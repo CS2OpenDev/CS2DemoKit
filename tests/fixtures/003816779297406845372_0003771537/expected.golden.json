@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "demo": "003816779297406845372_0003771537.dem",
+  "demo_sha256": "e92b50d0d338da87dabad66ad0b4b7ab2756b0d2f0ec376b025cb5f0cca207de",
+  "provider": "expected",
+  "provider_version": null,
+  "generated_at": "2026-05-23T02:16:12Z",
+  "match": {
+    "map": "de_mirage"
+  },
+  "players": {
+    "ÐúÇK ôÑ qùÄçk": {
+      "team": 3,
+      "stats": {
+        "kills": 14,
+        "deaths": 18,
+        "assists": 7,
+        "multi_2k": 4,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 3,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 5
+      }
+    },
+    "piesandcheese": {
+      "team": 3,
+      "stats": {
+        "kills": 13,
+        "deaths": 17,
+        "multi_2k": 0,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 5,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 5
+      }
+    },
+    "Little Michael Jackson": {
+      "team": 2,
+      "stats": {
+        "kills": 29,
+        "deaths": 15,
+        "assists": 4,
+        "multi_2k": 9,
+        "multi_3k": 2,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 7,
+        "trade_kills": 0,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "76561198303969338": {
+      "team": 2,
+      "stats": {
+        "kills": 9,
+        "deaths": 16,
+        "assists": 6,
+        "multi_2k": 1,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 1,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "PuKe$": {
+      "team": 2,
+      "stats": {
+        "kills": 12,
+        "deaths": 17,
+        "assists": 3,
+        "multi_2k": 2,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 5,
+        "trade_kills": 1,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "Plasmabal": {
+      "team": 2,
+      "stats": {
+        "kills": 20,
+        "deaths": 15,
+        "assists": 7,
+        "multi_2k": 4,
+        "multi_3k": 2,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 7,
+        "trade_kills": 4,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "Wifferino": {
+      "team": 3,
+      "stats": {
+        "kills": 15,
+        "deaths": 15,
+        "assists": 2,
+        "multi_2k": 2,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 7,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 5
+      }
+    },
+    "420IQPotato": {
+      "team": 3,
+      "stats": {
+        "kills": 21,
+        "deaths": 17,
+        "assists": 5,
+        "multi_2k": 6,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 5,
+        "trade_kills": 5,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 5
+      }
+    },
+    "DaHydraKing": {
+      "team": 2,
+      "stats": {
+        "kills": 12,
+        "deaths": 13,
+        "assists": 2,
+        "multi_2k": 2,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 9,
+        "trade_kills": 2,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "del Piero": {
+      "team": 3,
+      "stats": {
+        "kills": 13,
+        "deaths": 15,
+        "assists": 1,
+        "multi_2k": 4,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 7,
+        "trade_kills": 0,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 5
+      }
+    }
+  }
+}

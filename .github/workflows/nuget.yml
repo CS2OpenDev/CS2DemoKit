@@ -1,0 +1,92 @@
+# Publish the three CS2DemoKit packages from a v* tag.
+#
+# Channel: the maintainer's GitHub Packages feed. nuget.org is NOT yet reachable for this family —
+# every package here depends on the CS2OpenDev family, which publishes to GitHub Packages only
+# (CS2OpenDev-SDK#5, decided upstream), and a nuget.org package cannot depend on one that is not
+# there. The nuget.org step below is written and commented out, ready for the day that changes.
+name: nuget
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write   # push to the repo owner's GitHub Packages feed via the built-in token
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # Nerdbank.GitVersioning needs full history
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore tools (nbgv)
+        run: dotnet tool restore
+
+      # A tag build must stamp a STABLE version. If publicReleaseRefSpec fails to match the ref,
+      # NBGV stamps 0.9.0-g<sha> family-wide, which makes the exact [0.9.0] intra-family pins
+      # unsatisfiable — a broken package set that still uploads happily. Fail here instead.
+      - name: Assert a stable version stamp
+        run: |
+          set -euo pipefail
+          version=$(dotnet nbgv get-version -p src/CS2DemoKit.Parser -v NuGetPackageVersion)
+          public=$(dotnet nbgv get-version -p src/CS2DemoKit.Parser -v PublicRelease)
+          echo "NuGetPackageVersion=$version PublicRelease=$public"
+          if [ "$public" != "True" ]; then
+            echo "::error::PublicRelease is $public — this ref does not match publicReleaseRefSpec in version.json." >&2
+            exit 1
+          fi
+          case "$version" in
+            *-g*) echo "::error::Version $version is a prerelease stamp; exact family pins would be unsatisfiable." >&2; exit 1 ;;
+          esac
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME disagrees with the stamped version $version." >&2
+            exit 1
+          fi
+
+      - name: Build and test
+        run: |
+          dotnet build CS2DemoKit.slnx -c Release
+          dotnet run --project test/CS2DemoKit.Parser.Tests -c Release --no-build
+          dotnet run --project test/CS2DemoKit.Analysis.Tests -c Release --no-build
+
+      - name: Pack
+        run: |
+          dotnet pack src/CS2DemoKit.Parser -c Release -o artifacts/nuget --no-build
+          dotnet pack src/CS2DemoKit.Analysis -c Release -o artifacts/nuget --no-build
+          dotnet pack src/CS2DemoKit.Analysis.Rules -c Release -o artifacts/nuget --no-build
+
+      - name: Upload packages as run artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/nuget/
+
+      # GitHub Packages rejects .snupkg, so symbols ship as the run artifact above rather than
+      # alongside the package. --skip-duplicate keeps a re-run of the same tag idempotent.
+      - name: Push to GitHub Packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          dotnet nuget push "artifacts/nuget/*.nupkg" \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --skip-duplicate \
+            --no-symbols
+
+      # Enable once the CS2OpenDev family is on nuget.org (CS2OpenDev-SDK#5). Add a NUGET_API_KEY
+      # secret first. Publishing before then produces packages no consumer can restore.
+      # - name: Push to nuget.org
+      #   if: startsWith(github.ref, 'refs/tags/v')
+      #   run: |
+      #     dotnet nuget push "artifacts/nuget/*.nupkg" \
+      #       --source https://api.nuget.org/v3/index.json \
+      #       --api-key "${{ secrets.NUGET_API_KEY }}" \
+      #       --skip-duplicate

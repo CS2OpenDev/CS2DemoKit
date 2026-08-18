@@ -1,0 +1,505 @@
+# yaml-language-server: $schema=./dv-rules.schema.json
+#
+# The Rulesets v2 port of the v1 rules/player-stats.yaml — the largest corpus file.
+# The v1 file is FIVE per_player chains (player_totals, opening_kills,
+# opening_deaths, deagle_hs_achievement, traded_deaths) that, loaded together the way production
+# loads the whole rules/ directory, share ONE per-player template so their cross-chain expression
+# refs resolve (v1 HLTV reads kast_pct from rules/kast.yaml; DuelWin%/FK± read the opening chains).
+# The v2 resolver resolves each ruleset against the catalog + its OWN siblings, so this port folds
+# ALL five chains into ONE ruleset `player_stats` — the cross-chain refs become in-ruleset siblings.
+#
+# The on_satisfied:increment counters (total_opening_kills/deaths, deagle_hs_round_count,
+# total_traded_deaths) are re-authored as highlights whose match-scoped `.count` is the total (the
+# kast-port count-on-flag idiom). HLTV's cross-FILE dependency on kast_pct is resolved by
+# cross-ruleset composition (compiler-plan §8): `use: [kast]` brings rules/examples/kast.rules.yaml
+# into scope and HLTV reads `kast.kast_pct` as a qualified cross-ruleset stat — reproducing v1's
+# cross-FILE read exactly (v1 HLTV reads kast_pct from rules/kast.yaml). The kast sub-computation is
+# no longer folded in-ruleset here; the shared per-player template co-locates both rulesets' nodes so
+# the qualified read resolves to kast's own kast_pct node (KastPilotTests pins v2 kast_pct == v1).
+#
+# Grenade-usage columns (HE / Flash / Smokes / Molly) are ported via the actor_slot grenade views
+#   (he_grenade / flash_grenade / smoke_grenade / molotov). v1 counted a detonation/throw attributed
+#   to THIS player via event.UserId == player.slot on the hegrenade_detonate / flashbang_detonate
+#   / smokegrenade_detonate / molotov_thrown events; the views' actor_slot binding on each event's
+#   PlayerSlot field IS that per-player attribution, so no explicit filter is needed. (molotov_thrown
+#   is the synthesized per-throw event; GOTV binds it via the profile's MolotovThrown logical event.)
+#
+# PlayerStatsPilotTests evaluates this on the reference demo and asserts v2 == v1 (rules/ loaded as
+# production does) for every ported column.
+ruleset: player_stats
+title: Player Career Stats
+summary: Game-scoped aggregate stats, weapon categories, and computed metrics, per player.
+for: each_player
+use: [ kast ]                             # HLTV reads kast.kast_pct cross-ruleset (compiler-plan §8)
+
+stats:
+  # ── Kill / death / assist counters (kill & assist views bake event.Attacker != event.UserId) ──
+  TotalEnemyKills:
+    count: kill
+    match: { enemy: true }              # v1 parent enrich.kill.was_enemy_kill
+    per: match
+
+  TeamKills: # internal (HS% denominator); v1 parent was_team_kill
+    count: kill
+    match: { teamkill: true }
+    per: match
+
+  total_deaths:
+    count: death                        # death view: actor = victim, no suicide bake
+    while: match.live                   # v1 parent context.match.live
+    per: match
+
+  TotalTeamAssists:
+    count: assist                       # assist view: actor = assister, bakes event.Attacker != event.UserId
+    match: { enemy: true }              # v1 parent was_enemy_kill
+    where: "event.AssistedFlash == false"
+    per: match
+
+  total_headshot_kills:
+    count: kill
+    match: { headshot: true }
+    per: match
+
+  total_flash_assists:
+    count: assist
+    match: { flash: true }
+    while: round.active
+    per: match
+
+  total_noscope_kills:
+    count: kill
+    match: { no_scope: true }
+    while: round.active
+    per: match
+
+  total_wallbang_kills:
+    count: kill
+    where: "event.Penetrated > 0"
+    while: round.active
+    per: match
+
+  total_smoke_kills:
+    count: kill
+    match: { through_smoke: true }
+    while: round.active
+    per: match
+
+  total_blind_kills:
+    count: kill
+    where: "event.AttackerBlind == true"
+    while: round.active
+    per: match
+
+  total_revenge_kills:
+    count: kill
+    where: "event.Revenge > 0"
+    while: round.active
+    per: match
+
+  # ── Weapon-category kills (kill view exposes event.Weapon; v1 parent context.round.active) ──
+  awp_kills:
+    count: kill
+    where: 'event.Weapon == "awp"'
+    while: round.active
+    per: match
+
+  pistol_kills:
+    count: kill
+    where: 'event.Weapon == "glock" || event.Weapon == "hkp2000" || event.Weapon == "usp_silencer" || event.Weapon == "p250" || event.Weapon == "deagle" || event.Weapon == "fiveseven" || event.Weapon == "tec9" || event.Weapon == "cz75a" || event.Weapon == "elite" || event.Weapon == "revolver"'
+    while: round.active
+    per: match
+
+  rifle_kills:
+    count: kill
+    where: 'event.Weapon == "ak47" || event.Weapon == "m4a1" || event.Weapon == "m4a1_silencer" || event.Weapon == "aug" || event.Weapon == "sg556" || event.Weapon == "famas" || event.Weapon == "galilar" || event.Weapon == "ssg08"'
+    while: round.active
+    per: match
+
+  smg_kills:
+    count: kill
+    where: 'event.Weapon == "mp9" || event.Weapon == "mac10" || event.Weapon == "mp7" || event.Weapon == "mp5sd" || event.Weapon == "ump45" || event.Weapon == "bizon" || event.Weapon == "p90"'
+    while: round.active
+    per: match
+
+  knife_kills:
+    count: kill
+    where: 'event.Weapon == "knife" || event.Weapon == "knife_t" || event.Weapon == "knife_kukri"'
+    while: round.active
+    per: match
+
+  TradeKills:
+    count: kill
+    match: { trade: true }              # v1 parent enrich.kill.was_trade_kill
+    per: match
+
+  # ── FlashKills: actor is the flasher (flash_attacker_slot), NOT the killer — suppress the kill
+  #    view's killer binding (actor: any) and gate on the enrichment, exactly like v1. ──
+  FlashKills:
+    count: kill
+    match: { actor: any, flash_assisted: true }   # flash_assisted = enrich.kill.was_flash_kill
+    where: "enrich.kill.flash_attacker_slot == player.slot"
+    per: match
+
+  # ── Damage (damage_dealt view: actor = attacker) ──
+  TotalEnemyDmg:
+    sum: enrich.hurt.capped_damage      # v1 value: rule.value + enrich.hurt.capped_damage
+    on: damage_dealt
+    match: { enemy: true }              # v1 parent was_enemy_damage
+    per: match
+
+  TeamDmg:
+    sum: event.DmgHealth
+    on: damage_dealt
+    match: { teamdamage: true }         # v1 parent was_team_damage
+    per: match
+
+  SelfDmg:
+    sum: event.DmgHealth
+    on: damage_dealt
+    where: "event.Attacker == event.UserId"   # v1 parent was_self_damage
+    per: match
+
+  ShotsHitFoe:
+    count: damage_dealt
+    match: { enemy: true, bullet: true }
+    per: match
+
+  ShotsHitFriend:
+    count: damage_dealt
+    match: { teamdamage: true }
+    per: match
+
+  # ── Entity-read stats (player.* pre-frame provider reads — the hard part #1) ──
+  HealthWhileDamagingSum:
+    sum: player.health                  # v1 value: rule.value + player.entity.pawn.health
+    on: damage_dealt
+    match: { enemy: true }
+    per: match
+
+  EnemyDamageInstances:
+    count: damage_dealt
+    match: { enemy: true }
+    per: match
+
+  EquipmentValueSum:
+    sum: player.equipment_value         # v1 value: rule.value + player.entity.pawn.equipment_value
+    on: raw.round_freeze_end
+    while: player.alive                 # v1 parent context.player.alive
+    per: match
+
+  EquipmentValueRounds:
+    count: raw.round_freeze_end
+    while: player.alive
+    per: match
+
+  RoundsWithArmor:
+    count: raw.round_freeze_end
+    while: player.alive
+    where: "player.armor > 0"           # v1 condition player.entity.pawn.armor > 0
+    per: match
+
+  # ── Shots fired (shot view: actor = shooter) ──
+  total_shots_fired:
+    count: shot
+    match: { bullet: true }             # enrich.weapon_fire.is_bullet
+    while: round.active
+    per: match
+
+  # ── Grenade usage (actor_slot grenade views bind the thrower via each event's PlayerSlot; the
+  #    v1 counters had parent context.round.active + condition event.UserId == player.slot) ──
+  he_used:
+    count: he_grenade
+    while: round.active
+    per: match
+
+  flash_used:
+    count: flash_grenade
+    while: round.active
+    per: match
+
+  smoke_used:
+    count: smoke_grenade
+    while: round.active
+    per: match
+
+  molotov_used:
+    count: molotov
+    while: round.active
+    per: match
+
+  # ── Objectives (bomb_planted / bomb_defused views bind: none — explicit PlayerSlot filter) ──
+  bomb_plants:
+    count: bomb_planted
+    where: "event.UserId == player.slot"
+    per: match
+
+  bomb_defuses:
+    count: bomb_defused
+    where: "event.UserId == player.slot"
+    per: match
+
+  # ── Rounds survived: v1 counter on $round_end gated by context.player.alive ──
+  rounds_survived:
+    count: round_won
+    while: player.alive
+    per: match
+
+  # ── Enemy flashes (blinded_enemy view: actor = attacker/thrower) ──
+  TotalEnemyFlashes:
+    count: blinded_enemy
+    match: { enemy: true }              # enrich.blind.was_enemy_flash
+    per: match
+
+  # v1's TotalBlindDuration is a `type: counter` (int) node that accumulates the double
+  # enrich.blind.duration, truncating each step: (int)(runningInt + d) == runningInt + (int)d for a
+  # non-negative d, i.e. the running total is Σ floor(d_i). The v2 floor() builtin reproduces that
+  # exactly — floor(d_i) is integer-valued so Σ floor(d_i) is the same integer v1 stored, and the
+  # AvgBlind compute reads it as a double (Σfloor / count), matching v1's double division.
+  TotalBlindDuration:
+    sum: floor(enrich.blind.duration)   # v1: (int) counter accumulating enrich.blind.duration
+    on: blinded_enemy
+    match: { enemy: true }              # enrich.blind.was_enemy_flash
+    per: match
+
+  # ── Clutch win (v1 counter on $round_end; enrichment gate + winner slot, no view/facet) ──
+  clutch_won:
+    count: round_won
+    where: "enrich.clutch.was_clutch_won && enrich.clutch.winner_slot == player.slot"
+    per: match
+
+  # ── Round wins (side-aware; round_end enrichments winner_side/winner_team, player.team) ──
+  CTWins:
+    count: round_won
+    where: "enrich.round.has_winner && enrich.round.winner_team == player.team && enrich.round.winner_side == 3"
+    per: match
+
+  CTLosses:
+    count: round_won
+    where: "enrich.round.has_winner && enrich.round.winner_team != player.team && enrich.round.winner_side == 2"
+    per: match
+
+  TWins:
+    count: round_won
+    where: "enrich.round.has_winner && enrich.round.winner_team == player.team && enrich.round.winner_side == 2"
+    per: match
+
+  TLosses:
+    count: round_won
+    where: "enrich.round.has_winner && enrich.round.winner_team != player.team && enrich.round.winner_side == 3"
+    per: match
+
+  # ── Opening duels (first blood of the round: v1 parent context.round.no_deaths) ──
+  CTFK:
+    count: kill
+    while: round.no_deaths_yet
+    where: "player.team == 3"
+    per: match
+
+  CTFD:
+    count: death
+    while: round.no_deaths_yet
+    where: "event.Attacker != event.UserId && player.team == 3"
+    per: match
+
+  TFK:
+    count: kill
+    while: round.no_deaths_yet
+    where: "player.team == 2"
+    per: match
+
+  TFD:
+    count: death
+    while: round.no_deaths_yet
+    where: "event.Attacker != event.UserId && player.team == 2"
+    per: match
+
+  # ── Per-round opening flags (FK/FD round columns) ──
+  opening_kill_round:
+    flag: true
+    on: kill
+    while: round.no_deaths_yet
+    per: round
+
+  opening_death_round:
+    flag: true
+    on: death
+    while: round.no_deaths_yet
+    per: round
+
+  # ── Deagle HS round (per-round count; DeagleHS round column) ──
+  deagle_hs_kills:
+    count: kill
+    match: { headshot: true }
+    where: 'event.Weapon == "deagle"'
+    while: round.active
+    per: round
+
+  # ── KAST% comes from the `kast` ruleset via cross-ruleset composition (use: [kast]) ──
+  #    HLTV reads `kast.kast_pct` below; the folded kast sub-computation (enemy_kills_round /
+  #    team_assists_round / has_kast / the kast highlight / kast_pct) is gone — kast.rules.yaml owns it.
+
+  # ── Computed metrics (within-ruleset siblings + round.number + highlight .count) ──
+  # Computed metrics are match-scoped (per: match) so they resolve to the MATCH scoreboard (v1
+  # parity) — a match compute evaluates once at match end with round.number = total rounds, the same
+  # final value a per: round compute reaches on the last round (kast_pct proves this). `format:` is the
+  # v1 per-stat display precision (.NET numeric format), presentation only (outside node identity).
+  ADR:
+    compute: "TotalEnemyDmg / round.number"
+    per: match
+    format: F1
+  "HS%":
+    compute: "total_headshot_kills / (TotalEnemyKills + TeamKills) * 100"
+    per: match
+    format: F2
+  KPR:
+    compute: "TotalEnemyKills / round.number"
+    per: match
+    format: F2
+  KD:
+    compute: "TotalEnemyKills / total_deaths"
+    per: match
+    format: F2
+  "Surv%":
+    compute: "rounds_survived / round.number * 100"
+    per: match
+    format: F2
+  AvgHealthWhileDamaging:
+    compute: "HealthWhileDamagingSum / EnemyDamageInstances"
+    per: match
+    format: F1
+  AvgEquipmentValue:
+    compute: "EquipmentValueSum / EquipmentValueRounds"
+    per: match
+    format: F0
+  AvgBlind:
+    # v1: TotalBlindDuration / TotalEnemyFlashes (both read as double -> double division).
+    compute: "TotalBlindDuration / TotalEnemyFlashes"
+    per: match
+    format: F1
+
+  HLTV:
+    # HLTV 2.0 rating (v1 formula verbatim); kast_pct is read cross-ruleset from `kast`.
+    compute: "0.73 * (kast.kast_pct / 100) + 0.3591 * (TotalEnemyKills / round.number) - 0.5329 * (total_deaths / round.number) + 0.2372 * (2.13 * (TotalEnemyKills / round.number) + 0.42 * (total_assists / round.number) - 0.41) + 0.0032 * (TotalEnemyDmg / round.number) + 0.1587"
+    per: match
+    format: F2
+
+  # total_assists (game): v1 assister==player && killer!=victim, parent round.active.
+  total_assists:
+    count: assist                       # assist bakes event.Attacker != event.UserId
+    while: round.active
+    per: match
+
+  "DuelWin%":
+    compute: "opening_kill.count / (opening_kill.count + opening_death.count) * 100"
+    per: match
+    format: F0
+  "FK±":
+    compute: "opening_kill.count - opening_death.count"
+    per: match
+    format: F0
+
+  # ── Rapid kills (windowed streak; v1 windowed_streak rapid_kill_sequences) ──
+  rapid_kill_sequences:
+    streak: kill
+    window: 640
+    min_streak: 2
+    per: match
+
+highlights:
+  # The KAST round highlight now lives in kast.rules.yaml; HLTV reads kast.kast_pct.
+  # Rating-flavored entries are demoted out of the reel. `traded_death` (a KAST-
+  # adjacent bookkeeping flag, no watchable content) becomes kind: hidden — it keeps its .count for
+  # the TradedD column but is never surfaced in a reel. `opening_death` is reclassified as
+  # kind: lowlight (keeps its .count for DuelWin%/FK±, but routes to the lowlight track, not the
+  # skill reel). The genuine plays carry a score:.
+
+  # on_satisfied:increment collapse — each highlight's .count is the v1 game total counter.
+  opening_kill:
+    when: opening_kill_round
+    per: match
+    score: 45
+    title: "{player.name} — opening kill (round {round.number})"
+
+  opening_death:
+    when: opening_death_round
+    per: match
+    score: 40
+    kind: lowlight
+    title: "{player.name} — opening death (round {round.number})"
+
+  deagle_hs_round:
+    when: deagle_hs_kills >= 2
+    per: match
+    score: 65
+    title: "{player.name} — 2+ deagle headshot kills (round {round.number})"
+
+  traded_death:
+    when: player.traded
+    per: match
+    kind: hidden
+    title: "{player.name} — traded death (round {round.number})"
+
+show:
+  scoreboard:
+    # ── game group (match-scoped totals + computed metrics) ──
+    - { stat: TotalEnemyKills,        label: TotalK,    group: game }
+    - { stat: total_deaths,           label: TotalD,    group: game }
+    - { stat: TotalTeamAssists,       label: TotalA,    group: game }
+    - { stat: TotalEnemyDmg,          label: EnemyDmg,  group: game }
+    - { stat: TeamDmg,                label: TeamDmg,   group: game }
+    - { stat: SelfDmg,                label: SelfDmg,   group: game }
+    - { stat: total_headshot_kills,   label: TotalHS,   group: game }
+    - { stat: total_flash_assists,    label: FlashAst,  group: game }
+    - { stat: total_noscope_kills,    label: NoScope,   group: game }
+    - { stat: total_wallbang_kills,   label: WB,        group: game }
+    - { stat: total_smoke_kills,      label: Smoke,     group: game }
+    - { stat: total_blind_kills,      label: Blind,     group: game }
+    - { stat: total_shots_fired,      label: Shots,     group: game }
+    - { stat: he_used,                label: HE,        group: game }
+    - { stat: flash_used,             label: Flash,     group: game }
+    - { stat: smoke_used,             label: Smokes,    group: game }
+    - { stat: molotov_used,           label: Molly,     group: game }
+    - { stat: bomb_plants,            label: Plants,    group: game }
+    - { stat: bomb_defuses,           label: Defuses,   group: game }
+    - { stat: total_revenge_kills,    label: Revenge,   group: game }
+    - { stat: awp_kills,              label: AWP,       group: game }
+    - { stat: pistol_kills,           label: Pistol,    group: game }
+    - { stat: rifle_kills,            label: Rifle,     group: game }
+    - { stat: smg_kills,              label: SMG,       group: game }
+    - { stat: knife_kills,            label: Knife,     group: game }
+    - { stat: rounds_survived,        label: Survived,  group: game }
+    - { stat: ADR,                    label: ADR,       group: game }
+    - { stat: "HS%",                  label: "HS%",     group: game }
+    - { stat: KPR,                    label: KPR,       group: game }
+    - { stat: KD,                     label: KD,        group: game }
+    - { stat: "Surv%",                label: "Surv%",   group: game }
+    - { stat: HLTV,                   label: HLTV,      group: game }
+    - { stat: clutch_won,             label: Clutch,    group: game }
+    - { stat: rapid_kill_sequences,   label: RapidKills, group: game }
+    - { stat: TotalEnemyFlashes,      label: EFlash,    group: game }
+    - { stat: AvgBlind,               label: AvgBlind,  group: game }
+    - { stat: AvgHealthWhileDamaging, label: "AvgHP→Dmg", group: game }
+    - { stat: AvgEquipmentValue,      label: Equip,     group: game }
+    - { stat: RoundsWithArmor,        label: Armor,     group: game }
+    - { stat: FlashKills,             label: FlashK,    group: game }
+    - { stat: ShotsHitFoe,            label: HitFoe,    group: game }
+    - { stat: ShotsHitFriend,         label: HitTeam,   group: game }
+    - { stat: TradeKills,             label: TrdK,      group: game }
+    - { stat: "DuelWin%",             label: "Duel%",   group: game }
+    - { stat: "FK±",                  label: "FK±",     group: game }
+    - { stat: CTFK,                   label: CTFK,      group: game }
+    - { stat: CTFD,                   label: CTFD,      group: game }
+    - { stat: TFK,                    label: TFK,       group: game }
+    - { stat: TFD,                    label: TFD,       group: game }
+    - { stat: CTWins,                 label: CTW,       group: game }
+    - { stat: CTLosses,               label: CTL,       group: game }
+    - { stat: TWins,                  label: TW,        group: game }
+    - { stat: TLosses,                label: TL,        group: game }
+    - { stat: opening_kill,           label: TotalFK,   group: game }   # highlight .count
+    - { stat: opening_death,          label: TotalFD,   group: game }
+    - { stat: deagle_hs_round,        label: DeagleHSRnds, group: game }
+    - { stat: traded_death,           label: TradedD,   group: game }   # hidden highlight .count
+    # ── round group (per-round columns) ──
+    - { stat: opening_kill_round,     label: FK,        group: round }
+    - { stat: opening_death_round,    label: FD,        group: round }
+    - { stat: deagle_hs_kills,        label: DeagleHS,  group: round }

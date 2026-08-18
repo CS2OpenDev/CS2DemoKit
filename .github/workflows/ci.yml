@@ -1,0 +1,45 @@
+# Build + test on every push to main and every pull request.
+#
+# No credentials required: the CS2OpenDev packages resolve from the committed local-packages/
+# folder feed (see nuget.config), so forks and outside contributors get a working build.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # Nerdbank.GitVersioning needs full history
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build (Release)
+        run: dotnet build CS2DemoKit.slnx -c Release
+
+      # Both suites are TUnit executables, so they run via `dotnet run`, not `dotnet test`.
+      # Demo-dependent tests resolve the committed sample (parser) or skip (analysis, whose
+      # fixtures are pinned to a full match) — neither can fail for want of a demo file.
+      - name: Parser tests
+        run: dotnet run --project test/CS2DemoKit.Parser.Tests -c Release --no-build
+
+      - name: Analysis tests
+        run: dotnet run --project test/CS2DemoKit.Analysis.Tests -c Release --no-build
+
+      # Proves the three packages still pack with correct metadata and exact intra-family pins
+      # before a tag tries to publish them.
+      - name: Pack (verification only)
+        run: |
+          dotnet pack src/CS2DemoKit.Parser -c Release -o artifacts/ci-pack --no-build
+          dotnet pack src/CS2DemoKit.Analysis -c Release -o artifacts/ci-pack --no-build
+          dotnet pack src/CS2DemoKit.Analysis.Rules -c Release -o artifacts/ci-pack --no-build

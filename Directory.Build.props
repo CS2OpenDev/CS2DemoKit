@@ -1,0 +1,37 @@
+<Project>
+    <!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
+    <ItemGroup>
+        <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all"/>
+    </ItemGroup>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+
+        <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+        <AnalysisMode>Recommended</AnalysisMode>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>CS1591</NoWarn>
+
+        <!--
+            Nothing here is published to NuGet unless it opts in. Only the three CS2DemoKit library
+            projects set IsPackable=true (Directory.Build.targets holds the metadata they inherit
+            once they do); tools and tests stay unpackable, so a solution-wide `dotnet pack` can
+            never produce a surprise artifact.
+        -->
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!--
+        Release builds normalize first-party source paths to /_/ rather than recording the build
+        machine's absolute paths in each assembly's CodeView debug directory. Release-only on
+        purpose: deterministic paths are exactly what you do NOT want while debugging locally.
+    -->
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+</Project>

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../dv-rules.schema.json
+# Paper-test reference answer candidate — request #6 "Per-weapon headshot rate".
+# NOTE: the two per-weapon COUNTS are expressible; a per-key RATE (hs/kills per weapon) is NOT.
+ruleset: weapon_hs
+for: each_player
+stats:
+  kills_by_weapon:
+    bucket: kill
+    key: event.Weapon
+    match: { enemy: true }
+  hs_kills_by_weapon:
+    bucket: kill
+    key: event.Weapon
+    match: { enemy: true, headshot: true }

@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=./dv-rules.schema.json
+#
+# The Rulesets v2 centerpiece (docs/rules-v2/rule-authoring-ux-review.md §1.4): the 152-line
+# v1 achievement-post-plant-double.yaml rewritten in ~40 lines with zero duplication.
+# Detects 2+ enemy kills after the bomb plant in one round, per player, and captures the
+# clip context (plant tick + each qualifying kill tick). The v1 file's six copied kill
+# conditions collapse to one `define`; its five copy-pasted pp_kill_tick_N rules collapse
+# to one `keep: list` capture; its topo-sort comment is consumed by the compiler.
+#
+# The pilot golden (PostPlantDoublePilotTests) evaluates this on the reference
+# demo and asserts identical per-round/per-player results to the v1 file.
+ruleset: post_plant_double
+title: Post-Plant Double
+summary: 2+ enemy kills after the bomb plant in one round, with clip-ready tick context.
+for: each_player
+
+params:
+  min_kills: { type: int, default: 2, min: 2, max: 5 }
+
+define:
+  post_plant_kill: # the condition the old file repeated six times
+    on: kill                          # view of player_death from the killer — in a per-player
+    # ruleset the killer IS the ruleset's player
+    match: { enemy: true }
+    while: round.bomb.was_planted     # sticky per-round built-in; survives defuse/detonation
+
+stats:
+  plant_tick:
+    capture: event.tick
+    on: bomb_planted
+    per: round
+
+  post_plant_kills:
+    count: post_plant_kill
+    per: round
+
+  kill_ticks:
+    capture: event.tick
+    on: post_plant_kill
+    keep: list                        # ordered per-round capture list — was five copy-pasted
+    per: round                        # rules; one collection-valued node, no size to declare
+
+highlights:
+  post_plant_double:
+    when: post_plant_kills >= params.min_kills
+    per: round
+    score: 78
+    title: "{player.name} — {post_plant_kills} kills after the plant (round {round.number})"
+
+show:
+  scoreboard:
+    # boards: is inferred from each stat's per: (here match) — write it only to override
+    - { stat: post_plant_double.count, label: PostPlantDoubles, group: objectives }
+  tables:
+    post_plant_double_context:
+      per: player_round
+      columns:
+        - { stat: post_plant_double,  label: Achieved }
+        - { stat: post_plant_kills,   label: PostPlantKills }
+        - { stat: plant_tick,         label: PlantTick }
+        - { stat: kill_ticks,         label: KillTick }    # serializer flattens →
+        # KillTickCount, KillTick1..N

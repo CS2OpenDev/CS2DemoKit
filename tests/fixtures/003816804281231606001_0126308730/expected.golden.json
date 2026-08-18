@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "demo": "003816804281231606001_0126308730.dem",
+  "demo_sha256": "74b65ddf5303889c18840f9b2dcd16ec8201f55740d8931d28b0fa26f76ad0aa",
+  "provider": "expected",
+  "provider_version": null,
+  "generated_at": "2026-05-23T02:16:12Z",
+  "match": {
+    "map": "de_ancient"
+  },
+  "players": {
+    "d4y": {
+      "team": 3,
+      "stats": {
+        "kills": 13,
+        "deaths": 18,
+        "assists": 4,
+        "multi_2k": 0,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "ct_rounds_won": 6,
+        "t_rounds_won": 5
+      }
+    },
+    "Little Michael Jackson": {
+      "team": 2,
+      "stats": {
+        "kills": 22,
+        "deaths": 18,
+        "assists": 11,
+        "multi_2k": 4,
+        "multi_3k": 1,
+        "multi_4k": 1,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 3,
+        "ct_rounds_won": 7,
+        "t_rounds_won": 6
+      }
+    },
+    "Mr Chow": {
+      "team": 2,
+      "stats": {
+        "kills": 22,
+        "deaths": 15,
+        "assists": 7,
+        "multi_2k": 6,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 9,
+        "trade_kills": 4,
+        "ct_rounds_won": 7,
+        "t_rounds_won": 6
+      }
+    },
+    "Barry Keoghan's Nose": {
+      "team": 3,
+      "stats": {
+        "kills": 9,
+        "deaths": 20,
+        "assists": 5,
+        "multi_2k": 2,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 2,
+        "ct_rounds_won": 6,
+        "t_rounds_won": 5
+      }
+    },
+    "♛ JC": {
+      "team": 3,
+      "stats": {
+        "kills": 23,
+        "deaths": 20,
+        "assists": 4,
+        "multi_2k": 5,
+        "multi_3k": 2,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 4,
+        "ct_rounds_won": 6,
+        "t_rounds_won": 5
+      }
+    },
+    "𝙺 𝙰 𝙸 𝚉 𝙴 𝚁": {
+      "team": 3,
+      "stats": {
+        "kills": 19,
+        "deaths": 18,
+        "assists": 6,
+        "multi_2k": 4,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 3,
+        "ct_rounds_won": 6,
+        "t_rounds_won": 5
+      }
+    },
+    "yehright": {
+      "team": 2,
+      "stats": {
+        "kills": 19,
+        "deaths": 19,
+        "assists": 5,
+        "multi_2k": 5,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 5,
+        "ct_rounds_won": 7,
+        "t_rounds_won": 6
+      }
+    },
+    "9": {
+      "team": 3,
+      "stats": {
+        "kills": 14,
+        "deaths": 18,
+        "multi_2k": 5,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 2,
+        "ct_rounds_won": 6,
+        "t_rounds_won": 5
+      }
+    },
+    "Dark Jeb": {
+      "team": 2,
+      "stats": {
+        "kills": 12,
+        "deaths": 14,
+        "assists": 3,
+        "multi_2k": 3,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 10,
+        "trade_kills": 1,
+        "ct_rounds_won": 7,
+        "t_rounds_won": 6
+      }
+    },
+    "booshaL": {
+      "team": 2,
+      "stats": {
+        "kills": 18,
+        "deaths": 15,
+        "assists": 3,
+        "multi_2k": 4,
+        "multi_3k": 0,
+        "multi_4k": 1,
+        "multi_5k": 0,
+        "rounds_survived": 9,
+        "trade_kills": 2,
+        "ct_rounds_won": 7,
+        "t_rounds_won": 6
+      }
+    }
+  }
+}

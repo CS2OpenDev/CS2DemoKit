@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=./dv-rules.schema.json
+#
+# The Rulesets v2 port of the v1 rules/weapon-stats.yaml (keyed_counter). Each rule is one
+# per-player, match-scoped bucket keyed by weapon; the KeyedStatsProjector emits one table per
+# rule (player_kills_by_weapon / player_damage_by_weapon) with a `key` dimension.
+#
+# The gating deliberately mirrors the v1 file so the totals reconcile bucket-for-bucket:
+#   kills_by_weapon  — the `kill` view binds actor = killer (killer == this player, suicides
+#                      baked out); match: { enemy: true } is the v1 `enrich.kill.was_enemy_kill`
+#                      parent. A count bucket (no value:) = +1 per qualifying kill.
+#   damage_by_weapon — the `damage_dealt` view binds actor = attacker (attacker == this player);
+#                      match: { enemy: true } is the v1 `enrich.hurt.was_enemy_damage` parent.
+#                      value: enrich.hurt.capped_damage is the v1 `action: add` capped-at-remaining-
+#                      health amount, summed per weapon (the C8 single-value SUM reducer).
+#
+# The WeaponStatsPilotTests golden evaluates this on the reference demo and asserts identical
+# per-(player, weapon) buckets to the v1 file.
+ruleset: weapon_stats
+title: Per-Weapon Stats
+summary: Kills and enemy damage broken down by weapon, per player, per game.
+for: each_player
+
+stats:
+  kills_by_weapon:
+    bucket: kill                        # actor = killer (kill view's actor_slot binding)
+    match: { enemy: true }              # v1 parent: enrich.kill.was_enemy_kill
+    key: event.Weapon
+    per: match                          # a keyed bucket is match-scoped (sampled per-game)
+
+  damage_by_weapon:
+    bucket: damage_dealt                # actor = attacker (damage_dealt view's actor_slot binding)
+    match: { enemy: true }              # v1 parent: enrich.hurt.was_enemy_damage
+    key: event.Weapon
+    value: enrich.hurt.capped_damage    # SUM the capped damage — was v1 `action: add`, `value:`
+    per: match

@@ -1,0 +1,206 @@
+# yaml-language-server: $schema=./dv-rules.schema.json
+#
+# The Rulesets v2 port of the v1 rules/kast.yaml (the `kast` chain — per-round combat stats +
+# KAST%). This is a re-authoring into the v2 stats:/highlights:/show:
+# vocabulary, NOT a mechanical translation: v1's fifteen counters + threshold_tally + expression +
+# on_satisfied collapse onto count:/sum:/tally:/compute: stats, a flag, and one highlight.
+#
+# Gating deliberately mirrors v1 so every number reconciles (KastPilotTests proves v2 == v1 on the
+# reference demo — per-(player,round) columns AND per-player game totals, plus the kast.test.yaml
+# pins 98/105/105/33/1633):
+#   * v1 `parents: [context.round.active]`         -> `while: round.active`
+#   * v1 `parents: [enrich.kill.was_enemy_kill]`   -> `match: { enemy: true }` (kill view facet)
+#   * v1 killer/victim/assister slot-equality      -> the kill/death/assist view actor binding
+#   * v1 `action: set, value: rule.value + Dmg`    -> `sum: event.DmgHealth`
+#
+# Lives in rules/examples/ (not rules/) so its `ruleset: kast` id cannot collide with the v1
+# rules/kast.yaml `chains.kast` under the app's non-recursive production scan.
+ruleset: kast
+title: KAST Tracking
+summary: Per-round combat stats and KAST percentage, per player.
+for: each_player
+exports: [ kast_pct ]                  # the one stat other rulesets read cross-ruleset (player_stats' HLTV)
+
+stats:
+  # ── Per-round counters (v1 parents: [context.round.active] -> while: round.active) ──
+  kills:
+    count: kill                       # kill view: actor = killer, baked event.Attacker != event.UserId
+    per: round
+    while: round.active
+    label: Kills
+
+  assists:
+    # v1: assister == player && killer != victim, parent context.round.active. The plain idiomatic
+    # form: the assist view binds actor = assister (event.Assister == player.slot) and bakes
+    # event.Attacker != event.UserId. Its view actor-role is part of node identity (preimage row 10), so it
+    # hashes apart from `count: kill` (actor = killer) — no workaround needed.
+    count: assist
+    per: round
+    while: round.active
+    label: Assists
+
+  deaths:
+    count: death                      # death view: actor = victim (suicides still count as a death)
+    per: round
+    while: round.active
+    label: Deaths
+
+  damage_dealt:
+    sum: event.DmgHealth              # v1 action: set, value: rule.value + event.DmgHealth (raw)
+    on: damage_dealt                  # damage_dealt view: actor = attacker
+    where: "event.Attacker != event.UserId"   # v1 excluded self-damage
+    per: round
+    while: round.active
+    label: Damage
+
+  utility_damage:
+    sum: event.DmgHealth
+    on: damage_dealt
+    where: 'event.Attacker != event.UserId && (event.Weapon == "hegrenade" || event.Weapon == "inferno" || event.Weapon == "molotov")'
+    per: round
+    while: round.active
+    label: UtilDmg
+
+  headshot_kills:
+    count: kill
+    match: { headshot: true }         # facet IsHeadshot
+    per: round
+    while: round.active
+    label: HSKills
+
+  enemy_kills_round:
+    count: kill
+    match: { enemy: true }            # v1 parent: enrich.kill.was_enemy_kill
+    per: round
+    label: EKills
+
+  team_assists_round:
+    # v1: assister == player, parent enrich.kill.was_enemy_kill. DELIBERATELY pinned to the
+    # killer-vs-victim gate (was_enemy_kill), NOT the assist view's `enemy` facet: after the
+    # totalAssists mixed-sign fix that facet reads was_enemy_assist (assister-vs-victim), which
+    # is what Leetify's totalAssists counts — but Leetify's KAST credits looser assists (mirage
+    # bench, tick 11027: piesandcheese's team-damage assist is excluded from their totalAssists=4
+    # yet their KAST%=72.73 still credits that round). Keeping this on was_enemy_kill preserves
+    # the KAST oracle matches; see the totalAssists notes in KNOWN-AND-SUSPECTED-ISSUES.md.
+    count: assist
+    where: "enrich.kill.was_enemy_kill == true"
+    per: round
+
+  flash_assists:
+    count: assist
+    match: { flash: true }            # facet AssistedFlash
+    per: round
+    while: round.active
+    label: FlashAst
+
+  noscope_kills:
+    count: kill
+    match: { no_scope: true }         # facet NoScope
+    per: round
+    while: round.active
+    label: NoScope
+
+  wallbang_kills:
+    count: kill
+    where: "event.Penetrated > 0"   # no penetration facet — gate on the wire field
+    per: round
+    while: round.active
+    label: WB
+
+  smoke_kills:
+    count: kill
+    match: { through_smoke: true }    # facet ThroughSmoke
+    per: round
+    while: round.active
+    label: Smoke
+
+  shots_fired:
+    count: shot                       # shot view: actor = shooter (PlayerSlot)
+    match: { bullet: true }           # enrich.weapon_fire.is_bullet
+    per: round
+    while: round.active
+    label: Shots
+
+  enemies_flashed:
+    count: blinded_enemy              # blinded_enemy view: actor = attacker (thrower)
+    match: { enemy: true }            # v1 parent: enrich.blind.was_enemy_flash
+    per: round
+    label: Flashed
+
+  # ── Per-player contexts surfaced as round flags ──
+  traded:
+    flag:
+      when: "player.traded"           # v1 column referenced context.player.traded directly
+    per: round
+    label: Traded
+
+  # ── KAST round: the real four-source OR (v1 has_kast, parents: {mode: any}) ──
+  has_kast:
+    flag:
+      when: "enemy_kills_round > 0 or team_assists_round > 0 or player.survived or player.traded"
+    per: round
+    label: HasKAST
+
+  # ── KAST% (v1 expression kast_rounds / round_number * 100). Reads the hidden `kast` highlight's
+  #    match-scoped .count (== v1 kast_rounds) built below. ──
+  kast_pct:
+    compute: "kast.count / round.number * 100"
+    per: match
+    format: F2
+    label: "KAST%"
+
+  # ── Multi-kill rounds (v1 threshold_tally over kills into 2K-5K buckets) ──
+  multi_kill_tally:
+    tally: kills
+    thresholds:
+      - { min: 5, target: rounds_5k }
+      - { min: 4, target: rounds_4k }
+      - { min: 3, target: rounds_3k }
+      - { min: 2, target: rounds_2k }
+    per: match
+
+highlights:
+  # KAST is a rating INPUT (it fires ~70% of rounds), not a watchable moment, so it
+  # is DEMOTED out of the reel via `kind: hidden` — the firing still drives its match-scoped .count
+  # (== v1 kast_rounds, read by kast_pct and the KASTRounds column), but no reel ever surfaces it.
+  # The DSL has no plain-stat way to count "rounds where a per-round flag held" (that idiom is a
+  # highlight's .count), which is exactly why this stays a highlight rather than becoming a stat.
+  kast:
+    when: has_kast
+    per: match
+    kind: hidden
+    title: "KAST round for {player.name}"
+
+show:
+  scoreboard:
+    - { stat: kills,             label: Kills,    group: round }
+    - { stat: assists,           label: Assists,  group: round }
+    - { stat: deaths,            label: Deaths,   group: round }
+    - { stat: traded,            label: Traded,   group: round }
+    - { stat: damage_dealt,      label: Damage,   group: round }
+    - { stat: utility_damage,    label: UtilDmg,  group: round }
+    - { stat: headshot_kills,    label: HSKills,  group: round }
+    - { stat: flash_assists,     label: FlashAst, group: round }
+    - { stat: noscope_kills,     label: NoScope,  group: round }
+    - { stat: wallbang_kills,    label: WB,       group: round }
+    - { stat: smoke_kills,       label: Smoke,    group: round }
+    - { stat: shots_fired,       label: Shots,    group: round }
+    - { stat: enemy_kills_round, label: EKills,   group: round }
+    - { stat: enemies_flashed,   label: Flashed,  group: round }
+    - { stat: has_kast,          label: HasKAST,  group: round }
+    - { stat: kast,              label: KASTRounds, group: game }   # hidden highlight ref -> match .count
+    - { stat: kast_pct,          label: "KAST%",  group: game }
+    - { stat: rounds_2k,         label: "2K",     group: game }     # v1 parity: multi-kill tally
+    - { stat: rounds_3k,         label: "3K",     group: game }     #   targets were scoreboard
+    - { stat: rounds_4k,         label: "4K",     group: game }     #   columns in v1 kast.yaml
+    - { stat: rounds_5k,         label: "5K",     group: game }
+  tables:
+    kast_game_totals:
+      per: player_match
+      columns:
+        - { stat: kast,       label: KASTRounds }   # hidden highlight .count (== v1 kast_rounds)
+        - { stat: kast_pct,   label: "KAST%" }
+        - { stat: rounds_2k,  label: "2K" }
+        - { stat: rounds_3k,  label: "3K" }
+        - { stat: rounds_4k,  label: "4K" }
+        - { stat: rounds_5k,  label: "5K" }

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+
+    <!-- Published to NuGet. Shared metadata (authors, license, readme/notices, symbols, exact
+         intra-family pins) comes from Directory.Build.targets; only the per-package identity
+         lives here. -->
+    <PropertyGroup>
+        <IsPackable>true</IsPackable>
+        <PackageId>CS2DemoKit.Analysis.Rules</PackageId>
+        <Description>Zero-dependency semantic core of the CS2DemoKit rules DSL: lexer, parser, canonical AST and normalizer, resolver, typed checker, and resolved-identity canonical hashing — for rule editors, linters and validation services.</Description>
+        <PackageTags>cs2;counter-strike;demo;demo-parser;source2;rules;dsl;linter</PackageTags>
+    </PropertyGroup>
+
+    <!-- Deliberately BCL-only: this is the leaf semantic core of the v2 rules language
+         (lexer, parser, canonical AST + normalizer, resolver, typed checker, and the
+         resolved-identity RuleHasher). It is consumed by the v2 loader
+         (CS2DemoKit.Analysis.Yaml), `rules check` (tools/AnalysisBench), and the
+         Rules Workbench UI — none of which may drag parser/UI dependencies in through it.
+         Do not add project or package references. -->
+
+</Project>

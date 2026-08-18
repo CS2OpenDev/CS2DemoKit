@@ -1,0 +1,147 @@
+{
+  "Kills": {
+    "0": {
+      "ak47": 9,
+      "m4a1_silencer": 14,
+      "mac10": 1,
+      "usp_silencer": 4
+    },
+    "1": {
+      "awp": 16,
+      "elite": 1,
+      "hegrenade": 1,
+      "knife_cord": 2,
+      "m4a1": 1,
+      "mac10": 1
+    },
+    "2": {
+      "bizon": 1,
+      "m4a1": 4,
+      "m4a1_silencer": 5
+    },
+    "3": {
+      "awp": 2,
+      "mac10": 1,
+      "nova": 4
+    },
+    "4": {
+      "ak47": 4,
+      "glock": 1,
+      "xm1014": 2
+    },
+    "5": {
+      "m4a1_silencer": 2,
+      "usp_silencer": 3
+    },
+    "6": {
+      "ak47": 1,
+      "deagle": 1,
+      "glock": 2,
+      "m4a1_silencer": 1,
+      "usp_silencer": 2
+    },
+    "7": {
+      "famas": 1,
+      "glock": 1,
+      "m4a1": 1
+    },
+    "8": {
+      "ak47": 2,
+      "fiveseven": 2,
+      "mp7": 1,
+      "ssg08": 3,
+      "usp_silencer": 1
+    },
+    "9": {
+      "ak47": 2,
+      "mp7": 4,
+      "tec9": 1
+    }
+  },
+  "Damage": {
+    "0": {
+      "ak47": 824,
+      "glock": 26,
+      "hegrenade": 36,
+      "hkp2000": 210,
+      "m4a1": 1197,
+      "mac10": 32
+    },
+    "1": {
+      "awp": 1317,
+      "elite": 167,
+      "fiveseven": 64,
+      "hegrenade": 9,
+      "inferno": 24,
+      "knife": 131,
+      "m4a1": 98,
+      "mac10": 98,
+      "smokegrenade": 2
+    },
+    "2": {
+      "ak47": 56,
+      "bizon": 138,
+      "fiveseven": 77,
+      "galilar": 94,
+      "hegrenade": 7,
+      "m4a1": 1336,
+      "tec9": 23
+    },
+    "3": {
+      "awp": 268,
+      "hkp2000": 62,
+      "m4a1": 44,
+      "mac10": 100,
+      "nova": 245
+    },
+    "4": {
+      "ak47": 311,
+      "glock": 148,
+      "hegrenade": 1,
+      "hkp2000": 46,
+      "smokegrenade": 1,
+      "ssg08": 154,
+      "xm1014": 114
+    },
+    "5": {
+      "ak47": 106,
+      "glock": 102,
+      "hkp2000": 260,
+      "m4a1": 166,
+      "mp7": 100
+    },
+    "6": {
+      "ak47": 347,
+      "deagle": 100,
+      "glock": 178,
+      "hkp2000": 129,
+      "m4a1": 98,
+      "xm1014": 80
+    },
+    "7": {
+      "ak47": 85,
+      "famas": 152,
+      "glock": 192,
+      "m4a1": 267,
+      "nova": 84
+    },
+    "8": {
+      "ak47": 210,
+      "famas": 46,
+      "fiveseven": 235,
+      "glock": 21,
+      "hkp2000": 28,
+      "inferno": 22,
+      "mp7": 122,
+      "ssg08": 235
+    },
+    "9": {
+      "ak47": 283,
+      "hkp2000": 70,
+      "inferno": 40,
+      "mp7": 301,
+      "smokegrenade": 1,
+      "tec9": 85
+    }
+  }
+}

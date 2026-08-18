@@ -1,0 +1,310 @@
+# views.yaml — curated v2.0 "view" vocabulary (Rulesets v2).
+#
+# A *view* is the author-facing verb ("kill", "damage_dealt", "round_won") that a v2
+# ruleset triggers `on:`. It bundles a wire event with an editorial convention:
+#   - which player-slot fields are which *role* (killer/victim/assister/…),
+#   - a `binding:` mode that decides the implicit per-player attribution,
+#   - `baked:` editorial filters (v2 expressions over event.* — always applied),
+#   - `facets:` typed attributes an author can match on (`enemy: true`, `weapon: in rifles`).
+#
+# This file is DATA. The RulesCatalog generator (CatalogBuilder) reads it, verifies every
+# role slot-field and every field/enrichment facet against the engine's live registries,
+# resolves the per-demo-source concrete event set from the `profiles` family, and emits the
+# `views` family into rules/catalog.json. The app/compiler consume only the generated catalog.
+# Interface contract: docs/rules-v2/rules-v2-compiler-plan.md §5 (views & facets) and §4.1 (adapter).
+#
+# `event:` names the wire event whose fields/roles/facets are verified. It ALSO doubles as the
+#   LOGICAL event key by default (the `$name` binding, written without the `$`): the generator
+#   prepends `$`, looks it up per profile, and bakes the concrete event list. Simple views resolve
+#   to a single wire event (player_death → [player_death]); `round_end` fans out per source (GOTV:
+#   round_officially_ended + cs_win_panel_match; HLTV: cs_pre_restart + cs_win_panel_match). A
+#   profile with no binding = the view is unavailable there (empty concrete list → coverage diag).
+#
+# `logical:` (OPTIONAL) decouples the logical-event key from `event:` when a profile binds the
+#   logical concept under a key that differs from the wire name. When set, per-profile resolution
+#   uses `"$" + logical` (role/field-facet checks still run against `event:`, the wire event).
+#   Absent ⇒ the logical key falls back to `event:` ⇒ every view without `logical:` is unchanged.
+#   Example: he_grenade's wire event is `hegrenade_detonate`, but GOTV binds the concept as
+#   HeGrenadeDetonate → `$he_grenade_detonate`, so the view sets `logical: he_grenade_detonate`.
+#
+# `binding:` is the closed enum from §5 decision 3:
+#   actor_slot — the view's `actor` role slot equals the ruleset player's slot (v1 slot-equality,
+#                lowered against env.Slot). Requires `actor:`. A no-player sentinel in the slot
+#                field never equals a real player slot, so it is excluded automatically.
+#   team       — the ruleset player's LIVE team (never frozen env.Team — team_num swaps at
+#                halftime) compared to the round-end winner. Fixed convention: the winner is
+#                enrich.round.winner_team, gated by enrich.round.has_winner (both declared as
+#                facets so declared-reads order the enrichment before the read). `result:`
+#                (won|lost) picks the comparison sense. round_won/round_lost use this.
+#   none       — no implicit binding; every player's template fires on the event. Roles stay
+#                readable as role handles. bomb_planted/bomb_defused use this.
+#
+# Facet lowering forms (closed set, §5): `field:` (event field read), `enrichment:` (an
+# enrich.* node — existing machinery), `expr:` (a v2 expression over event.* + roles). `type:`
+# is the author-facing type; the generator verifies it against the real field/enrichment type.
+
+views:
+
+  # ── player_death (actor_slot) ────────────────────────────────────────────────
+  kill:
+    event: player_death
+    binding: actor_slot
+    actor: killer
+    roles:
+      killer: Attacker
+      victim: UserId
+      assister: Assister
+    baked:
+      - "event.Attacker != event.UserId"   # a kill excludes suicides/world deaths
+    facets:
+      enemy: { type: bool,   enrichment: enrich.kill.was_enemy_kill }
+      teamkill: { type: bool,   enrichment: enrich.kill.was_team_kill }
+      trade: { type: bool,   enrichment: enrich.kill.was_trade_kill }
+      flash_assisted: { type: bool,   enrichment: enrich.kill.was_flash_kill }
+      headshot: { type: bool,   field: Headshot }       # wire field is Headshot, not Headshot
+      through_smoke: { type: bool,   field: ThruSmoke }
+      no_scope: { type: bool,   field: NoScope }
+      weapon: { type: string, field: Weapon }
+    availability: all
+
+  death:
+    event: player_death
+    binding: actor_slot
+    actor: victim
+    roles:
+      killer: Attacker
+      victim: UserId
+      assister: Assister
+    baked: [ ]                                     # a suicide/world death still counts as a death
+    facets:
+      enemy: { type: bool,   enrichment: enrich.kill.was_enemy_kill }
+      headshot: { type: bool,   field: Headshot }
+      attacker_blind: { type: bool,   field: AttackerBlind }
+      through_smoke: { type: bool,   field: ThruSmoke }
+      no_scope: { type: bool,   field: NoScope }
+      weapon: { type: string, field: Weapon }
+    availability: all
+
+  assist:
+    event: player_death
+    binding: actor_slot
+    actor: assister
+    roles:
+      killer: Attacker
+      victim: UserId
+      assister: Assister
+    baked:
+      # Assists attach to real kills (shipped kast/player-stats convention). KEPT after the
+      # totalAssists mixed-sign investigation: the one suicide-with-enemy-assister on the bench
+      # suite (nuke, tick 89840) is NOT counted by the Leetify oracle — dropping this filter
+      # would overcount (shitstainsteve 3 vs oracle 2).
+      - "event.Attacker != event.UserId"
+    facets:
+      flash: { type: bool,   field: AssistedFlash }
+      # `enemy` on an assist means the ASSISTER is an enemy of the victim.
+      # was_enemy_kill (killer-vs-victim) both overcounted team-damage assists (assister on the
+      # victim's own team, victim killed by an enemy — mirage tick 11027) and dropped enemy
+      # assists on teamkills (ancient tick 115284, inferno tick 81688). With this enrichment the
+      # bench-suite assists match the Leetify oracle 50/50 players.
+      enemy: { type: bool,   enrichment: enrich.kill.was_enemy_assist }
+      weapon: { type: string, field: Weapon }
+    availability: all
+
+  # ── player_hurt (actor_slot) ─────────────────────────────────────────────────
+  damage_dealt:
+    event: player_hurt
+    binding: actor_slot
+    actor: attacker
+    roles:
+      attacker: Attacker
+      victim: UserId
+    baked: [ ]
+    facets:
+      enemy: { type: bool,   enrichment: enrich.hurt.was_enemy_damage }
+      teamdamage: { type: bool,   enrichment: enrich.hurt.was_team_damage }
+      bullet: { type: bool,   enrichment: enrich.hurt.is_bullet }
+      capped: { type: int,    enrichment: enrich.hurt.capped_damage }
+      amount: { type: int,    field: DmgHealth }
+      hitgroup: { type: int,    field: HitGroup }
+      weapon: { type: string, field: Weapon }
+    availability: all
+
+  damage_taken:
+    event: player_hurt
+    binding: actor_slot
+    actor: victim
+    roles:
+      attacker: Attacker
+      victim: UserId
+    baked: [ ]
+    facets:
+      enemy: { type: bool,   enrichment: enrich.hurt.was_enemy_damage }
+      bullet: { type: bool,   enrichment: enrich.hurt.is_bullet }
+      amount: { type: int,    field: DmgHealth }
+      hitgroup: { type: int,    field: HitGroup }
+      weapon: { type: string, field: Weapon }
+    availability: all
+
+  # ── weapon_fire (actor_slot) ─────────────────────────────────────────────────
+  shot:
+    event: weapon_fire
+    binding: actor_slot
+    actor: shooter
+    roles:
+      shooter: UserId
+    baked: [ ]
+    facets:
+      weapon: { type: string, field: Weapon }
+      silenced: { type: bool,   field: Silenced }
+      bullet: { type: bool,   enrichment: enrich.weapon_fire.is_bullet }
+    availability: all
+
+  # ── bullet_damage (actor_slot) ───────────────────────────────────────────────
+  # A bullet that DAMAGED a player (bullet_damage does not fire for misses). Attacker/Victim
+  # are player-slot ints (same slot space as the *Slot fields on player_death/player_hurt).
+  # The enrichment facets are per-attacker stateful derivations from ShotEnrichmentEdge:
+  # turn_degrees/ticks-gap anchor on the attacker's PREVIOUS damaging shot (flick gating);
+  # spray_shots/spray_victims describe the current uninterrupted spray run (RecoilIndex
+  # monotone, small tick gaps).
+  shot_landed:
+    event: bullet_damage
+    binding: actor_slot
+    actor: attacker
+    roles:
+      attacker: Attacker
+      victim: Victim
+    baked: [ ]
+    facets:
+      in_air: { type: bool,  field: InAir }
+      no_scope: { type: bool,  field: NoScope }
+      distance: { type: float, field: Distance }
+      recoil_index: { type: float, field: RecoilIndex }
+      turn_degrees: { type: float, enrichment: enrich.shot.turn_degrees }
+      ticks_since_last_shot: { type: int,   enrichment: enrich.shot.ticks_since_last_shot }
+      spray_shots: { type: int,   enrichment: enrich.shot.spray_shots }
+      spray_victims: { type: int,   enrichment: enrich.shot.spray_victims }
+    availability: all
+
+  # ── player_blind (actor_slot) ────────────────────────────────────────────────
+  # player_blind is unbound on the HLTV-pro source, so these views are unavailable there
+  # (empty concrete-event list for that profile → coverage diagnostic).
+  blinded: # actor = the player who got flashed
+    event: player_blind
+    binding: actor_slot
+    actor: victim
+    roles:
+      victim: UserId
+      attacker: Attacker
+    baked: [ ]
+    facets:
+      enemy: { type: bool,  enrichment: enrich.blind.was_enemy_flash }
+      duration: { type: float, field: BlindDuration }
+    availability: all
+
+  blinded_enemy: # actor = the player who threw the flash
+    event: player_blind
+    binding: actor_slot
+    actor: attacker
+    roles:
+      attacker: Attacker
+      victim: UserId
+    baked: [ ]
+    facets:
+      enemy: { type: bool,  enrichment: enrich.blind.was_enemy_flash }
+      duration: { type: float, field: BlindDuration }
+    availability: all
+
+  # ── grenade usage (actor_slot; actor = the thrower via each event's UserId) ──────────────
+  # Per-player grenade-usage counters. Each detonation/throw carries the thrower's UserId, so
+  # actor_slot binding on that field IS the per-player attribution (v1 counted these with an
+  # explicit event.UserId == player.slot filter). he_grenade and smoke_grenade need `logical:`
+  # because GOTV binds those concepts under keys (he_grenade_detonate / smoke_detonate) that differ
+  # from their wire names (hegrenade_detonate / smokegrenade_detonate); flash_grenade and molotov
+  # have logical == wire.
+  he_grenade:
+    event: hegrenade_detonate
+    logical: he_grenade_detonate
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: UserId
+    baked: [ ]
+    facets: { }
+    availability: all
+
+  flash_grenade:
+    event: flashbang_detonate
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: UserId
+    baked: [ ]
+    facets: { }
+    availability: all
+
+  smoke_grenade:
+    event: smokegrenade_detonate
+    logical: smoke_detonate
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: UserId
+    baked: [ ]
+    facets: { }
+    availability: all
+
+  molotov: # synthesized molotov_thrown (m_hThrower attribution)
+    event: molotov_thrown
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: PlayerSlot
+    baked: [ ]
+    facets: { }
+    availability: all
+
+  # ── bomb events (binding: none) ──────────────────────────────────────────────
+  bomb_planted:
+    event: bomb_planted
+    binding: none
+    roles:
+      planter: UserId
+    baked: [ ]
+    facets:
+      site: { type: int, field: Site }
+    availability: all
+
+  bomb_defused:
+    event: bomb_defused
+    binding: none
+    roles:
+      defuser: UserId
+    baked: [ ]
+    facets:
+      site: { type: int, field: Site }
+    availability: all
+
+  # ── round end (binding: team) ────────────────────────────────────────────────
+  # LIVE-team comparison against the round-end winner enrichment. The team-swap at halftime
+  # is the correctness trap compiler-plan §5 calls out; a fixture pins a post-halftime round.
+  round_won:
+    event: round_end
+    binding: team
+    result: won                                   # ruleset player's live team == winner
+    baked: [ ]
+    facets:
+      winner_team: { type: int,  enrichment: enrich.round.winner_team }
+      winner_side: { type: int,  enrichment: enrich.round.winner_side }
+      has_winner: { type: bool, enrichment: enrich.round.has_winner }
+    availability: all
+
+  round_lost:
+    event: round_end
+    binding: team
+    result: lost                                  # ruleset player's live team != winner (has_winner)
+    baked: [ ]
+    facets:
+      winner_team: { type: int,  enrichment: enrich.round.winner_team }
+      winner_side: { type: int,  enrichment: enrich.round.winner_side }
+      has_winner: { type: bool, enrichment: enrich.round.has_winner }
+    availability: all

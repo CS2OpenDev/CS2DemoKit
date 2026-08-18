@@ -1,0 +1,5727 @@
+{
+  "catalogVersion": 1,
+  "generator": "CS2DemoKit.RulesCatalog",
+  "events": [
+    {
+      "name": "announce_phase_end",
+      "clrType": "AnnouncePhaseEndEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "begin_new_match",
+      "clrType": "BeginNewMatchEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "bomb_abortdefuse",
+      "clrType": "BombAbortdefuseEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_abortplant",
+      "clrType": "BombAbortplantEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Site",
+          "type": "short",
+          "v2Name": "event.Site",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_begindefuse",
+      "clrType": "BombBegindefuseEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "HasKit",
+          "type": "bool",
+          "v2Name": "event.HasKit",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_beginplant",
+      "clrType": "BombBeginplantEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "Site",
+          "type": "short",
+          "v2Name": "event.Site",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_defused",
+      "clrType": "BombDefusedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "C4",
+          "type": "short",
+          "v2Name": "event.C4",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Site",
+          "type": "short",
+          "v2Name": "event.Site",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_dropped",
+      "clrType": "BombDroppedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "EntIndex",
+          "type": "int",
+          "v2Name": "event.EntIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_exploded",
+      "clrType": "BombExplodedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "C4",
+          "type": "short",
+          "v2Name": "event.C4",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Site",
+          "type": "short",
+          "v2Name": "event.Site",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_pickup",
+      "clrType": "BombPickupEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "uint",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bomb_planted",
+      "clrType": "BombPlantedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "C4",
+          "type": "short",
+          "v2Name": "event.C4",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Site",
+          "type": "short",
+          "v2Name": "event.Site",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bullet_damage",
+      "clrType": "BulletDamageEvent",
+      "synthesized": false,
+      "frequencyClass": "frequent",
+      "fields": [
+        {
+          "name": "AimPunchX",
+          "type": "float",
+          "v2Name": "event.AimPunchX",
+          "v2Type": "Float"
+        },
+        {
+          "name": "AimPunchY",
+          "type": "float",
+          "v2Name": "event.AimPunchY",
+          "v2Type": "Float"
+        },
+        {
+          "name": "AimPunchZ",
+          "type": "float",
+          "v2Name": "event.AimPunchZ",
+          "v2Type": "Float"
+        },
+        {
+          "name": "AttackTickCount",
+          "type": "int",
+          "v2Name": "event.AttackTickCount",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AttackTickFrac",
+          "type": "float",
+          "v2Name": "event.AttackTickFrac",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Attacker",
+          "type": "int",
+          "v2Name": "event.Attacker",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AttackerPawn",
+          "type": "uint",
+          "v2Name": "event.AttackerPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "DamageDirX",
+          "type": "float",
+          "v2Name": "event.DamageDirX",
+          "v2Type": "Float"
+        },
+        {
+          "name": "DamageDirY",
+          "type": "float",
+          "v2Name": "event.DamageDirY",
+          "v2Type": "Float"
+        },
+        {
+          "name": "DamageDirZ",
+          "type": "float",
+          "v2Name": "event.DamageDirZ",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Distance",
+          "type": "float",
+          "v2Name": "event.Distance",
+          "v2Type": "Float"
+        },
+        {
+          "name": "InAir",
+          "type": "bool",
+          "v2Name": "event.InAir",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "InaccuracyAir",
+          "type": "float",
+          "v2Name": "event.InaccuracyAir",
+          "v2Type": "Float"
+        },
+        {
+          "name": "InaccuracyMove",
+          "type": "float",
+          "v2Name": "event.InaccuracyMove",
+          "v2Type": "Float"
+        },
+        {
+          "name": "InaccuracyTotal",
+          "type": "float",
+          "v2Name": "event.InaccuracyTotal",
+          "v2Type": "Float"
+        },
+        {
+          "name": "NoScope",
+          "type": "bool",
+          "v2Name": "event.NoScope",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "NumPenetrations",
+          "type": "byte",
+          "v2Name": "event.NumPenetrations",
+          "v2Type": "Int"
+        },
+        {
+          "name": "RecoilIndex",
+          "type": "float",
+          "v2Name": "event.RecoilIndex",
+          "v2Type": "Float"
+        },
+        {
+          "name": "RenderTickCount",
+          "type": "int",
+          "v2Name": "event.RenderTickCount",
+          "v2Type": "Int"
+        },
+        {
+          "name": "RenderTickFrac",
+          "type": "float",
+          "v2Name": "event.RenderTickFrac",
+          "v2Type": "Float"
+        },
+        {
+          "name": "ShootAngX",
+          "type": "float",
+          "v2Name": "event.ShootAngX",
+          "v2Type": "Float"
+        },
+        {
+          "name": "ShootAngY",
+          "type": "float",
+          "v2Name": "event.ShootAngY",
+          "v2Type": "Float"
+        },
+        {
+          "name": "ShootAngZ",
+          "type": "float",
+          "v2Name": "event.ShootAngZ",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Type",
+          "type": "int",
+          "v2Name": "event.Type",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Victim",
+          "type": "int",
+          "v2Name": "event.Victim",
+          "v2Type": "Int"
+        },
+        {
+          "name": "VictimPawn",
+          "type": "uint",
+          "v2Name": "event.VictimPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "bullet_impact",
+      "clrType": "BulletImpactEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "buytime_ended",
+      "clrType": "BuyTimeEndedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "cs_intermission",
+      "clrType": "CsIntermissionEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
+      "name": "cs_match_end_restart",
+      "clrType": "CsMatchEndRestartEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
+      "name": "cs_pre_restart",
+      "clrType": "CsPreRestartEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "cs_round_final_beep",
+      "clrType": "CsRoundFinalBeepEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "cs_round_start_beep",
+      "clrType": "CsRoundStartBeepEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": []
+    },
+    {
+      "name": "cs_win_panel_match",
+      "clrType": "CsWinPanelMatchEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "cs_win_panel_round",
+      "clrType": "CsWinPanelRoundEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "FinalEvent",
+          "type": "byte",
+          "v2Name": "event.FinalEvent",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FunfactData1",
+          "type": "int",
+          "v2Name": "event.FunfactData1",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FunfactData2",
+          "type": "int",
+          "v2Name": "event.FunfactData2",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FunfactData3",
+          "type": "int",
+          "v2Name": "event.FunfactData3",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FunfactPlayer",
+          "type": "int",
+          "v2Name": "event.FunfactPlayer",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FunfactToken",
+          "type": "string",
+          "v2Name": "event.FunfactToken",
+          "v2Type": "String"
+        },
+        {
+          "name": "ShowTimerAttack",
+          "type": "bool",
+          "v2Name": "event.ShowTimerAttack",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "ShowTimerDefEnd",
+          "type": "bool",
+          "v2Name": "event.ShowTimerDefEnd",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "TimerTime",
+          "type": "short",
+          "v2Name": "event.TimerTime",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "decoy_detonate",
+      "clrType": "DecoyDetonateEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "defuser_dropped",
+      "clrType": "DefuserDroppedEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "int",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "defuser_pickup",
+      "clrType": "DefuserPickupEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "int",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "flashbang_detonate",
+      "clrType": "FlashbangDetonateEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "game_restart",
+      "clrType": "GameRestartEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
+      "name": "grenade_thrown",
+      "clrType": "GrenadeThrownEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Weapon",
+          "type": "string",
+          "v2Name": "event.Weapon",
+          "v2Type": "String"
+        }
+      ]
+    },
+    {
+      "name": "halftime",
+      "clrType": "HalfTimeEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
+      "name": "hegrenade_detonate",
+      "clrType": "HegrenadeDetonateEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "inferno_expire",
+      "clrType": "InfernoExpireEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "inferno_extinguish",
+      "clrType": "InfernoExtinguishEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "inferno_startburn",
+      "clrType": "InfernoStartburnEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "item_drop",
+      "clrType": "ItemDropEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Item",
+          "type": "string",
+          "v2Name": "event.Item",
+          "v2Type": "String"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "item_equip",
+      "clrType": "ItemEquipEvent",
+      "synthesized": false,
+      "frequencyClass": "frequent",
+      "fields": [
+        {
+          "name": "CanZoom",
+          "type": "bool",
+          "v2Name": "event.CanZoom",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "DefIndex",
+          "type": "int",
+          "v2Name": "event.DefIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "HasSilencer",
+          "type": "bool",
+          "v2Name": "event.HasSilencer",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "HasTracers",
+          "type": "bool",
+          "v2Name": "event.HasTracers",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "IsPainted",
+          "type": "bool",
+          "v2Name": "event.IsPainted",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "IsSilenced",
+          "type": "bool",
+          "v2Name": "event.IsSilenced",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Item",
+          "type": "string",
+          "v2Name": "event.Item",
+          "v2Type": "String"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "WepType",
+          "type": "short",
+          "v2Name": "event.WepType",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "item_pickup",
+      "clrType": "ItemPickupEvent",
+      "synthesized": false,
+      "frequencyClass": "frequent",
+      "fields": [
+        {
+          "name": "DefIndex",
+          "type": "int",
+          "v2Name": "event.DefIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Item",
+          "type": "string",
+          "v2Name": "event.Item",
+          "v2Type": "String"
+        },
+        {
+          "name": "Silent",
+          "type": "bool",
+          "v2Name": "event.Silent",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "molotov_thrown",
+      "clrType": "MolotovThrownEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "other_death",
+      "clrType": "OtherDeathEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "Attacker",
+          "type": "short",
+          "v2Name": "event.Attacker",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AttackerBlind",
+          "type": "bool",
+          "v2Name": "event.AttackerBlind",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Headshot",
+          "type": "bool",
+          "v2Name": "event.Headshot",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "NoScope",
+          "type": "bool",
+          "v2Name": "event.NoScope",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "OtherId",
+          "type": "short",
+          "v2Name": "event.OtherId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "OtherType",
+          "type": "string",
+          "v2Name": "event.OtherType",
+          "v2Type": "String"
+        },
+        {
+          "name": "Penetrated",
+          "type": "short",
+          "v2Name": "event.Penetrated",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ThruSmoke",
+          "type": "bool",
+          "v2Name": "event.ThruSmoke",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Weapon",
+          "type": "string",
+          "v2Name": "event.Weapon",
+          "v2Type": "String"
+        },
+        {
+          "name": "WeaponFauxItemId",
+          "type": "string",
+          "v2Name": "event.WeaponFauxItemId",
+          "v2Type": "String"
+        },
+        {
+          "name": "WeaponItemId",
+          "type": "string",
+          "v2Name": "event.WeaponItemId",
+          "v2Type": "String"
+        },
+        {
+          "name": "WeaponOriginalOwnerXuid",
+          "type": "string",
+          "v2Name": "event.WeaponOriginalOwnerXuid",
+          "v2Type": "String"
+        }
+      ]
+    },
+    {
+      "name": "player_avenged_teammate",
+      "clrType": "PlayerAvengedTeammateEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "AvengedPlayerId",
+          "type": "int",
+          "v2Name": "event.AvengedPlayerId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AvengerId",
+          "type": "int",
+          "v2Name": "event.AvengerId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_blind",
+      "clrType": "PlayerBlindEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "Attacker",
+          "type": "int",
+          "v2Name": "event.Attacker",
+          "v2Type": "Int"
+        },
+        {
+          "name": "BlindDuration",
+          "type": "float",
+          "v2Name": "event.BlindDuration",
+          "v2Type": "Float"
+        },
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_connect",
+      "clrType": "PlayerConnectEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "Bot",
+          "type": "bool",
+          "v2Name": "event.Bot",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "v2Name": "event.Name",
+          "v2Type": "String"
+        },
+        {
+          "name": "NetworkId",
+          "type": "string",
+          "v2Name": "event.NetworkId",
+          "v2Type": "String"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Xuid",
+          "type": "ulong",
+          "v2Name": "event.Xuid",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_death",
+      "clrType": "PlayerDeathEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "AssistedFlash",
+          "type": "bool",
+          "v2Name": "event.AssistedFlash",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Assister",
+          "type": "int",
+          "v2Name": "event.Assister",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AssisterPawn",
+          "type": "uint",
+          "v2Name": "event.AssisterPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Attacker",
+          "type": "int",
+          "v2Name": "event.Attacker",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AttackerBlind",
+          "type": "bool",
+          "v2Name": "event.AttackerBlind",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "AttackerInAir",
+          "type": "bool",
+          "v2Name": "event.AttackerInAir",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "AttackerPawn",
+          "type": "uint",
+          "v2Name": "event.AttackerPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Distance",
+          "type": "float",
+          "v2Name": "event.Distance",
+          "v2Type": "Float"
+        },
+        {
+          "name": "DmgArmor",
+          "type": "byte",
+          "v2Name": "event.DmgArmor",
+          "v2Type": "Int"
+        },
+        {
+          "name": "DmgHealth",
+          "type": "short",
+          "v2Name": "event.DmgHealth",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Dominated",
+          "type": "short",
+          "v2Name": "event.Dominated",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Headshot",
+          "type": "bool",
+          "v2Name": "event.Headshot",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "HitGroup",
+          "type": "byte",
+          "v2Name": "event.HitGroup",
+          "v2Type": "Int"
+        },
+        {
+          "name": "NoReplay",
+          "type": "bool",
+          "v2Name": "event.NoReplay",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "NoScope",
+          "type": "bool",
+          "v2Name": "event.NoScope",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Penetrated",
+          "type": "short",
+          "v2Name": "event.Penetrated",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Revenge",
+          "type": "short",
+          "v2Name": "event.Revenge",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ThruSmoke",
+          "type": "bool",
+          "v2Name": "event.ThruSmoke",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Weapon",
+          "type": "string",
+          "v2Name": "event.Weapon",
+          "v2Type": "String"
+        },
+        {
+          "name": "WeaponFauxItemId",
+          "type": "string",
+          "v2Name": "event.WeaponFauxItemId",
+          "v2Type": "String"
+        },
+        {
+          "name": "WeaponItemId",
+          "type": "string",
+          "v2Name": "event.WeaponItemId",
+          "v2Type": "String"
+        },
+        {
+          "name": "WeaponOriginalOwnerXuid",
+          "type": "string",
+          "v2Name": "event.WeaponOriginalOwnerXuid",
+          "v2Type": "String"
+        },
+        {
+          "name": "Wipe",
+          "type": "short",
+          "v2Name": "event.Wipe",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_disconnect",
+      "clrType": "PlayerDisconnectEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "EverFullyConnected",
+          "type": "bool",
+          "v2Name": "event.EverFullyConnected",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "v2Name": "event.Name",
+          "v2Type": "String"
+        },
+        {
+          "name": "NetworkId",
+          "type": "string",
+          "v2Name": "event.NetworkId",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerId",
+          "type": "short",
+          "v2Name": "event.PlayerId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Reason",
+          "type": "short",
+          "v2Name": "event.Reason",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Xuid",
+          "type": "ulong",
+          "v2Name": "event.Xuid",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_footstep",
+      "clrType": "PlayerFootstepEvent",
+      "synthesized": false,
+      "frequencyClass": "frequent",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_hurt",
+      "clrType": "PlayerHurtEvent",
+      "synthesized": false,
+      "frequencyClass": "frequent",
+      "fields": [
+        {
+          "name": "Armor",
+          "type": "byte",
+          "v2Name": "event.Armor",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Attacker",
+          "type": "int",
+          "v2Name": "event.Attacker",
+          "v2Type": "Int"
+        },
+        {
+          "name": "AttackerPawn",
+          "type": "uint",
+          "v2Name": "event.AttackerPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "DmgArmor",
+          "type": "byte",
+          "v2Name": "event.DmgArmor",
+          "v2Type": "Int"
+        },
+        {
+          "name": "DmgHealth",
+          "type": "short",
+          "v2Name": "event.DmgHealth",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Health",
+          "type": "byte",
+          "v2Name": "event.Health",
+          "v2Type": "Int"
+        },
+        {
+          "name": "HitGroup",
+          "type": "byte",
+          "v2Name": "event.HitGroup",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Weapon",
+          "type": "string",
+          "v2Name": "event.Weapon",
+          "v2Type": "String"
+        }
+      ]
+    },
+    {
+      "name": "player_jump",
+      "clrType": "PlayerJumpEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_spawn",
+      "clrType": "PlayerSpawnEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "player_team",
+      "clrType": "PlayerTeamEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "Disconnect",
+          "type": "bool",
+          "v2Name": "event.Disconnect",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "IsBot",
+          "type": "bool",
+          "v2Name": "event.IsBot",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "OldTeam",
+          "type": "byte",
+          "v2Name": "event.OldTeam",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Silent",
+          "type": "bool",
+          "v2Name": "event.Silent",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "Team",
+          "type": "byte",
+          "v2Name": "event.Team",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "round_announce_last_round_half",
+      "clrType": "RoundAnnounceLastRoundHalfEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_announce_match_point",
+      "clrType": "RoundAnnounceMatchPointEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_announce_match_start",
+      "clrType": "RoundAnnounceMatchStartEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_announce_warmup",
+      "clrType": "RoundAnnounceWarmupEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
+      "name": "round_end",
+      "clrType": "RoundEndEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Legacy",
+          "type": "byte",
+          "v2Name": "event.Legacy",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Message",
+          "type": "string",
+          "v2Name": "event.Message",
+          "v2Type": "String"
+        },
+        {
+          "name": "NoMusic",
+          "type": "byte",
+          "v2Name": "event.NoMusic",
+          "v2Type": "Int"
+        },
+        {
+          "name": "PlayerCount",
+          "type": "short",
+          "v2Name": "event.PlayerCount",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Reason",
+          "type": "byte",
+          "v2Name": "event.Reason",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Winner",
+          "type": "byte",
+          "v2Name": "event.Winner",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "round_freeze_end",
+      "clrType": "RoundFreezeEndEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_mvp",
+      "clrType": "RoundMvpEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "MusicKitId",
+          "type": "int",
+          "v2Name": "event.MusicKitId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "MusicKitMvps",
+          "type": "int",
+          "v2Name": "event.MusicKitMvps",
+          "v2Type": "Int"
+        },
+        {
+          "name": "NoMusic",
+          "type": "byte",
+          "v2Name": "event.NoMusic",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Reason",
+          "type": "short",
+          "v2Name": "event.Reason",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Value",
+          "type": "int",
+          "v2Name": "event.Value",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "round_officially_ended",
+      "clrType": "RoundOfficiallyEndedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_poststart",
+      "clrType": "RoundPoststartEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_prestart",
+      "clrType": "RoundPreStartEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": []
+    },
+    {
+      "name": "round_start",
+      "clrType": "RoundStartEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "FragLimit",
+          "type": "int",
+          "v2Name": "event.FragLimit",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Objective",
+          "type": "string",
+          "v2Name": "event.Objective",
+          "v2Type": "String"
+        },
+        {
+          "name": "TimeLimit",
+          "type": "int",
+          "v2Name": "event.TimeLimit",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "smokegrenade_detonate",
+      "clrType": "SmokeGrenadeDetonateEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "smokegrenade_expired",
+      "clrType": "SmokeGrenadeExpiredEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "switch_team",
+      "clrType": "SwitchTeamEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "AvgRank",
+          "type": "short",
+          "v2Name": "event.AvgRank",
+          "v2Type": "Int"
+        },
+        {
+          "name": "NumCTSlotsFree",
+          "type": "short",
+          "v2Name": "event.NumCTSlotsFree",
+          "v2Type": "Int"
+        },
+        {
+          "name": "NumPlayers",
+          "type": "short",
+          "v2Name": "event.NumPlayers",
+          "v2Type": "Int"
+        },
+        {
+          "name": "NumSpectators",
+          "type": "short",
+          "v2Name": "event.NumSpectators",
+          "v2Type": "Int"
+        },
+        {
+          "name": "NumTSlotsFree",
+          "type": "short",
+          "v2Name": "event.NumTSlotsFree",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "warmup_end",
+      "clrType": "WarmupEndEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
+      "name": "weapon_fire",
+      "clrType": "WeaponFireEvent",
+      "synthesized": false,
+      "frequencyClass": "frequent",
+      "fields": [
+        {
+          "name": "Silenced",
+          "type": "bool",
+          "v2Name": "event.Silenced",
+          "v2Type": "Bool"
+        },
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Weapon",
+          "type": "string",
+          "v2Name": "event.Weapon",
+          "v2Type": "String"
+        }
+      ]
+    },
+    {
+      "name": "weapon_fire_on_empty",
+      "clrType": "WeaponFireOnEmptyEvent",
+      "synthesized": false,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Weapon",
+          "type": "string",
+          "v2Name": "event.Weapon",
+          "v2Type": "String"
+        }
+      ]
+    },
+    {
+      "name": "weapon_reload",
+      "clrType": "WeaponReloadEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "weapon_zoom",
+      "clrType": "WeaponZoomEvent",
+      "synthesized": false,
+      "frequencyClass": "perRound",
+      "fields": [
+        {
+          "name": "UserId",
+          "type": "int",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserIdPawn",
+          "type": "uint",
+          "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        }
+      ]
+    }
+  ],
+  "netMessages": [
+    {
+      "name": "CDemoFileHeader",
+      "clrType": "CDemoFileHeader",
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "Addons",
+          "type": "string"
+        },
+        {
+          "name": "AllowClientsideEntities",
+          "type": "bool"
+        },
+        {
+          "name": "AllowClientsideParticles",
+          "type": "bool"
+        },
+        {
+          "name": "BuildNum",
+          "type": "int"
+        },
+        {
+          "name": "ClientName",
+          "type": "string"
+        },
+        {
+          "name": "DemoFileStamp",
+          "type": "string"
+        },
+        {
+          "name": "DemoVersionGuid",
+          "type": "string"
+        },
+        {
+          "name": "DemoVersionName",
+          "type": "string"
+        },
+        {
+          "name": "FullpacketsVersion",
+          "type": "int"
+        },
+        {
+          "name": "Game",
+          "type": "string"
+        },
+        {
+          "name": "GameDirectory",
+          "type": "string"
+        },
+        {
+          "name": "HasAddons",
+          "type": "bool"
+        },
+        {
+          "name": "HasAllowClientsideEntities",
+          "type": "bool"
+        },
+        {
+          "name": "HasAllowClientsideParticles",
+          "type": "bool"
+        },
+        {
+          "name": "HasBuildNum",
+          "type": "bool"
+        },
+        {
+          "name": "HasClientName",
+          "type": "bool"
+        },
+        {
+          "name": "HasDemoFileStamp",
+          "type": "bool"
+        },
+        {
+          "name": "HasDemoVersionGuid",
+          "type": "bool"
+        },
+        {
+          "name": "HasDemoVersionName",
+          "type": "bool"
+        },
+        {
+          "name": "HasFullpacketsVersion",
+          "type": "bool"
+        },
+        {
+          "name": "HasGame",
+          "type": "bool"
+        },
+        {
+          "name": "HasGameDirectory",
+          "type": "bool"
+        },
+        {
+          "name": "HasMapName",
+          "type": "bool"
+        },
+        {
+          "name": "HasPatchVersion",
+          "type": "bool"
+        },
+        {
+          "name": "HasServerName",
+          "type": "bool"
+        },
+        {
+          "name": "HasServerStartTick",
+          "type": "bool"
+        },
+        {
+          "name": "MapName",
+          "type": "string"
+        },
+        {
+          "name": "PatchVersion",
+          "type": "int"
+        },
+        {
+          "name": "ServerName",
+          "type": "string"
+        },
+        {
+          "name": "ServerStartTick",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "name": "CNETMsg_Tick",
+      "clrType": "CNETMsg_Tick",
+      "frequencyClass": "perTick",
+      "fields": [
+        {
+          "name": "ExpectedLongTick",
+          "type": "uint"
+        },
+        {
+          "name": "ExpectedLongTickReason",
+          "type": "string"
+        },
+        {
+          "name": "HasExpectedLongTick",
+          "type": "bool"
+        },
+        {
+          "name": "HasExpectedLongTickReason",
+          "type": "bool"
+        },
+        {
+          "name": "HasHltvReplayFlags",
+          "type": "bool"
+        },
+        {
+          "name": "HasHostComputationtime",
+          "type": "bool"
+        },
+        {
+          "name": "HasHostComputationtimeStdDeviation",
+          "type": "bool"
+        },
+        {
+          "name": "HasHostFrameDroppedPctX10",
+          "type": "bool"
+        },
+        {
+          "name": "HasHostFrameIrregularArrivalPctX10",
+          "type": "bool"
+        },
+        {
+          "name": "HasHostUnfilteredFrametime",
+          "type": "bool"
+        },
+        {
+          "name": "HasLegacyHostLoss",
+          "type": "bool"
+        },
+        {
+          "name": "HasTick",
+          "type": "bool"
+        },
+        {
+          "name": "HltvReplayFlags",
+          "type": "uint"
+        },
+        {
+          "name": "HostComputationtime",
+          "type": "uint"
+        },
+        {
+          "name": "HostComputationtimeStdDeviation",
+          "type": "uint"
+        },
+        {
+          "name": "HostFrameDroppedPctX10",
+          "type": "uint"
+        },
+        {
+          "name": "HostFrameIrregularArrivalPctX10",
+          "type": "uint"
+        },
+        {
+          "name": "HostUnfilteredFrametime",
+          "type": "uint"
+        },
+        {
+          "name": "LegacyHostLoss",
+          "type": "uint"
+        },
+        {
+          "name": "Tick",
+          "type": "uint"
+        }
+      ]
+    }
+  ],
+  "enrichments": [
+    {
+      "name": "enrich.blind.duration",
+      "valueType": "double",
+      "scope": "blind"
+    },
+    {
+      "name": "enrich.blind.was_enemy_flash",
+      "valueType": "bool",
+      "scope": "blind"
+    },
+    {
+      "name": "enrich.clutch.was_clutch_won",
+      "valueType": "bool",
+      "scope": "clutch"
+    },
+    {
+      "name": "enrich.clutch.winner_slot",
+      "valueType": "int",
+      "scope": "clutch"
+    },
+    {
+      "name": "enrich.hurt.attacker_active_weapon",
+      "valueType": "string",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.hurt.capped_damage",
+      "valueType": "int",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.hurt.is_bullet",
+      "valueType": "bool",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.hurt.victim_health_before",
+      "valueType": "int",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.hurt.was_enemy_damage",
+      "valueType": "bool",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.hurt.was_self_damage",
+      "valueType": "bool",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.hurt.was_team_damage",
+      "valueType": "bool",
+      "scope": "hurt"
+    },
+    {
+      "name": "enrich.kill.clutch_detected",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.clutch_player_slot",
+      "valueType": "int",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.flash_attacker_slot",
+      "valueType": "int",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.spray_kills",
+      "valueType": "int",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.spray_shots_at_kill",
+      "valueType": "int",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.traded_player_slot",
+      "valueType": "int",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.was_enemy_assist",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.was_enemy_kill",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.was_flash_kill",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.was_self_kill",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.was_team_kill",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.kill.was_trade_kill",
+      "valueType": "bool",
+      "scope": "kill"
+    },
+    {
+      "name": "enrich.round.has_winner",
+      "valueType": "bool",
+      "scope": "round"
+    },
+    {
+      "name": "enrich.round.winner_side",
+      "valueType": "int",
+      "scope": "round"
+    },
+    {
+      "name": "enrich.round.winner_team",
+      "valueType": "int",
+      "scope": "round"
+    },
+    {
+      "name": "enrich.shot.spray_shots",
+      "valueType": "int",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_victims",
+      "valueType": "int",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.ticks_since_last_shot",
+      "valueType": "int",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.turn_degrees",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.weapon_fire.is_bullet",
+      "valueType": "bool",
+      "scope": "weapon_fire"
+    }
+  ],
+  "contexts": [
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_alive_in_clutch",
+      "ruleType": "Bool",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.alive.in_clutch",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_clutch_size",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.clutch.size",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_enemies_alive",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.enemies.alive",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_enemies_equipment",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.enemies.equipment",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_enemies_players",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.enemies.players",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_team_alive",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.team.alive",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_team_equipment",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.team.equipment",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_team_players",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.team.players",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "bomb_status",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": true,
+      "triggers": [
+        "bomb_abortdefuse",
+        "bomb_abortplant",
+        "bomb_begindefuse",
+        "bomb_beginplant",
+        "bomb_defused",
+        "bomb_dropped",
+        "bomb_exploded",
+        "bomb_pickup",
+        "bomb_planted"
+      ],
+      "v2Name": "round.bomb_status",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "bomb_was_planted",
+      "ruleType": "Bool",
+      "resetOnRound": false,
+      "triggers": [
+        "$round_freeze_end",
+        "bomb_planted"
+      ],
+      "v2Name": "round.bomb.was_planted",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "gameplay_phase",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": false,
+      "triggers": [
+        "buytime_ended",
+        "cs_intermission",
+        "cs_pre_restart",
+        "cs_pre_restart",
+        "cs_round_final_beep",
+        "cs_win_panel_match",
+        "entity.game.freeze_period",
+        "halftime",
+        "round_announce_match_start",
+        "round_freeze_end",
+        "round_officially_ended",
+        "round_officially_ended",
+        "round_prestart",
+        "warmup_end"
+      ],
+      "v2Name": "match.phase",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "half_state",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": false,
+      "triggers": [
+        "$match_start",
+        "cs_pre_restart",
+        "halftime",
+        "round_officially_ended"
+      ],
+      "v2Name": "match.half_state",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "map_name",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": false,
+      "triggers": [
+        "CDemoFileHeader"
+      ],
+      "v2Name": "match.map",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "match_live",
+      "ruleType": "Bool",
+      "resetOnRound": false,
+      "triggers": [
+        "$match_end",
+        "$match_start"
+      ],
+      "v2Name": "match.live",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "no_deaths_yet",
+      "ruleType": "Bool",
+      "resetOnRound": false,
+      "triggers": [
+        "$player_death",
+        "$round_freeze_end"
+      ],
+      "v2Name": "round.no_deaths_yet",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "regulation_status",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": false,
+      "triggers": [
+        "cs_match_end_restart"
+      ],
+      "v2Name": "match.regulation_status",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "round_active",
+      "ruleType": "Bool",
+      "resetOnRound": false,
+      "triggers": [
+        "$round_end",
+        "$round_freeze_end"
+      ],
+      "v2Name": "round.active",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "round_number",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [
+        "$match_start",
+        "$round_freeze_end"
+      ],
+      "v2Name": "round.number",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_game_context",
+      "chainScope": "Game",
+      "ruleId": "rounds_after_half_announce",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [
+        "$match_start",
+        "round_announce_last_round_half",
+        "round_freeze_end"
+      ],
+      "v2Name": "match.rounds_after_half_announce",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_player_context",
+      "chainScope": "PerPlayer",
+      "ruleId": "alive",
+      "ruleType": "Bool",
+      "resetOnRound": false,
+      "triggers": [
+        "$player_death",
+        "$round_freeze_end"
+      ],
+      "v2Name": "player.alive",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_player_context",
+      "chainScope": "PerPlayer",
+      "ruleId": "survived",
+      "ruleType": "Bool",
+      "resetOnRound": true,
+      "triggers": [
+        "$round_end"
+      ],
+      "v2Name": "player.survived",
+      "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_player_context",
+      "chainScope": "PerPlayer",
+      "ruleId": "traded",
+      "ruleType": "Bool",
+      "resetOnRound": true,
+      "triggers": [
+        "$player_death"
+      ],
+      "v2Name": "player.traded",
+      "v2Type": "Bool"
+    }
+  ],
+  "providers": [
+    {
+      "name": "entity.game.freeze_period",
+      "scope": "singleton",
+      "clrType": "bool",
+      "v2Name": "match.freeze_period",
+      "v2Type": "Bool"
+    },
+    {
+      "name": "entity.pawn.active_weapon_class",
+      "scope": "perPlayer",
+      "clrType": "string",
+      "v2Name": "player.active_weapon_class",
+      "v2Type": "String"
+    },
+    {
+      "name": "entity.pawn.active_weapon_clip",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.active_weapon_clip",
+      "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.armor",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.armor",
+      "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.equipment_value",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.equipment_value",
+      "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.health",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.health",
+      "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.place",
+      "scope": "perPlayer",
+      "clrType": "string",
+      "v2Name": "player.place",
+      "v2Type": "String"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "Cs2FaceitProfile",
+      "kind": "Faceit",
+      "bindings": [
+        {
+          "logicalName": "$bomb_abort_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortdefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_abort_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_begindefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_beginplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_defused",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "logicalName": "$bomb_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_dropped"
+          ]
+        },
+        {
+          "logicalName": "$bomb_exploded",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_exploded"
+          ]
+        },
+        {
+          "logicalName": "$bomb_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_pickup"
+          ]
+        },
+        {
+          "logicalName": "$bomb_planted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "logicalName": "$bullet_damage",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "logicalName": "$bullet_impact",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$combat_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "buytime_ended"
+          ]
+        },
+        {
+          "logicalName": "$decoy_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$defuser_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_dropped"
+          ]
+        },
+        {
+          "logicalName": "$defuser_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$flashbang_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "logicalName": "$game_restart",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "game_restart"
+          ]
+        },
+        {
+          "logicalName": "$halftime",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "halftime"
+          ]
+        },
+        {
+          "logicalName": "$he_grenade_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$inferno_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_expire"
+          ]
+        },
+        {
+          "logicalName": "$inferno_extinguished",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_extinguish"
+          ]
+        },
+        {
+          "logicalName": "$inferno_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "logicalName": "$item_drop",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_drop"
+          ]
+        },
+        {
+          "logicalName": "$item_equip",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_equip"
+          ]
+        },
+        {
+          "logicalName": "$item_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$match_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$match_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "begin_new_match"
+          ]
+        },
+        {
+          "logicalName": "$molotov_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "logicalName": "$other_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "other_death"
+          ]
+        },
+        {
+          "logicalName": "$phase_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "announce_phase_end"
+          ]
+        },
+        {
+          "logicalName": "$player_avenged_teammate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_avenged_teammate"
+          ]
+        },
+        {
+          "logicalName": "$player_blind",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "logicalName": "$player_connect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_connect"
+          ]
+        },
+        {
+          "logicalName": "$player_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "logicalName": "$player_disconnect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_disconnect"
+          ]
+        },
+        {
+          "logicalName": "$player_footstep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_footstep"
+          ]
+        },
+        {
+          "logicalName": "$player_hurt",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "logicalName": "$player_jump",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_jump"
+          ]
+        },
+        {
+          "logicalName": "$player_spawn",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_spawn"
+          ]
+        },
+        {
+          "logicalName": "$player_team",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_team"
+          ]
+        },
+        {
+          "logicalName": "$round_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$round_freeze_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$round_mvp",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_mvp"
+          ]
+        },
+        {
+          "logicalName": "$round_officially_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_officially_ended"
+          ]
+        },
+        {
+          "logicalName": "$round_post_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_poststart"
+          ]
+        },
+        {
+          "logicalName": "$round_pre_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_prestart"
+          ]
+        },
+        {
+          "logicalName": "$round_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_start"
+          ]
+        },
+        {
+          "logicalName": "$round_start_beep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_round_start_beep"
+          ]
+        },
+        {
+          "logicalName": "$smoke_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$smoke_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire_on_empty",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire_on_empty"
+          ]
+        },
+        {
+          "logicalName": "$weapon_reload",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_reload"
+          ]
+        },
+        {
+          "logicalName": "$weapon_zoom",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_zoom"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Cs2GotvPreRestartProfile",
+      "kind": "GotvMatchmaking",
+      "bindings": [
+        {
+          "logicalName": "$bomb_abort_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortdefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_abort_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_begindefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_beginplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_defused",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "logicalName": "$bomb_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_dropped"
+          ]
+        },
+        {
+          "logicalName": "$bomb_exploded",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_exploded"
+          ]
+        },
+        {
+          "logicalName": "$bomb_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_pickup"
+          ]
+        },
+        {
+          "logicalName": "$bomb_planted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "logicalName": "$bullet_damage",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "logicalName": "$bullet_impact",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$combat_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "buytime_ended"
+          ]
+        },
+        {
+          "logicalName": "$decoy_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$defuser_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_dropped"
+          ]
+        },
+        {
+          "logicalName": "$defuser_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$flashbang_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "logicalName": "$game_restart",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "game_restart"
+          ]
+        },
+        {
+          "logicalName": "$halftime",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "halftime"
+          ]
+        },
+        {
+          "logicalName": "$he_grenade_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$inferno_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_expire"
+          ]
+        },
+        {
+          "logicalName": "$inferno_extinguished",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_extinguish"
+          ]
+        },
+        {
+          "logicalName": "$inferno_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "logicalName": "$item_drop",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_drop"
+          ]
+        },
+        {
+          "logicalName": "$item_equip",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_equip"
+          ]
+        },
+        {
+          "logicalName": "$item_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$match_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$match_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "begin_new_match"
+          ]
+        },
+        {
+          "logicalName": "$molotov_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "logicalName": "$other_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "other_death"
+          ]
+        },
+        {
+          "logicalName": "$phase_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "announce_phase_end"
+          ]
+        },
+        {
+          "logicalName": "$player_avenged_teammate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_avenged_teammate"
+          ]
+        },
+        {
+          "logicalName": "$player_blind",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "logicalName": "$player_connect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_connect"
+          ]
+        },
+        {
+          "logicalName": "$player_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "logicalName": "$player_disconnect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_disconnect"
+          ]
+        },
+        {
+          "logicalName": "$player_footstep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_footstep"
+          ]
+        },
+        {
+          "logicalName": "$player_hurt",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "logicalName": "$player_jump",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_jump"
+          ]
+        },
+        {
+          "logicalName": "$player_spawn",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_spawn"
+          ]
+        },
+        {
+          "logicalName": "$player_team",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_team"
+          ]
+        },
+        {
+          "logicalName": "$round_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$round_freeze_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$round_mvp",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_mvp"
+          ]
+        },
+        {
+          "logicalName": "$round_post_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_poststart"
+          ]
+        },
+        {
+          "logicalName": "$round_pre_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_prestart"
+          ]
+        },
+        {
+          "logicalName": "$round_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_start"
+          ]
+        },
+        {
+          "logicalName": "$round_start_beep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_round_start_beep"
+          ]
+        },
+        {
+          "logicalName": "$smoke_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$smoke_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire_on_empty",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire_on_empty"
+          ]
+        },
+        {
+          "logicalName": "$weapon_reload",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_reload"
+          ]
+        },
+        {
+          "logicalName": "$weapon_zoom",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_zoom"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Cs2GotvProfile",
+      "kind": "GotvMatchmaking",
+      "bindings": [
+        {
+          "logicalName": "$bomb_abort_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortdefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_abort_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_begindefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_beginplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_defused",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "logicalName": "$bomb_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_dropped"
+          ]
+        },
+        {
+          "logicalName": "$bomb_exploded",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_exploded"
+          ]
+        },
+        {
+          "logicalName": "$bomb_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_pickup"
+          ]
+        },
+        {
+          "logicalName": "$bomb_planted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "logicalName": "$bullet_damage",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "logicalName": "$bullet_impact",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$combat_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "buytime_ended"
+          ]
+        },
+        {
+          "logicalName": "$decoy_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$defuser_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_dropped"
+          ]
+        },
+        {
+          "logicalName": "$defuser_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$flashbang_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "logicalName": "$game_restart",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "game_restart"
+          ]
+        },
+        {
+          "logicalName": "$halftime",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "halftime"
+          ]
+        },
+        {
+          "logicalName": "$he_grenade_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$inferno_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_expire"
+          ]
+        },
+        {
+          "logicalName": "$inferno_extinguished",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_extinguish"
+          ]
+        },
+        {
+          "logicalName": "$inferno_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "logicalName": "$item_drop",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_drop"
+          ]
+        },
+        {
+          "logicalName": "$item_equip",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_equip"
+          ]
+        },
+        {
+          "logicalName": "$item_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$match_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$match_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "begin_new_match"
+          ]
+        },
+        {
+          "logicalName": "$molotov_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "logicalName": "$other_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "other_death"
+          ]
+        },
+        {
+          "logicalName": "$phase_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "announce_phase_end"
+          ]
+        },
+        {
+          "logicalName": "$player_avenged_teammate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_avenged_teammate"
+          ]
+        },
+        {
+          "logicalName": "$player_blind",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "logicalName": "$player_connect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_connect"
+          ]
+        },
+        {
+          "logicalName": "$player_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "logicalName": "$player_disconnect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_disconnect"
+          ]
+        },
+        {
+          "logicalName": "$player_footstep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_footstep"
+          ]
+        },
+        {
+          "logicalName": "$player_hurt",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "logicalName": "$player_jump",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_jump"
+          ]
+        },
+        {
+          "logicalName": "$player_spawn",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_spawn"
+          ]
+        },
+        {
+          "logicalName": "$player_team",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_team"
+          ]
+        },
+        {
+          "logicalName": "$round_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$round_freeze_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$round_mvp",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_mvp"
+          ]
+        },
+        {
+          "logicalName": "$round_officially_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_officially_ended"
+          ]
+        },
+        {
+          "logicalName": "$round_post_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_poststart"
+          ]
+        },
+        {
+          "logicalName": "$round_pre_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_prestart"
+          ]
+        },
+        {
+          "logicalName": "$round_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_start"
+          ]
+        },
+        {
+          "logicalName": "$round_start_beep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_round_start_beep"
+          ]
+        },
+        {
+          "logicalName": "$smoke_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$smoke_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire_on_empty",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire_on_empty"
+          ]
+        },
+        {
+          "logicalName": "$weapon_reload",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_reload"
+          ]
+        },
+        {
+          "logicalName": "$weapon_zoom",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_zoom"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Cs2HltvProfile",
+      "kind": "HltvPro",
+      "bindings": [
+        {
+          "logicalName": "$bomb_abort_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortdefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_abort_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_begindefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_beginplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_defused",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "logicalName": "$bomb_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_dropped"
+          ]
+        },
+        {
+          "logicalName": "$bomb_exploded",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_exploded"
+          ]
+        },
+        {
+          "logicalName": "$bomb_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_pickup"
+          ]
+        },
+        {
+          "logicalName": "$bomb_planted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "logicalName": "$bullet_damage",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "logicalName": "$bullet_impact",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$combat_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "buytime_ended"
+          ]
+        },
+        {
+          "logicalName": "$decoy_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$defuser_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_dropped"
+          ]
+        },
+        {
+          "logicalName": "$defuser_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$flashbang_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "logicalName": "$game_restart",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "game_restart"
+          ]
+        },
+        {
+          "logicalName": "$grenade_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "grenade_thrown"
+          ]
+        },
+        {
+          "logicalName": "$halftime",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "halftime"
+          ]
+        },
+        {
+          "logicalName": "$he_grenade_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$inferno_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_expire"
+          ]
+        },
+        {
+          "logicalName": "$inferno_extinguished",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_extinguish"
+          ]
+        },
+        {
+          "logicalName": "$inferno_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "logicalName": "$item_drop",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_drop"
+          ]
+        },
+        {
+          "logicalName": "$item_equip",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_equip"
+          ]
+        },
+        {
+          "logicalName": "$item_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$match_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$match_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "begin_new_match"
+          ]
+        },
+        {
+          "logicalName": "$molotov_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "logicalName": "$other_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "other_death"
+          ]
+        },
+        {
+          "logicalName": "$phase_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "announce_phase_end"
+          ]
+        },
+        {
+          "logicalName": "$player_avenged_teammate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_avenged_teammate"
+          ]
+        },
+        {
+          "logicalName": "$player_connect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_connect"
+          ]
+        },
+        {
+          "logicalName": "$player_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "logicalName": "$player_disconnect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_disconnect"
+          ]
+        },
+        {
+          "logicalName": "$player_hurt",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "logicalName": "$player_spawn",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_spawn"
+          ]
+        },
+        {
+          "logicalName": "$player_team",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_team"
+          ]
+        },
+        {
+          "logicalName": "$round_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$round_freeze_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$round_mvp",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_mvp"
+          ]
+        },
+        {
+          "logicalName": "$round_post_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_poststart"
+          ]
+        },
+        {
+          "logicalName": "$round_pre_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_prestart"
+          ]
+        },
+        {
+          "logicalName": "$round_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_start"
+          ]
+        },
+        {
+          "logicalName": "$round_start_beep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_round_start_beep"
+          ]
+        },
+        {
+          "logicalName": "$smoke_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$smoke_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire_on_empty",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire_on_empty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Cs2PovProfile",
+      "kind": "Pov",
+      "bindings": [
+        {
+          "logicalName": "$bomb_abort_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortdefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_abort_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_begindefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_beginplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_defused",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "logicalName": "$bomb_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_dropped"
+          ]
+        },
+        {
+          "logicalName": "$bomb_exploded",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_exploded"
+          ]
+        },
+        {
+          "logicalName": "$bomb_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_pickup"
+          ]
+        },
+        {
+          "logicalName": "$bomb_planted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "logicalName": "$bullet_damage",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "logicalName": "$bullet_impact",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$combat_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "buytime_ended"
+          ]
+        },
+        {
+          "logicalName": "$decoy_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$defuser_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_dropped"
+          ]
+        },
+        {
+          "logicalName": "$defuser_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$flashbang_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "logicalName": "$game_restart",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "game_restart"
+          ]
+        },
+        {
+          "logicalName": "$halftime",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "halftime"
+          ]
+        },
+        {
+          "logicalName": "$he_grenade_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$inferno_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_expire"
+          ]
+        },
+        {
+          "logicalName": "$inferno_extinguished",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_extinguish"
+          ]
+        },
+        {
+          "logicalName": "$inferno_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "logicalName": "$item_drop",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_drop"
+          ]
+        },
+        {
+          "logicalName": "$item_equip",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_equip"
+          ]
+        },
+        {
+          "logicalName": "$item_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$match_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$match_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "begin_new_match"
+          ]
+        },
+        {
+          "logicalName": "$molotov_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "logicalName": "$other_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "other_death"
+          ]
+        },
+        {
+          "logicalName": "$phase_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "announce_phase_end"
+          ]
+        },
+        {
+          "logicalName": "$player_avenged_teammate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_avenged_teammate"
+          ]
+        },
+        {
+          "logicalName": "$player_blind",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "logicalName": "$player_connect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_connect"
+          ]
+        },
+        {
+          "logicalName": "$player_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "logicalName": "$player_disconnect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_disconnect"
+          ]
+        },
+        {
+          "logicalName": "$player_footstep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_footstep"
+          ]
+        },
+        {
+          "logicalName": "$player_hurt",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "logicalName": "$player_jump",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_jump"
+          ]
+        },
+        {
+          "logicalName": "$player_spawn",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_spawn"
+          ]
+        },
+        {
+          "logicalName": "$player_team",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_team"
+          ]
+        },
+        {
+          "logicalName": "$round_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$round_freeze_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$round_mvp",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_mvp"
+          ]
+        },
+        {
+          "logicalName": "$round_officially_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_officially_ended"
+          ]
+        },
+        {
+          "logicalName": "$round_post_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_poststart"
+          ]
+        },
+        {
+          "logicalName": "$round_pre_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_prestart"
+          ]
+        },
+        {
+          "logicalName": "$round_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_start"
+          ]
+        },
+        {
+          "logicalName": "$round_start_beep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_round_start_beep"
+          ]
+        },
+        {
+          "logicalName": "$smoke_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$smoke_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire_on_empty",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire_on_empty"
+          ]
+        },
+        {
+          "logicalName": "$weapon_reload",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_reload"
+          ]
+        },
+        {
+          "logicalName": "$weapon_zoom",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_zoom"
+          ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "name": "assist",
+      "event": "player_death",
+      "binding": "actor_slot",
+      "actor": "assister",
+      "roles": [
+        {
+          "role": "assister",
+          "field": "Assister"
+        },
+        {
+          "role": "killer",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [
+        "event.Attacker != event.UserId"
+      ],
+      "facets": [
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.kill.was_enemy_assist"
+        },
+        {
+          "name": "flash",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "AssistedFlash"
+        },
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "blinded",
+      "event": "player_blind",
+      "binding": "actor_slot",
+      "actor": "victim",
+      "roles": [
+        {
+          "role": "attacker",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "duration",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "BlindDuration"
+        },
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.blind.was_enemy_flash"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": []
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "blinded_enemy",
+      "event": "player_blind",
+      "binding": "actor_slot",
+      "actor": "attacker",
+      "roles": [
+        {
+          "role": "attacker",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "duration",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "BlindDuration"
+        },
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.blind.was_enemy_flash"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": []
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bomb_defused",
+      "event": "bomb_defused",
+      "binding": "none",
+      "roles": [
+        {
+          "role": "defuser",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "site",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Site"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bomb_planted",
+      "event": "bomb_planted",
+      "binding": "none",
+      "roles": [
+        {
+          "role": "planter",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "site",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Site"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "damage_dealt",
+      "event": "player_hurt",
+      "binding": "actor_slot",
+      "actor": "attacker",
+      "roles": [
+        {
+          "role": "attacker",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "amount",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "DmgHealth"
+        },
+        {
+          "name": "bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.hurt.is_bullet"
+        },
+        {
+          "name": "capped",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.hurt.capped_damage"
+        },
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.hurt.was_enemy_damage"
+        },
+        {
+          "name": "hitgroup",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "HitGroup"
+        },
+        {
+          "name": "teamdamage",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.hurt.was_team_damage"
+        },
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "damage_taken",
+      "event": "player_hurt",
+      "binding": "actor_slot",
+      "actor": "victim",
+      "roles": [
+        {
+          "role": "attacker",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "amount",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "DmgHealth"
+        },
+        {
+          "name": "bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.hurt.is_bullet"
+        },
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.hurt.was_enemy_damage"
+        },
+        {
+          "name": "hitgroup",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "HitGroup"
+        },
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "death",
+      "event": "player_death",
+      "binding": "actor_slot",
+      "actor": "victim",
+      "roles": [
+        {
+          "role": "assister",
+          "field": "Assister"
+        },
+        {
+          "role": "killer",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "attacker_blind",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "AttackerBlind"
+        },
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.kill.was_enemy_kill"
+        },
+        {
+          "name": "headshot",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "Headshot"
+        },
+        {
+          "name": "no_scope",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "NoScope"
+        },
+        {
+          "name": "through_smoke",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "ThruSmoke"
+        },
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "flash_grenade",
+      "event": "flashbang_detonate",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "he_grenade",
+      "event": "hegrenade_detonate",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kill",
+      "event": "player_death",
+      "binding": "actor_slot",
+      "actor": "killer",
+      "roles": [
+        {
+          "role": "assister",
+          "field": "Assister"
+        },
+        {
+          "role": "killer",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "UserId"
+        }
+      ],
+      "baked": [
+        "event.Attacker != event.UserId"
+      ],
+      "facets": [
+        {
+          "name": "enemy",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.kill.was_enemy_kill"
+        },
+        {
+          "name": "flash_assisted",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.kill.was_flash_kill"
+        },
+        {
+          "name": "headshot",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "Headshot"
+        },
+        {
+          "name": "no_scope",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "NoScope"
+        },
+        {
+          "name": "teamkill",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.kill.was_team_kill"
+        },
+        {
+          "name": "through_smoke",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "ThruSmoke"
+        },
+        {
+          "name": "trade",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.kill.was_trade_kill"
+        },
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "molotov",
+      "event": "molotov_thrown",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "round_lost",
+      "event": "round_end",
+      "binding": "team",
+      "result": "lost",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "has_winner",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.round.has_winner"
+        },
+        {
+          "name": "winner_side",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.winner_side"
+        },
+        {
+          "name": "winner_team",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.winner_team"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "round_won",
+      "event": "round_end",
+      "binding": "team",
+      "result": "won",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "has_winner",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.round.has_winner"
+        },
+        {
+          "name": "winner_side",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.winner_side"
+        },
+        {
+          "name": "winner_team",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.winner_team"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shot",
+      "event": "weapon_fire",
+      "binding": "actor_slot",
+      "actor": "shooter",
+      "roles": [
+        {
+          "role": "shooter",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.weapon_fire.is_bullet"
+        },
+        {
+          "name": "silenced",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "Silenced"
+        },
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shot_landed",
+      "event": "bullet_damage",
+      "binding": "actor_slot",
+      "actor": "attacker",
+      "roles": [
+        {
+          "role": "attacker",
+          "field": "Attacker"
+        },
+        {
+          "role": "victim",
+          "field": "Victim"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "distance",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Distance"
+        },
+        {
+          "name": "in_air",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "InAir"
+        },
+        {
+          "name": "no_scope",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "NoScope"
+        },
+        {
+          "name": "recoil_index",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "RecoilIndex"
+        },
+        {
+          "name": "spray_shots",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.spray_shots"
+        },
+        {
+          "name": "spray_victims",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.spray_victims"
+        },
+        {
+          "name": "ticks_since_last_shot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_last_shot"
+        },
+        {
+          "name": "turn_degrees",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.turn_degrees"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "smoke_grenade",
+      "event": "smokegrenade_detonate",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "UserId"
+        }
+      ],
+      "baked": [],
+      "facets": [],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        }
+      ]
+    }
+  ]
+}

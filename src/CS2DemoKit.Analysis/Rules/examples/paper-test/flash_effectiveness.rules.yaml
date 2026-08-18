@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../dv-rules.schema.json
+# Paper-test reference answer — request #8 "Flash effectiveness".
+ruleset: flash_effectiveness
+for: each_player
+stats:
+  flashes_landed:
+    count: blinded_enemy
+    match: { enemy: true }
+    per: match
+  total_blind_seconds:
+    sum: enrich.blind.duration
+    on: blinded_enemy
+    match: { enemy: true }
+    per: match
+  avg_blind_seconds:
+    compute: "total_blind_seconds / flashes_landed"
+show:
+  scoreboard:
+    - { stat: avg_blind_seconds, label: AvgBlind, group: game }

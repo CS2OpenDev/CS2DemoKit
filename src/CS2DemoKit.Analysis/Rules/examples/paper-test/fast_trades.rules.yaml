@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../dv-rules.schema.json
+# Paper-test reference answer candidate — request #5 "Fast trades" (trade kills).
+ruleset: fast_trades
+for: each_player
+stats:
+  trade_kills:
+    count: kill
+    match: { enemy: true, trade: true }
+    per: match
+show:
+  scoreboard:
+    - { stat: trade_kills, label: Trades, group: game }

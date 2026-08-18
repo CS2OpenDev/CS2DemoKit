@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../dv-rules.schema.json
+# Paper-test reference answer — request #9 "Utility damage per round".
+ruleset: utility_damage
+for: each_player
+stats:
+  util_damage:
+    sum: event.DmgHealth
+    on: damage_dealt
+    match: { enemy: true }
+    where: 'event.Weapon == "hegrenade" or event.Weapon == "inferno" or event.Weapon == "molotov"'
+    per: match
+  util_damage_per_round:
+    compute: "util_damage / round.number"
+show:
+  scoreboard:
+    - { stat: util_damage_per_round, label: UtilDmg/R, group: game }

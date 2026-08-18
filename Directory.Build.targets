@@ -1,0 +1,75 @@
+<Project>
+    <!--
+        Shared NuGet pack metadata for the three published CS2DemoKit libraries.
+
+        This file is imported into every project, but every element below is gated on
+        IsPackable=true — which Directory.Build.props defaults to false and only CS2DemoKit.Parser,
+        CS2DemoKit.Analysis and CS2DemoKit.Analysis.Rules turn back on. A .targets file (not .props)
+        is required: IsPackable is set in the csproj body, which .props files are evaluated before.
+
+        Per-package metadata — PackageId, Description, PackageTags — stays in the csproj, because
+        that is the part a reader needs to see next to the code it describes.
+    -->
+
+    <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+        <Authors>sid2934</Authors>
+        <Copyright>Copyright (c) 2026 sid2934</Copyright>
+
+        <!-- MIT for the whole family; the demofile-net-adapted files (BitBuffer, FieldDecoder,
+             FieldPath*, EntityTracker, …) carry their own MIT obligation, discharged by the
+             THIRD-PARTY-NOTICES.md packed alongside — see the None item below. -->
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+        <!-- The repo is public, so consumers can actually reach the sources these keys point at.
+             SourceLink for GitHub ships in the SDK — no package reference needed. PublishRepositoryUrl
+             fills RepositoryUrl from the git remote; the explicit value below keeps the nuspec
+             correct in checkouts that have no remote configured yet. -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryUrl>https://github.com/sid2934/CS2DemoKit</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/sid2934/CS2DemoKit</PackageProjectUrl>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(IsPackable)' == 'true'">
+        <!-- Update, not Include: the SDK's default None glob already owns the project's README.md,
+             and a second item would pack the file twice (NU5118, an error here because
+             TreatWarningsAsErrors is on). If the Update ever fails to attach, pack fails loudly
+             with NU5039 rather than shipping a package whose declared readme is missing. -->
+        <None Update="README.md" Pack="true" PackagePath="\"/>
+        <!-- Repo-root file, outside every project directory, so there is no default item to
+             update. Travels in all three packages; it is load-bearing for Parser, which is where
+             the demofile-net-adapted code actually lives. -->
+        <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\"
+              Visible="false"/>
+    </ItemGroup>
+
+    <!--
+        Exact intra-family version pins.
+
+        A ProjectReference becomes a package dependency with a min-floor range ("0.9.0", i.e. 0.9.0
+        and up). The family is versioned in lockstep and shares no compatibility contract across
+        versions, so the floor range is a lie that surfaces as a runtime MissingMethodException.
+        NuGet has no property for this; the supported seam is the item the pack targets build for
+        the nuspec.
+
+        _GetProjectReferenceVersions populates _ProjectReferencesWithVersions (each with
+        ProjectVersion metadata) and is a DependsOnTarget of GenerateNuspec, so an AfterTargets
+        hook here runs after the versions are resolved and before the nuspec is written. Verified
+        present in the .NET 10.0.100 SDK: NuGet.Build.Tasks.Pack.targets lines 215, 313-341.
+    -->
+    <Target Name="UseExactProjectReferenceVersions"
+            AfterTargets="_GetProjectReferenceVersions"
+            Condition="'$(IsPackable)' == 'true'">
+        <ItemGroup>
+            <_ProjectReferencesWithVersions Update="@(_ProjectReferencesWithVersions)">
+                <ProjectVersion>[%(_ProjectReferencesWithVersions.ProjectVersion)]</ProjectVersion>
+            </_ProjectReferencesWithVersions>
+        </ItemGroup>
+    </Target>
+
+</Project>

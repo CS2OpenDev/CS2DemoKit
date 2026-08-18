@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "demo": "003816809596253634708_1168926414.dem",
+  "demo_sha256": "1e9a68ac3f8d2f7c053f5879cfd78ee0844b4da9457d49baf669c3114fe5dac0",
+  "provider": "expected",
+  "provider_version": null,
+  "generated_at": "2026-05-23T02:16:12Z",
+  "match": {
+    "map": "de_dust2"
+  },
+  "players": {
+    "Little Michael Jackson": {
+      "team": 3,
+      "stats": {
+        "kills": 12,
+        "deaths": 15,
+        "assists": 8,
+        "multi_2k": 3,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 3,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "Canoga Park, Ca 91304": {
+      "team": 3,
+      "stats": {
+        "kills": 23,
+        "deaths": 13,
+        "assists": 4,
+        "multi_2k": 4,
+        "multi_3k": 2,
+        "multi_4k": 1,
+        "multi_5k": 0,
+        "rounds_survived": 8,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "Daunted": {
+      "team": 2,
+      "stats": {
+        "kills": 15,
+        "deaths": 13,
+        "assists": 2,
+        "multi_2k": 3,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 8,
+        "trade_kills": 2,
+        "ct_rounds_won": 1,
+        "t_rounds_won": 7
+      }
+    },
+    "nonch asf": {
+      "team": 2,
+      "stats": {
+        "kills": 20,
+        "deaths": 19,
+        "assists": 3,
+        "multi_2k": 5,
+        "multi_3k": 2,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 3,
+        "ct_rounds_won": 1,
+        "t_rounds_won": 7
+      }
+    },
+    "sw1zz": {
+      "team": 2,
+      "stats": {
+        "kills": 7,
+        "deaths": 17,
+        "assists": 6,
+        "multi_2k": 1,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 0,
+        "ct_rounds_won": 1,
+        "t_rounds_won": 7
+      }
+    },
+    "yehright": {
+      "team": 3,
+      "stats": {
+        "kills": 12,
+        "deaths": 13,
+        "assists": 6,
+        "multi_2k": 1,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 8,
+        "trade_kills": 2,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "Dark Jeb": {
+      "team": 3,
+      "stats": {
+        "kills": 11,
+        "deaths": 14,
+        "assists": 5,
+        "multi_2k": 0,
+        "multi_3k": 0,
+        "multi_4k": 1,
+        "multi_5k": 0,
+        "rounds_survived": 7,
+        "trade_kills": 1,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "#FreeVertigo": {
+      "team": 2,
+      "stats": {
+        "kills": 6,
+        "deaths": 18,
+        "assists": 6,
+        "multi_2k": 0,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 0,
+        "ct_rounds_won": 1,
+        "t_rounds_won": 7
+      }
+    },
+    "booshaL": {
+      "team": 3,
+      "stats": {
+        "kills": 21,
+        "deaths": 12,
+        "assists": 6,
+        "multi_2k": 6,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 9,
+        "trade_kills": 4,
+        "ct_rounds_won": 5,
+        "t_rounds_won": 8
+      }
+    },
+    "Crew_v7": {
+      "team": 2,
+      "stats": {
+        "kills": 19,
+        "deaths": 15,
+        "assists": 3,
+        "multi_2k": 1,
+        "multi_3k": 0,
+        "multi_4k": 2,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 0,
+        "ct_rounds_won": 1,
+        "t_rounds_won": 7
+      }
+    }
+  }
+}

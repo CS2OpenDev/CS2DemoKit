@@ -1,0 +1,1007 @@
+{
+  "Firings": [
+    {
+      "Slot": 5,
+      "Tick": 72658
+    },
+    {
+      "Slot": 9,
+      "Tick": 78246
+    },
+    {
+      "Slot": 1,
+      "Tick": 78413
+    },
+    {
+      "Slot": 1,
+      "Tick": 83840
+    }
+  ],
+  "Rows": {
+    "0|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|1": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|2": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|3": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|4": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|5": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|6": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|7": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|8": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|9": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|10": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|11": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "1|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "2|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "3|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "4|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "5|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "6|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "7|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "8|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "9|12": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 0,
+      "KillTicks": []
+    },
+    "0|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "1|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "2|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "3|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "4|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "5|13": {
+      "Achieved": true,
+      "PostPlantKills": 2,
+      "PlantTick": 73774,
+      "KillTicks": [
+        73978,
+        74167
+      ]
+    },
+    "6|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "7|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "8|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "9|13": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 73774,
+      "KillTicks": []
+    },
+    "0|14": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 78669,
+      "KillTicks": []
+    },
+    "1|14": {
+      "Achieved": true,
+      "PostPlantKills": 2,
+      "PlantTick": 78669,
+      "KillTicks": [
+        79016,
+        79921
+      ]
+    },
+    "2|14": {
+      "Achieved": false,
+      "PostPlantKills": 1,
+      "PlantTick": 78669,
+      "KillTicks": [
+        79738
+      ]
+    },
+    "3|14": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 78669,
+      "KillTicks": []
+    },
+    "4|14": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 78669,
+      "KillTicks": []
+    },
+    "5|14": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 78669,
+      "KillTicks": []
+    },
+    "6|14": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 78669,
+      "KillTicks": []
+    },
+    "7|14": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 78669,
+      "KillTicks": []
+    },
+    "8|14": {
+      "Achieved": false,
+      "PostPlantKills": 1,
+      "PlantTick": 78669,
+      "KillTicks": [
+        79557
+      ]
+    },
+    "9|14": {
+      "Achieved": true,
+      "PostPlantKills": 3,
+      "PlantTick": 78669,
+      "KillTicks": [
+        79583,
+        79754,
+        80035
+      ]
+    },
+    "0|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "1|15": {
+      "Achieved": true,
+      "PostPlantKills": 2,
+      "PlantTick": 84208,
+      "KillTicks": [
+        84538,
+        85348
+      ]
+    },
+    "2|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "3|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "4|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "5|15": {
+      "Achieved": false,
+      "PostPlantKills": 1,
+      "PlantTick": 84208,
+      "KillTicks": [
+        84850
+      ]
+    },
+    "6|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "7|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "8|15": {
+      "Achieved": false,
+      "PostPlantKills": 1,
+      "PlantTick": 84208,
+      "KillTicks": [
+        84298
+      ]
+    },
+    "9|15": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 84208,
+      "KillTicks": []
+    },
+    "0|16": {
+      "Achieved": false,
+      "PostPlantKills": 1,
+      "PlantTick": 89874,
+      "KillTicks": [
+        90797
+      ]
+    },
+    "1|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "2|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "3|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "4|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "5|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "6|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "7|16": {
+      "Achieved": false,
+      "PostPlantKills": 1,
+      "PlantTick": 89874,
+      "KillTicks": [
+        89973
+      ]
+    },
+    "8|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    },
+    "9|16": {
+      "Achieved": false,
+      "PostPlantKills": 0,
+      "PlantTick": 89874,
+      "KillTicks": []
+    }
+  }
+}

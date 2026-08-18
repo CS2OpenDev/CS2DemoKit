@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "demo": "003816798820180689112_1066991563.dem",
+  "demo_sha256": "c12a04f8d8d45a482eef1ef3170a1d80e8c0773b370012af9a4e08d1b0ccd61e",
+  "provider": "expected",
+  "provider_version": null,
+  "generated_at": "2026-05-23T02:16:12Z",
+  "match": {
+    "map": "de_inferno"
+  },
+  "players": {
+    "Little Michael Jackson": {
+      "team": 2,
+      "stats": {
+        "kills": 16,
+        "deaths": 11,
+        "multi_2k": 2,
+        "multi_3k": 3,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 8,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 9
+      }
+    },
+    "SMELL MY FINGER": {
+      "team": 3,
+      "stats": {
+        "kills": 17,
+        "deaths": 16,
+        "multi_2k": 2,
+        "multi_3k": 2,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 3,
+        "trade_kills": 3,
+        "ct_rounds_won": 3,
+        "t_rounds_won": 3
+      }
+    },
+    "Toxsick": {
+      "team": 3,
+      "stats": {
+        "kills": 6,
+        "deaths": 17,
+        "assists": 2,
+        "multi_2k": 0,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 2,
+        "trade_kills": 0,
+        "ct_rounds_won": 3,
+        "t_rounds_won": 3
+      }
+    },
+    "ABSOLUTELY FABULOUS": {
+      "team": 3,
+      "stats": {
+        "kills": 11,
+        "deaths": 16,
+        "assists": 4,
+        "multi_2k": 2,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 3,
+        "trade_kills": 1,
+        "ct_rounds_won": 3,
+        "t_rounds_won": 3
+      }
+    },
+    "space m0nkee": {
+      "team": 3,
+      "stats": {
+        "kills": 14,
+        "deaths": 15,
+        "assists": 5,
+        "multi_2k": 4,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 0,
+        "ct_rounds_won": 3,
+        "t_rounds_won": 3
+      }
+    },
+    "anna putana": {
+      "team": 2,
+      "stats": {
+        "kills": 19,
+        "deaths": 8,
+        "multi_2k": 2,
+        "multi_3k": 2,
+        "multi_4k": 1,
+        "multi_5k": 0,
+        "rounds_survived": 11,
+        "trade_kills": 2,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 9
+      }
+    },
+    "beyondproof": {
+      "team": 2,
+      "stats": {
+        "kills": 14,
+        "deaths": 12,
+        "assists": 7,
+        "multi_2k": 3,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 7,
+        "trade_kills": 5,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 9
+      }
+    },
+    "phantomcaster": {
+      "team": 2,
+      "stats": {
+        "kills": 14,
+        "deaths": 13,
+        "assists": 4,
+        "multi_2k": 4,
+        "multi_3k": 0,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 6,
+        "trade_kills": 1,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 9
+      }
+    },
+    "X3YellowPP": {
+      "team": 3,
+      "stats": {
+        "kills": 10,
+        "deaths": 16,
+        "assists": 4,
+        "multi_2k": 1,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 3,
+        "ct_rounds_won": 3,
+        "t_rounds_won": 3
+      }
+    },
+    "pebe": {
+      "team": 2,
+      "stats": {
+        "kills": 17,
+        "deaths": 15,
+        "assists": 7,
+        "multi_2k": 4,
+        "multi_3k": 1,
+        "multi_4k": 0,
+        "multi_5k": 0,
+        "rounds_survived": 4,
+        "trade_kills": 1,
+        "ct_rounds_won": 4,
+        "t_rounds_won": 9
+      }
+    }
+  }
+}

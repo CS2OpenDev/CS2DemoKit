@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../dv-rules.schema.json
+# Paper-test reference answer — request #10 "Multi-kill rounds" (2K/3K/4K/5K breakdown).
+ruleset: multikill
+for: each_player
+stats:
+  round_kills:
+    count: kill
+    match: { enemy: true }
+    per: round
+  multi_kill_tally:
+    tally: round_kills
+    thresholds:
+      - { min: 5, target: rounds_5k }
+      - { min: 4, target: rounds_4k }
+      - { min: 3, target: rounds_3k }
+      - { min: 2, target: rounds_2k }
+show:
+  scoreboard:
+    - { stat: rounds_2k, label: "2K", group: game }
+    - { stat: rounds_3k, label: "3K", group: game }
+    - { stat: rounds_4k, label: "4K", group: game }
+    - { stat: rounds_5k, label: "5K", group: game }

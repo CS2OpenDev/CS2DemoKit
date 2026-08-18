@@ -1,0 +1,1656 @@
+{
+  "schema_version": 1,
+  "demo": "furia-vs-vitality-m1-mirage.dem",
+  "demo_sha256": "9019e9ee6cdeee54d93a73625620f3372ee55b8560240b6381f67fdb84676cbb",
+  "provider": "ours",
+  "generated_at": "2026-06-08T19:12:40.8400780Z",
+  "ticks": {
+    "25000": [
+      {
+        "slot": 1,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "@reLazffs",
+          "SteamID": 76561197982907430,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 2,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "YEKINDAR",
+          "SteamID": 76561198134401925,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 3,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "Rush",
+          "SteamID": 76561198213765927,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 4,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 5,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 6,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "molodoy",
+          "SteamID": 76561198200982290,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 7,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "FalleN",
+          "SteamID": 76561197960690195,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 8,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "KSCERATO",
+          "SteamID": 76561198058500492,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 9,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "jeyrazz",
+          "SteamID": 76561198910385880,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 10,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "yuurih",
+          "SteamID": 76561198164970560,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 11,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "mezii",
+          "SteamID": 76561197973140692,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 4550
+        }
+      },
+      {
+        "slot": 12,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ropz",
+          "SteamID": 76561197991272318,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 9050
+        }
+      },
+      {
+        "slot": 13,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "apEX",
+          "SteamID": 76561197989744167,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 5650
+        }
+      },
+      {
+        "slot": 14,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "flameZ",
+          "SteamID": 76561197978835160,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 6750
+        }
+      },
+      {
+        "slot": 15,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ZywOo",
+          "SteamID": 76561198113666193,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 8100
+        }
+      },
+      {
+        "slot": 69,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 150,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 158,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 162,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 168,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 170,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 174,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 178,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 184,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 58
+        }
+      },
+      {
+        "slot": 191,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 205,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 99
+        }
+      },
+      {
+        "slot": 212,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 219,
+        "class": "CCSGameRulesProxy",
+        "fields": {
+          "TotalRoundsPlayed": 4,
+          "GamePhase": 2,
+          "WarmupPeriod": 0
+        }
+      },
+      {
+        "slot": 346,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      }
+    ],
+    "50000": [
+      {
+        "slot": 1,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "@reLazffs",
+          "SteamID": 76561197982907430,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 2,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "YEKINDAR",
+          "SteamID": 76561198134401925,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 2300
+        }
+      },
+      {
+        "slot": 3,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "Rush",
+          "SteamID": 76561198213765927,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 4,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 5,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 6,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "molodoy",
+          "SteamID": 76561198200982290,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 300
+        }
+      },
+      {
+        "slot": 7,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "FalleN",
+          "SteamID": 76561197960690195,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 2750
+        }
+      },
+      {
+        "slot": 8,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "KSCERATO",
+          "SteamID": 76561198058500492,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 2350
+        }
+      },
+      {
+        "slot": 9,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "jeyrazz",
+          "SteamID": 76561198910385880,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 10,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "yuurih",
+          "SteamID": 76561198164970560,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 850
+        }
+      },
+      {
+        "slot": 11,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "mezii",
+          "SteamID": 76561197973140692,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 5600
+        }
+      },
+      {
+        "slot": 12,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ropz",
+          "SteamID": 76561197991272318,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 6550
+        }
+      },
+      {
+        "slot": 13,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "apEX",
+          "SteamID": 76561197989744167,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 9350
+        }
+      },
+      {
+        "slot": 14,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "flameZ",
+          "SteamID": 76561197978835160,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 7250
+        }
+      },
+      {
+        "slot": 15,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ZywOo",
+          "SteamID": 76561198113666193,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 8650
+        }
+      },
+      {
+        "slot": 69,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 150,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 158,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 162,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 168,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 170,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 174,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 178,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 184,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 191,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 205,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 212,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 219,
+        "class": "CCSGameRulesProxy",
+        "fields": {
+          "TotalRoundsPlayed": 7,
+          "GamePhase": 2,
+          "WarmupPeriod": 0
+        }
+      },
+      {
+        "slot": 346,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      }
+    ],
+    "100000": [
+      {
+        "slot": 1,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "@reLazffs",
+          "SteamID": 76561197982907430,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 2,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "YEKINDAR",
+          "SteamID": 76561198134401925,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 3,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "Rush",
+          "SteamID": 76561198213765927,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 4,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 5,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 6,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "molodoy",
+          "SteamID": 76561198200982290,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 7,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "FalleN",
+          "SteamID": 76561197960690195,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 0
+        }
+      },
+      {
+        "slot": 8,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "KSCERATO",
+          "SteamID": 76561198058500492,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 9,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "jeyrazz",
+          "SteamID": 76561198910385880,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 10,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "yuurih",
+          "SteamID": 76561198164970560,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 11,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "mezii",
+          "SteamID": 76561197973140692,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 12,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ropz",
+          "SteamID": 76561197991272318,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 13,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "apEX",
+          "SteamID": 76561197989744167,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 0
+        }
+      },
+      {
+        "slot": 14,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "flameZ",
+          "SteamID": 76561197978835160,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 15,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ZywOo",
+          "SteamID": 76561198113666193,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 150
+        }
+      },
+      {
+        "slot": 69,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 150,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 158,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 162,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 168,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 170,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 174,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 178,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 184,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 191,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 205,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 212,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 219,
+        "class": "CCSGameRulesProxy",
+        "fields": {
+          "TotalRoundsPlayed": 12,
+          "GamePhase": 3,
+          "WarmupPeriod": 0
+        }
+      },
+      {
+        "slot": 346,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      }
+    ],
+    "200000": [
+      {
+        "slot": 1,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "@reLazffs",
+          "SteamID": 76561197982907430,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 2,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "YEKINDAR",
+          "SteamID": 76561198134401925,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 4500
+        }
+      },
+      {
+        "slot": 3,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "Rush",
+          "SteamID": 76561198213765927,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 4,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 5,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 6,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "molodoy",
+          "SteamID": 76561198200982290,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 1600
+        }
+      },
+      {
+        "slot": 7,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "FalleN",
+          "SteamID": 76561197960690195,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 2750
+        }
+      },
+      {
+        "slot": 8,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "KSCERATO",
+          "SteamID": 76561198058500492,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 5550
+        }
+      },
+      {
+        "slot": 9,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "jeyrazz",
+          "SteamID": 76561198910385880,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 10,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "yuurih",
+          "SteamID": 76561198164970560,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 2100
+        }
+      },
+      {
+        "slot": 11,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "mezii",
+          "SteamID": 76561197973140692,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 12,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ropz",
+          "SteamID": 76561197991272318,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 50
+        }
+      },
+      {
+        "slot": 13,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "apEX",
+          "SteamID": 76561197989744167,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 14,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "flameZ",
+          "SteamID": 76561197978835160,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 0
+        }
+      },
+      {
+        "slot": 15,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ZywOo",
+          "SteamID": 76561198113666193,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 69,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 150,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 158,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 162,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 99,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 168,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 170,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 174,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 178,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 184,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 191,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 93
+        }
+      },
+      {
+        "slot": 205,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 96,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 212,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 219,
+        "class": "CCSGameRulesProxy",
+        "fields": {
+          "TotalRoundsPlayed": 23,
+          "GamePhase": 3,
+          "WarmupPeriod": 0
+        }
+      },
+      {
+        "slot": 346,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 2,
+          "ArmorValue": 100
+        }
+      }
+    ],
+    "350000": [
+      {
+        "slot": 1,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "@reLazffs",
+          "SteamID": 76561197982907430,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 2,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "YEKINDAR",
+          "SteamID": 76561198134401925,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 4500
+        }
+      },
+      {
+        "slot": 3,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "Rush",
+          "SteamID": 76561198213765927,
+          "Connected": 0,
+          "TeamNum": 1,
+          "PendingTeamNum": 1,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 4,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 5,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ESL GOTV",
+          "SteamID": 0,
+          "Connected": 0,
+          "TeamNum": 0,
+          "PendingTeamNum": 0,
+          "Account": 800
+        }
+      },
+      {
+        "slot": 6,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "molodoy",
+          "SteamID": 76561198200982290,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 1800
+        }
+      },
+      {
+        "slot": 7,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "FalleN",
+          "SteamID": 76561197960690195,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 2950
+        }
+      },
+      {
+        "slot": 8,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "KSCERATO",
+          "SteamID": 76561198058500492,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 5550
+        }
+      },
+      {
+        "slot": 10,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "yuurih",
+          "SteamID": 76561198164970560,
+          "Connected": 0,
+          "TeamNum": 3,
+          "PendingTeamNum": 3,
+          "Account": 2400
+        }
+      },
+      {
+        "slot": 11,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "mezii",
+          "SteamID": 76561197973140692,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 12,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ropz",
+          "SteamID": 76561197991272318,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 650
+        }
+      },
+      {
+        "slot": 13,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "apEX",
+          "SteamID": 76561197989744167,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 14,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "flameZ",
+          "SteamID": 76561197978835160,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 300
+        }
+      },
+      {
+        "slot": 15,
+        "class": "CCSPlayerController",
+        "fields": {
+          "PlayerName": "ZywOo",
+          "SteamID": 76561198113666193,
+          "Connected": 0,
+          "TeamNum": 2,
+          "PendingTeamNum": 2,
+          "Account": 100
+        }
+      },
+      {
+        "slot": 69,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 150,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 3,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 158,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 162,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 99,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 100
+        }
+      },
+      {
+        "slot": 170,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 3,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 174,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 178,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 184,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 191,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 0,
+          "TeamNum": 3,
+          "ArmorValue": 93
+        }
+      },
+      {
+        "slot": 205,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 212,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 100,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 0,
+          "ArmorValue": 0
+        }
+      },
+      {
+        "slot": 219,
+        "class": "CCSGameRulesProxy",
+        "fields": {
+          "TotalRoundsPlayed": 23,
+          "GamePhase": 3,
+          "WarmupPeriod": 0
+        }
+      },
+      {
+        "slot": 346,
+        "class": "CCSPlayerPawn",
+        "fields": {
+          "Health": 0,
+          "MaxHealth": 100,
+          "LifeState": 2,
+          "TeamNum": 2,
+          "ArmorValue": 0
+        }
+      }
+    ]
+  }
+}

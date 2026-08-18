@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=../dv-rules.schema.json
+#
+# "Deagle last-bullet post-plant doubles" — a deliberately rare achievement, written to
+# exercise the v2 vocabulary rather than to match any demo we have on hand.
+#
+# The ask: fire when a player lands one-or-more Desert Eagle HEADSHOT kills, with the LAST
+# bullet in their magazine, while STANDING ON B SITE, on de_dust2 / de_nuke / de_cache — and
+# does so in TWO OR MORE rounds of the same match.
+#
+# ── What is / isn't expressible with the shipped catalog ─────────────────────────────────────
+# ENFORCED (real gates below): deagle + headshot + enemy + post-plant + map restriction + the
+#   >= 2-rounds match threshold.
+#
+# TRACKED GAPS (forced into this file as greppable TODOs so the missing capabilities are tracked
+# and the gates are pre-written for the day they land — `grep -rn 'TODO(' rules/` finds them):
+#
+#   RESOLVED(entity-clip): the clip read landed as `player.active_weapon_clip`
+#     (entity.pawn.active_weapon_clip — active-weapon handle → the weapon's m_iClip1). NOTE the
+#     timing: event-gated entity reads are PRE-FRAME, so at the kill the value is the clip
+#     BEFORE the killing shot — "last bullet" is `== 1`, not the `== 0` this file originally
+#     guessed (see rules/highlights_ammo.rules.yaml for the full reasoning). The clause below is
+#     pre-written with the correct spelling; uncommenting it is a semantic change to this
+#     example's canonical hash, left to a deliberate edit.
+#
+#   TODO(positioning): "standing on B site" needs the killer's map location at the kill tick.
+#     There is no position / place / bombsite context or provider yet — no way to ask where a
+#     player is standing. (Pawn position itself is reconstructable from cell coords, but nothing
+#     surfaces it, or a named place, as a v2 context.)
+#
+# Both gaps are written verbatim as commented `and …` clauses on the qualifying-kill gate below,
+# so when the capability lands you uncomment the clause — no re-derivation needed. The provider
+# names shown are illustrative (exact spelling TBD when the read is added).
+# ────────────────────────────────────────────────────────────────────────────────────────────
+ruleset: deagle_lastbullet_postplant_doubles
+title: Deagle Last-Bullet Post-Plant Doubles
+summary: >-
+  A player lands a deagle headshot kill after the plant, on de_dust2/de_nuke/de_cache, in two or
+  more rounds of a match (the "last bullet" and "on B site" qualifiers are not yet expressible —
+  see header TODOs).
+for: each_player
+
+params:
+  # How many distinct qualifying rounds the match-level achievement requires. "in 2 rounds" => 2.
+  min_rounds: { type: int, default: 2, min: 2, max: 10 }
+
+define:
+  # One qualifying kill: the ruleset's player (killer) lands a headshot on an enemy with the
+  # Desert Eagle, on one of the target maps, while the bomb is planted this round.
+  # `while: round.bomb.was_planted` is the sticky per-round post-plant gate (survives
+  # defuse/detonation), proven by post_plant_double. `match.map` is the map_name context (catalog
+  # v2Name match.map); the value is the demo's MapName (e.g. "de_dust2").
+  deagle_hs_postplant_kill:
+    on: kill                                # kill view: actor = killer == this player
+    match: { enemy: true, headshot: true }  # enrich.kill.was_enemy_kill + IsHeadshot facet
+    where: 'event.Weapon == "deagle" and (match.map == "de_dust2" or match.map == "de_nuke" or match.map == "de_cache")'
+    while: round.bomb.was_planted           # sticky post-plant built-in
+    # TODO(positioning): AND require the killer to be standing on B site. No position/place
+    #   context exists yet; when one lands, extend the where: above with (killer == this player):
+    #     and killer.entity.place == "BombsiteB"
+    # RESOLVED(entity-clip): AND require the killing shot to empty the magazine (last bullet).
+    #   The read exists now (`player.active_weapon_clip`; the kill view's actor IS this player,
+    #   so the subject spelling applies). Pre-frame timing makes the gate `== 1` — the clip
+    #   before the killing shot. Extend the where: above with:
+    #     and player.active_weapon_clip == 1
+
+stats:
+  # How many qualifying kills this player got this round (>= 1 makes the round "count").
+  qualifying_kills:
+    count: deagle_hs_postplant_kill
+    per: round
+    label: DeagleHSPP
+
+highlights:
+  # A round in which the player did it at least once. Its match-scoped `.count` is the number
+  # of distinct qualifying rounds — the quantity the achievement thresholds on.
+  deagle_postplant_round:
+    when: qualifying_kills >= 1
+    per: round
+    title: "{player.name} — deagle post-plant headshot (round {round.number})"
+
+  # The match-level achievement: the round-highlight fired in >= min_rounds distinct rounds.
+  # per: match so its own rising edge is the once-per-match "unlocked" moment.
+  deagle_postplant_multi_round:
+    when: deagle_postplant_round.count >= params.min_rounds
+    per: match
+    title: "{player.name} — deagle post-plant headshots in {deagle_postplant_round.count} rounds"
+
+show:
+  scoreboard:
+    - { stat: deagle_postplant_round.count,       label: DeaglePPRounds, group: game }
+    - { stat: deagle_postplant_multi_round.count, label: Achieved,       group: game }

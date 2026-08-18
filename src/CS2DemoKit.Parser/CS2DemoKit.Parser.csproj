@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <!-- Published to NuGet. Shared metadata (authors, license, readme/notices, symbols, exact
+         intra-family pins) comes from Directory.Build.targets; only the per-package identity
+         lives here. -->
+    <PropertyGroup>
+        <IsPackable>true</IsPackable>
+        <PackageId>CS2DemoKit.Parser</PackageId>
+        <Description>Zero-copy parser for Counter-Strike 2 (.dem) demo files: the frame and net-message stream, 272 typed game events, and stateful entity tracking with typed entity wrappers.</Description>
+        <PackageTags>cs2;counter-strike;demo;demo-parser;source2</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Google.Protobuf"/>
+        <PackageReference Include="Snappier"/>
+        <!--
+            Valve's generated protobuf message types, in namespace CS2OpenSchema.Protos.
+
+            This replaced a local protoc pipeline (2026-08-10). What used
+            to live here: a submodule dependency on cs2-opendocs/data/Protobufs, a
+            RoslynCodeTaskFactory inline task that staged a copy of every .proto into obj/ with
+            `option csharp_namespace` injected (the upstream files carry no `package` statement, so
+            protoc otherwise emits ~672 types into the GLOBAL namespace — a CS0433 hazard for the
+            published package), the staging target keyed by namespace so a rename invalidated stale
+            copies, 16 <Protobuf> items, and a Grpc.Tools 2.57.0 pin.
+
+            Consequences worth knowing:
+              - This is a PUBLIC dependency: seven public members here take these types
+                (StringTableProcessor.ProcessCreate/ProcessSnapshot/ProcessUpdate,
+                GameEventDecoder.Decode/LoadSchema, EntityTracker.PeekEntityUpdates,
+                RuntimeSchema.Parse). PrivateAssets would ship signatures naming types the consumer
+                cannot see. CS2DemoKit.* therefore cannot reach nuget.org before CS2OpenDev.Protos
+                does — decided 2026-08-10: flip both together.
+              - Proto SHORT names and descriptor file names are unchanged from the old pipeline, so
+                the App's ProtoIndex / PayloadNodeBuilder name matching and HeaderKind detection
+                are unaffected.
+              - Projects naming a generated type without qualification carry a GlobalUsings.cs with
+                `global using CS2OpenSchema.Protos;`.
+              - Wire compatibility with the previous pipeline was verified descriptor-level before
+                the swap: across 2,753 fields common to both sources, ZERO differ in field number,
+                type or label. The 47 fields the new source drops are GC/close-caption cruft and
+                descriptor.proto internals, none of them read here.
+        -->
+        <PackageReference Include="CS2OpenDev.Protos"/>
+
+        <!-- GameEventFieldProjector reads the SDK's [GameEventFieldType]
+             attribute to recover each field's original KV1 wire tag, so the schema
+             types have to be visible here and not only in the layers above. The
+             projector landed without this reference, which is why the parser
+             stopped building.
+
+             CS2OpenDev.Sdk carries the attributes and the payload records
+             (CS2OpenSchema / CS2OpenSchema.Events) and has zero package
+             dependencies by design, so it costs the parser nothing transitively.
+             Sdk.GameEvents carries the decoder and registry that replace the local
+             GameEventDecoder; its only dependencies are Sdk and
+             CS2OpenDev.Protos, already referenced above. -->
+        <PackageReference Include="CS2OpenDev.Sdk"/>
+        <PackageReference Include="CS2OpenDev.Sdk.GameEvents"/>
+
+        <!-- SDK#6: the frozen, BCL-only entity read contract (IEntityFieldReader /
+             IEntityWorld / EntityWrapper / EntityClassBinding). DVN implements it in
+             Entities/SdkAbstractions/ (LensBoundReader, TrackerEntityWorld,
+             LensBindingBuilder) as the contract's second implementation. This is a PUBLIC
+             dependency (the adapters implement its interfaces in public signatures). The
+             package is IsTrimmable/IsAotCompatible with zero dependencies, so the
+             Browser/WASM head is unaffected. -->
+        <PackageReference Include="CS2OpenDev.Sdk.Entities.Abstractions"/>
+    </ItemGroup>
+
+</Project>

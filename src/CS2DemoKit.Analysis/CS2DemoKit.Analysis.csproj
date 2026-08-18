@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+
+    <!-- Published to NuGet. Shared metadata (authors, license, readme/notices, symbols, exact
+         intra-family pins) comes from Directory.Build.targets; only the per-package identity
+         lives here. -->
+    <PropertyGroup>
+        <IsPackable>true</IsPackable>
+        <PackageId>CS2DemoKit.Analysis</PackageId>
+        <Description>Rule-driven analysis engine for parsed Counter-Strike 2 demos: a state-graph evaluator, the shipped rulesets embedded in the assembly, per-player stats, rich highlights, and a 3D line-of-sight engine.</Description>
+        <PackageTags>cs2;counter-strike;demo;demo-parser;source2;analysis;stats;highlights</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\CS2DemoKit.Parser\CS2DemoKit.Parser.csproj"/>
+        <!-- Rulesets v2 semantic core (leaf, BCL-only — no cycle). The RulesetsV2
+             document model reuses its lexer for unary-test parsing, plus its
+             normalizer/checker/hasher. -->
+        <ProjectReference Include="..\CS2DemoKit.Analysis.Rules\CS2DemoKit.Analysis.Rules.csproj"/>
+        <!-- CS2OpenDev.Sdk supplies SchemaNames.X.Y constants used by entity-value providers
+             (FreezePeriodProvider reads SchemaNames.CCSGameRules.FreezePeriod). Kept
+             at the Analysis-project leaf so the parser and abstractions stay SDK-agnostic.
+             PackageReference (repo-local feed, see nuget.config) — not a sibling-checkout
+             ProjectReference — so a bare clone builds. -->
+        <PackageReference Include="CS2OpenDev.Sdk"/>
+        <!-- The SDK-emitted typed entity wrappers — the production read surface for
+             pawn/controller fields. Wrappers bind over our runtime through the Parser's
+             SdkAbstractions seam (LensBoundReader / TrackerEntityWorld); SdkEntityWorlds owns
+             the per-tracker wiring. -->
+        <PackageReference Include="CS2OpenDev.Sdk.Entities"/>
+        <!-- Diagnostics logging. Abstractions only — carries ILogger + the [LoggerMessage] source
+             generator; no logging provider, so it adds no runtime cost when the ambient
+             DiagnosticsLog.LoggerFactory is left as NullLogger. -->
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <!-- YAML is the primary rule format; the loader lives in the Yaml/ sub-folder. -->
+        <PackageReference Include="YamlDotNet"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- The generated rules catalog (tools/CS2DemoKit.RulesCatalog, committed at
+             Rules/catalog.json and drift-gated by CatalogDriftTests). Embedded so runtime
+             consumers - the data browser, load-time enum validation, `rules check` - read the
+             exact catalog the build shipped with, not whatever file happens to sit next to the
+             binary. -->
+        <EmbeddedResource Include="Rules\catalog.json" LogicalName="CS2DemoKit.Analysis.Catalog.catalog.json"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <!--
+            The baseline rulesets + the editor schema, embedded alongside catalog.json so a NuGet
+            consumer with no rules directory on disk still gets a working rule set via
+            YamlConfigLoader.LoadShippedEmbedded() / ExtractShippedTo(dir).
+
+            These four are deliberately a BASELINE, not the full set an application ships: they
+            double as the validation corpus (each has a pinned golden fixture) and as authoring
+            samples covering every shape the DSL has — counts, sums, computed metrics, keyed
+            buckets, cross-ruleset composition and clip-context capture. player_stats declares
+            `use: [ kast ]` and reads kast.kast_pct, so those two can never be separated;
+            LoadShippedEmbedded validates this tier with no overlay, so an incomplete tier fails
+            loudly rather than silently resolving nothing.
+
+            LogicalName is deliberately "CS2DemoKit.Analysis.ShippedRules.*", NOT
+            "...Analysis.Rules.*", so it cannot be mistaken for the CS2DemoKit.Analysis.Rules
+            package id.
+        -->
+        <EmbeddedResource Include="Rules\*.rules.yaml" LogicalName="CS2DemoKit.Analysis.ShippedRules.%(Filename)%(Extension)"/>
+        <EmbeddedResource Include="Rules\dv-rules.schema.json" LogicalName="CS2DemoKit.Analysis.ShippedRules.dv-rules.schema.json"/>
+    </ItemGroup>
+
+</Project>
