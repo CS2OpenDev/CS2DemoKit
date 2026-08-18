@@ -15,18 +15,20 @@
 
         <!--
             The CS2OpenDev family — community-maintained CS2 schema, protobuf and game-event
-            definitions (github.com/CS2OpenDev). These are NOT on nuget.org; they publish to
-            GitHub Packages, so this repo carries the .nupkg files in local-packages/ and maps
-            them there in nuget.config. That keeps a bare clone building with no credentials.
+            definitions (github.com/CS2OpenDev). As of 2026-08 these ship on nuget.org under the
+            renumbered public line pinned below (the earlier 5.x versions were withdrawn from
+            GitHub Packages when the public line was cut). This repo still carries the .nupkg
+            files in local-packages/ and maps CS2OpenDev* there in nuget.config, which keeps a
+            bare clone building hermetically and offline.
 
-            Refresh: download the .nupkg from the CS2OpenDev-SDK release, drop it in
-            local-packages/, bump the version here.
+            Refresh: download the .nupkg from nuget.org, drop it in local-packages/, bump the
+            version here.
         -->
-        <PackageVersion Include="CS2OpenDev.Protos" Version="5.1.1"/>
-        <PackageVersion Include="CS2OpenDev.Sdk" Version="5.1.0"/>
-        <PackageVersion Include="CS2OpenDev.Sdk.GameEvents" Version="5.1.0"/>
-        <PackageVersion Include="CS2OpenDev.Sdk.Entities.Abstractions" Version="1.0.0"/>
-        <PackageVersion Include="CS2OpenDev.Sdk.Entities" Version="1.1.0"/>
+        <PackageVersion Include="CS2OpenDev.Protos" Version="0.9.0"/>
+        <PackageVersion Include="CS2OpenDev.Sdk" Version="0.9.0"/>
+        <PackageVersion Include="CS2OpenDev.Sdk.GameEvents" Version="0.9.0"/>
+        <PackageVersion Include="CS2OpenDev.Sdk.Entities.Abstractions" Version="1.0.3"/>
+        <PackageVersion Include="CS2OpenDev.Sdk.Entities" Version="1.1.3"/>
 
         <!-- Analysis. Logging is abstractions-only (no provider), YAML is the rule format. -->
         <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0"/>
