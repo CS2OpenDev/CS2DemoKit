@@ -1,0 +1,7 @@
+<Project>
+    <!-- Central package management OFF here: a real consumer pins the version in its own
+         PackageReference, which is exactly what this project does. -->
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    </PropertyGroup>
+</Project>

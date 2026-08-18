@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+        A consumer of the PACKED packages, not of the projects. It restores CS2DemoKit.Analysis
+        from a local feed of freshly packed nupkgs, which is the only way to catch breakage that
+        exists solely in the packaging: a missing dependency, an unsatisfiable exact pin, content
+        that was embedded at build time but not packed.
+
+        Deliberately outside CS2DemoKit.slnx and carrying its own nuget.config, so it inherits
+        neither the repo's project graph nor its package source mapping.
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <!-- The point of this project is the restore graph, not its own code quality; the repo's
+             analyzer settings would only add noise to a smoke run. -->
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
+        <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <CS2DemoKitVersion Condition="'$(CS2DemoKitVersion)' == ''">0.9.0</CS2DemoKitVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Top of the family DAG: Parser and Analysis.Rules arrive transitively, so this one
+             reference exercises all three packages and both exact pins. -->
+        <PackageReference Include="CS2DemoKit.Analysis" Version="$(CS2DemoKitVersion)"/>
+    </ItemGroup>
+
+</Project>

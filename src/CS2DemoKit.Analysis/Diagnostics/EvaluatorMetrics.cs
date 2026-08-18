@@ -36,8 +36,8 @@ internal static class EvaluatorMetrics
         _meter.CreateCounter<long>("analysis.players.materialized");
 
     /// <summary>
-    ///     True when a <see cref="MeterListener" /> (e.g. <c>dotnet-counters</c>, or AnalysisBench
-    ///     <c>--counters</c>) is subscribed to this meter's instruments. The evaluator guards its
+    ///     True when a <see cref="MeterListener" /> (e.g. <c>dotnet-counters</c>, or a listener the
+    ///     host installs itself) is subscribed to this meter's instruments. The evaluator guards its
     ///     per-message <c>Counter.Add</c> block on this, so the default user path pays a single bool
     ///     read instead of four <c>Counter.Add</c> when nobody is listening. <c>Instrument.Enabled</c>
     ///     is the runtime's own near-free "are there any listeners?" check.

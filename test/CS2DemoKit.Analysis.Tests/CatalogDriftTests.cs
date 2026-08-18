@@ -40,19 +40,19 @@ public class CatalogDriftTests
 
     /// <summary>
     ///     Schema generation: the generated v2 ruleset schema
-    ///     <c>rules/dv-rules.schema.json</c> is drift-gated too — its per-view <c>match:</c> facet
+    ///     <c>rules/cs2demokit-rules.schema.json</c> is drift-gated too — its per-view <c>match:</c> facet
     ///     enums, kind if/then, destination enums, and reserved-shape annotations must match a regen
     ///     from the same catalog's <c>views</c> family.
     /// </summary>
     [Test]
     public async Task CommittedV2Schema_MatchesRegenFromLiveCatalog()
     {
-        string v2SchemaPath = Path.Combine(FindRepoRoot(), "src", "CS2DemoKit.Analysis", "Rules", "dv-rules.schema.json");
+        string v2SchemaPath = Path.Combine(FindRepoRoot(), "src", "CS2DemoKit.Analysis", "Rules", "cs2demokit-rules.schema.json");
         await Assert.That(File.Exists(v2SchemaPath)).IsTrue()
-            .Because("rules/dv-rules.schema.json is a committed artifact (the pilot modeline references it)");
+            .Because("rules/cs2demokit-rules.schema.json is a committed artifact (the pilot modeline references it)");
 
         string committed = await File.ReadAllTextAsync(v2SchemaPath);
-        string regen = DvRulesSchemaBuilder.Build(
+        string regen = RulesSchemaBuilder.Build(
             CatalogBuilder.Build(FrequencyBaseline.Load(FindRepoRoot())));
 
         await Assert.That(committed).IsEqualTo(regen)

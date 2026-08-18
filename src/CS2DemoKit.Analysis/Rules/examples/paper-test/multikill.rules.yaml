@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../dv-rules.schema.json
+# yaml-language-server: $schema=../../cs2demokit-rules.schema.json
 # Paper-test reference answer — request #10 "Multi-kill rounds" (2K/3K/4K/5K breakdown).
 ruleset: multikill
 for: each_player

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../dv-rules.schema.json
+# yaml-language-server: $schema=../../cs2demokit-rules.schema.json
 # Paper-test reference answer candidate — request #5 "Fast trades" (trade kills).
 ruleset: fast_trades
 for: each_player

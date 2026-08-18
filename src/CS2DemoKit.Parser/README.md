@@ -136,12 +136,15 @@ foreach (NetMessage msg in frame.InnerMessages)
 }
 ```
 
-## Legacy identifiers
+## Opt-in diagnostics
 
-Two environment variables gate opt-in diagnostics and keep their original names for compatibility
-with existing installs and scripts: `DEMOVIEWER_PROFILE=1` enables the parse-profiling accumulator,
-`DEMOVIEWER_TRACE_DECODE=1` enables verbose entity-decode tracing. Both default to off and cost
-nothing when unset.
+Two environment variables gate diagnostics that are off by default and cost nothing when unset:
+`CS2DEMOKIT_PROFILE=1` enables the parse-profiling accumulator, `CS2DEMOKIT_TRACE_DECODE=1`
+enables verbose entity-decode tracing. Both are settable in code as well, via `Profiling.Enabled`
+and `Tracing.Enabled` — set them before the run they govern begins.
+
+The `DEMOVIEWER_*` spellings these switches shipped under are still honoured, second in
+precedence, so existing scripts keep working.
 
 ## License
 

@@ -224,22 +224,22 @@ public static class YamlConfigLoader
 
     /// <summary>
     ///     Writes every embedded shipped rules file — the 14 <c>*.rules.yaml</c> rulesets plus
-    ///     <c>dv-rules.schema.json</c> — into <paramref name="directory" />, byte-identical to the
+    ///     <c>cs2demokit-rules.schema.json</c> — into <paramref name="directory" />, byte-identical to the
     ///     repo's <c>rules/</c> files they were embedded from. Creates the directory if needed and
     ///     <b>overwrites</b> any file already there (unconditionally, unlike
     ///     <see cref="RuleSetLocator.ProvisionUserRulesDirectory" />'s deliberate never-overwrite
     ///     idempotence) — do not point this at a directory holding edits you want to keep.
     ///     <para>
     ///         For consumers who want to inspect, fork, or feed the shipped rules into an editor
-    ///         with schema validation (the <c># yaml-language-server: $schema=./dv-rules.schema.json</c>
-    ///         modeline points at the extracted <c>dv-rules.schema.json</c>) rather than read them
+    ///         with schema validation (the <c># yaml-language-server: $schema=./cs2demokit-rules.schema.json</c>
+    ///         modeline points at the extracted <c>cs2demokit-rules.schema.json</c>) rather than read them
     ///         only through <see cref="LoadShippedEmbedded" />.
     ///     </para>
     /// </summary>
     /// <param name="directory">The target directory; created if it does not already exist.</param>
     /// <returns>
     ///     The full paths of every file written, in file-name order (ordinal, case-insensitive) —
-    ///     note that puts <c>dv-rules.schema.json</c> first (<c>d</c> sorts before <c>h</c>/<c>k</c>/
+    ///     note that puts <c>cs2demokit-rules.schema.json</c> first (<c>d</c> sorts before <c>h</c>/<c>k</c>/
     ///     <c>p</c>/<c>w</c>), not last.
     /// </returns>
     public static IReadOnlyList<string> ExtractShippedTo(string directory)
@@ -297,7 +297,7 @@ public static class YamlConfigLoader
         assembly.GetManifestResourceStream(resourceName)
         ?? throw new InvalidOperationException(
             $"embedded shipped-rules resource '{resourceName}' missing — rebuild "
-            + "CS2DemoKit.Analysis (the rules/*.rules.yaml + dv-rules.schema.json EmbeddedResource wiring "
+            + "CS2DemoKit.Analysis (the rules/*.rules.yaml + cs2demokit-rules.schema.json EmbeddedResource wiring "
             + "in the csproj is out of sync with the assembly).");
 
     /// <summary>

@@ -60,22 +60,33 @@ jobs:
 
       - name: Pack
         run: |
-          dotnet pack src/CS2DemoKit.Parser -c Release -o artifacts/nuget --no-build
-          dotnet pack src/CS2DemoKit.Analysis -c Release -o artifacts/nuget --no-build
-          dotnet pack src/CS2DemoKit.Analysis.Rules -c Release -o artifacts/nuget --no-build
+          dotnet pack src/CS2DemoKit.Parser -c Release -o artifacts/pack --no-build
+          dotnet pack src/CS2DemoKit.Analysis -c Release -o artifacts/pack --no-build
+          dotnet pack src/CS2DemoKit.Analysis.Rules -c Release -o artifacts/pack --no-build
+
+      - name: Scan packed artifacts
+        run: python3 scripts/scan-nuget-artifacts.py artifacts/pack
+
+      # Last gate before upload: restore the exact nupkgs about to be published and run against
+      # them. A package that cannot be consumed must not reach the feed.
+      - name: Smoke-test the packages
+        working-directory: scripts/nuget-smoke
+        run: |
+          version=$(dotnet nbgv get-version -p ../../src/CS2DemoKit.Parser -v NuGetPackageVersion)
+          dotnet run -c Release -p:CS2DemoKitVersion="$version" -- ../../tests/assets/sample-de_nuke.dem
 
       - name: Upload packages as run artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nupkg
-          path: artifacts/nuget/
+          path: artifacts/pack/
 
       # GitHub Packages rejects .snupkg, so symbols ship as the run artifact above rather than
       # alongside the package. --skip-duplicate keeps a re-run of the same tag idempotent.
       - name: Push to GitHub Packages
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          dotnet nuget push "artifacts/nuget/*.nupkg" \
+          dotnet nuget push "artifacts/pack/*.nupkg" \
             --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
             --api-key "${{ secrets.GITHUB_TOKEN }}" \
             --skip-duplicate \
@@ -86,7 +97,7 @@ jobs:
       # - name: Push to nuget.org
       #   if: startsWith(github.ref, 'refs/tags/v')
       #   run: |
-      #     dotnet nuget push "artifacts/nuget/*.nupkg" \
+      #     dotnet nuget push "artifacts/pack/*.nupkg" \
       #       --source https://api.nuget.org/v3/index.json \
       #       --api-key "${{ secrets.NUGET_API_KEY }}" \
       #       --skip-duplicate

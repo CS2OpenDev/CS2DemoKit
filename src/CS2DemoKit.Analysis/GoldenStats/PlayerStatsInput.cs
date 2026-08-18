@@ -3,7 +3,7 @@ namespace CS2DemoKit.Analysis.GoldenStats;
 /// <summary>
 ///     Lightweight input contract that <see cref="OursGoldenStatsConverter" />
 ///     accepts as its per-player payload. Decouples the converter from
-///     AnalysisBench's internal <c>PlayerReport</c> shape: any caller —
+///     the analyzer per-player report shape: any caller —
 ///     bench tool, ad-hoc script, future test scaffold — can construct
 ///     this without dragging in bench-specific types.
 ///     <para>

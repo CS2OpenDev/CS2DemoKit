@@ -5,7 +5,7 @@ namespace CS2DemoKit.Parser;
 ///     chronological per-op / per-field record the decoder keeps for one in-flight
 ///     <c>CSVCMsg_PacketEntities</c> packet so a decode failure can be root-caused down to the
 ///     offending field read. Lives in the Parser assembly (the lowest common layer) so
-///     EntityTracking, the bench, and the App all read the exact same flag.
+///     EntityTracking, Analysis and any host application all read the exact same flag.
 ///     <para>
 ///         <b>Independent of <see cref="Profiling" /> by design.</b> Profiling gates timing
 ///         accumulators on the hot path; tracing gates the per-op <c>DecodeTraceEntry</c>

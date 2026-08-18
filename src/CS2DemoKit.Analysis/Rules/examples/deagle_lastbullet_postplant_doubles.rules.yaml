@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../dv-rules.schema.json
+# yaml-language-server: $schema=../cs2demokit-rules.schema.json
 #
 # "Deagle last-bullet post-plant doubles" — a deliberately rare achievement, written to
 # exercise the v2 vocabulary rather than to match any demo we have on hand.

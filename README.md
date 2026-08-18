@@ -72,7 +72,7 @@ Four baseline rulesets are embedded in `CS2DemoKit.Analysis` and live in
 They double as the authoring samples and as the validation corpus — each has a pinned golden
 fixture under `tests/fixtures/rules-v2/`. Write your own as `<name>.rules.yaml` documents; see
 `src/CS2DemoKit.Analysis/Rules/examples/` and the JSON schema at
-`src/CS2DemoKit.Analysis/Rules/dv-rules.schema.json` for editor validation. A ruleset whose id
+`src/CS2DemoKit.Analysis/Rules/cs2demokit-rules.schema.json` for editor validation. A ruleset whose id
 matches a shipped one replaces it wholesale.
 
 ## Building

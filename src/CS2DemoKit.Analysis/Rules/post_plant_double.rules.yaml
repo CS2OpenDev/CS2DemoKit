@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./dv-rules.schema.json
+# yaml-language-server: $schema=./cs2demokit-rules.schema.json
 #
 # The Rulesets v2 centerpiece (docs/rules-v2/rule-authoring-ux-review.md §1.4): the 152-line
 # v1 achievement-post-plant-double.yaml rewritten in ~40 lines with zero duplication.

@@ -5,8 +5,8 @@ namespace CS2DemoKit.Analysis;
 ///     accumulators. All tick fields are raw <c>Stopwatch</c> timestamps.
 ///     <para>
 ///         Populated at runtime only when <see cref="CS2DemoKit.Parser.Profiling.Enabled" /> was on
-///         while this scanner ran (set via <c>CS2DEMOKIT_PROFILE=1</c>, the bench <c>--profile</c> flag,
-///         or the Diagnostics tab). Otherwise <see cref="EntityChangeScanner.GetProfilingSnapshot" />
+///         while this scanner ran (set via <c>CS2DEMOKIT_PROFILE=1</c> or the
+///         <see cref="CS2DemoKit.Parser.Profiling.Enabled" /> setter). Otherwise <see cref="EntityChangeScanner.GetProfilingSnapshot" />
 ///         returns <c>default</c> and <see cref="Enabled" /> is <c>false</c>.
 ///     </para>
 ///     <para>

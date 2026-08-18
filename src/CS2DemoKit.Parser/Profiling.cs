@@ -4,14 +4,14 @@ namespace CS2DemoKit.Parser;
 ///     The single, process-wide runtime switch for ALL CS2DemoKit profiling instrumentation
 ///     (parse-pipeline, entity-decode, and the analysis evaluator's accumulator trees). Lives in the
 ///     Parser assembly — the lowest common layer every other project references — so EntityTracking,
-///     Analysis, the bench, and the App all read the exact same flag.
+///     Analysis and any host application all read the exact same flag.
 ///     <para>
 ///         <b>Default:</b> off. The flag resolves once from the <c>CS2DEMOKIT_PROFILE</c> environment
 ///         variable (<c>1</c>/<c>true</c>/<c>yes</c>, case-insensitive) the first time it is touched, so a
 ///         general user who never sets that env var pays nothing but a single predicted branch on each
 ///         instrumented seam's disabled path. Profiling is turned on either by that env var at process
-///         start, or programmatically via the <see cref="Enabled" /> setter (the bench's <c>--profile</c>
-///         flag and the Diagnostics tab use the setter).
+///         start, or programmatically via the <see cref="Enabled" /> setter, which is the route to use when
+///         a host wants to enable profiling for one run.
 ///     </para>
 ///     <para>
 ///         <b>Threading contract — set before the run.</b> <see cref="Enabled" /> is read on
@@ -40,8 +40,7 @@ public static class Profiling
     /// <summary>
     ///     Whether profiling instrumentation is active. Reads are near-free (a static bool load); writes
     ///     should happen on the orchestrating thread before a run begins (see the threading contract on the
-    ///     type). Set by <c>CS2DEMOKIT_PROFILE</c> at startup, the bench <c>--profile</c> flag, or the
-    ///     Diagnostics tab.
+    ///     type). Set by <c>CS2DEMOKIT_PROFILE</c> at startup or through this setter.
     /// </summary>
     public static bool Enabled { get; set; } = ResolveEnvironment();
 

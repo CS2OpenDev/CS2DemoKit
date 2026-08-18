@@ -6,8 +6,8 @@ namespace CS2DemoKit.Parser.EntityTracking;
 ///     <c>Stopwatch.GetElapsedTime</c> / <c>Stopwatch.Frequency</c>).
 ///     <para>
 ///         These fields are populated at runtime only when <see cref="Profiling.Enabled" /> was on
-///         while this tracker decoded (set via <c>DEMOVIEWER_PROFILE=1</c>, the bench <c>--profile</c>
-///         flag, or the Diagnostics tab). Otherwise <see cref="EntityTracker.GetProfilingSnapshot" />
+///         while this tracker decoded (set via <c>CS2DEMOKIT_PROFILE=1</c> or the <see cref="Profiling.Enabled" />
+///         setter). Otherwise <see cref="EntityTracker.GetProfilingSnapshot" />
 ///         returns <c>default</c>, whose <see cref="Enabled" /> is <c>false</c> — the signal to callers
 ///         that no profiling data was captured.
 ///     </para>

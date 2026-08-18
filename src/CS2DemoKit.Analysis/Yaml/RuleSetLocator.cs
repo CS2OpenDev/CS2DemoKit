@@ -61,7 +61,7 @@ public static class RuleSetLocator
                                            is copied into this folder for you):
 
                                            ```yaml
-                                           # yaml-language-server: $schema=./dv-rules.schema.json
+                                           # yaml-language-server: $schema=./cs2demokit-rules.schema.json
                                            ```
 
                                            The old v1 format (a `chains:` document) is retired and no longer loads — a v1 file in
@@ -177,7 +177,7 @@ public static class RuleSetLocator
     /// <summary>
     ///     Creates the user rules directory on first use and provisions it for editing: a README
     ///     explaining the overlay semantics, plus a copy of the Rulesets v2 JSON schema
-    ///     (<c>dv-rules.schema.json</c>) from the shipped directory so <c># yaml-language-server</c>
+    ///     (<c>cs2demokit-rules.schema.json</c>) from the shipped directory so <c># yaml-language-server</c>
     ///     editor validation lights up immediately. Idempotent — existing files are never
     ///     overwritten (a dir provisioned pre-cutover keeps its v1 README/schema untouched; it just
     ///     gains the v2 schema). Returns the directory path.
@@ -203,8 +203,8 @@ public static class RuleSetLocator
         {
             // Rulesets v2 schema (GAP-AE-5 cutover): user dirs are provisioned v2-only. The v1
             // format is retired entirely — a leftover v1 schema copy in an old user dir is inert.
-            string schemaSource = Path.Combine(shippedDirectory, "dv-rules.schema.json");
-            string schemaTarget = Path.Combine(userDir, "dv-rules.schema.json");
+            string schemaSource = Path.Combine(shippedDirectory, "cs2demokit-rules.schema.json");
+            string schemaTarget = Path.Combine(userDir, "cs2demokit-rules.schema.json");
             if (File.Exists(schemaSource) && !File.Exists(schemaTarget))
             {
                 File.Copy(schemaSource, schemaTarget);

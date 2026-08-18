@@ -27,7 +27,7 @@ public sealed record AnalysisOptions
     /// <summary>
     ///     Capture per-message <see cref="NodeSnapshot" /> rows for seek/inspect consumers (the UI path).
     ///     When <c>false</c>, runs the cheaper bare evaluation that produces only the
-    ///     <see cref="RuleChainTimeline" /> (the benchmark's <c>--bare</c> path).
+    ///     <see cref="RuleChainTimeline" /> (the bare, snapshot-free path).
     /// </summary>
     public bool CaptureSnapshots { get; init; } = true;
 
@@ -174,7 +174,7 @@ public static class DemoAnalysis
     ///     Builds the loaded v2 rulesets onto one graph. The v2 docs are composed against the
     ///     demo's real tick rate and active source profile so D11a cross-ruleset
     ///     (<c>use:</c>/<c>exports:</c>) reads resolve against the export graph — the same seam the
-    ///     AnalysisBench coverage path uses (<c>RulesCheckCommand</c>). An empty
+    ///     the coverage path uses. An empty
     ///     <paramref name="v2Docs" /> list builds the bare context/enrichment graph.
     ///     <para>
     ///         Composition is <b>tolerant</b>: a document that fails cross-reference validation,
@@ -221,7 +221,7 @@ public static class DemoAnalysis
     ///         The intended consumer is an upload-time validation endpoint for user-authored rules:
     ///         it answers "is this set safe to store and run" in milliseconds, and every diagnostic
     ///         carries a stable code, a message, and a <c>file(line,col)</c> position to hand back to
-    ///         the author. <c>rules check</c> in AnalysisBench is the same recipe behind a CLI.
+    ///         the author.
     ///     </para>
     ///     <para>
     ///         <b>Pass every document that shares the id namespace, not just the ones being

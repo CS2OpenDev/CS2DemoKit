@@ -1,22 +1,22 @@
-# Cs2DemoKit.Analysis
+# CS2DemoKit.Analysis
 
 A rule-driven analysis engine for parsed CS2 demos: a state-graph evaluator that walks a
-`ParsedDemo`'s frames once, the shipped rulesets (KAST, ADR, clutches, multi-kills, and more),
-rich highlights with frame-clock timestamps, per-player stats, and a 3D line-of-sight engine for
-visibility-gated stats. Builds on `Cs2DemoKit.Parser` — parse first, then hand the result here.
+`ParsedDemo`'s frames once, four baseline rulesets embedded in the assembly, rich highlights with
+frame-clock timestamps, per-player stats, and a 3D line-of-sight engine for visibility-gated
+stats. Builds on `CS2DemoKit.Parser` — parse first, then hand the result here.
 
 ## Quickstart
 
 ```csharp
-using Cs2DemoKit.Analysis;
-using Cs2DemoKit.Analysis.Abstractions;
-using Cs2DemoKit.Analysis.Yaml;
-using Cs2DemoKit.Parser;
+using CS2DemoKit.Analysis;
+using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Yaml;
+using CS2DemoKit.Parser;
 
 ParsedDemo demo = MemoryMappedDemoSource.ParseFile(path);
 
-// The 14 shipped rulesets (KAST, ADR, clutches, multi-kills, …), embedded in this assembly —
-// no files to ship or locate alongside your app.
+// The four baseline rulesets — KAST, per-player stats, weapon stats, post-plant multi-kills —
+// embedded in this assembly, so there are no files to ship or locate alongside your app.
 RuleConfigLoadResult loaded = YamlConfigLoader.LoadShippedEmbedded();
 if (!loaded.Success)
 {
@@ -59,7 +59,7 @@ check them, or a ruleset that stopped compiling is indistinguishable from feats 
 
 ## Clip planning
 
-`Cs2DemoKit.Analysis.Clips` turns highlights into clip windows entirely in frame clock:
+`CS2DemoKit.Analysis.Clips` turns highlights into clip windows entirely in frame clock:
 `ClipRounds.Derive(demo)` (the frame-clock round authority), `HighlightSurfacing.Surface`
 (drops hidden firings, collapses group families to their top tier), `ClipWindows`
 (per-round window computation with reach-back + coalescing), and `ClipPlanner.Plan(demo, ...)`
@@ -68,11 +68,11 @@ at emission — never inside the plan.
 
 ## Version discipline
 
-This family (`Cs2DemoKit.Parser`, `Cs2DemoKit.Analysis`, `Cs2DemoKit.Analysis.Rules`) is
-**lockstep exact-pinned** pre-1.0: `Cs2DemoKit.Analysis` depends on exact versions of the other
-two. Installing `Cs2DemoKit.Analysis` alone is the known-good set — there is no metapackage.
+This family (`CS2DemoKit.Parser`, `CS2DemoKit.Analysis`, `CS2DemoKit.Analysis.Rules`) is
+**lockstep exact-pinned** pre-1.0: `CS2DemoKit.Analysis` depends on exact versions of the other
+two. Installing `CS2DemoKit.Analysis` alone is the known-good set — there is no metapackage.
 
-**Bump all `Cs2DemoKit.*` package references together, in one commit.** A direct reference to one
+**Bump all `CS2DemoKit.*` package references together, in one commit.** A direct reference to one
 family member at a version that conflicts with another member's transitive exact pin doesn't fail
 the build — NuGet's nearest-wins rule lets it through with only **NU1608**, a warning. Restore
 succeeds and the skew surfaces later as a runtime `MissingMethodException`, not a build error. Add
@@ -94,36 +94,40 @@ in mind.
 
 ## Line-of-sight / visibility
 
-The LOS engine ships in this package under `Cs2DemoKit.Analysis.Visibility`
+The LOS engine ships in this package under `CS2DemoKit.Analysis.Visibility`
 (`VisibilityEngine`, `VisibilityAnalyzer`, `TriangleBvh`) — `VisibilityEngine.Load(trisPath)` loads
 a per-map baked triangle mesh and answers ray/occlusion queries against it.
 
 The baked collision geometry itself (`collision.tris` per map) does **not** ship in this package —
 it's Valve-derived geometry distributed out-of-band as its own asset bundle. The resolution
 convention now ships in the package: `CollisionAssetLocator` finds the blob via the
-`DEMOVIEWER_COLLISION_DIR` environment variable (`<map>.tris` / `<map>/collision.tris`) with an
+`CS2DEMOKIT_COLLISION_DIR` environment variable (`<map>.tris` / `<map>/collision.tris`) with an
 `assets/<map>/collision.tris` walk-up fallback, null-on-miss; `MapAssetBundleReader` reads the
 `bundle.json` manifest beside it. Thread the manifest's identity into
 `VisibilityAnalyzer.Options.Bundle` and **persist `Report.Bundle` with any stored result** —
 bundles are selected by map name only, so bake identity is the only way to tell a stale bake from
 a current one after a CS2 map update. `Analyze` accepts a `CancellationToken`. For the analyzer's
-position resolver, pass `Cs2DemoKit.Parser.EntityTracking.PositionUtil.CellToWorldVector`. Without
+position resolver, pass `CS2DemoKit.Parser.EntityTracking.PositionUtil.CellToWorldVector`. Without
 a bundle for a given map, LOS-dependent stats are simply unavailable; the rest of analysis is
 unaffected.
 
-## Legacy identifiers
+## On-disk rule locations
 
-`RuleSetLocator` (used internally by the shipped-tier resolution helpers) also probes two
-locations inherited from this library's desktop-app origins: a `DemoViewer.NET` platform config
-directory (`~/Library/Application Support/DemoViewer.NET`, `%APPDATA%\DemoViewer.NET`,
-`~/.config/DemoViewer.NET`) for a user rule overlay, and `AppContext.BaseDirectory/rules` (with a
-repo-walk fallback) for the shipped tier. Server-side consumers that just want the embedded
-defaults should prefer `YamlConfigLoader.LoadShippedEmbedded()` over these directory probes — they
-exist for the desktop app's on-disk deployment model, not as the primary API.
+`RuleSetLocator` (used internally by the shipped-tier resolution helpers) resolves two directories
+for applications that deploy rules as files: a per-user overlay under the platform config root
+(`~/Library/Application Support/<app>` on macOS, `%APPDATA%\<app>` on Windows,
+`$XDG_CONFIG_HOME/<app>` on Linux), and `AppContext.BaseDirectory/rules` — with a directory
+walk-up fallback — for the shipped tier. Set `RuleSetLocator.AppConfigDirName` once at startup to
+your application's name so user rules land beside its other settings; it defaults to `CS2DemoKit`.
+Both locations are overridable with `CS2DEMOKIT_RULES_DIR` and `CS2DEMOKIT_USER_RULES_DIR`.
+
+Server-side consumers that just want the embedded defaults should prefer
+`YamlConfigLoader.LoadShippedEmbedded()` over these directory probes — they exist for on-disk
+deployment models, not as the primary API.
 
 ## Dependencies
 
-`Cs2DemoKit.Parser` and `Cs2DemoKit.Analysis.Rules` (exact-pinned, see above), `CS2OpenDev.Sdk`
+`CS2DemoKit.Parser` and `CS2DemoKit.Analysis.Rules` (exact-pinned, see above), `CS2OpenDev.Sdk`
 (schema field-name constants), and `YamlDotNet` (the primary rule format — shipped and user
 rulesets are both YAML).
 

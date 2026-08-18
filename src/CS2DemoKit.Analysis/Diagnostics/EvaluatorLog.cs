@@ -12,7 +12,7 @@ namespace CS2DemoKit.Analysis.Diagnostics;
 ///     stays the machine-readable per-frame/per-edge channel for <c>dotnet-trace</c>). Only low-rate,
 ///     end-user-meaningful seams are logged here (a run starts/finishes, a round resets, an authoring
 ///     warning); the per-frame / per-message / per-edge events are deliberately NOT logged, so this
-///     stream is safe to surface live in the Diagnostics tab.
+///     stream is safe to surface live in a host application's diagnostics UI.
 ///     <para>
 ///         Each method is emitted by the <c>[LoggerMessage]</c> source generator: no boxing, no
 ///         format-string parsing at call time, and a compiler-inserted <see cref="ILogger.IsEnabled" />
@@ -21,7 +21,7 @@ namespace CS2DemoKit.Analysis.Diagnostics;
 /// </summary>
 internal static partial class EvaluatorLog
 {
-    /// <summary>Category all evaluator log rows are tagged with in the Diagnostics tab.</summary>
+    /// <summary>Category all evaluator log rows are tagged with.</summary>
     public const string Category = "Analysis.Evaluator";
 
     /// <summary>

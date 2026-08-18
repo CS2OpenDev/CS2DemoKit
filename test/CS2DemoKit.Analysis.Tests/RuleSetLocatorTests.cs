@@ -59,16 +59,16 @@ public class RuleSetLocatorTests
     [Test]
     public async Task ProvisionUserRulesDirectory_CreatesReadmeAndV2Schema_Idempotently()
     {
-        using TempDir shipped = new(("dv-rules.schema.json", "{}"));
+        using TempDir shipped = new(("cs2demokit-rules.schema.json", "{}"));
         string target = Path.Combine(shipped.Path, "user-rules");
 
         string provisioned = RuleSetLocator.ProvisionUserRulesDirectory(target, shipped.Path);
 
         await Assert.That(provisioned).IsEqualTo(target);
         await Assert.That(File.Exists(Path.Combine(target, "README.md"))).IsTrue();
-        await Assert.That(File.Exists(Path.Combine(target, "dv-rules.schema.json"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(target, "cs2demokit-rules.schema.json"))).IsTrue();
         await Assert.That(File.ReadAllText(Path.Combine(target, "README.md")))
-            .Contains("$schema=./dv-rules.schema.json")
+            .Contains("$schema=./cs2demokit-rules.schema.json")
             .Because("the README's modeline must name the schema that was actually provisioned");
 
         // Idempotence: a user's edits survive re-provisioning (this runs on every app start).

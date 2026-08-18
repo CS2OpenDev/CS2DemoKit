@@ -8,7 +8,7 @@ that one or more tests assert against.
 
 ```
 tests/fixtures/
-├── cs2-opendocs.expected-sha          submodule pin
+├── rules-v2/                          pinned outputs for the four baseline rulesets
 ├── <demo-id>/
 │   ├── ours.golden.json               Stat snapshot produced by AnalysisBench
 │   ├── leetify.golden.json            Stat snapshot converted from Leetify API JSON
@@ -49,13 +49,13 @@ and the oracle-sunset clock starts.
 
 ## Refresh procedures
 
-| File | Refresh command |
+| File | Refresh procedure |
 |---|---|
-| `ours.golden.json` | `dotnet run -c Release --project tools/AnalysisBench -- --suite` |
-| `leetify.golden.json` | Same — bench writes both as a side-effect. |
+| `rules-v2/*.expected.json` | Re-run the pilot tests with `PIN_RULES_V2=1` and the pinning demo available. Deliberate, reviewed re-pin only — the fixtures are the assertion. |
+| `ours.golden.json` | Produced by the analysis benchmark suite, which lives in the application repo this library was extracted from; it is not part of this repo. |
+| `leetify.golden.json` | Same source — the bench writes both as a side-effect. |
 | `expected.golden.json` | **Not auto-refreshable.** Manual edit when hand-verifying. |
-| `entity-fields.ours.golden.json` | `dotnet run --project tools/DemoViewer.NET.EntityFieldDiff -- <demo> --write-snapshot` (requires the gitignored EntityFieldDiff tool + sibling demofile-net repo). |
-| `cs2-opendocs.expected-sha` | Manual edit when intentionally bumping the schema submodule (see `SchemaSnapshotTests` for the procedure). |
+| `entity-fields.ours.golden.json` | Produced by the entity-field diff tool, also in the application repo (it additionally needs a sibling demofile-net checkout as the oracle). |
 
 ## Schema versioning
 
@@ -67,11 +67,12 @@ when a v2 actually exists.
 
 ## What's not in here
 
-- **The demo files themselves.** `.dem` files are 200–300 MB each and
-  gitignored. Provisioning them is deferred work; until then, fixture
-  refreshes are a maintainer activity (the maintainer has the demos
-  locally).
+- **The demo files these fixtures were computed from.** Those `.dem` files run
+  200–300 MB each and are gitignored, so every test that compares against a
+  fixture here skips in a clone that does not have them. The committed
+  `tests/assets/sample-de_nuke.dem` is a four-round trim and deliberately does
+  **not** satisfy them — see `DemoTestHelper.AllowSampleDemo`.
 - **Per-stat tolerances.** Lives in `StatParityTests.Tolerances`.
 - **Cross-provider mappings.** Each provider's converter (in
-  `src/Analysis/.../GoldenStats/`) owns its own mapping from raw input
+  `src/CS2DemoKit.Analysis/GoldenStats/`) owns its own mapping from raw input
   to the canonical schema.

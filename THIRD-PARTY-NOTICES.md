@@ -8,8 +8,8 @@ definitions. Both are documented below.
 
 Eight files in the parser ship code adapted from
 [demofile-net](https://github.com/saul/demofile-net), an MIT-licensed CS2/Source demo parser.
-These files all ship in the `Cs2DemoKit.Parser` assembly (`src/Parser/Cs2DemoKit.Parser/`), which
-is published as the `Cs2DemoKit.Parser` package:
+These files all ship in the `CS2DemoKit.Parser` assembly (`src/CS2DemoKit.Parser/`), which
+is published as the `CS2DemoKit.Parser` package:
 
 - `BitBuffer.cs`
 - `RuntimeField.cs`

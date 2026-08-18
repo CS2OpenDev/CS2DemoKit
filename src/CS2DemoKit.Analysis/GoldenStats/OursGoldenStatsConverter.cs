@@ -8,7 +8,7 @@ using CS2DemoKit.Parser;
 namespace CS2DemoKit.Analysis.GoldenStats;
 
 /// <summary>
-///     Converts our analyzer's per-player stat output (the bench tool's
+///     Converts the analyzer per-player stat output (the
 ///     <c>PlayerReport</c> dictionaries, or any equivalent caller-built
 ///     <see cref="PlayerStatsInput" /> list) into the canonical
 ///     <see cref="GoldenStatsDocument" /> shape.
@@ -105,7 +105,7 @@ public static class OursGoldenStatsConverter
     }
 
     /// <summary>
-    ///     Coerces the bench's loosely-typed stat value (int, double, string,
+    ///     Coerces the loosely-typed stat value (int, double, string,
     ///     bool, null) into the canonical <c>double?</c> shape. Anything that
     ///     can't be parsed becomes <c>null</c> — comparison treats it as
     ///     "provider didn't report this stat" rather than a false zero.

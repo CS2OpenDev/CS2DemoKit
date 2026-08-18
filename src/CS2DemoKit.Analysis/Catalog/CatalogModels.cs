@@ -40,7 +40,7 @@ public sealed record CatalogRoot(
 ///     Parser.
 /// </param>
 /// <param name="FrequencyClass">
-///     Measured occurrence class over the bench corpus (<c>perMatch</c> / <c>perRound</c> /
+///     Measured occurrence class over the reference demo corpus (<c>perMatch</c> / <c>perRound</c> /
 ///     <c>frequent</c> / <c>perTick</c>, or <c>unmeasured</c>) — high-frequency lints key on
 ///     this field, never on hardcoded names. Re-baselined explicitly via the
 ///     generator's <c>--measure</c> verb, never hand-tagged.
@@ -57,7 +57,7 @@ public sealed record CatalogEvent(
 /// <param name="Name">Protobuf payload class name (e.g. <c>CDemoFileHeader</c>).</param>
 /// <param name="ClrType">CLR payload type's simple name.</param>
 /// <param name="FrequencyClass">
-///     Measured occurrence class over the bench corpus (see <see cref="CatalogEvent.FrequencyClass" />).
+///     Measured occurrence class over the reference demo corpus (see <see cref="CatalogEvent.FrequencyClass" />).
 ///     The cautionary number behind this field: the removed CNETMsg_Tick plugin cost 123K+ edge
 ///     evaluations per demo.
 /// </param>

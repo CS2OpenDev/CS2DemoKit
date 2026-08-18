@@ -1,0 +1,8 @@
+<Project>
+    <!--
+        Intentionally empty, and intentionally NOT importing the repo root's Directory.Build.props.
+        MSBuild stops walking up at the nearest file, so this isolates the smoke consumer from the
+        repo's analyzer settings, versioning and pack metadata — it must behave like somebody
+        else's project, because that is what it is standing in for.
+    -->
+</Project>

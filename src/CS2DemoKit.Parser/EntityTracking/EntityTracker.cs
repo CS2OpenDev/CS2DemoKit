@@ -1093,7 +1093,7 @@ public sealed class EntityTracker
             }
             else
             {
-                DecodeDiagnosticSink("  [trace off] re-run with DEMOVIEWER_TRACE_DECODE=1 for the full decode bit-trace (decode is deterministic in the demo bytes, so the failure reproduces).");
+                DecodeDiagnosticSink("  [trace off] re-run with CS2DEMOKIT_TRACE_DECODE=1 for the full decode bit-trace (decode is deterministic in the demo bytes, so the failure reproduces).");
             }
         }
     }
@@ -2081,7 +2081,7 @@ public sealed class EntityTracker
         WarnIfWrappersRegisteredWithoutLens();
 
         // Decode trace: arm the per-packet buffer ONLY when tracing is explicitly opted in
-        // (Tracing.Enabled / DEMOVIEWER_TRACE_DECODE). When off, _traceContextActive stays false,
+        // (Tracing.Enabled / CS2DEMOKIT_TRACE_DECODE). When off, _traceContextActive stays false,
         // every gated construction site below is skipped, and the ~7 M-per-load DecodeTraceEntry
         // constructs + List.Adds never happen — the healthy path pays one predicted branch.
         // Cleared each packet (when armed) so a long trace run keeps memory flat; the dump runs

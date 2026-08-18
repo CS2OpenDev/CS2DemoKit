@@ -9,9 +9,9 @@ using CS2DemoKit.Analysis.Catalog;
 namespace CS2DemoKit.RulesCatalog;
 
 /// <summary>
-///     Generates the shipped <c>rules/dv-rules.schema.json</c> — the
+///     Generates the shipped <c>rules/cs2demokit-rules.schema.json</c> — the
 ///     JSON schema for v2 <c>ruleset:</c> documents that the pilot modeline
-///     (<c>$schema=./dv-rules.schema.json</c>) drives editor completion + validation from. Emits a
+///     (<c>$schema=./cs2demokit-rules.schema.json</c>) drives editor completion + validation from. Emits a
 ///     fresh document from the generated <see cref="CatalogRoot" />, so its view/facet vocabulary never
 ///     drifts from the engine. The drift gate (<c>CatalogDriftTests</c>) byte-compares a regen
 ///     against the committed file.
@@ -40,11 +40,11 @@ namespace CS2DemoKit.RulesCatalog;
 ///             list of predicates = their AND-conjunction) are now <b>live</b>.
 ///     </list>
 /// </summary>
-public static class DvRulesSchemaBuilder
+public static class RulesSchemaBuilder
 {
     private const string ReservedPrefix = "RESERVED - not yet implemented. ";
 
-    /// <summary>Builds the <c>dv-rules.schema.json</c> text from the generated catalog.</summary>
+    /// <summary>Builds the <c>cs2demokit-rules.schema.json</c> text from the generated catalog.</summary>
     /// <param name="catalog">The freshly-built catalog (its <c>views</c> family drives the facet enums).</param>
     /// <returns>Deterministic, indented JSON with LF line endings and a trailing newline (drift-comparable).</returns>
     public static string Build(CatalogRoot catalog)
@@ -56,7 +56,7 @@ public static class DvRulesSchemaBuilder
         JsonObject root = new()
         {
             ["$schema"] = "https://json-schema.org/draft/2020-12/schema",
-            ["$id"] = "dv-rules.schema.json",
+            ["$id"] = "cs2demokit-rules.schema.json",
             ["title"] = "CS2DemoKit Rulesets v2",
             ["description"] =
                 "Schema for v2 ruleset: documents (docs/rules-v2/rules-v2-spec.md, docs/rules-v2/rules-v2-compiler-plan.md). "

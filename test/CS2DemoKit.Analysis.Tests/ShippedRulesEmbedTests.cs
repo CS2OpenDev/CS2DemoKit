@@ -11,7 +11,7 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     Drift gate for the shipped-rules embedding, mirroring
 ///     <see cref="CatalogDriftTests" />'s pattern: the embedded copy of the 4
-///     <c>rules/*.rules.yaml</c> files + <c>rules/dv-rules.schema.json</c> can never silently
+///     <c>rules/*.rules.yaml</c> files + <c>rules/cs2demokit-rules.schema.json</c> can never silently
 ///     diverge from the repo files they were <c>EmbeddedResource</c> <c>Link</c>-sourced from,
 ///     and <see cref="YamlConfigLoader.LoadShippedEmbedded" /> / <see cref="YamlConfigLoader.ExtractShippedTo" />
 ///     must keep behaving identically to directory loading. Pure in-memory / temp-dir — no demo file.
@@ -41,7 +41,7 @@ public class ShippedRulesEmbedTests
         await Assert.That(embeddedRulesetNames.Count).IsEqualTo(repoRulesetFiles.Length)
             .Because("every rules/*.rules.yaml file must be embedded — a glob/Link break silently drops one");
         await Assert.That(embeddedNames.Count).IsEqualTo(5)
-            .Because("4 baseline rulesets + dv-rules.schema.json");
+            .Because("4 baseline rulesets + cs2demokit-rules.schema.json");
     }
 
     /// <summary>

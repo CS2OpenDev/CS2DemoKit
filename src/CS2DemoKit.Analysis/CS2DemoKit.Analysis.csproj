@@ -67,7 +67,7 @@
             package id.
         -->
         <EmbeddedResource Include="Rules\*.rules.yaml" LogicalName="CS2DemoKit.Analysis.ShippedRules.%(Filename)%(Extension)"/>
-        <EmbeddedResource Include="Rules\dv-rules.schema.json" LogicalName="CS2DemoKit.Analysis.ShippedRules.dv-rules.schema.json"/>
+        <EmbeddedResource Include="Rules\cs2demokit-rules.schema.json" LogicalName="CS2DemoKit.Analysis.ShippedRules.cs2demokit-rules.schema.json"/>
     </ItemGroup>
 
 </Project>

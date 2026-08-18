@@ -24,6 +24,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Restore tools (nbgv)
+        run: dotnet tool restore
+
       - name: Build (Release)
         run: dotnet build CS2DemoKit.slnx -c Release
 
@@ -37,9 +40,24 @@ jobs:
         run: dotnet run --project test/CS2DemoKit.Analysis.Tests -c Release --no-build
 
       # Proves the three packages still pack with correct metadata and exact intra-family pins
-      # before a tag tries to publish them.
+      # before a tag tries to publish them. PublicRelease=true so the pins are stable versions and
+      # the smoke consumer below can reference a predictable one.
       - name: Pack (verification only)
         run: |
-          dotnet pack src/CS2DemoKit.Parser -c Release -o artifacts/ci-pack --no-build
-          dotnet pack src/CS2DemoKit.Analysis -c Release -o artifacts/ci-pack --no-build
-          dotnet pack src/CS2DemoKit.Analysis.Rules -c Release -o artifacts/ci-pack --no-build
+          dotnet pack src/CS2DemoKit.Parser -c Release -o artifacts/pack -p:PublicRelease=true --no-build
+          dotnet pack src/CS2DemoKit.Analysis -c Release -o artifacts/pack -p:PublicRelease=true --no-build
+          dotnet pack src/CS2DemoKit.Analysis.Rules -c Release -o artifacts/pack -p:PublicRelease=true --no-build
+
+      # Shape/leak scan of the packed artifacts: no build-machine paths, no loose rule or catalog
+      # files that should have been embedded, exact intra-family pins, SourceLink metadata present,
+      # and the expected embedded-resource count.
+      - name: Scan packed artifacts
+        run: python3 scripts/scan-nuget-artifacts.py artifacts/pack
+
+      # Restores the freshly packed packages from a local feed and runs against them, which is the
+      # only way to catch breakage that lives in the packaging rather than in the code.
+      - name: Smoke-test the packages
+        working-directory: scripts/nuget-smoke
+        run: |
+          version=$(dotnet nbgv get-version -p ../../src/CS2DemoKit.Parser -v NuGetPackageVersion)
+          dotnet run -c Release -p:CS2DemoKitVersion="$version" -- ../../tests/assets/sample-de_nuke.dem

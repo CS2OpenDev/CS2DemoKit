@@ -2,7 +2,7 @@ namespace CS2DemoKit.Analysis.Output;
 
 /// <summary>
 ///     The shared format-id → <see cref="IOutputFormatter" /> lookup, so the app's export dialog and
-///     AnalysisBench's <c>--export=</c> resolve formats through one table (a new format is one
+///     export selectors resolve formats through one table (a new format is one
 ///     formatter file + one line here, and every consumer picks it up). Formatters are pure functions
 ///     of the table (stateless), so shared singleton instances are safe.
 /// </summary>

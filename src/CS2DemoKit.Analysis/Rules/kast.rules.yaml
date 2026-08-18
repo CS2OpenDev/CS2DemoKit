@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./dv-rules.schema.json
+# yaml-language-server: $schema=./cs2demokit-rules.schema.json
 #
 # The Rulesets v2 port of the v1 rules/kast.yaml (the `kast` chain — per-round combat stats +
 # KAST%). This is a re-authoring into the v2 stats:/highlights:/show:

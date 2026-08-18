@@ -17,7 +17,7 @@ using CS2DemoKit.RulesCatalog;
 string repoRoot = FindRepoRoot();
 string rulesDir = Path.Combine(repoRoot, "src", "CS2DemoKit.Analysis", "Rules");
 string outputPath = Path.Combine(rulesDir, "catalog.json");
-string v2SchemaPath = Path.Combine(rulesDir, "dv-rules.schema.json");
+string v2SchemaPath = Path.Combine(rulesDir, "cs2demokit-rules.schema.json");
 bool checkOnly = args.Contains("--check");
 
 // --measure: explicit frequency re-baseline — parses every demos/benchmarks/*.dem
@@ -37,7 +37,7 @@ CatalogRoot catalog = CatalogBuilder.Build(FrequencyBaseline.Load(repoRoot));
 string json = CatalogJson.Serialize(catalog);
 // The v2 ruleset schema (compiler-plan §9) is generated fresh from the catalog's
 // views family (per-view match: facet enums, kind if/then, destination enums, defaultSnippets).
-string v2Schema = DvRulesSchemaBuilder.Build(catalog);
+string v2Schema = RulesSchemaBuilder.Build(catalog);
 
 if (checkOnly)
 {
@@ -46,7 +46,7 @@ if (checkOnly)
     if (committed != json || committedV2Schema != v2Schema)
     {
         Console.Error.WriteLine(
-            "DRIFT: rules/catalog.json or rules/dv-rules.schema.json is stale.");
+            "DRIFT: rules/catalog.json or rules/cs2demokit-rules.schema.json is stale.");
         Console.Error.WriteLine("Run: dotnet run --project tools/CS2DemoKit.RulesCatalog");
         return 1;
     }

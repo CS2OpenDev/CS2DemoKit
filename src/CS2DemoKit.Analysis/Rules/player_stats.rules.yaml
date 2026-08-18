@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./dv-rules.schema.json
+# yaml-language-server: $schema=./cs2demokit-rules.schema.json
 #
 # The Rulesets v2 port of the v1 rules/player-stats.yaml — the largest corpus file.
 # The v1 file is FIVE per_player chains (player_totals, opening_kills,

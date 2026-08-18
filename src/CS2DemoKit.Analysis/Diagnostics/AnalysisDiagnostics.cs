@@ -12,7 +12,7 @@ namespace CS2DemoKit.Analysis.Diagnostics;
 ///     <see cref="System.Diagnostics.ActivitySource.StartActivity(string, ActivityKind)" /> returns <c>null</c> when no
 ///     <see cref="ActivityListener" /> is sampling, so these spans are near-free in the default build:
 ///     they ship in the binary but cost ~one predicted branch when idle (no allocation, no listener).
-///     Capture them with <c>AnalysisBench --timeline</c>, an OpenTelemetry exporter, or any custom
+///     Capture them with <c>dotnet-trace</c>, an OpenTelemetry exporter, or any custom
 ///     <see cref="ActivityListener" />.
 /// </summary>
 public static class AnalysisDiagnostics

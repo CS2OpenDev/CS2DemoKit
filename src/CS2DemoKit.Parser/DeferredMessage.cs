@@ -17,7 +17,7 @@ namespace CS2DemoKit.Parser;
 ///         demo, ~530 MiB retained for the life of the <see cref="ParsedDemo" /> (58% of it), yet the
 ///         only consumers are two lazy UI features (the Replay tab's subtick view and the Parser-tab
 ///         inspector). Deferring the parse drops that object-graph overhead for every load that never
-///         opens those views: all of AnalysisBench, the analysis engine, Library background parse, and
+///         opens those views: the analysis engine, background parse workers, and
 ///         highlight backfill.
 ///     </para>
 ///     <para>

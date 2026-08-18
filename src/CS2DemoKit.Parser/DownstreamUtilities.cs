@@ -639,10 +639,10 @@ public static class DownstreamUtilities
 
 /// <summary>
 ///     Parse-pipeline profiling accumulators (opt-in at RUNTIME via <see cref="Profiling.Enabled" /> —
-///     <c>DEMOVIEWER_PROFILE=1</c>, the bench <c>--profile</c> flag, or the Diagnostics tab). Populated by
+///     <c>CS2DEMOKIT_PROFILE=1</c> or <see cref="Profiling.Enabled" />). Populated by
 ///     the runtime-gated call-sites in <see cref="DemoParser" />; read once after a parse via
 ///     <see cref="ParseProfilingSnapshot.Read" />. Static because a parse is a single-shot per-process
-///     operation in the bench/probe tools (see <see cref="Profiling" />'s single-run contract); concurrent
+///     operation (see <see cref="Profiling" />'s single-run contract); concurrent
 ///     profiling would need an instance threaded through the (protected) <c>Parse</c> signature, which is
 ///     out of scope.
 /// </summary>

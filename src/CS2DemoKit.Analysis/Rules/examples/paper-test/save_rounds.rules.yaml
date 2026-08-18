@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../dv-rules.schema.json
+# yaml-language-server: $schema=../../cs2demokit-rules.schema.json
 # Paper-test reference answer — request #3 "Save rounds" (team lost, player survived).
 ruleset: save_rounds
 for: each_player

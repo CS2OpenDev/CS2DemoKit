@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../dv-rules.schema.json
+# yaml-language-server: $schema=../../cs2demokit-rules.schema.json
 # Paper-test reference answer — request #9 "Utility damage per round".
 ruleset: utility_damage
 for: each_player

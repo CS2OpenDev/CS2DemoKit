@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./dv-rules.schema.json
+# yaml-language-server: $schema=./cs2demokit-rules.schema.json
 #
 # The Rulesets v2 port of the v1 rules/weapon-stats.yaml (keyed_counter). Each rule is one
 # per-player, match-scoped bucket keyed by weapon; the KeyedStatsProjector emits one table per

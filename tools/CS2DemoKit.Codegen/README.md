@@ -1,6 +1,6 @@
 # CS2DemoKit.Codegen
 
-Emits `src/Parser/CS2DemoKit.Parser/Entities/Generated/SchemaLens.Generated.cs` — the
+Emits `src/CS2DemoKit.Parser/Entities/Generated/SchemaLens.Generated.cs` — the
 `GeneratedLensRegistry` that lane-binds `EntityState` (which curated engine fields land on
 the typed int/float/object lanes). The SDK-emitted wrappers read THROUGH those lanes via the
 `SdkAbstractions` seam, so the emit is load-bearing even though no wrapper code is generated

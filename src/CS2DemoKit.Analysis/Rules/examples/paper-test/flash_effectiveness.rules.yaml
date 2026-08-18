@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../dv-rules.schema.json
+# yaml-language-server: $schema=../../cs2demokit-rules.schema.json
 # Paper-test reference answer — request #8 "Flash effectiveness".
 ruleset: flash_effectiveness
 for: each_player
