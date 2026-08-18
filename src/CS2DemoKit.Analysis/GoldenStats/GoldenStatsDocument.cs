@@ -8,10 +8,10 @@ namespace CS2DemoKit.Analysis.GoldenStats;
 
 /// <summary>
 ///     Canonical per-(demo, provider) stats document. Every stat provider — ours,
-///     Leetify, HLTV, hand-verified expected, etc. — gets converted into this
+///     hand-verified expected, any external reference — gets converted into this
 ///     shape. Comparison tests then diff one provider's <see cref="GoldenStatsDocument" />
 ///     against another's, abstracted from provider-specific stat names and
-///     numeric quirks (Leetify scales percent-stats by 100 internally, our
+///     numeric quirks (a provider may emit percent-stats as 0–1 ratios, our
 ///     <c>HLTV</c> column is a string, etc. — those live in the converters).
 ///     <para>
 ///         Stat values are always nullable double. Counts (kills, deaths,
@@ -50,7 +50,7 @@ public sealed record GoldenStatsDocument(
 
 /// <summary>
 ///     Match-level metadata. Optional fields are <c>null</c> when the provider
-///     doesn't supply them — e.g. Leetify's API has no tick_count.
+///     doesn't supply them — not every provider reports a tick_count.
 /// </summary>
 public sealed record MatchMetadata(
     [property: JsonPropertyName("map")] string? Map = null,

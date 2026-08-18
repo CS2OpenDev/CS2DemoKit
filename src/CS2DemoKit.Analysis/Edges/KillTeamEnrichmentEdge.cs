@@ -93,7 +93,7 @@ public sealed class KillTeamEnrichmentEdge(
         // and drops enemy assists on teamkills. Computed independently of the kill-shape
         // classification below so teamkills still classify the assister correctly; suicide
         // exclusion stays at the view level (the assist view bakes Attacker != UserId,
-        // matching the Leetify oracle — verified on the nuke bench demo, tick 89840).
+        // matching the reference goldens — verified on the nuke bench demo, tick 89840).
         int aTeam = GetTeam(death.Assister);
         if (aTeam > 1 && vTeam > 1 && aTeam != vTeam)
         {

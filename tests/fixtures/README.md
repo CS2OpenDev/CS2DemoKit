@@ -11,41 +11,40 @@ tests/fixtures/
 ├── rules-v2/                          pinned outputs for the four baseline rulesets
 ├── <demo-id>/
 │   ├── ours.golden.json               Stat snapshot produced by AnalysisBench
-│   ├── leetify.golden.json            Stat snapshot converted from Leetify API JSON
-│   ├── expected.golden.json           Curated reference (see "Reliability posture" below)
+│   ├── expected.golden.json           Committed reference (see "Reliability posture" below)
 │   └── entity-fields.ours.golden.json Per-tick entity-field snapshot (FuriaMirage only)
 ```
 
 ## Reliability posture — what each file means
 
-The three stat-side providers (`ours`, `leetify`, `expected`) are NOT
-equally trustworthy. Tests in `StatParityTests` treat them differently:
+The two stat-side files play different roles. Tests in `StatParityTests`
+treat them differently:
 
-| Provider | Source | Trust level today |
+| Provider | Source | Role |
 |---|---|---|
 | `ours` | `AnalysisBench --suite` reads the demo through our parser/analyzer | Reflects what our code currently produces. NOT a reference — it's the thing being measured. |
-| `leetify` | Leetify's public `?include=playerStats` API response, converted via `LeetifyGoldenStatsConverter` | **The current gold standard.** When ours and Leetify disagree on a stat, the working assumption is that ours is wrong until proven otherwise. |
-| `expected` | Hand-curated values | **Not yet reliable.** Today's files were seeded from ours+leetify agreement, NOT from a human watching the demo. Function: parser-regression tripwire only. |
+| `expected` | Committed reference values, seeded from engine output that was verified during the parity-hardening passes | **The reference.** When ours and expected disagree on a stat, the working assumption is that ours regressed until proven otherwise. |
 
-## Why `expected` exists if it's not yet hand-verified
+The parity gate is zero-tolerance: `OursVsExpected_StatParity` fails on any
+divergence. Never widen or edit the reference to absorb a diff — fix the
+engine, or hand-verify the value and re-pin deliberately.
 
-The intent is for `expected.golden.json` to become the load-bearing ground
-truth that unblocks the oracle sunset (dropping the live Leetify API
-dependency from CI). That requires actual hand-verification.
+## Where the reference values came from, and where they're going
 
-Today's seed files were written from values where `ours` and `leetify`
-agreed exactly on a chosen demo. They serve two interim purposes:
+Today's `expected.golden.json` values are the engine's own verified output:
+they were pinned after the parity-hardening passes, during which each stat
+was checked against external references and per-event investigation (the
+tick citations scattered through the edge tests and view comments are the
+residue of that work). What the parity test catches is "our parser drifted
+from its verified output" — real regression detection, without any live
+external dependency.
 
-1. **Parser regression detection** — if ours produces a different value
-   for a stat the seed has, the test fails. That catches our parser
-   drifting from its own past output, even without a human in the loop.
-2. **Infrastructure proof** — the schema, the loader, the parity-test
-   shape all exist and work. Replacing seeded values with hand-verified
-   values is a content swap, no code change required.
-
-When hand-verification work happens, the file's `provider_version` field
-will move from `null` to something like `"hand-verified-2026-XX-XX-by-NAME"`,
-and the oracle-sunset clock starts.
+The upgrade path for any individual value is hand-verification: a human
+confirms the number by watching the demo, and the file's `provider_version`
+field moves from `null` to something like
+`"hand-verified-2026-XX-XX-by-NAME"`. At that point a failure means "our
+parser disagrees with what a human confirmed" — the strongest signal the
+suite can give.
 
 ## Refresh procedures
 
@@ -53,8 +52,7 @@ and the oracle-sunset clock starts.
 |---|---|
 | `rules-v2/*.expected.json` | Re-run the pilot tests with `PIN_RULES_V2=1` and the pinning demo available. Deliberate, reviewed re-pin only — the fixtures are the assertion. |
 | `ours.golden.json` | Produced by the analysis benchmark suite, which lives in the application repo this library was extracted from; it is not part of this repo. |
-| `leetify.golden.json` | Same source — the bench writes both as a side-effect. |
-| `expected.golden.json` | **Not auto-refreshable.** Manual edit when hand-verifying. |
+| `expected.golden.json` | **Not auto-refreshable.** A re-pin from a verified `ours` snapshot (or a hand-verified edit) is a deliberate, reviewed change — the fixture is the assertion. |
 | `entity-fields.ours.golden.json` | Produced by the entity-field diff tool, also in the application repo (it additionally needs a sibling demofile-net checkout as the oracle). |
 
 ## Schema versioning
@@ -72,7 +70,6 @@ when a v2 actually exists.
   fixture here skips in a clone that does not have them. The committed
   `tests/assets/sample-de_nuke.dem` is a four-round trim and deliberately does
   **not** satisfy them — see `DemoTestHelper.AllowSampleDemo`.
-- **Per-stat tolerances.** Lives in `StatParityTests.Tolerances`.
 - **Cross-provider mappings.** Each provider's converter (in
   `src/CS2DemoKit.Analysis/GoldenStats/`) owns its own mapping from raw input
   to the canonical schema.

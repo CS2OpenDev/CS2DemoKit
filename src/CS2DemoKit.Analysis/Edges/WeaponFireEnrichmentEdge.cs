@@ -12,7 +12,7 @@ namespace CS2DemoKit.Analysis.Edges;
 /// <summary>
 ///     Classifies a weapon name as bullet-fire (rifles/pistols/SMGs/LMGs) or not.
 ///     Shotguns (xm1014/nova/mag7/sawedoff) fire pellet volleys and are excluded
-///     from this category because Leetify's "shots fired" / "shots hit foe" totals
+///     from this category because the "shots fired" / "shots hit foe" stats
 ///     only count single-bullet weapons. Knives, grenades, c4, taser, fists, etc.
 ///     are also excluded.
 /// </summary>
@@ -55,7 +55,7 @@ public static class WeaponClassification
                 or "bumpmine" or "tablet" or "melee" or "inferno" or "world"
                 or "snowball" or "healthshot" or "diversion" or "tagrenade"
                 or "shield" or "axe" or "hammer" or "spanner" or "frag_grenade"
-                // Shotguns: pellet-spread weapons excluded from Leetify's shots stats.
+                // Shotguns: pellet-spread weapons excluded from the shots stats.
                 or "xm1014" or "nova" or "mag7" or "sawedoff" => false,
             _ => true
         };
@@ -101,9 +101,9 @@ public sealed class WeaponFireEnrichmentEdge(StateNode source, TransientBoolNode
 /// <summary>
 ///     Sets <c>enrich.hurt.is_bullet</c> on player_hurt events caused by bullet
 ///     weapons only, with shotgun multi-pellet deduplication. A shotgun blast
-///     emits one player_hurt event per pellet that connects; Leetify counts that
-///     as a single hit, so we suppress duplicates with the same attacker/victim
-///     at the same tick.
+///     emits one player_hurt event per pellet that connects; the hit stats count
+///     that as a single hit, so we suppress duplicates with the same
+///     attacker/victim at the same tick.
 /// </summary>
 public sealed class HurtBulletEnrichmentEdge(StateNode source, PlayerContextIndex ctx, TransientBoolNode isBullet) : StateEdge(source)
 {

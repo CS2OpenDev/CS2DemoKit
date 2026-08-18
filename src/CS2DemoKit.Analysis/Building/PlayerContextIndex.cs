@@ -112,9 +112,9 @@ public sealed class PlayerContextIndex
     /// <summary>
     ///     Checks if the given victim had recently killed any tracked player on the
     ///     avenger's current team within the trade window. Returns the slot of the
-    ///     traded player, or -1. Matches Leetify's <c>tradeKillsSucceeded</c>:
-    ///     only direct kills count (not assists), and the avenger must be on the
-    ///     same side as the dead teammate.
+    ///     traded player, or -1. Trade-kill semantics: only direct kills count
+    ///     (not assists), and the avenger must be on the same side as the dead
+    ///     teammate.
     /// </summary>
     public int FindTradedPlayer(int victimSlot, int killerSlot, int currentTick, int windowTicks = 256)
     {

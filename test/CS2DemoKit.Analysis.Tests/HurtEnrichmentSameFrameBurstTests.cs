@@ -22,7 +22,7 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     <para>
 ///         Root cause chain: the May-2026 goldens were generated while a bitstream
 ///         misalignment kept entity decode broken on all 5 MM bench demos — the entity HP override
-///         never engaged and the event cache did all the capping (Leetify-verified 9/9). The
+///         never engaged and the event cache did all the capping (golden-verified 9/9). The
 ///         2026-06-08 AnimGraph2 + instancebaseline decode fixes cured the
 ///         misalignment, the override came alive, and burst-ending kills started capping at
 ///         pre-burst frame-start HP. Measured on the nuke bench demo: 4 events, all with a

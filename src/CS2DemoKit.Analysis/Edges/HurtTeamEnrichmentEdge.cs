@@ -57,7 +57,7 @@ public sealed class HurtTeamEnrichmentEdge(
     // the FRAME-START health (before the whole burst). For every hit after the first in a frame,
     // the event-tracked cache is exact — it holds the server-reported post-hit health of the
     // previous same-frame hit — so the entity override must stand down or the overkill cap uses a
-    // pre-burst HP and overcounts (measured +2..+66 per player vs the Leetify-verified goldens).
+    // pre-burst HP and overcounts (measured +2..+66 per player vs the verified goldens).
     private readonly Dictionary<int, int> _lastVictimHurtFrame = [];
 
     /// <inheritdoc />
@@ -99,7 +99,7 @@ public sealed class HurtTeamEnrichmentEdge(
         // in THIS frame (a GOTV same-frame burst), the snapshot no longer reflects the pre-hit
         // state — the event cache does, exactly (it stores the server-reported post-hit health of
         // the previous same-frame hit). The override therefore only engages for the victim's
-        // first hurt of the frame; this is what keeps the overkill cap at the Leetify-verified
+        // first hurt of the frame; this is what keeps the overkill cap at the verified
         // May-golden values.
         int frameNumber = context.Frame.FrameNumber;
         bool victimAlreadyHurtThisFrame =

@@ -15,11 +15,11 @@ namespace CS2DemoKit.Analysis.Tests;
 
 /// <summary>
 ///     Unit pins for <see cref="KillTeamEnrichmentEdge" />'s team classification — in particular
-///     the S7 (totalAssists mixed sign) fix: <c>enrich.kill.was_enemy_assist</c> tests the
+///     the S7 (assists mixed sign) fix: <c>enrich.kill.was_enemy_assist</c> tests the
 ///     ASSISTER against the victim, independently of the killer-vs-victim classification that
 ///     drives <c>was_enemy_kill</c> / <c>was_team_kill</c> / <c>was_self_kill</c>. Every scenario
-///     below is a shape observed on the bench suite against the Leetify oracle (demo + tick cited
-///     per test). Pure in-memory — no demo file.
+///     below is a shape observed on the bench suite against the reference goldens (demo + tick
+///     cited per test). Pure in-memory — no demo file.
 /// </summary>
 [Category("Unit")]
 public class KillTeamEnrichmentEdgeTests
@@ -83,8 +83,8 @@ public class KillTeamEnrichmentEdgeTests
     /// <summary>
     ///     Team-damage assist (mirage bench demo, tick 11027): assister on the VICTIM's own team,
     ///     victim killed by an enemy. was_enemy_kill fires (killer↔victim are enemies) but
-    ///     was_enemy_assist must NOT — this is the S7 +1 overcount shape (Leetify does not credit
-    ///     team-damage assists).
+    ///     was_enemy_assist must NOT — this is the S7 +1 overcount shape (the assists stat does
+    ///     not credit team-damage assists).
     /// </summary>
     [Test]
     public async Task TeamDamageAssist_EnemyKillFires_EnemyAssistDoesNot()
@@ -103,7 +103,7 @@ public class KillTeamEnrichmentEdgeTests
     ///     Enemy assister on a TEAMKILL (ancient bench demo tick 115284; inferno tick 81688):
     ///     killer and victim share a team, the assister is an enemy of the victim. was_team_kill
     ///     fires and was_enemy_kill does not — but was_enemy_assist MUST fire. This is the S7 −1
-    ///     undercount shape (Leetify credits the enemy assister).
+    ///     undercount shape (the assists stat credits the enemy assister).
     /// </summary>
     [Test]
     public async Task EnemyAssisterOnTeamkill_EnemyAssistFires()
@@ -148,7 +148,7 @@ public class KillTeamEnrichmentEdgeTests
     ///     Suicide with an enemy assister (nuke bench demo, tick 89840: world death, enemy
     ///     assister). The ENRICHMENT still fires — it describes the assister↔victim relationship,
     ///     not the kill shape. Exclusion from assist counts happens at the view level: the assist
-    ///     view bakes <c>Attacker != UserId</c>, which the Leetify oracle confirms
+    ///     view bakes <c>Attacker != UserId</c>, which the reference goldens confirm
     ///     (shitstainsteve pins 2, not 3, on the nuke demo).
     /// </summary>
     [Test]

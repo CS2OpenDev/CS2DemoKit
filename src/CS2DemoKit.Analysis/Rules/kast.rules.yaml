@@ -77,11 +77,11 @@ stats:
   team_assists_round:
     # v1: assister == player, parent enrich.kill.was_enemy_kill. DELIBERATELY pinned to the
     # killer-vs-victim gate (was_enemy_kill), NOT the assist view's `enemy` facet: after the
-    # totalAssists mixed-sign fix that facet reads was_enemy_assist (assister-vs-victim), which
-    # is what Leetify's totalAssists counts — but Leetify's KAST credits looser assists (mirage
-    # bench, tick 11027: piesandcheese's team-damage assist is excluded from their totalAssists=4
-    # yet their KAST%=72.73 still credits that round). Keeping this on was_enemy_kill preserves
-    # the KAST oracle matches; see the totalAssists notes in KNOWN-AND-SUSPECTED-ISSUES.md.
+    # assists mixed-sign fix that facet reads was_enemy_assist (assister-vs-victim), which is
+    # what the assists stat counts — but KAST credits looser assists (mirage bench, tick 11027:
+    # piesandcheese's team-damage assist is excluded from their assists=4 yet their KAST%=72.73
+    # still credits that round). Keeping this on was_enemy_kill preserves the KAST golden
+    # matches.
     count: assist
     where: "enrich.kill.was_enemy_kill == true"
     per: round

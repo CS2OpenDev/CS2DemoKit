@@ -14,8 +14,8 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     this folds <c>demo.AllGameEvents</c> with the SAME predicate the view's <c>baked:</c>
 ///     filter + binding lowers to (the event-fold oracle pattern
 ///     — no engine, a deterministic C# fold), then asserts the per-player / total counts against
-///     the demofile-net-derived Leetify golden fixture (the project's ground-truth oracle;
-///     demofile-net is never a live dependency).
+///     the demo's reference golden fixture (<c>expected.golden.json</c>, the pinned
+///     reference stats).
 ///     <para>
 ///         The reference demo (<c>003816779297406845372_0003771537</c>, de_mirage, 22 decided
 ///         rounds, a 13–9 that crosses halftime) is chosen so <c>round_won</c>/<c>round_lost</c>
@@ -24,15 +24,15 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     <para>
 ///         <b>Oracle honesty.</b> Views pin at different tiers, printed in the report:
 ///         <list type="bullet">
-///             <item>EXACT external oracle — kill / death / assist per-player vs Leetify k/d/a.</item>
+///             <item>EXACT — kill / death / assist per-player vs the reference k/d/a.</item>
 ///             <item>
-///                 DIRECTIONAL external oracle — shot ≥ Leetify shots_fired (weapon_fire counts
-///                 utility throws too); damage_dealt(raw) ≥ Leetify enemy_damage (raw is
+///                 DIRECTIONAL — shot ≥ reference shots_fired (weapon_fire counts
+///                 utility throws too); damage_dealt(raw) ≥ reference enemy_damage (raw is
 ///                 uncapped and includes team/self damage). The exact match needs the
 ///                 <c>enrich.*</c> facets, which are engine-computed, not foldable here.
 ///             </item>
 ///             <item>
-///                 COUNT external oracle + STRUCTURAL — round_won/round_lost: decided-round
+///                 COUNT + STRUCTURAL — round_won/round_lost: decided-round
 ///                 count vs the golden (Σ team ct+t wins), plus a post-halftime assertion. The
 ///                 full per-player <c>binding: team</c> live-team attribution is validated by
 ///                 the env-equivalence battery (which must include a
@@ -40,7 +40,7 @@ namespace CS2DemoKit.Analysis.Tests;
 ///             </item>
 ///             <item>
 ///                 SELF / INTERNAL — damage_taken, blinded, blinded_enemy, bomb_planted,
-///                 bomb_defused have no external stat in the golden; pinned by non-vacuity +
+///                 bomb_defused have no matching stat in the golden; pinned by non-vacuity +
 ///                 internal reconciliation and reported.
 ///             </item>
 ///         </list>
@@ -53,14 +53,14 @@ public class RulesV2ViewFixtureTests
     private const string DemoId = "003816779297406845372_0003771537";
 
     [Test]
-    public async Task CuratedViews_MatchDemofileNetDerivedGolden_OnReferenceDemo()
+    public async Task CuratedViews_MatchReferenceGolden_OnReferenceDemo()
     {
         string path = DemoTestHelper.RequireDemo(DemoId + ".dem");
-        GoldenStatsDocument golden = GoldenStatsTestHelper.LoadGolden(DemoId, "leetify");
+        GoldenStatsDocument golden = GoldenStatsTestHelper.LoadGolden(DemoId, "expected");
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
 
         // slot -> SteamID64 for the real players, and SteamID64 -> golden stats. Matching by
-        // Steam ID avoids the display-name encoding quirks in the Leetify export.
+        // Steam ID avoids display-name encoding quirks between exports.
         Dictionary<int, ulong> slotToSteam = demo.Players.Values
             .Where(p => !p.IsBot && p.SteamId64 != 0)
             .ToDictionary(p => p.Slot, p => p.SteamId64);
@@ -170,21 +170,21 @@ public class RulesV2ViewFixtureTests
 
             matched++;
 
-            // TIER 1 — EXACT external oracle: kill view per player == demofile-net-derived kills.
+            // TIER 1 — EXACT: kill view per player == the reference kills.
             // (killer≠victim + per-killer attribution reproduces the golden kill count exactly.)
             await Assert.That((double)kill.Get(slot)).IsEqualTo(Stat(g, "kills"))
                 .Because($"kill view: slot {slot} kills (killer≠victim) must equal the golden");
 
-            // TIER 2 — DIRECTIONAL external oracle. The view's fold is a SUPERSET of the narrower
-            // Leetify stat, so the exact number needs an engine enrichment the fold can't apply:
-            //   death        ⊇ Leetify deaths      (Leetify excludes suicides / world deaths)
-            //   assist       ⊇ Leetify assists     (v2 counts flash + damage assists; Leetify narrower)
-            //   shot         ⊇ Leetify shots_fired (weapon_fire counts grenade/utility throws too)
-            //   damage_dealt ⊇ Leetify enemy_damage(raw DmgHealth is uncapped + incl team/self)
+            // TIER 2 — DIRECTIONAL. The view's fold is a SUPERSET of the narrower
+            // reference stat, so the exact number needs an engine enrichment the fold can't apply:
+            //   death        ⊇ reference deaths      (the deaths stat excludes suicides / world deaths)
+            //   assist       ⊇ reference assists     (v2 counts flash + damage assists; the stat is narrower)
+            //   shot         ⊇ reference shots_fired (weapon_fire counts grenade/utility throws too)
+            //   damage_dealt ⊇ reference enemy_damage(raw DmgHealth is uncapped + incl team/self)
             await Assert.That((double)death.Get(slot)).IsGreaterThanOrEqualTo(Stat(g, "deaths"))
-                .Because($"death view: slot {slot} all-deaths ≥ golden (Leetify drops suicides)");
+                .Because($"death view: slot {slot} all-deaths ≥ golden (the deaths stat drops suicides)");
             await Assert.That((double)assist.Get(slot)).IsGreaterThanOrEqualTo(Stat(g, "assists"))
-                .Because($"assist view: slot {slot} all-assists ≥ golden (Leetify's assist stat is narrower)");
+                .Because($"assist view: slot {slot} all-assists ≥ golden (the assists stat is narrower)");
             await Assert.That((double)shot.Get(slot)).IsGreaterThanOrEqualTo(Stat(g, "shots_fired"))
                 .Because($"shot view: slot {slot} weapon_fire count ⊇ golden shots_fired");
             await Assert.That((double)dmgDealt.Get(slot)).IsGreaterThanOrEqualTo(Stat(g, "enemy_damage"))
@@ -194,7 +194,7 @@ public class RulesV2ViewFixtureTests
         await Assert.That(matched).IsGreaterThanOrEqualTo(10)
             .Because("all ten golden players must match a real slot by Steam ID");
 
-        // TIER 4 — SELF / INTERNAL reconciliation (no external stat in the golden).
+        // TIER 4 — SELF / INTERNAL reconciliation (no matching stat in the golden).
         // Every player_blind has a real victim and a real attacker on this demo, so both the
         // blinded (victim-side) and blinded_enemy (attacker-side) views reconcile to the event count.
         await Assert.That(SumReal(blinded, slotToSteam)).IsEqualTo(playerBlindEvents)
@@ -204,7 +204,7 @@ public class RulesV2ViewFixtureTests
         await Assert.That(bombDefused).IsLessThanOrEqualTo(bombPlanted)
             .Because("a bomb can only be defused if it was planted");
 
-        // TIER 3 — round_won / round_lost: COUNT external oracle + post-halftime STRUCTURAL pin.
+        // TIER 3 — round_won / round_lost: COUNT reconciliation + post-halftime STRUCTURAL pin.
         // No wire winner to fold, so: (a) the fold's played-round count (round_officially_ended)
         // reconciles with the golden's decided-round total, and (b) the golden itself proves the
         // team-swap — every team won rounds on BOTH sides, which is only possible across halftime.

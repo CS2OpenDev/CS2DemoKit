@@ -95,9 +95,9 @@ views:
       assister: Assister
     baked:
       # Assists attach to real kills (shipped kast/player-stats convention). KEPT after the
-      # totalAssists mixed-sign investigation: the one suicide-with-enemy-assister on the bench
-      # suite (nuke, tick 89840) is NOT counted by the Leetify oracle — dropping this filter
-      # would overcount (shitstainsteve 3 vs oracle 2).
+      # assists mixed-sign investigation: the one suicide-with-enemy-assister on the bench
+      # suite (nuke, tick 89840) is NOT counted in the reference assists — dropping this filter
+      # would overcount (shitstainsteve 3 vs golden 2).
       - "event.Attacker != event.UserId"
     facets:
       flash: { type: bool,   field: AssistedFlash }
@@ -105,7 +105,7 @@ views:
       # was_enemy_kill (killer-vs-victim) both overcounted team-damage assists (assister on the
       # victim's own team, victim killed by an enemy — mirage tick 11027) and dropped enemy
       # assists on teamkills (ancient tick 115284, inferno tick 81688). With this enrichment the
-      # bench-suite assists match the Leetify oracle 50/50 players.
+      # bench-suite assists match the reference goldens 50/50 players.
       enemy: { type: bool,   enrichment: enrich.kill.was_enemy_assist }
       weapon: { type: string, field: Weapon }
     availability: all
