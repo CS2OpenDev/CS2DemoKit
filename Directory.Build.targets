@@ -31,8 +31,8 @@
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
         <RepositoryType>git</RepositoryType>
-        <RepositoryUrl>https://github.com/sid2934/CS2DemoKit</RepositoryUrl>
-        <PackageProjectUrl>https://github.com/sid2934/CS2DemoKit</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/CS2OpenDev/CS2DemoKit</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/CS2OpenDev/CS2DemoKit</PackageProjectUrl>
     </PropertyGroup>
 
     <ItemGroup Condition="'$(IsPackable)' == 'true'">
