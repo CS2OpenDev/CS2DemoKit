@@ -83,9 +83,8 @@ dotnet run --project test/CS2DemoKit.Parser.Tests -c Release
 dotnet run --project test/CS2DemoKit.Analysis.Tests -c Release
 ```
 
-Tests use TUnit, not xUnit or NUnit. A bare clone builds with no credentials: the CS2OpenDev
-packages publish to GitHub Packages rather than nuget.org, so their `.nupkg` files are committed in
-`local-packages/` and mapped there by `nuget.config`.
+Tests use TUnit, not xUnit or NUnit. A bare clone builds with no credentials: every dependency,
+the CS2OpenDev family included, restores from nuget.org.
 
 Demo-dependent tests resolve a `.dem` from `DEMO_PATH`, a `TestData/` folder beside the test
 assembly, or `demos/`. The parser suite falls back to the committed sample in `tests/assets/`, so it

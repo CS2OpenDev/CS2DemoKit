@@ -482,8 +482,3 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
-
-# The CS2OpenDev family publishes to GitHub Packages rather than nuget.org, so these committed
-# .nupkg files are this repo's source of record for them (see nuget.config packageSourceMapping).
-# The blanket *.nupkg rule above would otherwise drop them.
-!local-packages/*.nupkg

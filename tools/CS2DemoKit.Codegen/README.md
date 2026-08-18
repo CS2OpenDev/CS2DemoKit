@@ -31,7 +31,7 @@ when upstream ships the aliases).
 ## Regen recipe (on every `Sdk.Entities` pin bump)
 
 ```sh
-# 1. Bump the pin (Directory.Packages.props + local-packages/), audit the tag diff.
+# 1. Bump the pin (Directory.Packages.props), audit the tag diff.
 # 2. Regenerate — the emit is deterministic; run twice → identical file:
 dotnet run --project tools/CS2DemoKit.Codegen -- --schemalens --state ../CS2OpenDev-SDK/schema-lens/state.json
 # 3. REBUILD consumers (stale binaries are the classic trap), then verify:

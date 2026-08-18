@@ -15,14 +15,9 @@
 
         <!--
             The CS2OpenDev family — community-maintained CS2 schema, protobuf and game-event
-            definitions (github.com/CS2OpenDev). As of 2026-08 these ship on nuget.org under the
-            renumbered public line pinned below (the earlier 5.x versions were withdrawn from
-            GitHub Packages when the public line was cut). This repo still carries the .nupkg
-            files in local-packages/ and maps CS2OpenDev* there in nuget.config, which keeps a
-            bare clone building hermetically and offline.
-
-            Refresh: download the .nupkg from nuget.org, drop it in local-packages/, bump the
-            version here.
+            definitions (github.com/CS2OpenDev). Ships on nuget.org under the renumbered public
+            line (2026-08, replacing the withdrawn 5.x GitHub Packages line) and restores from
+            there like every other dependency.
         -->
         <PackageVersion Include="CS2OpenDev.Protos" Version="0.9.0"/>
         <PackageVersion Include="CS2OpenDev.Sdk" Version="0.9.0"/>

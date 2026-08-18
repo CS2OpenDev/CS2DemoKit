@@ -1,7 +1,7 @@
 # Build + test on every push to main and every pull request.
 #
-# No credentials required: the CS2OpenDev packages resolve from the committed local-packages/
-# folder feed (see nuget.config), so forks and outside contributors get a working build.
+# No credentials required: every dependency, the CS2OpenDev family included, restores from
+# nuget.org, so forks and outside contributors get a working build.
 name: ci
 
 on:
