@@ -21,7 +21,7 @@
         <EnableNETAnalyzers>false</EnableNETAnalyzers>
         <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
-        <CS2DemoKitVersion Condition="'$(CS2DemoKitVersion)' == ''">0.9.0</CS2DemoKitVersion>
+        <CS2DemoKitVersion Condition="'$(CS2DemoKitVersion)' == ''">0.9.1</CS2DemoKitVersion>
     </PropertyGroup>
 
     <ItemGroup>
