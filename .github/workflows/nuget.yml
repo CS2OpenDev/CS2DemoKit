@@ -3,7 +3,8 @@
 # Channel: the maintainer's GitHub Packages feed. nuget.org is NOT yet reachable for this family —
 # every package here depends on the CS2OpenDev family, which publishes to GitHub Packages only
 # (CS2OpenDev-SDK#5, decided upstream), and a nuget.org package cannot depend on one that is not
-# there. The nuget.org step below is written and commented out, ready for the day that changes.
+# there. The nuget.org steps below are written and commented out (auth via a trusted-publishing
+# policy, no stored key), ready for the day that changes.
 name: nuget
 
 on:
@@ -14,6 +15,7 @@ on:
 permissions:
   contents: read
   packages: write   # push to the repo owner's GitHub Packages feed via the built-in token
+  # id-token: write # uncomment together with the nuget.org trusted-publishing steps below
 
 jobs:
   publish:
@@ -92,12 +94,23 @@ jobs:
             --skip-duplicate \
             --no-symbols
 
-      # Enable once the CS2OpenDev family is on nuget.org (CS2OpenDev-SDK#5). Add a NUGET_API_KEY
-      # secret first. Publishing before then produces packages no consumer can restore.
+      # Enable once the CS2OpenDev family is on nuget.org (CS2OpenDev-SDK#5) — as of 2026-08 only
+      # CS2OpenDev.Sdk is there, and at 1.0.1 against our 5.1.0 pin. Publishing before then
+      # produces packages no consumer can restore.
+      #
+      # Auth is a nuget.org Trusted Publishing policy (owner sid2934, repo CS2OpenDev/CS2DemoKit,
+      # workflow nuget.yml) — no NUGET_API_KEY secret to provision. To enable: uncomment the two
+      # steps below AND `id-token: write` in the permissions block up top (the OIDC exchange
+      # needs it).
+      # - name: Log in to nuget.org (trusted publishing)
+      #   id: nuget-login
+      #   uses: NuGet/login@v1
+      #   with:
+      #     user: sid2934
       # - name: Push to nuget.org
       #   if: startsWith(github.ref, 'refs/tags/v')
       #   run: |
       #     dotnet nuget push "artifacts/pack/*.nupkg" \
       #       --source https://api.nuget.org/v3/index.json \
-      #       --api-key "${{ secrets.NUGET_API_KEY }}" \
+      #       --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
       #       --skip-duplicate
