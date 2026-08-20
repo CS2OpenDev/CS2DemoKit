@@ -68,7 +68,7 @@ public class KastPilotTests
         if (PilotFixture.Regenerate)
         {
             PilotFixture.Write(FindRepoRoot(), FixtureName, actual);
-            return;
+            throw PilotFixture.Repinned(FixtureName);
         }
 
         KastFixture expected = PilotFixture.Read<KastFixture>(FindRepoRoot(), FixtureName);

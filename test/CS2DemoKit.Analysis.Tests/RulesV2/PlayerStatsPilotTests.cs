@@ -76,7 +76,7 @@ public class PlayerStatsPilotTests
         if (PilotFixture.Regenerate)
         {
             PilotFixture.Write(FindRepoRoot(), FixtureName, actual);
-            return;
+            throw PilotFixture.Repinned(FixtureName);
         }
 
         PlayerStatsFixture expected = PilotFixture.Read<PlayerStatsFixture>(FindRepoRoot(), FixtureName);

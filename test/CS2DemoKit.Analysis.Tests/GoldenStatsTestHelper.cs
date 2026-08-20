@@ -61,7 +61,7 @@ internal static class GoldenStatsTestHelper
         {
             throw new SkipTestException(
                 $"Fixture directory missing: {Path.GetRelativePath(root, dir)}. " +
-                "Run `dotnet run -c Release --project tools/AnalysisBench -- --suite` to produce it.");
+                "Create it and pin a reference with PIN_EXPECTED=1 while the demo is available.");
         }
 
         return dir;
@@ -77,7 +77,7 @@ internal static class GoldenStatsTestHelper
         if (!File.Exists(path))
         {
             throw new SkipTestException(
-                $"Golden file missing: {path}. The bench should produce it on the next --suite run.");
+                $"Golden file missing: {path}. Pin it with PIN_EXPECTED=1 while the demo is available.");
         }
 
         return GoldenStatsSerializer.ReadFromFile(path);
