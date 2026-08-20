@@ -72,4 +72,24 @@
         </ItemGroup>
     </Target>
 
+    <!--
+        Replaces Nerdbank.GitVersioning's target of the same name with a no-op. Its version is the
+        one that runs otherwise, and it appends three variables to the file named by GITHUB_ENV
+        once per project. Eight projects build in parallel, so that is 24 concurrent appends to one
+        file: they interleave, GitHub Actions then parses a torn line, and the whole build step
+        fails with "Unable to process file command 'env' successfully / Invalid format '9.1'" after
+        the build itself has already succeeded. It is intermittent, so it reads as flake.
+
+        Nothing consumes those variables. Both workflows call `nbgv get-version` directly where
+        they need a version, and no props, targets, script, or workflow references
+        GitBuildVersion, GitAssemblyInformationalVersion, or GitBuildVersionSimple.
+
+        Setting cloudBuild.setVersionVariables to false in version.json is the documented switch
+        and it does NOT work: measured on NBGV 3.7.115, a clean single-project build writes the
+        same three lines with it true or false. That setting is left false to declare intent; this
+        target is what actually stops the writes. Verified: 0 lines written, no warnings.
+        Reproduce with GITHUB_ACTIONS=true and GITHUB_ENV pointed at a scratch file.
+    -->
+    <Target Name="SetCloudBuildVersionVars" AfterTargets="GetBuildVersion" Condition="false" />
+
 </Project>
