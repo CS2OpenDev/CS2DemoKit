@@ -74,22 +74,22 @@ public class EntityIntegrationTests
     [Test]
     public async Task EntityDecode_IsHealthy_NoMisalignmentAndPawnsResolve()
     {
-        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
+        string path = DemoTestHelper.RequireDemo();
 
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
-        // Replay to the demo midpoint with a fresh tracker (no analysis build — keep the
-        // tripwire light so it stays reliable under full-suite memory load).
+        // Replay to live play with a fresh tracker (no analysis build, keeping the tripwire light so
+        // it stays reliable under full-suite memory load). Anchored on a kill rather than the frame
+        // midpoint so this holds for any demo; see LivePlayFrameIndex.
         EntityTracker tracker = new();
-        tracker.AdvanceToIndex(parsed.Frames.Count / 2, parsed.Frames);
+        tracker.AdvanceToIndex(DemoTestHelper.LivePlayFrameIndex(parsed), parsed.Frames);
 
-        // 1. No bit-misalignment error replaying to the midpoint. (Broken decode on
-        //    AnimGraph2-era demos used to set this and the other tests SKIPPED on it.)
+        // 1. No bit-misalignment error replaying there. (Broken decode on AnimGraph2-era demos used
+        //    to set this and the other tests SKIPPED on it.)
         await Assert.That(tracker.LastEntityError).IsNull();
 
         // 2. Pawn entities resolve by slot (controller-bound). A 5v5 has ~10 pawn entities;
-        //    broken decode (garbage m_hController) resolves 0. Counts dead pawns too, so it's
-        //    robust to whatever round phase the midpoint lands in.
+        //    broken decode (garbage m_hController) resolves 0. Counts dead pawns too.
         int pawns = 0;
         PawnLookup.ForEachLivePawn(tracker, (_, _) => pawns++);
 
@@ -514,13 +514,15 @@ public class EntityIntegrationTests
     // partial regressions.
     /// <summary>Player snapshot builder_at midpoint_produces teamed players.</summary>
     [Test]
-    public async Task PlayerSnapshotBuilder_AtMidpoint_ProducesTeamedPlayers()
+    public async Task PlayerSnapshotBuilder_DuringLivePlay_ProducesTeamedPlayers()
     {
-        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
+        string path = DemoTestHelper.RequireDemo();
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
+        // Anchored on a kill, not TickCount / 2: on a full match the tick midpoint can land in
+        // warmup or halftime with nobody on a team. See LivePlayTick.
         EntityStateLayer layer = new(parsed.Frames);
-        layer.SeekToTick(parsed.TickCount / 2);
+        layer.SeekToTick(DemoTestHelper.LivePlayTick(parsed));
         SkipIfEntityDecodeFailed(layer.Tracker);
 
         IReadOnlyList<PlayerSnapshot> snaps = PlayerSnapshotBuilder.Build(layer.Tracker, parsed);
@@ -531,7 +533,7 @@ public class EntityIntegrationTests
             Console.WriteLine($"  team={s.Team} {(s.IsAlive ? "alive" : "dead ")} hp={s.Health,3} armor={s.Armor,3} ${s.Money,5} {s.ActiveWeapon,-10} util=[{s.UtilSummary}] name={s.Name}");
         }
 
-        // A normal CS2 demo at midpoint should produce at least one teamed player
+        // A normal CS2 demo during live play should produce at least one teamed player
         // on each side. Strict 5v5 isn't asserted because the discovered demo may
         // be a 1v1 retake, 4v5 with a disconnect, OT halftime mid-restart, etc.
         // What we ARE asserting: the builder produces some snapshots, both teams

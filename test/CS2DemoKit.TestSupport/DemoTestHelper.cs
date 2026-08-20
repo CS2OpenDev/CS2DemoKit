@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.GameEvents;
 using TUnit.Core.Exceptions;
 
 #endregion
@@ -246,6 +247,42 @@ public static class DemoTestHelper
     ///     The committed sample demo: a four-round <c>de_nuke</c> trim, small enough to live in git.
     /// </summary>
     public const string SampleDemoFileName = "sample-de_nuke.dem";
+
+    /// <summary>
+    ///     A frame index that is during live play, for tests asserting "the match is running" rather
+    ///     than anything about a particular moment.
+    ///     <para>
+    ///         <c>Frames.Count / 2</c> is not that. On a full match the frame midpoint can land in
+    ///         warmup, a freeze period, or halftime, where no pawn is alive, which is why
+    ///         midpoint-based assertions held on the four-round sample and failed on every real demo.
+    ///         The median <c>player_death</c> is mid-match on any demo by construction.
+    ///     </para>
+    /// </summary>
+    /// <param name="demo">The parsed demo.</param>
+    /// <returns>A frame index during live play.</returns>
+    /// <exception cref="SkipTestException">The demo has no kills, so it has no live play to anchor on.</exception>
+    public static int LivePlayFrameIndex(ParsedDemo demo) => MedianKill(demo).FrameNumber;
+
+    /// <summary>The <see cref="LivePlayFrameIndex" /> anchor as a server tick, for tick-based seeks.</summary>
+    /// <param name="demo">The parsed demo.</param>
+    /// <returns>A server tick during live play.</returns>
+    /// <exception cref="SkipTestException">The demo has no kills, so it has no live play to anchor on.</exception>
+    public static int LivePlayTick(ParsedDemo demo) => MedianKill(demo).ServerTick;
+
+    private static GameEvent MedianKill(ParsedDemo demo)
+    {
+        ArgumentNullException.ThrowIfNull(demo);
+
+        List<GameEvent> kills = demo.AllGameEvents
+            .Where(e => string.Equals(e.Name, "player_death", StringComparison.Ordinal))
+            .Where(e => e.FrameNumber >= 0 && e.FrameNumber < demo.Frames.Count)
+            .OrderBy(e => e.FrameNumber)
+            .ToList();
+
+        return kills.Count > 0
+            ? kills[kills.Count / 2]
+            : throw new SkipTestException("Demo has no player_death events, so it has no live play to anchor on.");
+    }
 
     /// <summary>
     ///     Lowercase hex SHA-256 of a demo file, matching the <c>demo_sha256</c> a fixture records.
