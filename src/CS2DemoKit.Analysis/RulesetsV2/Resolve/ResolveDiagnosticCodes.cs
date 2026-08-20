@@ -72,6 +72,15 @@ public static class ResolveDiagnosticCodes
     public const string BadHighlightKind = "resolve.bad-highlight-kind";
 
     /// <summary>
+    ///     A <c>show:</c> scoreboard entry or table column naming no stat, highlight, or tally target
+    ///     of the ruleset.
+    /// </summary>
+    public const string ShowUnknownRef = "resolve.show.unknown-ref";
+
+    /// <summary>A <c>show:</c> table whose <c>per:</c> is not a supported table dimension.</summary>
+    public const string ShowBadTableDimension = "resolve.show.bad-table-dimension";
+
+    /// <summary>
     ///     A stat kind the resolver cannot yet lower faithfully — gated loudly rather than emitting a
     ///     config-less node. All eight base kinds now lower (tally/streak/bucket completed the set);
     ///     this code is <b>reserved</b> for the C8 bucket lifts still on the roadmap (composite keys +

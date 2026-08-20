@@ -77,42 +77,20 @@ public static class ShowLowering
             return [];
         }
 
-        HashSet<string> highlightIds = new(ruleset.Highlights.Select(h => h.HighlightId), StringComparer.Ordinal);
-        Dictionary<string, CheckedStat> statsById =
-            ruleset.Stats.ToDictionary(s => s.StatId, StringComparer.Ordinal);
-        // A tally: stat produces no node under its own id — its thresholds emit nodes under their
-        // `target:` ids (spec §6 tally row). v1 surfaced those targets (2K/3K/4K/5K) as scoreboard
-        // columns, so a scoreboard ref to a tally target resolves to its emit node (the board follows
-        // the owning tally's scope), exactly as the `tables:` path already references them.
-        Dictionary<string, CheckedStat> tallyTargetsById = new(StringComparer.Ordinal);
-        foreach (CheckedStat s in ruleset.Stats)
-        {
-            if (s.TallyThresholds is { } thresholds)
-            {
-                foreach ((int _, string target) in thresholds)
-                {
-                    tallyTargetsById[target] = s;
-                }
-            }
-        }
-
-        // Nodes dropped as coverage skips (view unavailable on this profile) are NOT built, so a
-        // scoreboard ref to one must silently drop its column, never crash the build — the coverage
-        // skip is a legitimate outcome the diagnostic already reported.
-        HashSet<string> coverageSkipped = new(ruleset.Coverage.Select(c => c.NodeId), StringComparer.Ordinal);
+        // Shared with ShowReferenceValidator so the checker and the build cannot disagree about what
+        // a show ref may name. Coverage-skipped nodes are not built, so a ref to one drops its column
+        // silently rather than crashing: the coverage diagnostic already reported it.
+        ShowReferenceIds ids = ShowReferenceIds.From(ruleset);
 
         List<PerPlayerColumnAssignment> columns = [];
         foreach (ScoreboardEntry entry in show.Scoreboard)
         {
-            string baseId = entry.Stat.EndsWith(".count", StringComparison.Ordinal)
-                ? entry.Stat[..^".count".Length]
-                : entry.Stat;
-            if (coverageSkipped.Contains(baseId))
+            if (ids.IsCoverageSkipped(entry.Stat))
             {
                 continue;
             }
 
-            ScoreboardRef reference = ResolveScoreboardRef(ruleset, entry, highlightIds, statsById, tallyTargetsById);
+            ScoreboardRef reference = ResolveScoreboardRef(ruleset, entry, ids);
             if (!nodesByRuleId.TryGetValue(reference.NodeKey, out StateNode? node))
             {
                 throw new InvalidOperationException(
@@ -138,33 +116,29 @@ public static class ShowLowering
     ///     axis (round-scoped ⇒ round board).
     /// </summary>
     private static ScoreboardRef ResolveScoreboardRef(
-        CheckedRuleset ruleset, ScoreboardEntry entry, HashSet<string> highlightIds,
-        Dictionary<string, CheckedStat> statsById, Dictionary<string, CheckedStat> tallyTargetsById)
+        CheckedRuleset ruleset, ScoreboardEntry entry, ShowReferenceIds ids)
     {
         string statRef = entry.Stat;
         string columnName = entry.Label ?? statRef;
 
         // Highlight ref: `<id>` or `<id>.count`, both surfacing the match-scoped `.count` node.
-        string highlightBase = statRef.EndsWith(".count", StringComparison.Ordinal)
-            ? statRef[..^".count".Length]
-            : statRef;
-        if (highlightIds.Contains(highlightBase))
+        if (ids.TryResolveHighlight(statRef, out string highlightBase))
         {
             return new ScoreboardRef($"{ruleset.Id.Id}.{highlightBase}.count", false, columnName);
         }
 
         // Plain stat ref: board defaults from the stat's per: (round-scoped ⇒ round board).
-        if (statsById.TryGetValue(statRef, out CheckedStat? stat))
+        if (ids.TryGetStat(statRef, out CheckedStat? stat))
         {
-            bool roundScoped = stat.Scope is ScopeAxis.Round or ScopeAxis.PlayerRound;
+            bool roundScoped = stat!.Scope is ScopeAxis.Round or ScopeAxis.PlayerRound;
             return new ScoreboardRef($"{ruleset.Id.Id}.{statRef}", roundScoped, columnName);
         }
 
         // Tally-target ref (2K/3K/4K/5K): the emit node keyed under the target id; board follows the
         // owning tally's scope, just like a plain stat ref.
-        if (tallyTargetsById.TryGetValue(statRef, out CheckedStat? tally))
+        if (ids.TryGetTallyOwner(statRef, out CheckedStat? tally))
         {
-            bool roundScoped = tally.Scope is ScopeAxis.Round or ScopeAxis.PlayerRound;
+            bool roundScoped = tally!.Scope is ScopeAxis.Round or ScopeAxis.PlayerRound;
             return new ScoreboardRef($"{ruleset.Id.Id}.{statRef}", roundScoped, columnName);
         }
 

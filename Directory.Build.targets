@@ -72,4 +72,13 @@
         </ItemGroup>
     </Target>
 
+    <!--
+        No-ops Nerdbank.GitVersioning's target of the same name. It appends version variables to
+        $GITHUB_ENV once per project, and parallel builds tear the file, failing the CI step after
+        the build has already succeeded. Nothing reads those variables; both workflows call
+        `nbgv get-version`. version.json's cloudBuild.setVersionVariables=false does NOT stop the
+        writes (measured on NBGV 3.7.115), so this target is the load-bearing part.
+    -->
+    <Target Name="SetCloudBuildVersionVars" AfterTargets="GetBuildVersion" Condition="false" />
+
 </Project>
