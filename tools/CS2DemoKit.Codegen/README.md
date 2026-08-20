@@ -36,7 +36,7 @@ when upstream ships the aliases).
 dotnet run --project tools/CS2DemoKit.Codegen -- --schemalens --state ../CS2OpenDev-SDK/schema-lens/state.json
 # 3. REBUILD consumers (stale binaries are the classic trap), then verify:
 #    - Parser suite (SchemaLensGeneratedTests census pins + the SDK battery)
-#    - golden regen A/B (AnalysisBench --suite, fixtures diff must be metadata-only)
+#    - golden A/B (StatParityTests against tests/fixtures/, which runs the engine live)
 ```
 
 A changed `LensHash` after a pin bump is expected (new curation); a changed hash WITHOUT a

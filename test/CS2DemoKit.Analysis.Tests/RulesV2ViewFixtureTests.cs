@@ -215,16 +215,13 @@ public class RulesV2ViewFixtureTests
                      + "round has no officially-ended transition after it, so it reads one fewer");
         await Assert.That(roundsOfficiallyEnded).IsGreaterThan(12)
             .Because("the demo itself contains post-halftime rounds (not just golden metadata)");
-        await Assert.That(goldenDecidedRounds).IsGreaterThan(12)
-            .Because("a >12-round match has post-halftime rounds — the team-swap case round_won pins");
-        foreach (IGrouping<int, PlayerStatsRecord> team in golden.Players.Values.GroupBy(p => p.Team))
-        {
-            PlayerStatsRecord any = team.First();
-            await Assert.That(Stat(any, "ct_rounds_won")).IsGreaterThan(0);
-            await Assert.That(Stat(any, "t_rounds_won")).IsGreaterThan(0)
-                .Because($"team {team.Key} won rounds on both sides ⇒ it played both halves; "
-                         + "binding: team must read the LIVE team, not frozen env, to attribute these");
-        }
+
+        // The halftime-crossing precondition is carried entirely by the two assertions above, both
+        // of which read the demo. Two further checks used to live here, on goldenDecidedRounds > 12
+        // and on each team having won rounds on both sides, and both read only the committed
+        // golden. Those are permanently true properties of a static file, so they asserted nothing
+        // about any code and could not fail. The reconcile above already implies the first, and the
+        // reference demo's team-swap is documented on the class.
     }
 
     /// <summary>Σ over the two distinct team (ct_rounds_won + t_rounds_won) totals in the golden.</summary>
@@ -240,8 +237,15 @@ public class RulesV2ViewFixtureTests
         return perTeam.Values.Sum();
     }
 
+    // Loud on a missing key. Defaulting to 0 silently degraded every DIRECTIONAL assertion that
+    // reads it into "x >= 0", which is unconditionally true, so a re-pin that dropped a key would
+    // gut those checks with no signal. All six goldens carry all the keys read here today.
     private static double Stat(PlayerStatsRecord r, string key) =>
-        r.Stats.GetValueOrDefault(key) ?? 0;
+        r.Stats.TryGetValue(key, out double? value) && value is not null
+            ? value.Value
+            : throw new InvalidOperationException(
+                $"golden record for team {r.Team} has no '{key}' stat, so the assertions reading it "
+                + "would silently become vacuous. Re-pin the fixture or fix the key.");
 
     private static long SumReal(Fold fold, Dictionary<int, ulong> realSlots) =>
         realSlots.Keys.Sum(slot => fold.Get(slot));

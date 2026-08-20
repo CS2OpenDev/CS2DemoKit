@@ -41,7 +41,10 @@ internal static class GoldenStatsTestHelper
             return Array.Empty<string>();
         }
 
+        // Only per-demo directories. rules-v2/ holds ruleset pins (*.expected.json) and is not a
+        // demo, so without this filter it generates a permanent phantom skip in every consumer.
         return Directory.EnumerateDirectories(fixtures)
+            .Where(dir => Directory.EnumerateFiles(dir, "*.golden.json").Any())
             .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrEmpty(name))
             .Cast<string>()

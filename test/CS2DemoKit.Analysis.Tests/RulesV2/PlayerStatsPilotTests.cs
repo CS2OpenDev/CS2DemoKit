@@ -81,6 +81,16 @@ public class PlayerStatsPilotTests
 
         PlayerStatsFixture expected = PilotFixture.Read<PlayerStatsFixture>(FindRepoRoot(), FixtureName);
 
+        // Non-vacuity floor, as WeaponStatsPilotTests and KastPilotTests already have. Every loop
+        // below iterates the pinned fixture, so an empty one would pass all of them having compared
+        // nothing. That is reachable: PIN_RULES_V2=1 against a broken build writes exactly that.
+        await Assert.That(expected.GameInt.Count).IsGreaterThan(0)
+            .Because("the pinned player set must be non-vacuous");
+        await Assert.That(expected.Compute.Count).IsGreaterThan(0)
+            .Because("the pinned computed metrics must be non-vacuous");
+        await Assert.That(expected.Round.Count).IsGreaterThan(0)
+            .Because("the pinned (player, round) rows must be non-vacuous");
+
         // ── 1. Game-group int columns ──
         await Assert.That(actual.GameInt.Keys.ToHashSet()).IsEquivalentTo(expected.GameInt.Keys.ToHashSet())
             .Because("v2 must materialize the pinned players");
