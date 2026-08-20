@@ -122,10 +122,11 @@ public class StringTableBoundsTests
     }
 
     // Why the structural num_entries bound cannot carry the memory guarantee alone once entries are
-    // keyed. A run of 3-bit sequential entries needs no entropy, so it Snappy-compresses to nothing:
-    // ~200 compressed bytes reach the 16 MiB string_data ceiling, declare ~44.7M entries, and every
-    // one is a distinct key (~1.6 GiB of map). RemainingBits/3 happily admits all of them — this is
-    // the shape MaxEntriesPerTable exists to stop.
+    // keyed. A run of 3-bit sequential entries needs no entropy, so it compresses hard: about
+    // 768 KiB reaches the 16 MiB string_data ceiling, declaring ~44.7M entries, every one a distinct
+    // key (~1.6 GiB of map). RemainingBits/3 happily admits all of them, which is the shape
+    // MaxEntriesPerTable exists to stop. The cheap part is the entry count, not the byte count:
+    // Snappy's max amplification is 21.3x (measured, Snappier 1.3.1).
     [Test]
     public async Task DecodeEntries_CompressibleSequentialRun_StopsAtTheEntryCap()
     {
