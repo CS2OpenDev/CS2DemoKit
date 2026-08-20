@@ -94,10 +94,12 @@ a full match and the sample is a four-round trim — those tests skip instead of
 ### A local demo corpus
 
 Drop a handful of real demos into `demos/` (gitignored) and a large part of the suite stops
-skipping and starts running against full matches instead of the four-round sample. Five demos of
-40-70 MB is plenty; prefer a spread of the build-id suffix in the filename, since that tracks the
-protocol variant and is where decode differences show up. `MultiDemoCanaryTests` sweeps the
-directory (capped at 25) and is the breadth check.
+skipping and starts running against full matches instead of the four-round sample. Use full
+match length demos from various builds and maps: the build-id suffix in the filename tracks the
+protocol variant, which is where decode differences show up, and different maps exercise
+different entity content. A short or abandoned match covers little the committed sample does not
+already cover, so size is a poor proxy to select on. `MultiDemoCanaryTests` sweeps the directory
+(capped at 25) and is the breadth check.
 
 This is local-only for now. CI still runs on the committed sample alone, so a corpus run before
 opening a PR is worth the minute it costs.
