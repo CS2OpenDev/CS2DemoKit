@@ -308,9 +308,10 @@ internal sealed class StringTableProcessor
     ///     bitstream format into <paramref name="state" />.  The format is:
     ///     <para>
     ///         <b>CS2 <c>UsingVarintBitcounts</c> mode:</b> when the create-message has this flag,
-    ///         non-sequential entry indices and variable-size user-data lengths are encoded as
-    ///         <c>UVarInt32</c> rather than fixed bit fields.  The flag is stored in
-    ///         <see cref="TableState.UsingVarintBitcounts" /> and checked per-entry.
+    ///         non-sequential entry indices and variable-size user-data lengths stop using fixed bit
+    ///         fields — but they do NOT switch to the same encoding as each other. The index becomes a
+    ///         protobuf <c>UVarInt32</c>; the user-data length becomes Source's <c>UBitVar</c>. The
+    ///         flag is stored in <see cref="TableState.UsingVarintBitcounts" /> and checked per-entry.
     ///     </para>
     ///     <code>
     ///     for each entry:
@@ -326,8 +327,8 @@ internal sealed class StringTableProcessor
     ///       hasUserData  : 1 bit
     ///       if hasUserData:
     ///         if fixedSize: userData : UserDataSizeBits bits
-    ///         UsingVarintBitcounts=true  → length : UVarInt32; userData : length bytes
-    ///         UsingVarintBitcounts=false → length : 17 bits;   userData : length bytes
+    ///         UsingVarintBitcounts=true  → length : UBitVar;  userData : length bytes
+    ///         UsingVarintBitcounts=false → length : 17 bits;  userData : length bytes
     ///     </code>
     /// </summary>
     /// <remarks>
@@ -474,9 +475,19 @@ internal sealed class StringTableProcessor
                 else
                 {
                     // Variable-size: length prefix then bytes.
-                    // UsingVarintBitcounts → UVarInt32; legacy → 17-bit fixed.
+                    // UsingVarintBitcounts → UBitVar; legacy → 17-bit fixed.
+                    //
+                    // UBitVar, NOT UVarInt32 — despite the flag's name and despite the entry index
+                    // above reading UVarInt32 under that same flag. The two fields differ, and
+                    // reading this one as a protobuf varint consumes 8 bits where the wire spent 6,
+                    // desyncing the rest of the entry: the length came back as ~5140 instead of
+                    // ~35, tripped the bounds check below, and threw away `userinfo` on EVERY CS2
+                    // demo (all 15 protocol versions tested). The roster survived only because
+                    // CDemoStringTables snapshots repopulate it by a different path, so the visible
+                    // damage was a spurious "this demo may be damaged" warning plus the loss of the
+                    // GOTV recorder's slot.
                     uint declaredBytes = varint
-                        ? buf.ReadUVarInt32()
+                        ? buf.ReadUBitVar()
                         : buf.ReadUBits(17);
                     if (declaredBytes > (uint)buf.RemainingBytes)
                     {
