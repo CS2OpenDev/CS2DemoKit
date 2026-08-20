@@ -66,7 +66,7 @@ public class G4WhilePullNodeGateTests
     [Test]
     public async Task PullNodeGates_WhileRestricts_AndWhenBuilds()
     {
-        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName));
 
         // The build itself is the primary `when:` regression guard: a `flag: when: round.alive.in_clutch`
         // used to throw MissingMethodException here. Reaching Evaluate proves it now builds.

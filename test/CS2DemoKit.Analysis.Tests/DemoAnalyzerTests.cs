@@ -19,7 +19,7 @@ public class DemoAnalyzerTests
     [Test]
     public async Task BuildContext_IndexesEventsAndReplaysEntities()
     {
-        string path = DemoTestHelper.RequireDemo();
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
 
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 

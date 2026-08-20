@@ -74,7 +74,7 @@ public class EntityIntegrationTests
     [Test]
     public async Task EntityDecode_IsHealthy_NoMisalignmentAndPawnsResolve()
     {
-        string path = DemoTestHelper.RequireDemo();
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
 
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
@@ -516,7 +516,7 @@ public class EntityIntegrationTests
     [Test]
     public async Task PlayerSnapshotBuilder_AtMidpoint_ProducesTeamedPlayers()
     {
-        string path = DemoTestHelper.RequireDemo();
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
         EntityStateLayer layer = new(parsed.Frames);
@@ -755,7 +755,7 @@ public class EntityIntegrationTests
     [Test]
     public async Task MolotovThrowScanner_AttributesThrowsToSlots()
     {
-        string path = DemoTestHelper.RequireDemo();
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
         EntityStateLayer layer = new(parsed.Frames);

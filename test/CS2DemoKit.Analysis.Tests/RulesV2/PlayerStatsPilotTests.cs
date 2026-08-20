@@ -65,7 +65,7 @@ public class PlayerStatsPilotTests
     [Test]
     public async Task PlayerStats_MatchesPinnedCutover()
     {
-        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName));
 
         BuildResult v2Build = CompileV2(demo);
         AnalysisRun v2Run = DemoAnalysis.Evaluate(demo, v2Build);

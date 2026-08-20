@@ -482,3 +482,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# CS2 demo files. Real ones run 40-550 MB, so a local corpus for testing stays out of git.
+# The four-round sample under tests/assets/ is the deliberate exception and is committed.
+demos/
+*.dem
+!tests/assets/sample-de_nuke.dem
