@@ -41,7 +41,10 @@ internal static class GoldenStatsTestHelper
             return Array.Empty<string>();
         }
 
+        // Only per-demo directories. rules-v2/ holds ruleset pins (*.expected.json) and is not a
+        // demo, so without this filter it generates a permanent phantom skip in every consumer.
         return Directory.EnumerateDirectories(fixtures)
+            .Where(dir => Directory.EnumerateFiles(dir, "*.golden.json").Any())
             .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrEmpty(name))
             .Cast<string>()
@@ -61,7 +64,7 @@ internal static class GoldenStatsTestHelper
         {
             throw new SkipTestException(
                 $"Fixture directory missing: {Path.GetRelativePath(root, dir)}. " +
-                "Run `dotnet run -c Release --project tools/AnalysisBench -- --suite` to produce it.");
+                "Create it and pin a reference with PIN_EXPECTED=1 while the demo is available.");
         }
 
         return dir;
@@ -77,7 +80,7 @@ internal static class GoldenStatsTestHelper
         if (!File.Exists(path))
         {
             throw new SkipTestException(
-                $"Golden file missing: {path}. The bench should produce it on the next --suite run.");
+                $"Golden file missing: {path}. Pin it with PIN_EXPECTED=1 while the demo is available.");
         }
 
         return GoldenStatsSerializer.ReadFromFile(path);

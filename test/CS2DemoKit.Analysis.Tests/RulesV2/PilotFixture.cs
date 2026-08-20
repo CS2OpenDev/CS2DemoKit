@@ -1,6 +1,7 @@
 #region
 
 using System.Text.Json;
+using TUnit.Core.Exceptions;
 
 #endregion
 
@@ -41,6 +42,16 @@ internal static class PilotFixture
         Directory.CreateDirectory(Dir(repoRoot));
         File.WriteAllText(PathFor(repoRoot, name), JsonSerializer.Serialize(value, _options));
     }
+
+    /// <summary>
+    ///     The exception a re-pinning test ends on. A re-pin asserts nothing, so reporting it as
+    ///     passed would be a green result that checked nothing, which is what these fixtures exist
+    ///     to prevent.
+    /// </summary>
+    /// <param name="name">The fixture just written.</param>
+    /// <returns>The skip to throw.</returns>
+    internal static SkipTestException Repinned(string name) =>
+        new($"Re-pinned the '{name}' fixture. Review the diff before committing.");
 
     internal static T Read<T>(string repoRoot, string name)
     {

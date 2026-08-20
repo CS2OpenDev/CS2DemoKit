@@ -59,7 +59,7 @@ public class PostPlantDoublePilotTests
         if (PilotFixture.Regenerate)
         {
             PilotFixture.Write(FindRepoRoot(), FixtureName, actual);
-            return;
+            throw PilotFixture.Repinned(FixtureName);
         }
 
         PpdFixture expected = PilotFixture.Read<PpdFixture>(FindRepoRoot(), FixtureName);

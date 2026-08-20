@@ -50,6 +50,14 @@ public class BucketKindGoldenTests
         Dictionary<int, Dictionary<string, double>> expected = FoldKillBuckets(demo);
         Dictionary<int, Dictionary<string, double>> v2 = ReadBuckets(v2Run);
 
+        // The loop below walks v2 only, so a player the engine dropped entirely would never be
+        // compared and the test would pass on the survivors. v2 may legitimately carry extra slots
+        // (a materialized player with no kills folds to an empty bucket set), so this is a superset
+        // check rather than equivalence.
+        List<int> missing = expected.Keys.Where(slot => !v2.ContainsKey(slot)).OrderBy(s => s).ToList();
+        await Assert.That(missing).IsEmpty()
+            .Because("every slot with a kill in the event fold must appear in the engine's buckets");
+
         int totalBuckets = 0;
         double totalKills = 0;
         foreach ((int slot, Dictionary<string, double> b2) in v2)

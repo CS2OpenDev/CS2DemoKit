@@ -59,7 +59,7 @@ public class WeaponStatsPilotTests
         if (PilotFixture.Regenerate)
         {
             PilotFixture.Write(FindRepoRoot(), FixtureName, actual);
-            return;
+            throw PilotFixture.Repinned(FixtureName);
         }
 
         WeaponStatsFixture expected = PilotFixture.Read<WeaponStatsFixture>(FindRepoRoot(), FixtureName);

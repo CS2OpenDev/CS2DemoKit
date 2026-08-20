@@ -1,5 +1,6 @@
 #region
 
+using System.Security.Cryptography;
 using CS2DemoKit.Parser;
 using TUnit.Core.Exceptions;
 
@@ -205,6 +206,18 @@ public static class DemoTestHelper
             }
         }
 
+        // 3. tests/assets, unconditionally rather than behind AllowSampleDemo. That flag governs
+        // whether the sample may be SUBSTITUTED for an absent full match; naming a file outright is
+        // not a substitution, so it cannot silently redirect anything.
+        if (FindRepoRoot() is { } repoRoot)
+        {
+            string asset = Path.Combine(repoRoot, "tests", "assets", filename);
+            if (File.Exists(asset))
+            {
+                return asset;
+            }
+        }
+
         return null;
     }
 
@@ -228,6 +241,25 @@ public static class DemoTestHelper
             $"Required demo '{filename}' was not found. " +
             $"Place it under <repo-root>/demos/ (recursive lookup) or " +
             $"under TestData/ next to the test assembly.");
+
+    /// <summary>
+    ///     The committed sample demo: a four-round <c>de_nuke</c> trim, small enough to live in git.
+    /// </summary>
+    public const string SampleDemoFileName = "sample-de_nuke.dem";
+
+    /// <summary>
+    ///     Lowercase hex SHA-256 of a demo file, matching the <c>demo_sha256</c> a fixture records.
+    ///     A reference is only valid for the exact bytes it was pinned from: two files can carry the
+    ///     same match and still differ, so comparing a live run against a fixture pinned from a
+    ///     different recording produces divergences that read as engine regressions.
+    /// </summary>
+    /// <param name="path">The demo file.</param>
+    /// <returns>The hash.</returns>
+    public static string Sha256OfFile(string path)
+    {
+        using FileStream stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
 
     /// <summary>
     ///     Walks up from <see cref="AppContext.BaseDirectory" /> until it finds a directory

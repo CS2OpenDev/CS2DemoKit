@@ -163,6 +163,10 @@ public class EntityFieldSnapshotTests
             Console.WriteLine(string.Join('\n', divergences.Take(30)));
         }
 
+        // Floor first. "No divergences" is also what an empty snapshot produces, so without this a
+        // fixture with zero ticks passes green having compared nothing.
+        await Assert.That(fieldsCompared).IsGreaterThan(0)
+            .Because($"the snapshot for '{demoId}' must actually pin fields, not just fail to disagree");
         await Assert.That(divergences.Count).IsEqualTo(0);
     }
 

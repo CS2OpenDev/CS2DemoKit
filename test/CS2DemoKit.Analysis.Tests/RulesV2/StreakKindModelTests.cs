@@ -15,8 +15,9 @@ namespace CS2DemoKit.Analysis.Tests.RulesV2;
 ///     <c>window:</c>/<c>min_streak:</c>, structural validation enforces the streak shape (source
 ///     required, window/min-streak streak-only, positive min), the resolver folds a duration window
 ///     to ticks, and the resolved-identity hash distinguishes streaks that differ only in window or
-///     min-streak. (The v1-differential runtime golden retired with Rulesets v1; the
-///     AnalysisBench accuracy suite pins streak values end to end.)
+///     min-streak. (The v1-differential runtime golden retired with Rulesets v1. Runtime streak
+///     values are pinned by <c>PlayerStatsPilotTests</c>' <c>rapid_kill_sequences</c> column, which
+///     needs the reference demo and skips without it; nothing pins them on a bare clone.)
 /// </summary>
 [Category("Unit")]
 public class StreakKindModelTests

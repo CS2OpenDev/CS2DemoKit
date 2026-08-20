@@ -15,7 +15,8 @@ namespace CS2DemoKit.Analysis.Tests.RulesV2;
 ///     <c>thresholds:</c> list, structural validation enforces the tally shape (thresholds required,
 ///     tally-only), and the resolved-identity hash distinguishes tallies that differ only in a
 ///     threshold's <c>(min, target)</c>. (The v1-differential runtime golden retired with
-///     Rulesets v1; PlayerStatsPilotTests + the AnalysisBench accuracy suite pin tally values.)
+///     Rulesets v1. Runtime tally values are pinned by <c>PlayerStatsPilotTests</c> and, on the
+///     committed sample demo, by <c>StatParityTests</c> via <c>multi_2k</c>..<c>multi_5k</c>.)
 /// </summary>
 [Category("Unit")]
 public class TallyKindModelTests
