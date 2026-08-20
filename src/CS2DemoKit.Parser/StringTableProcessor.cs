@@ -155,12 +155,14 @@ internal sealed class StringTableProcessor
         // registered above so `table_id` lookups in ProcessUpdate stay aligned for skipped tables.
         if (IsMaterialized(state.Name) && !msg.StringData.IsEmpty)
         {
-            ReadOnlySpan<byte> raw = msg.DataCompressed
-                ? DecompressBounded(msg.StringData.Span, msg.Name)
-                : msg.StringData.Span;
-
             try
             {
+                // Must stay inside the try. DecompressBounded and Snappy both throw on bad input,
+                // and nothing between here and the public Parse overloads catches.
+                ReadOnlySpan<byte> raw = msg.DataCompressed
+                    ? DecompressBounded(msg.StringData.Span, msg.Name)
+                    : msg.StringData.Span;
+
                 DecodeEntries(raw, msg.NumEntries, state);
             }
             catch (Exception ex)
@@ -290,8 +292,10 @@ internal sealed class StringTableProcessor
     /// </summary>
     private static byte[] DecompressBounded(ReadOnlySpan<byte> compressed, string tableName)
     {
+        // GetUncompressedLength returns int, so >= 2^31 wraps negative and passes an
+        // upper-bound-only check.
         int declared = Snappy.GetUncompressedLength(compressed);
-        if (declared > MaxStringDataBytes)
+        if (declared < 0 || declared > MaxStringDataBytes)
         {
             throw new InvalidDataException(
                 $"String table '{tableName}': compressed string_data declares {declared} bytes, "

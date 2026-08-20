@@ -8,10 +8,11 @@ namespace CS2DemoKit.Parser.Tests;
 ///     — <see cref="BitBuffer" /> zero-fills past the end instead of failing, so an over-read is not
 ///     an error signal and every attacker-controlled size must be bounded explicitly.
 ///     <para>
-///         These drive <c>StringTableProcessor.DecodeEntries</c> directly (internal, see its
+///         Most drive <c>StringTableProcessor.DecodeEntries</c> directly (internal, see its
 ///         remarks): the public entry points catch per-table by design — one bad table must not
 ///         abort the demo — so a test going through them could never observe a guard firing. The
-///         last test covers that swallowing path on purpose.
+///         <c>ProcessCreate_*</c> tests cover that swallowing path on purpose, on both the
+///         compressed and uncompressed branches.
 ///     </para>
 ///     <para>
 ///         Fixtures are built with <see cref="StringTableBitWriter" />, which appends LSB-first to
@@ -243,6 +244,87 @@ public class StringTableBoundsTests
         processor.ProcessCreate(msg); // must not throw out of the public entry point
 
         await Assert.That(processor.Players.Count).IsEqualTo(0);
+    }
+
+    // ── Compressed string_data ────────────────────────────────────────────────────────────────
+    // Nothing touched a compressed table before these, so the swallow contract went unchecked on
+    // the one path that broke it: decompression ran outside ProcessCreate's try.
+
+    /// <summary>
+    ///     A Snappy length header declaring <paramref name="declared" /> bytes, followed by bytes
+    ///     that are not a decodable tag stream.
+    /// </summary>
+    private static byte[] CompressedDeclaring(uint declared)
+    {
+        List<byte> bytes = [];
+        for (uint v = declared; ; v >>= 7)
+        {
+            if (v < 0x80)
+            {
+                bytes.Add((byte)v);
+                break;
+            }
+
+            bytes.Add((byte)(v | 0x80));
+        }
+
+        bytes.AddRange([0xFF, 0xFF, 0xFF, 0xFF]);
+        return [.. bytes];
+    }
+
+    private static CSVCMsg_CreateStringTable CompressedUserinfo(byte[] data) =>
+        new()
+        {
+            Name = "userinfo",
+            NumEntries = 1,
+            UsingVarintBitcounts = true,
+            DataCompressed = true,
+            StringData = Google.Protobuf.ByteString.CopyFrom(data)
+        };
+
+    // Declares a plausible size, then hands Snappier a stream it cannot decode.
+    [Test]
+    public async Task ProcessCreate_CorruptCompressedTable_SwallowsAndWarns()
+    {
+        ParseDiagnostics.Drain(); // this thread's residue is not ours; see the class-level note
+        StringTableProcessor processor = new();
+
+        processor.ProcessCreate(CompressedUserinfo(CompressedDeclaring(64)));
+
+        IReadOnlyList<ParseWarning> warnings = ParseDiagnostics.Drain();
+        await Assert.That(warnings).HasCount().EqualTo(1);
+        await Assert.That(warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
+        await Assert.That(processor.Players.Count).IsEqualTo(0);
+    }
+
+    // One byte above MaxStringDataBytes, so the bomb guard itself throws.
+    [Test]
+    public async Task ProcessCreate_CompressedLengthAboveTheCap_SwallowsAndWarns()
+    {
+        ParseDiagnostics.Drain();
+        StringTableProcessor processor = new();
+
+        processor.ProcessCreate(CompressedUserinfo(CompressedDeclaring((16 * 1024 * 1024) + 1)));
+
+        IReadOnlyList<ParseWarning> warnings = ParseDiagnostics.Drain();
+        await Assert.That(warnings).HasCount().EqualTo(1);
+        await Assert.That(warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
+    }
+
+    // 2^31 wraps negative through GetUncompressedLength's int return, past an upper-bound check.
+    [Test]
+    public async Task ProcessCreate_CompressedLengthWrappingNegative_SwallowsAndWarns()
+    {
+        ParseDiagnostics.Drain();
+        StringTableProcessor processor = new();
+
+        processor.ProcessCreate(CompressedUserinfo(CompressedDeclaring(2147483648u)));
+
+        IReadOnlyList<ParseWarning> warnings = ParseDiagnostics.Drain();
+        await Assert.That(warnings).HasCount().EqualTo(1);
+        await Assert.That(warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
+        await Assert.That(warnings[0].Message).Contains("InvalidDataException")
+            .Because("the guard names the real problem; without it Snappier fails later with OverflowException");
     }
 
     // ── Player-slot range (the domain knowledge the index cap used to carry) ──────────────────
