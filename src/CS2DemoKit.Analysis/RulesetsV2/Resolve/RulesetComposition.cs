@@ -111,6 +111,16 @@ public static class RulesetComposition
                 continue;
             }
 
+            // The show block is the last thing resolve leaves unchecked, and it fails differently on
+            // each path at build: a bad scoreboard ref throws, a bad table column projects all-null.
+            IReadOnlyList<RulesetDiagnostic> showErrors = ShowReferenceValidator.Validate(ruleset);
+            if (showErrors.Count > 0)
+            {
+                diagnostics.AddRange(showErrors);
+                excluded.Add(Exclude(doc, showErrors, attributed));
+                continue;
+            }
+
             checkedByDoc[doc.Id] = ruleset;
         }
 
