@@ -14,8 +14,9 @@ namespace CS2DemoKit.Parser.Tests;
 ///         last test covers that swallowing path on purpose.
 ///     </para>
 ///     <para>
-///         Bit order matches the decoder: <see cref="BitBuffer" /> reads LSB-first within each byte,
-///         so <see cref="Bits" /> appends in the same direction.
+///         Fixtures are built with <see cref="StringTableBitWriter" />, which appends LSB-first to
+///         match <see cref="BitBuffer" />'s read order and is the single place the wire encodings
+///         are written down.
 ///     </para>
 /// </summary>
 [Category("Unit")]
@@ -33,57 +34,6 @@ public class StringTableBoundsTests
     [After(Test)]
     public void DrainStrandedWarnings() => ParseDiagnostics.Drain();
 
-    // Minimal bit writer — LSB-first, matching BitBuffer's read order.
-    private sealed class Bits
-    {
-        private readonly List<byte> _bytes = [];
-        private int _bitPos; // 0-7 within the current (last) byte
-
-        public Bits One(bool value = true)
-        {
-            if (_bitPos == 0)
-            {
-                _bytes.Add(0);
-            }
-
-            if (value)
-            {
-                _bytes[^1] |= (byte)(1 << _bitPos);
-            }
-
-            _bitPos = (_bitPos + 1) % 8;
-            return this;
-        }
-
-        public Bits Zero() => One(false);
-
-        /// <summary>Writes <paramref name="count" /> low bits of <paramref name="value" />, LSB first.</summary>
-        public Bits Raw(uint value, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                One((value & (1u << i)) != 0);
-            }
-
-            return this;
-        }
-
-        /// <summary>Writes a protobuf-style unsigned varint, byte-aligned reads notwithstanding.</summary>
-        public Bits VarInt(uint value)
-        {
-            while (value >= 0x80)
-            {
-                Raw((value & 0x7F) | 0x80, 8);
-                value >>= 7;
-            }
-
-            return Raw(value, 8);
-        }
-
-        /// <summary>Pads to a byte boundary and returns the buffer.</summary>
-        public byte[] ToArray() => _bytes.ToArray();
-    }
-
     private static StringTableProcessor.TableState VarintTable() =>
         new("userinfo")
         {
@@ -99,7 +49,7 @@ public class StringTableBoundsTests
     public async Task DecodeEntries_HugeVarintIndex_StoresOneEntry_InsteadOfPaddingToIt()
     {
         StringTableProcessor.TableState state = VarintTable();
-        byte[] data = new Bits()
+        byte[] data = new StringTableBitWriter()
             .Zero().VarInt(2147483647) // explicit index int.MaxValue
             .One() // hasString
             .Zero() // not a history suffix
@@ -122,7 +72,7 @@ public class StringTableBoundsTests
     public async Task DecodeEntries_IndexAboveInt32Range_ThrowsInvalidData_NotIndexOutOfRange()
     {
         StringTableProcessor.TableState state = VarintTable();
-        byte[] data = new Bits().Zero().VarInt(2147483648).ToArray();
+        byte[] data = new StringTableBitWriter().Zero().VarInt(2147483648).ToArray();
 
         Exception? ex = null;
         try
@@ -149,7 +99,7 @@ public class StringTableBoundsTests
     public async Task DecodeEntries_EntryCountCapBoundary(int entries, bool shouldThrow)
     {
         StringTableProcessor.TableState state = VarintTable();
-        Bits bits = new();
+        StringTableBitWriter bits = new();
         for (int i = 0; i < entries; i++)
         {
             bits.One().Zero().Zero(); // isSequential=1, hasString=0, hasUserData=0
@@ -180,7 +130,7 @@ public class StringTableBoundsTests
     {
         StringTableProcessor.TableState state = VarintTable();
         const int claimed = 60000; // well past the cap, and within RemainingBits / 3
-        Bits bits = new();
+        StringTableBitWriter bits = new();
         for (int i = 0; i < claimed; i++)
         {
             bits.One().Zero().Zero();
@@ -208,7 +158,7 @@ public class StringTableBoundsTests
     public async Task DecodeEntries_ValidSparseIndex_KeysWithoutPadding()
     {
         StringTableProcessor.TableState state = VarintTable();
-        byte[] data = new Bits()
+        byte[] data = new StringTableBitWriter()
             .Zero().VarInt(63) // explicit index 63
             .One() // hasString
             .Zero() // not a history suffix
@@ -229,11 +179,11 @@ public class StringTableBoundsTests
     public async Task DecodeEntries_UserDataLengthBeyondBuffer_Throws()
     {
         StringTableProcessor.TableState state = VarintTable();
-        byte[] data = new Bits()
+        byte[] data = new StringTableBitWriter()
             .One() // sequential index → 0
             .Zero() // hasString = 0
             .One() // hasUserData = 1
-            .VarInt(2000000000) // claims ~2 GB of payload
+            .UBitVar(2000000000) // claims ~2 GB of payload
             .ToArray();
 
         InvalidDataException? ex = null;
@@ -256,7 +206,7 @@ public class StringTableBoundsTests
     public async Task DecodeEntries_NumEntriesBeyondWhatTheMessageCanHold_Throws()
     {
         StringTableProcessor.TableState state = VarintTable();
-        byte[] data = new Bits().One().Zero().Zero().ToArray(); // one tiny entry's worth of bits
+        byte[] data = new StringTableBitWriter().One().Zero().Zero().ToArray(); // one tiny entry's worth of bits
 
         InvalidDataException? ex = null;
         try
@@ -287,7 +237,7 @@ public class StringTableBoundsTests
             // 2^31 — not representable as a signed key, and the value that used to narrow to a
             // NEGATIVE index and fault later at the indexer instead.
             StringData = Google.Protobuf.ByteString.CopyFrom(
-                new Bits().Zero().VarInt(2147483648).ToArray())
+                new StringTableBitWriter().Zero().VarInt(2147483648).ToArray())
         };
 
         processor.ProcessCreate(msg); // must not throw out of the public entry point
@@ -305,11 +255,11 @@ public class StringTableBoundsTests
     {
         byte[] blob = [0x0A, (byte)name.Length, .. Encoding.UTF8.GetBytes(name)];
 
-        Bits bits = new Bits()
-            .Zero().VarInt(index) // explicit entry index
+        StringTableBitWriter bits = new StringTableBitWriter()
+            .Zero().VarInt(index) // explicit entry index — UVarInt32 on the wire
             .Zero() // hasString = 0
             .One() // hasUserData = 1
-            .VarInt((uint)blob.Length);
+            .UBitVar((uint)blob.Length); // length — UBitVar on the wire, NOT the index's encoding
         foreach (byte b in blob)
         {
             bits.Raw(b, 8);

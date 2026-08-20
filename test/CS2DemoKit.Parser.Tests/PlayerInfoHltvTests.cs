@@ -27,14 +27,14 @@ public class PlayerInfoHltvTests
     // Builds a userinfo string table carrying one entry per supplied player blob, in slot order.
     private static CSVCMsg_CreateStringTable UserinfoTable(params CMsgPlayerInfo[] players)
     {
-        BitWriter bits = new();
+        StringTableBitWriter bits = new();
         foreach (CMsgPlayerInfo p in players)
         {
             byte[] blob = p.ToByteArray();
             bits.One();          // isSequential → next index
             bits.Zero();         // hasString = 0 (the name lives in the blob)
             bits.One();          // hasUserData = 1
-            bits.VarInt((uint)blob.Length);
+            bits.UBitVar((uint)blob.Length); // length is UBitVar on the wire, not a protobuf varint
             foreach (byte b in blob)
             {
                 bits.Raw(b, 8);
@@ -104,50 +104,5 @@ public class PlayerInfoHltvTests
         await Assert.That(bot.IsHltv).IsFalse().Because("a bot plays the match; the GOTV proxy does not");
         await Assert.That(human.IsBot).IsFalse();
         await Assert.That(human.IsHltv).IsFalse();
-    }
-
-    // LSB-first bit writer matching BitBuffer's read order (see StringTableBoundsTests.Bits).
-    private sealed class BitWriter
-    {
-        private readonly List<byte> _bytes = [];
-        private int _bitPos;
-
-        public void One(bool value = true)
-        {
-            if (_bitPos == 0)
-            {
-                _bytes.Add(0);
-            }
-
-            if (value)
-            {
-                _bytes[^1] |= (byte)(1 << _bitPos);
-            }
-
-            _bitPos = (_bitPos + 1) % 8;
-        }
-
-        public void Zero() => One(false);
-
-        public void Raw(uint value, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                One((value & (1u << i)) != 0);
-            }
-        }
-
-        public void VarInt(uint value)
-        {
-            while (value >= 0x80)
-            {
-                Raw((value & 0x7F) | 0x80, 8);
-                value >>= 7;
-            }
-
-            Raw(value, 8);
-        }
-
-        public byte[] ToArray() => _bytes.ToArray();
     }
 }
