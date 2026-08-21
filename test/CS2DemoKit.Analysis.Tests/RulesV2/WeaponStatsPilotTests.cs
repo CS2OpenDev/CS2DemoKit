@@ -46,7 +46,7 @@ public class WeaponStatsPilotTests
     [Test]
     public async Task WeaponStats_MatchesPinnedCutover()
     {
-        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName));
 
         // ── v2: the ported ruleset, through the 2.2c planner + composition seam ──
         BuildResult v2Build = CompileV2(demo);

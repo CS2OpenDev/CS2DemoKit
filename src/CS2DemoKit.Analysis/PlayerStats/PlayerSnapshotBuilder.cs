@@ -414,14 +414,22 @@ public static class PlayerSnapshotBuilder
     ///     lookup (the uint overload below matches the SDK wrappers' raw getters).
     /// </summary>
     public static int MaskHandle(int rawHandle) =>
-        rawHandle == 0 || rawHandle == -1 ? 0 : rawHandle & 0x3FFF;
+        MaskIndex(rawHandle == 0 || rawHandle == -1 ? 0 : rawHandle & 0x3FFF);
 
     /// <summary>
     ///     <see cref="MaskHandle(int)" /> for the SDK wrappers' raw <c>uint</c> handle
     ///     getters (same packed value, same 0 / 0xFFFFFFFF sentinels, same low-14-bit index).
     /// </summary>
     public static int MaskHandle(uint rawHandle) =>
-        rawHandle is 0u or 0xFFFF_FFFFu ? 0 : (int)(rawHandle & 0x3FFF);
+        MaskIndex(rawHandle is 0u or 0xFFFF_FFFFu ? 0 : (int)(rawHandle & 0x3FFF));
+
+    /// <summary>
+    ///     Folds the all-ones index into the "no live handle" zero. A narrower handle field encodes
+    ///     invalid within its own width rather than as <c>0xFFFFFFFF</c>: a dead pawn's
+    ///     <c>m_hController</c> reads <c>0x00FFFFFF</c>, which masks to 0x3FFF. Nothing lives at that
+    ///     index, so without this it leaves here as a live handle and becomes a garbage slot 16382.
+    /// </summary>
+    private static int MaskIndex(int index) => index == 0x3FFF ? 0 : index;
 
     /// <summary>
     ///     CS2 entity-handle decoder: lower 14 bits = entity index. Wire values arrive
@@ -452,7 +460,7 @@ public static class PlayerSnapshotBuilder
             return 0;
         }
 
-        return (int)(handle & 0x3FFF);
+        return MaskIndex((int)(handle & 0x3FFF));
     }
 
     /// <summary>

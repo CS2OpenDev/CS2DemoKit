@@ -67,7 +67,7 @@ public class G1WhereContextSubjectBindingTests
     [Test]
     public async Task WhereReads_BindSubjectSlot()
     {
-        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName));
 
         BuildResult build = V2KindGoldenSupport.CompileV2(demo, Yaml);
         AnalysisRun run = DemoAnalysis.Evaluate(demo, build);

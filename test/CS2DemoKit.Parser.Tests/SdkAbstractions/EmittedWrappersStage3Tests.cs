@@ -181,7 +181,13 @@ public class EmittedWrappersStage3Tests
             ulong packed = Convert.ToUInt64(rawController, CultureInfo.InvariantCulture);
             await Assert.That((ulong)pawn.ControllerHandle).IsEqualTo(packed);
 
-            if (pawn.ControllerHandle != 0u && pawn.ControllerHandle != 0xFFFF_FFFFu)
+            // 0x00FFFFFF is the all-ones sentinel for a 24-bit handle field, encoding the same "no
+            // entity" the 32-bit 0xFFFFFFFF does. The pawn picked here is the first with m_iHealth
+            // at the FINAL checkpoint, and on a real match that is routinely a dead pawn carrying
+            // exactly this: health 0, and a handle whose masked index is 0x3FFF, the reserved
+            // invalid entity index. The committed four-round sample never produces one, so the
+            // narrower guard held there while failing on every full match.
+            if (pawn.ControllerHandle is not (0u or 0x00FF_FFFFu or 0xFFFF_FFFFu))
             {
                 CSPlayerController? controller = world.Resolve<CSPlayerController>(pawn.ControllerHandle);
                 await Assert.That(controller).IsNotNull();

@@ -114,7 +114,7 @@ public class RuleChainEventProjectorTests
     [Category("Integration")]
     public async Task Evaluate_PerPlayerChainSatisfaction_CarriesOwningPlayer()
     {
-        string path = DemoTestHelper.RequireDemo();
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
 
         // Post Rulesets v2 cutover the shipped stats are v2 rulesets (in .Rulesets), so the

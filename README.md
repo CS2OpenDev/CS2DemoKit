@@ -91,6 +91,24 @@ assembly, or `demos/`. The parser suite falls back to the committed sample in `t
 runs in a fresh clone; the analysis suite deliberately does not, because its fixtures are pinned to
 a full match and the sample is a four-round trim — those tests skip instead of failing.
 
+### A local demo corpus
+
+Drop a handful of real demos into `demos/` (gitignored) and a large part of the suite stops
+skipping and starts running against full matches instead of the four-round sample. Use full
+match length demos from various builds and maps: the build-id suffix in the filename tracks the
+protocol variant, which is where decode differences show up, and different maps exercise
+different entity content. A short or abandoned match covers little the committed sample does not
+already cover, so size is a poor proxy to select on. `MultiDemoCanaryTests` sweeps the directory
+(capped at 25) and is the breadth check.
+
+This is local-only for now. CI still runs on the committed sample alone, so a corpus run before
+opening a PR is worth the minute it costs.
+
+Tests whose expectations are specific to one match name that demo through
+`RequireDemo(DemoTestHelper.ReferenceDemoFileName)` rather than taking whatever is in `demos/`, so
+they skip cleanly rather than failing against a demo their numbers never described. If you add a
+test that hardcodes a tick, a slot, or a count, name its demo the same way.
+
 ## Regenerating committed artifacts
 
 ```sh

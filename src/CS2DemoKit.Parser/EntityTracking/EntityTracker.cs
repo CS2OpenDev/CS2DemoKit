@@ -1611,6 +1611,16 @@ public sealed class EntityTracker
         }
 
         int slot = handle & 0x3FFF;
+
+        // A narrower field encodes invalid as all-ones within its own width, not as 0xFFFFFFFF: a
+        // dead pawn's m_hController reads 0x00FFFFFF, which masks to index 0x3FFF. That index is
+        // the invalid marker, never a real entity. Returning null was previously luck, because the
+        // slot happens to be empty; this makes it a guarantee if anything ever occupies 16383.
+        if (slot == 0x3FFF)
+        {
+            return null;
+        }
+
         return Get<T>(slot);
     }
 
