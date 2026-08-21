@@ -34,6 +34,16 @@ public sealed class EntityTracker
     private const int MaxEdicts = 1 << 14; // 16 384
     private const int NumSerialNumberBits = 17;
 
+    // ── Hostile-input bounds for instancebaseline ─────────────────────────────
+    // Same untrusted bitstream StringTableProcessor decodes, and it had none of that file's
+    // bounds. Ceiling on a decompressed blob, checked against Snappy's declared length before
+    // decompressing; matches MaxStringDataBytes, far above a real instancebaseline.
+    private const int MaxInstanceBaselineBytes = 16 * 1024 * 1024;
+
+    // Cheapest entry the format allows: consecutive-index bit, key-present bit, value-present bit.
+    // Bounds the declared entry count against what the payload can actually carry.
+    private const int MinBitsPerInstanceBaselineEntry = 3;
+
     // Serializes the first-error report (breadcrumb + optional full DumpTrace) across parallel
     // decode workers. Each worker is a separate EntityTracker instance, so _errorLogged
     // is per-tracker ("first error" is per-worker); without this lock their multi-line reports
@@ -1869,6 +1879,30 @@ public sealed class EntityTracker
     // ── instancebaseline string table ─────────────────────────────────────────
 
     /// <summary>
+    ///     Snappy-decompresses an instancebaseline blob, refusing one whose DECLARED output exceeds
+    ///     <see cref="MaxInstanceBaselineBytes" />. The declared length is attacker-controlled and
+    ///     drives the allocation, so it is checked before decompressing, not after. A length at or
+    ///     above 2^31 wraps negative through the int return and is rejected by the same check.
+    /// </summary>
+    /// <remarks>
+    ///     <c>internal</c> rather than private so the bound can be exercised directly: the only
+    ///     caller swallows per-update by design, so a test driving that path could never observe
+    ///     the guard firing.
+    /// </remarks>
+    internal static byte[] DecompressBounded(ReadOnlySpan<byte> compressed)
+    {
+        int declared = Snappy.GetUncompressedLength(compressed);
+        if (declared < 0 || declared > MaxInstanceBaselineBytes)
+        {
+            throw new InvalidDataException(
+                $"instancebaseline: compressed blob declares {declared} bytes, above the "
+                + $"{MaxInstanceBaselineBytes}-byte maximum (malformed or hostile demo data).");
+        }
+
+        return Snappy.DecompressToArray(compressed);
+    }
+
+    /// <summary>
     ///     Applies one instancebaseline string-table update (from either the initial
     ///     <c>CSVCMsg_CreateStringTable</c> or a subsequent <c>CSVCMsg_UpdateStringTable</c>).
     ///     Each entry's key is a class id (<c>"classId"</c> or <c>"classId:altBaseline"</c>) and
@@ -1897,12 +1931,25 @@ public sealed class EntityTracker
     ///         </list>
     ///     </para>
     /// </summary>
-    private void ReadInstanceBaselineUpdate(byte[] data, int entries)
+    private void ReadInstanceBaselineUpdate(byte[] data, int entries, bool compressed = false)
     {
-        BitBuffer buf = new(data);
-
         try
         {
+            // Decompressing inside the try is the point: the create path used to do it at the call
+            // site, so a bomb or a corrupt stream escaped this method's swallow and, since neither
+            // ProcessNetMessage call site catches, left the tracker entirely.
+            BitBuffer buf = new(compressed ? DecompressBounded(data) : data);
+
+            // entries is attacker-controlled and sizes the history array below. Bits present is a
+            // hard structural ceiling on how many entries the message can actually carry.
+            int maxEntries = buf.RemainingBits / MinBitsPerInstanceBaselineEntry;
+            if (entries < 0 || entries > maxEntries)
+            {
+                throw new InvalidDataException(
+                    $"instancebaseline declares {entries} entries, but the message holds at most "
+                    + $"{maxEntries} (malformed or hostile demo data).");
+            }
+
             string[] historyKeys = new string[entries > 0 ? entries : 1];
             int index = -1;
 
@@ -1968,7 +2015,7 @@ public sealed class EntityTracker
                     buf.ReadBitsAsBytes(value, bits);
                     if (isCompressed)
                     {
-                        value = Snappy.DecompressToArray(value);
+                        value = DecompressBounded(value);
                     }
                 }
 
@@ -2050,10 +2097,8 @@ public sealed class EntityTracker
                     _ibUserDataSizeBits = createTable.UserDataSizeBits;
                     _ibUsingVarintBitcounts = createTable.UsingVarintBitcounts;
                     _ibFlags = createTable.Flags;
-                    byte[] createData = createTable.DataCompressed
-                        ? Snappy.DecompressToArray(createTable.StringData.Span)
-                        : createTable.StringData.ToByteArray();
-                    ReadInstanceBaselineUpdate(createData, createTable.NumEntries);
+                    ReadInstanceBaselineUpdate(
+                        createTable.StringData.ToByteArray(), createTable.NumEntries, createTable.DataCompressed);
                 }
 
                 break;

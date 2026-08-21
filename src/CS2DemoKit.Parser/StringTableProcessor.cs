@@ -73,11 +73,12 @@ internal sealed class StringTableProcessor
     // list, max-index and entry-count were the same number, so capping the index capped both; a
     // keyed map decouples them and `num_entries <= RemainingBits / MinBitsPerEntry` constrains only
     // the count's rate, not its total. The cheapest entry that still yields a DISTINCT index is the
-    // 3-bit sequential shorthand (isSequential=1, hasString=0, hasUserData=0), and — unlike the
-    // varint path — a run of those needs no entropy, so it Snappy-compresses to nothing: ~200
-    // compressed bytes expand to the 16 MiB MaxStringDataBytes ceiling, declare ~44.7M entries,
-    // and every one of them is a distinct key. At ~36 bytes per Dictionary<int, Entry> slot that
-    // is ~1.6 GiB live from ~200 bytes of demo. So the count needs its own explicit ceiling.
+    // 3-bit sequential shorthand (isSequential=1, hasString=0, hasUserData=0), and a run of those
+    // needs no entropy, so it compresses hard: about 768 KiB reaches the 16 MiB MaxStringDataBytes
+    // ceiling, declaring ~44.7M entries, every one a distinct key. At ~36 bytes per
+    // Dictionary<int, Entry> slot that is ~1.6 GiB live. So the count needs its own explicit
+    // ceiling. (Measured on Snappier 1.3.1: max amplification is 21.3x, so a blob small enough to
+    // overlook cannot reach the ceiling. It is the entry count that is cheap, not the bytes.)
     //
     // 4096 is the entry ceiling the old index bound already enforced in practice (index <= 4096 implied
     // count <= 4097), so the memory ceiling this file guarantees is unchanged — only the index
