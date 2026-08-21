@@ -149,12 +149,10 @@ internal static class EntityDigestExtractor
             return -1;
         }
 
-        uint controller = PawnLookup.TryUnboxHandle(controllerHandle);
-        if (controller == 0)
-        {
-            return -1;
-        }
-
-        return (int)(controller & PawnLookup.EntityIndexMask) - 1;
+        // Must go through IndexOf. A dead pawn's m_hController is the 24-bit invalid handle, and
+        // masking it raw yields slot 16382, which this method's contract says should be -1. Nothing
+        // downstream re-checks, and unlike a table lookup there is no empty slot to save it.
+        int controllerIdx = PawnLookup.IndexOf(PawnLookup.TryUnboxHandle(controllerHandle));
+        return controllerIdx <= 0 ? -1 : controllerIdx - 1;
     }
 }
