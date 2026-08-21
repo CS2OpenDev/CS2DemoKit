@@ -83,7 +83,10 @@ public static class DemoParser
     ///     (game events, player info, schema).
     /// </returns>
     /// <exception cref="InvalidDataException">
-    ///     Thrown if the magic bytes are missing or a frame-size varint overflows.
+    ///     Thrown only when the input is not a CS2 demo: missing magic bytes, or too short to hold
+    ///     a header. Damage inside a real demo does not throw. It yields the frames that decoded,
+    ///     a warning saying what was lost, and a <see cref="ParsedDemo.Health" /> below
+    ///     <see cref="ParseHealth.Clean" />.
     /// </exception>
     public static ParsedDemo Parse(ReadOnlyMemory<byte> data, DemoProfile? profileOverride = null) =>
         ParseCore(data, profileOverride, null);
@@ -170,7 +173,10 @@ public static class DemoParser
             int headerBytes = Leb128Utils.ParseFrameHeader(span[pos..], out FrameHeader header);
             if (headerBytes < 0)
             {
-                break; // truncated header
+                ParseDiagnostics.Warn(ParseWarningCodes.DemoTruncated,
+                    $"frame header at byte {frameStart} is incomplete ({data.Length - frameStart} byte(s) left); "
+                    + $"stopped after {frameDescs.Count} frame(s).");
+                break;
             }
 
             pos += headerBytes;
@@ -184,12 +190,21 @@ public static class DemoParser
             int size = (int)header.Size;
             if (size < 0)
             {
-                throw new InvalidDataException($"Frame size varint overflow at tick {header.Tick}.");
+                // Was a throw. Frame offsets chain, so this is unrecoverable for the REST of the
+                // stream, but the frames already scanned are intact and a caller can use them.
+                // Discarding them made a corrupt byte late in a match cost the whole parse.
+                ParseDiagnostics.Warn(ParseWarningCodes.FrameStreamCorrupt,
+                    $"frame at byte {frameStart} declares size {header.Size}, which cannot be real; "
+                    + $"cannot resynchronize, stopped after {frameDescs.Count} frame(s).", header.Tick);
+                break;
             }
 
             if (pos + size > data.Length)
             {
-                break; // truncated payload
+                ParseDiagnostics.Warn(ParseWarningCodes.DemoTruncated,
+                    $"frame at byte {frameStart} declares {size} payload byte(s) but only "
+                    + $"{data.Length - pos} remain; stopped after {frameDescs.Count} frame(s).", header.Tick);
+                break;
             }
 
             // Zero-copy slice for both cases:

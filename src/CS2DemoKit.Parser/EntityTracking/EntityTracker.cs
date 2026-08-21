@@ -2026,10 +2026,18 @@ public sealed class EntityTracker
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
             // A malformed update is non-fatal: entities fall back to delta-only population
             // (the pre-fix behaviour), so a parse slip degrades rather than crashes the replay.
+            //
+            // Recorded, not swallowed silently. Baselines carry fields that are never re-sent
+            // (m_iMaxHealth, a static m_iTeamNum), so losing one leaves entities quietly missing
+            // values rather than visibly broken. ParseDiagnostics is not reachable here: it is
+            // [ThreadStatic] and drained when ParsedDemo is constructed, which has already happened
+            // by the time a tracker replays. LastEntityError is the tracker-side channel, and
+            // EntityDigestExtractor already reads it as DecodeCompromised.
+            LastEntityError ??= ex.ToString();
         }
     }
 

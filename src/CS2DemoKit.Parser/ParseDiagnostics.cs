@@ -53,6 +53,70 @@ public static class ParseWarningCodes
     ///     were suppressed. Always the LAST entry when present.
     /// </summary>
     public const string WarningsTruncated = "warnings-truncated";
+
+    /// <summary>
+    ///     The frame stream ended mid-header or mid-payload: the recording was cut short. Frames up
+    ///     to that point are intact and returned.
+    /// </summary>
+    public const string DemoTruncated = "demo-truncated";
+
+    /// <summary>
+    ///     A frame header declared a size that cannot be real. Frame offsets chain, so the scan
+    ///     cannot resynchronize past it and stops there; frames before it are intact and returned.
+    /// </summary>
+    public const string FrameStreamCorrupt = "frame-stream-corrupt";
+
+    /// <summary>
+    ///     How much a given code says about the DEMO, as opposed to about this parser. See
+    ///     <see cref="ParsedDemo.Health" />, which folds these into one signal.
+    /// </summary>
+    /// <remarks>
+    ///     The split that matters is <see cref="ParseWarningCodes.NetMessageDropped" />: a dropped
+    ///     net message usually means Valve shipped a message type this parser has no case for yet,
+    ///     which is this library being behind rather than the demo being damaged. Grading it with
+    ///     structural decode failures would make every demo from a new build look broken.
+    /// </remarks>
+    public static ParseHealth SeverityOf(string code) => code switch
+    {
+        StringTableCreateFailed => ParseHealth.Damaged,
+        StringTableUpdateFailed => ParseHealth.Damaged,
+        StringTableTruncated => ParseHealth.Damaged,
+        PlayerInfoUnreadable => ParseHealth.Damaged,
+        DemoTruncated => ParseHealth.Damaged,
+        FrameStreamCorrupt => ParseHealth.Damaged,
+
+        // The parser is behind, or diagnostics themselves were lost. Neither indicts the demo.
+        NetMessageDropped => ParseHealth.Degraded,
+        WarningsTruncated => ParseHealth.Degraded,
+
+        // An unrecognized code is a code added without a severity. Grade it as damage so the
+        // omission shows up as a too-pessimistic reading rather than a silently clean one.
+        _ => ParseHealth.Damaged
+    };
+}
+
+/// <summary>
+///     How much to trust a <see cref="ParsedDemo" />. Ordered, so <c>&gt;</c> comparisons work and
+///     <see cref="ParsedDemo.Health" /> can take the max across warnings.
+/// </summary>
+public enum ParseHealth
+{
+    /// <summary>No warnings. Every byte the parser looked at decoded.</summary>
+    Clean = 0,
+
+    /// <summary>
+    ///     The demo parsed, but something was lost on THIS side: an unparsed message type, or
+    ///     diagnostics past the cap. The demo itself is not implicated, and the parsed output is
+    ///     normally still usable as-is.
+    /// </summary>
+    Degraded = 1,
+
+    /// <summary>
+    ///     Part of the demo's own data did not decode, or the recording is incomplete. Output is a
+    ///     best-effort partial: present values are trustworthy, but absences may be damage rather
+    ///     than fact. Surface this to a user rather than rendering it as a clean match.
+    /// </summary>
+    Damaged = 2
 }
 
 /// <summary>

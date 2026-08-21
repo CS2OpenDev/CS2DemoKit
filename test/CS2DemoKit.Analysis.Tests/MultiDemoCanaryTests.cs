@@ -130,6 +130,23 @@ public class MultiDemoCanaryTests
         }
 
         await Assert.That(replayError).IsNull();
+
+        // A real, complete demo must not be graded Damaged. This is the false-positive guard on the
+        // truncation and frame-corrupt warnings: both fire from the Pass-1 scan on conditions a
+        // healthy file should never meet, so a demo in the corpus reporting Damaged means the
+        // detector is wrong, not the demo. Degraded is allowed and expected on newer builds, where
+        // Valve has shipped message types this parser has no case for.
+        if (parsed.Health is ParseHealth.Damaged)
+        {
+            foreach (ParseWarning w in parsed.Warnings.Where(
+                         w => ParseWarningCodes.SeverityOf(w.Code) == ParseHealth.Damaged))
+            {
+                Console.WriteLine($"DAMAGED {Path.GetFileName(demoPath)}: [{w.Code}] {w.Message}");
+            }
+        }
+
+        await Assert.That(parsed.Health).IsNotEqualTo(ParseHealth.Damaged)
+            .Because("a complete demo that parsed and replayed cleanly must not grade as damaged");
     }
 
     private static string? FindRepoRoot()
