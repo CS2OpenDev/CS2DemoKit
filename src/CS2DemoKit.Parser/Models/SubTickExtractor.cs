@@ -66,18 +66,18 @@ public static class SubTickExtractor
     }
 
     /// <summary>
-    ///     This frame's subtick messages. Parse-time payloads live in the frame's arena slab and are
+    ///     This frame's subtick messages. Parse-time payloads live in the frame's store blocks and are
     ///     decoded here, on the one path that reads them. A frame built by hand (tests, synthetic
     ///     input) carries them in <see cref="DemoFrame.InnerMessages" /> instead, so both are read.
     /// </summary>
     private static IEnumerable<CSVCMsg_UserCommands> UserCommandsIn(DemoFrame frame)
     {
-        if (frame.SubtickSlab is { } slab)
+        if (frame.UserCmdsBlock is { } block)
         {
-            int offset = frame.SubtickOffset;
-            for (int i = 0; i < frame.SubtickCount; i++)
+            int offset = frame.UserCmdsOffset;
+            for (int i = 0; i < frame.UserCmdsCount; i++)
             {
-                ReadOnlySpan<byte> payload = SubtickArena.Read(slab, ref offset);
+                ReadOnlySpan<byte> payload = UserCmdsStore.Read(block, ref offset);
                 CSVCMsg_UserCommands? parsed = TryParse(payload);
                 if (parsed is not null)
                 {
@@ -101,7 +101,7 @@ public static class SubTickExtractor
         }
     }
 
-    /// <summary>Decodes one arena payload, returning null rather than throwing on a bad record.</summary>
+    /// <summary>Decodes one stored payload, returning null rather than throwing on a bad record.</summary>
     private static CSVCMsg_UserCommands? TryParse(ReadOnlySpan<byte> payload)
     {
         try

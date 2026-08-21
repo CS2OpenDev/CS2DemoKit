@@ -57,22 +57,34 @@ CS2 demos carry two clocks and mixing them produces results that look plausible 
 `GameEvent.GameTick`, `RuleChainEvent.Tick` and `HighlightFired.Tick` are already frame clock. Do
 not subtract `ServerStartTick` from them.
 
-## Subtick input
+## Player input (`svc_UserCmds`)
 
-`svc_UserCmds` is about 90% of the net messages in a demo (2.3 million on a 290 MB file) and is
-read by almost nothing. It does not appear in `DemoFrame.InnerMessages`. The payloads are kept
-verbatim in a slab arena on the frame and decoded by `SubTickExtractor`, which is the supported
-way to read them:
+`svc_UserCmds` is about 90% of the net messages in a demo (1.15 million on a 290 MB file) and is
+read by almost nothing. It does not appear in `DemoFrame.InnerMessages`. Each payload is stored
+verbatim in shared blocks on the frame.
+
+For the interpreted view, `SubTickExtractor` reads the subtick move steps out of them:
 
 ```csharp
 List<SubTickEvent> input = SubTickExtractor.Extract(demo.Frames);
 ```
 
-The reason is GC, not decode cost. A payload-per-message representation means one surviving
-object per message, and collection cost scales with the number of live objects rather than their
-bytes. Holding the same bytes in a few hundred large arrays cuts parse time about 40% and halves
-GC pause under workstation GC, which is what a consumer gets unless the host app opts into server
-GC.
+Subtick moves are only one field of the message. It also carries view angles, movement, buttons,
+weapon select, mouse deltas and the pawn handle, so for anything beyond subtick input take the raw
+wire bytes and decode them yourself:
+
+```csharp
+for (int i = 0; i < frame.UserCmdsPayloadCount; i++)
+{
+    var cmds = CSVCMsg_UserCommands.Parser.ParseFrom(frame.GetUserCmdsPayload(i));
+}
+```
+
+The reason for the split is GC, not decode cost. A payload-per-message representation means one
+surviving object per message, and collection cost scales with the number of live objects rather
+than their bytes. Holding the same bytes in a few hundred large arrays cuts parse time about 40%
+and halves GC pause under workstation GC, which is what a consumer gets unless the host app opts
+into server GC.
 
 If you enumerate `InnerMessages` expecting to find `svc_UserCmds` there, that is the one place
 this shows through.

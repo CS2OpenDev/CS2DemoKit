@@ -210,7 +210,7 @@ public class InnerMessageAlignmentTests
         {
             // A DeferredMessage never .Equals the real parsed message, so compare against its
             // materialized form. The parser no longer produces these (svc_UserCmds goes to the
-            // subtick arena), but a hand-built frame still can.
+            // user-command store), but a hand-built frame still can.
             IMessage target = expected is DeferredMessage d ? d.Materialize() : expected;
             return parser.ParseFrom(bytes).Equals(target);
         }

@@ -16,8 +16,8 @@ namespace CS2DemoKit.Parser;
 ///         solved half that problem: deferring the decode removed the protobuf object graph but still
 ///         cost a private byte copy and two live objects per message, and at ~90% of a demo's net
 ///         messages that object count was what made parse GC-bound. Those payloads now go to the
-///         subtick arena instead (<c>SubtickWriter</c>), which holds the same bytes in a few hundred
-///         large slabs and allocates nothing per message.
+///         user-command store instead (<c>UserCmdsWriter</c>), which holds the same bytes in a few hundred
+///         large blocks and allocates nothing per message.
 ///     </para>
 ///     <para>
 ///         Kept because it is public API and still works: a hand-built frame may carry one, and
