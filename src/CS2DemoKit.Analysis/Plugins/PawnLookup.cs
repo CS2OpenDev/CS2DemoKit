@@ -16,31 +16,27 @@ namespace CS2DemoKit.Analysis.Plugins;
 public static class PawnLookup
 {
     /// <summary>
-    ///     CS2 entity-handle encoding: lower 14 bits = entity index. Used for every
-    ///     handle-typed networked field including <c>m_hController</c>, <c>m_hActiveWeapon</c>,
-    ///     <c>m_hPawn</c>, etc.
+    ///     CS2 entity-handle encoding: lower 14 bits = entity index.
     ///     <para>
-    ///         Masking with this alone is not enough to get an index: see <see cref="IndexOf" />,
-    ///         which also rejects the invalid handle that masks to <c>0x3FFF</c>.
+    ///         Masking with this alone does not give you an index. Use <see cref="IndexOf" />, or
+    ///         <see cref="EntityHandle" /> directly, both of which also reject the invalid handle
+    ///         that masks to <c>0x3FFF</c>.
     ///     </para>
     /// </summary>
-    public const uint EntityIndexMask = 0x3FFF;
+    public const uint EntityIndexMask = EntityHandle.IndexMask;
 
     /// <summary>
     ///     Entity index of a networked handle, or <c>-1</c> when the handle points at nothing.
     ///     Prefer this to masking directly.
     /// </summary>
     /// <remarks>
-    ///     A networked ehandle is index bits plus serial bits, and invalid is all-ones at that
-    ///     serialized width, not <c>0xFFFFFFFF</c>: Valve's <c>INVALID_NETWORKED_EHANDLE_VALUE</c>,
-    ///     which is <c>0xFFFFFF</c> for CS2's 14 index + 10 serial. Every such width folds to index
-    ///     <c>0x3FFF</c>, which is reserved and never a live entity, so folding the index catches
-    ///     all of them at once where testing raw sentinel values does not.
+    ///     <see cref="EntityHandle" /> owns the wire rule. This adds the zero convention and the
+    ///     <c>-1</c> sentinel, which are this layer's, not the wire's.
     /// </remarks>
     public static int IndexOf(uint handle)
     {
-        int index = (int)(handle & EntityIndexMask);
-        return handle == 0 || index == (int)EntityIndexMask ? -1 : index;
+        EntityHandle h = new(handle);
+        return handle == 0 || !h.IsValid ? -1 : h.Index;
     }
 
     /// <summary>

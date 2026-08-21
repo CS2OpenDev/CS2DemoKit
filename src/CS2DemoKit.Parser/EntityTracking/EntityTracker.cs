@@ -1598,40 +1598,28 @@ public sealed class EntityTracker
     /// <summary>
     ///     Resolves a raw wire handle (as it lands on the int lane after the V1
     ///     <see cref="LensTransform.HandleIndex" /> identity transform) into a live
-    ///     typed wrapper. Performs the entity-handle mask + sentinel checks (<c>0</c>
-    ///     and <c>0xFFFFFFFF</c> are "no entity"), looks up the target slot in
-    ///     <see cref="CurrentEntities" />, and dispatches through the factory registry
-    ///     to build the wrapper.
+    ///     typed wrapper. Decodes through <see cref="EntityHandle" />, looks up the target
+    ///     slot in <see cref="CurrentEntities" />, and dispatches through the factory registry
+    ///     to build the wrapper. Returns <c>null</c> for a zero handle and for any invalid
+    ///     one, <c>0xFFFFFFFF</c> and the narrower <c>0x00FFFFFF</c> alike.
     ///     <para>
-    ///         The low 14 bits of the handle are the entity slot index; bits 14–16 are
-    ///         reserved; bits 17+ carry the serial number used to validate that the
-    ///         handle still refers to the same entity (not an entity that has been
-    ///         destroyed and recycled into the same slot). For V1 we trust the slot
-    ///         lookup; serial validation belongs to the wrapper-side accessors.
+    ///         The networked encoding is 14 index bits then 10 serial bits, with no gap: see
+    ///         <see cref="EntityHandle" />. The serial number distinguishes a live entity from a
+    ///         different one recycled into the same slot. Here we trust the slot lookup; serial
+    ///         validation belongs to the wrapper-side accessors.
     ///     </para>
     /// </summary>
     public T? ResolveHandle<T>(int handle) where T : class
     {
-        // Two sentinel encodings cover "no entity":
-        //   0          — uninitialised handle
-        //   0xFFFFFFFF — explicit "invalid" (e.g. cleared m_hOwnerEntity)
-        if (handle == 0 || handle == -1)
+        // Zero is an uninitialised handle, which EntityHandle does not fold in: see IsValid on why
+        // the zero convention stays with the caller.
+        if (handle == 0)
         {
             return null;
         }
 
-        int slot = handle & 0x3FFF;
-
-        // A narrower field encodes invalid as all-ones within its own width, not as 0xFFFFFFFF: a
-        // dead pawn's m_hController reads 0x00FFFFFF, which masks to index 0x3FFF. That index is
-        // the invalid marker, never a real entity. Returning null was previously luck, because the
-        // slot happens to be empty; this makes it a guarantee if anything ever occupies 16383.
-        if (slot == 0x3FFF)
-        {
-            return null;
-        }
-
-        return Get<T>(slot);
+        EntityHandle h = EntityHandle.FromRaw(handle);
+        return h.IsValid ? Get<T>(h.Index) : null;
     }
 
     /// <summary>
