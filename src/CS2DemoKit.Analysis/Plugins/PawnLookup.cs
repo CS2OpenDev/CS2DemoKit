@@ -19,8 +19,29 @@ public static class PawnLookup
     ///     CS2 entity-handle encoding: lower 14 bits = entity index. Used for every
     ///     handle-typed networked field including <c>m_hController</c>, <c>m_hActiveWeapon</c>,
     ///     <c>m_hPawn</c>, etc.
+    ///     <para>
+    ///         Masking with this alone is not enough to get an index: see <see cref="IndexOf" />,
+    ///         which also rejects the invalid handle that masks to <c>0x3FFF</c>.
+    ///     </para>
     /// </summary>
     public const uint EntityIndexMask = 0x3FFF;
+
+    /// <summary>
+    ///     Entity index of a networked handle, or <c>-1</c> when the handle points at nothing.
+    ///     Prefer this to masking directly.
+    /// </summary>
+    /// <remarks>
+    ///     A networked ehandle is index bits plus serial bits, and invalid is all-ones at that
+    ///     serialized width, not <c>0xFFFFFFFF</c>: Valve's <c>INVALID_NETWORKED_EHANDLE_VALUE</c>,
+    ///     which is <c>0xFFFFFF</c> for CS2's 14 index + 10 serial. Every such width folds to index
+    ///     <c>0x3FFF</c>, which is reserved and never a live entity, so folding the index catches
+    ///     all of them at once where testing raw sentinel values does not.
+    /// </remarks>
+    public static int IndexOf(uint handle)
+    {
+        int index = (int)(handle & EntityIndexMask);
+        return handle == 0 || index == (int)EntityIndexMask ? -1 : index;
+    }
 
     /// <summary>
     ///     Per-pawn enumeration helper used by <c>CaptureAllSlots</c> implementations.
@@ -49,23 +70,16 @@ public static class PawnLookup
                 continue;
             }
 
-            uint handle = TryUnboxHandle(hv);
-            if (handle == 0)
-            {
-                continue;
-            }
-
-            int ctrlIdx = (int)(handle & EntityIndexMask);
+            int ctrlIdx = IndexOf(TryUnboxHandle(hv));
             int slot = ctrlIdx - 1;
             if (slot < 0)
             {
                 continue;
             }
 
-            // A fully-dead / orphaned pawn reads m_hController = 0x00FFFFFF (entity index 0x3FFF, which
-            // resolves to no entity), so without this guard it yields a garbage slot 16382. Verify the
-            // handle resolves to a live player controller — the ground-truth identity — before mapping.
-            // (ResolveHandle guards the analogous invalid-handle case for single-handle reads.)
+            // Identity check, not a bounds check: IndexOf already folds the invalid handle a dead
+            // pawn reports. A live index can still name a recycled non-controller, and the slot
+            // mapping must not trust it.
             EntityState? ctrl = tracker.CurrentEntities[ctrlIdx];
             if (ctrl is null || !ctrl.ClassName.Contains("PlayerController", StringComparison.OrdinalIgnoreCase))
             {
@@ -77,19 +91,13 @@ public static class PawnLookup
     }
 
     /// <summary>
-    ///     Resolves an entity-handle value to the live entity it points to.
-    ///     Returns <c>null</c> for the zero handle, sentinel <c>0xFFFFFFFF</c>, or when
-    ///     the resolved index is empty.
+    ///     Resolves an entity-handle value to the live entity it points to. Returns <c>null</c>
+    ///     when the handle points at nothing (see <see cref="IndexOf" />) or the slot is empty.
     /// </summary>
     public static EntityState? ResolveHandle(EntityTracker tracker, object? handleValue)
     {
-        uint h = TryUnboxHandle(handleValue);
-        if (h == 0 || h == 0xFFFF_FFFF)
-        {
-            return null;
-        }
-
-        return tracker.CurrentEntities[(int)(h & EntityIndexMask)];
+        int index = IndexOf(TryUnboxHandle(handleValue));
+        return index < 0 ? null : tracker.CurrentEntities[index];
     }
 
     /// <summary>
@@ -126,14 +134,7 @@ public static class PawnLookup
                 continue;
             }
 
-            uint handle = TryUnboxHandle(hv);
-            if (handle == 0)
-            {
-                continue;
-            }
-
-            int ctrlIdx = (int)(handle & EntityIndexMask);
-            if (ctrlIdx == targetControllerIdx)
+            if (IndexOf(TryUnboxHandle(hv)) == targetControllerIdx)
             {
                 return ent;
             }
