@@ -254,7 +254,8 @@ public class EmittedWrappersStage3Tests
             {
                 activeCandidates++;
                 BasePlayerWeapon? active = holder.ActiveWeapon;
-                EntityState? target = tracker.CurrentEntities[unchecked((int)(holder.ActiveWeaponHandle & 0x3FFF))];
+                EntityHandle activeHandle = new(holder.ActiveWeaponHandle);
+                EntityState? target = activeHandle.IsValid ? tracker.CurrentEntities[activeHandle.Index] : null;
                 if (target is not null && curated.Contains(target.ClassName))
                 {
                     await Assert.That(active).IsNotNull();
@@ -284,7 +285,8 @@ public class EmittedWrappersStage3Tests
             {
                 lastCandidates++;
                 BasePlayerWeapon? last = holder.LastWeapon;
-                EntityState? target = tracker.CurrentEntities[unchecked((int)(holder.LastWeaponHandle & 0x3FFF))];
+                EntityHandle lastHandle = new(holder.LastWeaponHandle);
+                EntityState? target = lastHandle.IsValid ? tracker.CurrentEntities[lastHandle.Index] : null;
                 if (target is null)
                 {
                     lastStale++;
@@ -340,7 +342,8 @@ public class EmittedWrappersStage3Tests
 
             pawnLinkCandidates++;
             CSPlayerPawn? linked = ctl.PlayerPawn;
-            EntityState? linkedState = tracker.CurrentEntities[unchecked((int)(ctl.PlayerPawnHandle & 0x3FFF))];
+            EntityHandle pawnHandle = new(ctl.PlayerPawnHandle);
+            EntityState? linkedState = pawnHandle.IsValid ? tracker.CurrentEntities[pawnHandle.Index] : null;
             if (linkedState is null || linkedState.ClassName != "CCSPlayerPawn")
             {
                 pawnLinkStale++;
