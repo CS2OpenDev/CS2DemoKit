@@ -1,5 +1,6 @@
 using CS2DemoKit.Parser.Models;
 using CS2DemoKit.TestSupport;
+using TUnit.Core.Exceptions;
 
 namespace CS2DemoKit.Parser.Tests;
 
@@ -78,12 +79,33 @@ public class UserCmdsStoreTests
         return payloads;
     }
 
+    /// <summary>
+    ///     Total <c>svc_UserCmds</c> payloads the wire carries, counted by the oracle rather than by
+    ///     the store, so a store that silently wrote nothing cannot satisfy its own precondition.
+    /// </summary>
+    private static int WirePayloadCount(ParsedDemo demo, byte[] fileBytes) =>
+        demo.Frames.Sum(f => ReDerive(f, fileBytes).Count);
+
+    /// <summary>
+    ///     Skips when the demo carries no player input at all. GOTV-side and trimmed demos can omit
+    ///     <c>svc_UserCmds</c> entirely (the committed sample does), and a demo without the data
+    ///     cannot say anything about how the data is stored.
+    /// </summary>
+    private static void RequireUserCmds(ParsedDemo demo, byte[] fileBytes)
+    {
+        if (WirePayloadCount(demo, fileBytes) == 0)
+        {
+            throw new SkipTestException("demo carries no svc_UserCmds messages");
+        }
+    }
+
     [Test]
     public async Task Store_HoldsExactlyTheWirePayloads_InOrder()
     {
         string path = DemoTestHelper.RequireDemo();
         byte[] fileBytes = File.ReadAllBytes(path);
         ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(demo, fileBytes);
 
         int framesWithUserCmds = 0, payloadsChecked = 0, mismatches = 0;
 
@@ -134,6 +156,8 @@ public class UserCmdsStoreTests
         byte[] fileBytes = File.ReadAllBytes(path);
 
         ParsedDemo parallel = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(parallel, fileBytes);
+
         ParsedDemo serial = DemoParser.Parse(fileBytes.AsMemory(),
             new ParseOptions { MaxDegreeOfParallelism = 1 });
 
@@ -171,7 +195,10 @@ public class UserCmdsStoreTests
     [Test]
     public async Task UserCmdsPayloads_AreNotInInnerMessages()
     {
-        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(DemoTestHelper.RequireDemo()).AsMemory());
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+        ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(demo, fileBytes);
 
         int asNetMessage = demo.Frames
             .SelectMany(f => f.InnerMessages)
@@ -183,7 +210,10 @@ public class UserCmdsStoreTests
     [Test]
     public async Task SubTickExtractor_ReadsFromTheStore()
     {
-        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(DemoTestHelper.RequireDemo()).AsMemory());
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+        ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(demo, fileBytes);
 
         List<SubTickEvent> events = SubTickExtractor.Extract(demo.Frames);
 
