@@ -113,6 +113,11 @@ public static class DemoParser
     private static ParsedDemo ParseCore(ReadOnlyMemory<byte> data, DemoProfile? profileOverride,
         ParseOptions? options)
     {
+        // Every public Parse overload funnels here, so this is the one place a parse can claim a
+        // clean warning channel. A parse that throws never reaches Drain, and its residue would
+        // otherwise be handed to whatever parses next on this thread.
+        ParseDiagnostics.Reset();
+
         CancellationToken cancellationToken = options?.CancellationToken ?? default;
 
         // File header layout:
@@ -491,6 +496,20 @@ public static class DemoParser
     // ── Enrichment (pass 3) ────────────────────────────────────────────────
 
     /// <summary>
+    ///     Orders dropped net-message types for warning emission: by count descending, then by
+    ///     type name. Total order, so the result does not depend on the enumeration order of
+    ///     <paramref name="dropTotals" />.
+    /// </summary>
+    /// <remarks>
+    ///     <c>internal</c> so the ordering can be tested without a demo that drops messages.
+    /// </remarks>
+    internal static List<KeyValuePair<string, int>> RankDropTypes(IReadOnlyDictionary<string, int> dropTotals) =>
+        dropTotals
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
     ///     Walks all frames in order, decoding game events, processing string tables,
     ///     and extracting the RuntimeSchema.  Mutates each frame's <c>MessageList</c>
     ///     to replace raw <c>CMsgSource1LegacyGameEvent</c> slots with
@@ -660,6 +679,10 @@ public static class DemoParser
         DemoProfile profile = profileOverride
                               ?? DemoSourceClassifier.Classify(serverName, clientName, gameDirectory, buildNumber);
 
+        // Ranked by count, then by type name. The name is not cosmetic: dropTotals is merged from
+        // per-thread partials in completion order, so ties broken by dictionary order would put a
+        // different set of types in the top 8 from run to run on the same demo.
+        //
         // Emitted LAST, after every Pass-3 Warn() call above (string tables, player-info), so those
         // calls claim the shared MaxWarnings budget first: an untrusted upload's corrupted bitstream
         // can synthesize hundreds of distinct garbage type IDs. Emission is additionally capped to
@@ -668,7 +691,7 @@ public static class DemoParser
         // stops holding.
         if (dropTotals is { Count: > 0 })
         {
-            List<KeyValuePair<string, int>> ordered = dropTotals.OrderByDescending(kv => kv.Value).ToList();
+            List<KeyValuePair<string, int>> ordered = RankDropTypes(dropTotals);
             foreach ((string type, int n) in ordered.Take(8))
             {
                 ParseDiagnostics.Warn(ParseWarningCodes.NetMessageDropped, $"{type} dropped", count: n);
