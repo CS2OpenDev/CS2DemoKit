@@ -171,8 +171,37 @@ public sealed class ParsedDemo
     ///     Structured parse warnings (the S11 diagnostics channel, v0.6.0): per-structure damage
     ///     the parser recovered from — rejected string tables, unreadable player blobs — that
     ///     previously vanished into <c>Debug.WriteLine</c> (Release builds saw nothing at all).
-    ///     Empty for a healthy demo. The UI surfaces a "this demo may be damaged" banner when
-    ///     non-empty; the parse itself is still a usable partial result.
+    ///     Empty for a healthy demo. Prefer <see cref="Health" /> to <c>Warnings.Count</c> for the
+    ///     "is this demo damaged" question; the parse itself is still a usable partial result.
     /// </summary>
     public IReadOnlyList<ParseWarning> Warnings { get; }
+
+    /// <summary>
+    ///     The one-line answer to "can I trust this demo": the worst
+    ///     <see cref="ParseWarningCodes.SeverityOf" /> across <see cref="Warnings" />, or
+    ///     <see cref="ParseHealth.Clean" /> when there are none.
+    /// </summary>
+    /// <remarks>
+    ///     Not the same question as <c>Warnings.Count > 0</c>. A demo from a build newer than this
+    ///     parser drops net messages it has no case for and reports
+    ///     <see cref="ParseHealth.Degraded" /> while being a perfectly good demo. Gating a "this
+    ///     demo may be damaged" banner on the count alone would fire on every such demo.
+    /// </remarks>
+    public ParseHealth Health
+    {
+        get
+        {
+            ParseHealth worst = ParseHealth.Clean;
+            foreach (ParseWarning w in Warnings)
+            {
+                ParseHealth s = ParseWarningCodes.SeverityOf(w.Code);
+                if (s > worst)
+                {
+                    worst = s;
+                }
+            }
+
+            return worst;
+        }
+    }
 }

@@ -57,6 +57,54 @@ CS2 demos carry two clocks and mixing them produces results that look plausible 
 `GameEvent.GameTick`, `RuleChainEvent.Tick` and `HighlightFired.Tick` are already frame clock. Do
 not subtract `ServerStartTick` from them.
 
+## Malformed demos
+
+Demos arrive truncated, corrupted mid-stream, and occasionally hostile. The policy is one rule:
+
+**The parser throws only when the input is not a CS2 demo.** Bad magic bytes, or a file too short to
+hold a header, get an `InvalidDataException`, because there is no partial result worth returning.
+Everything else degrades: you get the frames that decoded, plus a warning saying what was lost.
+
+That means a corrupt byte at minute 40 costs you minute 40 onward, not the whole match.
+
+Read `ParsedDemo.Health`, not `Warnings.Count`:
+
+| `Health` | Meaning |
+|---|---|
+| `Clean` | Every byte the parser looked at decoded. |
+| `Degraded` | Something was lost on *this* side: a message type this parser has no case for, or diagnostics past the cap. The demo is not implicated. |
+| `Damaged` | Part of the demo's own data did not decode, or the recording is incomplete. Present values are trustworthy; absences may be damage rather than fact. |
+
+The distinction is load-bearing. A demo recorded on a build newer than your parser drops net messages
+and reports `Degraded` while being perfectly good, so gating a "this demo may be damaged" banner on
+`Warnings.Count > 0` fires on every new-build demo. `ParseWarningCodes.SeverityOf` holds the grading.
+
+### Enforced limits
+
+Bounds exist to stop untrusted input allocating without bound. Exceeding one is never fatal: the
+structure is rejected, a warning is recorded, and the parse continues.
+
+| Limit | Value | Guards |
+|---|---|---|
+| `MaxStringDataBytes` | 16 MiB | Declared decompressed size of a string-table blob |
+| `MaxEntriesPerTable` | 4096 | Declared entry count in a string table |
+| `MinBitsPerEntry` | 3 | Entry count against bits actually present |
+| `MaxInstanceBaselineBytes` | 16 MiB | Declared decompressed size of an instancebaseline blob |
+| `MinBitsPerInstanceBaselineEntry` | 3 | Baseline entry count against bits present |
+| `MaxFieldPaths` | 2048 | Runaway field-path decode on a misaligned entity |
+| `MaxWarnings` | 256 | The warning channel itself |
+
+Compressed sizes are checked *before* decompressing, since the declared length is what drives the
+allocation and it is attacker-controlled.
+
+### Entity replay
+
+`ParsedDemo.Health` covers parsing. Entity replay runs later, against a live `EntityTracker`, and
+reports separately through `EntityTracker.LastEntityError` (sticky, first error wins). The two cannot
+share a channel: the parse-time warning store is drained when `ParsedDemo` is constructed, which has
+already happened by the time a tracker replays. A demo can parse `Clean` and still hit a replay
+error, so check both if you care about entity state.
+
 ## Rules
 
 Four baseline rulesets are embedded in `CS2DemoKit.Analysis` and live in
