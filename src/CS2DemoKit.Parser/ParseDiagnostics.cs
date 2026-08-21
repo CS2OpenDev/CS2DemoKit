@@ -63,12 +63,16 @@ public static class ParseWarningCodes
 ///         <b>Isolation is thread-affine.</b> The store is <see cref="ThreadStaticAttribute" />:
 ///         a parse runs pass 3 and constructs its <see cref="ParsedDemo" /> on one thread, and
 ///         <see cref="Drain" /> (called from the <see cref="ParsedDemo" /> ctor) empties that
-///         thread's list — so drain-on-construct doubles as the per-parse reset, and concurrent
-///         parses on the background queue cannot cross-contaminate. A parse that THROWS before
-///         constructing its result leaves residue on its thread; the next successful parse on
-///         that thread drains it away, which at worst attributes a dead parse's warnings to its
-///         successor — accepted, because warnings are advisory and the alternative is a reset
-///         hook inside the protected <c>DemoParser.cs</c>.
+///         thread's list, so concurrent parses on the background queue cannot
+///         cross-contaminate.
+///     </para>
+///     <para>
+///         Drain-on-construct is not sufficient on its own. A parse that throws before
+///         constructing its result leaves residue on its thread, and the next parse on that
+///         thread used to inherit it, so the same demo could report a different warning count
+///         depending on what ran before it. <see cref="Reset" /> at the entry to
+///         <c>DemoParser.ParseCore</c> is what makes a parse's warnings depend on that parse
+///         alone.
 ///     </para>
 /// </summary>
 internal static class ParseDiagnostics
@@ -102,7 +106,18 @@ internal static class ParseDiagnostics
     }
 
     /// <summary>
-    ///     Returns and clears the current thread's warnings — called by the
+    ///     Discards any warnings left on the current thread. Called at the entry to
+    ///     <c>DemoParser.ParseCore</c> so a parse cannot inherit residue from an earlier parse on
+    ///     the same thread that threw before reaching <see cref="Drain" />.
+    /// </summary>
+    public static void Reset()
+    {
+        _warnings = null;
+        _dropped = 0;
+    }
+
+    /// <summary>
+    ///     Returns and clears the current thread's warnings, called by the
     ///     <see cref="ParsedDemo" /> constructor, so every parse result carries exactly the
     ///     warnings its own run produced.
     /// </summary>
