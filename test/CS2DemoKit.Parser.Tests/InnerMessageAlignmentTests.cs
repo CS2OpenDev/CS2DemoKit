@@ -208,9 +208,9 @@ public class InnerMessageAlignmentTests
     {
         try
         {
-            // svc_UserCmds payloads are deferred (DeferredMessage) — a real parsed message never
-            // .Equals the wrapper, so compare against its materialized form. Equivalent for every
-            // other type (Materialize returns the same instance passed through).
+            // A DeferredMessage never .Equals the real parsed message, so compare against its
+            // materialized form. The parser no longer produces these (svc_UserCmds goes to the
+            // subtick arena), but a hand-built frame still can.
             IMessage target = expected is DeferredMessage d ? d.Materialize() : expected;
             return parser.ParseFrom(bytes).Equals(target);
         }

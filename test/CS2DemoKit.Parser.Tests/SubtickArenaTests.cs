@@ -1,0 +1,198 @@
+using CS2DemoKit.Parser.Models;
+using CS2DemoKit.TestSupport;
+
+namespace CS2DemoKit.Parser.Tests;
+
+/// <summary>
+///     The subtick arena holds <c>svc_UserCmds</c> payloads outside <see cref="DemoFrame.InnerMessages" />,
+///     so nothing in the ordinary message path can catch a mistake in it. These pin it against an
+///     independent oracle: the wire bytes, re-derived from the file.
+///     <para>
+///         Demo-independent. The oracle re-walks each frame's bitstream from the original file and
+///         compares byte for byte, so any demo works and no golden is needed.
+///     </para>
+/// </summary>
+[Category("Unit")]
+public class SubtickArenaTests
+{
+    /// <summary>
+    ///     Re-derives every <c>svc_UserCmds</c> payload for one frame straight from the file: decompress,
+    ///     walk the <c>CDemoPacket</c> bitstream, keep the payloads in wire order. Shares no code with
+    ///     the arena writer, which is what makes it an oracle rather than a restatement.
+    /// </summary>
+    private static List<byte[]> ReDerive(DemoFrame frame, byte[] fileBytes)
+    {
+        List<byte[]> payloads = new();
+        if (frame.Command is not ("DEM_Packet" or "DEM_SignonPacket"))
+        {
+            return payloads;
+        }
+
+        byte[] decompressed = DownstreamUtilities.GetDecompressedPayload(frame, fileBytes);
+        CDemoPacket outer;
+        try
+        {
+            outer = CDemoPacket.Parser.ParseFrom(decompressed);
+        }
+        catch
+        {
+            return payloads;
+        }
+
+        BitBuffer buf = new(outer.Data.Span);
+        while (buf.RemainingBits > 0)
+        {
+            int typeId = (int)buf.ReadUBitVar();
+            int size = (int)buf.ReadUVarInt32();
+            if (size <= 0 || size > buf.RemainingBytes)
+            {
+                break;
+            }
+
+            byte[] bytes = new byte[size];
+            buf.ReadBytes(bytes);
+            if (typeId == (int)SVC_Messages.SvcUserCmds)
+            {
+                payloads.Add(bytes);
+            }
+        }
+
+        return payloads;
+    }
+
+    /// <summary>Reads one frame's arena run back out, in stored order.</summary>
+    private static List<byte[]> FromArena(DemoFrame frame)
+    {
+        List<byte[]> payloads = new();
+        if (frame.SubtickSlab is not { } slab)
+        {
+            return payloads;
+        }
+
+        int offset = frame.SubtickOffset;
+        for (int i = 0; i < frame.SubtickCount; i++)
+        {
+            payloads.Add(SubtickArena.Read(slab, ref offset).ToArray());
+        }
+
+        return payloads;
+    }
+
+    [Test]
+    public async Task Arena_HoldsExactlyTheWirePayloads_InOrder()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+        ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+
+        int framesWithSubtick = 0, payloadsChecked = 0, mismatches = 0;
+
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            List<byte[]> expected = ReDerive(frame, fileBytes);
+            List<byte[]> actual = FromArena(frame);
+
+            if (expected.Count == 0 && actual.Count == 0)
+            {
+                continue;
+            }
+
+            framesWithSubtick++;
+            if (expected.Count != actual.Count)
+            {
+                mismatches++;
+                continue;
+            }
+
+            for (int i = 0; i < expected.Count; i++)
+            {
+                payloadsChecked++;
+                if (!expected[i].AsSpan().SequenceEqual(actual[i]))
+                {
+                    mismatches++;
+                }
+            }
+        }
+
+        Console.WriteLine($"frames with subtick: {framesWithSubtick}; payloads: {payloadsChecked}; " +
+                          $"mismatches: {mismatches}");
+
+        await Assert.That(framesWithSubtick).IsGreaterThan(0)
+            .Because("a real demo carries subtick input; zero here means the arena never ran");
+        await Assert.That(payloadsChecked).IsGreaterThan(0);
+        await Assert.That(mismatches).IsEqualTo(0);
+    }
+
+    // The arena is written by several Parallel.For partitions at once, each with its own slabs. A
+    // frame's payloads must stay contiguous in one slab and must not interleave with another
+    // partition's frame. Running single-threaded and comparing to the parallel result is the check:
+    // identical output means partitioning did not corrupt any run.
+    [Test]
+    public async Task Arena_IsUnaffectedByPartitioning()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+
+        ParsedDemo parallel = DemoParser.Parse(fileBytes.AsMemory());
+        ParsedDemo serial = DemoParser.Parse(fileBytes.AsMemory(),
+            new ParseOptions { MaxDegreeOfParallelism = 1 });
+
+        await Assert.That(serial.Frames.Count).IsEqualTo(parallel.Frames.Count);
+
+        int compared = 0, mismatches = 0;
+        for (int i = 0; i < parallel.Frames.Count; i++)
+        {
+            List<byte[]> a = FromArena(parallel.Frames[i]);
+            List<byte[]> b = FromArena(serial.Frames[i]);
+
+            if (a.Count != b.Count)
+            {
+                mismatches++;
+                continue;
+            }
+
+            for (int j = 0; j < a.Count; j++)
+            {
+                compared++;
+                if (!a[j].AsSpan().SequenceEqual(b[j]))
+                {
+                    mismatches++;
+                }
+            }
+        }
+
+        Console.WriteLine($"payloads compared: {compared}; mismatches: {mismatches}");
+        await Assert.That(compared).IsGreaterThan(0);
+        await Assert.That(mismatches).IsEqualTo(0);
+    }
+
+    // svc_UserCmds is deliberately absent from InnerMessages now. This pins that, so a future change
+    // that puts them back lands as a failing test rather than a silent return of the 2.3M objects.
+    [Test]
+    public async Task SubtickPayloads_AreNotInInnerMessages()
+    {
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(DemoTestHelper.RequireDemo()).AsMemory());
+
+        int asNetMessage = demo.Frames
+            .SelectMany(f => f.InnerMessages)
+            .Count(m => m.MessageTypeName == "svc_UserCmds");
+
+        await Assert.That(asNetMessage).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SubTickExtractor_ReadsFromTheArena()
+    {
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(DemoTestHelper.RequireDemo()).AsMemory());
+
+        List<SubTickEvent> events = SubTickExtractor.Extract(demo.Frames);
+
+        Console.WriteLine($"subtick events: {events.Count}");
+        await Assert.That(events.Count).IsGreaterThan(0)
+            .Because("the arena is the only source of subtick input now, so zero means it is unreadable");
+
+        // Sorted by When: the extractor's documented output ordering.
+        float[] when = events.Select(e => e.When).ToArray();
+        await Assert.That(when.SequenceEqual(when.OrderBy(w => w).ToArray())).IsTrue();
+    }
+}

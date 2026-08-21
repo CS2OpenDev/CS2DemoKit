@@ -59,6 +59,54 @@ public sealed class DemoFrame
     /// </summary>
     internal List<NetMessage> MessageList { get; init; } = [];
 
+    /// <summary>
+    ///     This frame's <c>svc_UserCmds</c> payloads, held in a shared slab rather than as one
+    ///     object per message. <c>null</c> when the frame carries no subtick input.
+    ///     <para>
+    ///         These payloads are deliberately absent from <see cref="MessageList" />: at ~90% of a
+    ///         demo's net messages they dominated parse cost purely by existing as live objects.
+    ///         Read them through <see cref="Models.SubTickExtractor" />, which is the only consumer.
+    ///     </para>
+    /// </summary>
+    internal byte[]? SubtickSlab { get; init; }
+
+    /// <summary>Start of this frame's run within <see cref="SubtickSlab" />.</summary>
+    internal int SubtickOffset { get; init; }
+
+    /// <summary>How many payloads the run holds.</summary>
+    internal int SubtickCount { get; init; }
+
+    /// <summary>
+    ///     Number of <c>svc_UserCmds</c> payloads this frame carries. These are not in
+    ///     <see cref="InnerMessages" />; see <see cref="GetSubtickPayload" />.
+    /// </summary>
+    public int SubtickPayloadCount => SubtickCount;
+
+    /// <summary>
+    ///     The raw wire bytes of subtick payload <paramref name="index" />, exactly as they appeared
+    ///     in the frame's message stream. Decode with <c>CSVCMsg_UserCommands.Parser.ParseFrom</c>, or
+    ///     use <see cref="Models.SubTickExtractor" /> for the interpreted view.
+    ///     <para>
+    ///         The span points into shared storage owned by this frame. It stays valid as long as the
+    ///         frame is reachable; copy it if you need to outlive that.
+    ///     </para>
+    /// </summary>
+    /// <param name="index">Zero-based, ordered as the payloads appeared on the wire.</param>
+    /// <exception cref="ArgumentOutOfRangeException">If <paramref name="index" /> is outside the run.</exception>
+    public ReadOnlySpan<byte> GetSubtickPayload(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, SubtickCount);
+
+        int offset = SubtickOffset;
+        for (int i = 0; i < index; i++)
+        {
+            SubtickArena.Read(SubtickSlab!, ref offset);
+        }
+
+        return SubtickArena.Read(SubtickSlab!, ref offset);
+    }
+
     /// <summary>Byte length of the (possibly compressed) payload within the raw .dem file.</summary>
     public int PayloadLength => RawLength - HeaderLength;
 

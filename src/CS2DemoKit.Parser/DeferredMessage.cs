@@ -12,13 +12,16 @@ namespace CS2DemoKit.Parser;
 ///     graph. It IS a valid on-the-wire message; it simply defers the (sometimes very expensive)
 ///     deserialization until a consumer actually needs the typed view.
 ///     <para>
-///         <b>Why this exists.</b> Some message types are eagerly parsed on every demo load but read by
-///         almost nothing. <c>svc_UserCmds</c> is the extreme case: ~1.37M messages on a single 279 MB
-///         demo, ~530 MiB retained for the life of the <see cref="ParsedDemo" /> (58% of it), yet the
-///         only consumers are two lazy UI features (the Replay tab's subtick view and the Parser-tab
-///         inspector). Deferring the parse drops that object-graph overhead for every load that never
-///         opens those views: the analysis engine, background parse workers, and
-///         highlight backfill.
+///         <b>No longer produced by the parser.</b> This existed for <c>svc_UserCmds</c>, and it only
+///         solved half that problem: deferring the decode removed the protobuf object graph but still
+///         cost a private byte copy and two live objects per message, and at ~90% of a demo's net
+///         messages that object count was what made parse GC-bound. Those payloads now go to the
+///         subtick arena instead (<c>SubtickWriter</c>), which holds the same bytes in a few hundred
+///         large slabs and allocates nothing per message.
+///     </para>
+///     <para>
+///         Kept because it is public API and still works: a hand-built frame may carry one, and
+///         <see cref="Models.SubTickExtractor" /> still reads it. Nothing in the parse path creates one.
 ///     </para>
 ///     <para>
 ///         <b>Why implementing <see cref="IMessage" /> is the right layer</b> (rather than changing the

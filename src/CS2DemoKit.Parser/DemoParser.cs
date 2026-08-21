@@ -265,10 +265,11 @@ public static class DemoParser
         }
 
         Parallel.For(0, frameDescs.Count, parallelOptions,
-            // localInit: each partition starts with no buffer; it grows on first compressed frame.
-            () => Array.Empty<byte>(),
-            // body: returns the (possibly grown) partition-local buffer to thread it forward.
-            (i, _, decompressBuffer) =>
+            // localInit: each partition starts with no decompress buffer (it grows on the first
+            // compressed frame) and its own subtick arena.
+            () => new PartitionState(),
+            // body: returns the partition state to thread it forward.
+            (i, _, state) =>
             {
                 // Checkpoint 2 of 3 — per frame, inside pass 2 (the only chunked/parallel pass;
                 // Parallel.For's own range-partitioner assigns contiguous i-ranges to workers
@@ -279,11 +280,12 @@ public static class DemoParser
                 if (d.IsCompressed)
                 {
                     int decompressedLength = Snappy.GetUncompressedLength(d.RawPayload.Span);
-                    if (decompressBuffer.Length < decompressedLength)
+                    if (state.DecompressBuffer.Length < decompressedLength)
                     {
-                        decompressBuffer = new byte[decompressedLength]; // grow-only, never shrink
+                        state.DecompressBuffer = new byte[decompressedLength]; // grow-only, never shrink
                     }
 
+                    byte[] decompressBuffer = state.DecompressBuffer;
                     int written = Snappy.Decompress(d.RawPayload.Span, decompressBuffer);
                     // Slice to the exact written count — the buffer may be larger than this frame
                     // from a prior iteration. Passing the whole oversized buffer would make the
@@ -299,7 +301,7 @@ public static class DemoParser
 
                 results[i] = ParseFrame(d.Command, d.Tick, payload,
                     d.RawStart, d.HeaderLength, d.RawPayloadSize, d.IsCompressed, i,
-                    onUnknownMessage, dropCounts?.Value);
+                    onUnknownMessage, dropCounts?.Value, state.Subtick);
 
                 if (progressStride > 0)
                 {
@@ -310,9 +312,10 @@ public static class DemoParser
                     }
                 }
 
-                return decompressBuffer;
+                return state;
             },
-            // localFinally: nothing to release — the buffer is plain managed memory, GC'd with the partition.
+            // localFinally: nothing to release. The buffer is plain managed memory, GC'd with the
+            // partition, and the arena's slabs are kept alive by the frames that point into them.
             _ => { });
         if (prof)
         {
@@ -788,6 +791,7 @@ public static class DemoParser
     /// <param name="headerLength">Byte length of the three ULEB128 header varints.</param>
     /// <param name="rawPayloadSize">Byte length of the payload as stored in the file (compressed or not).</param>
     /// <param name="isCompressed">Whether the payload was Snappy-compressed on disk.</param>
+    /// <param name="subtick">This partition's subtick arena; bracketed per frame by the caller.</param>
     /// <param name="frameNumber">
     ///     Zero-based index of this frame in the result array (set on
     ///     <see cref="DemoFrame.FrameNumber" />).
@@ -812,9 +816,14 @@ public static class DemoParser
         bool isCompressed,
         int frameNumber,
         Action<UnknownMessageInfo>? onUnknownMessage,
-        Dictionary<string, int>? dropCounts)
+        Dictionary<string, int>? dropCounts,
+        SubtickWriter subtick)
     {
         int rawLength = headerLength + rawPayloadSize;
+
+        // Brackets every ParseInnerMessages call below, so a frame's subtick payloads land in one
+        // contiguous slab run.
+        subtick.BeginFrame();
 
         // O(1) hash lookup into the pre-built cache — no reflection per frame.
         string name = _demoCommandNames.TryGetValue((int)cmd, out string? n)
@@ -840,6 +849,12 @@ public static class DemoParser
                 FindBytesField(framePayload.Span, 3, out dataFieldStart, out _);
             }
 
+            List<NetMessage> packetMessages = outer is not null
+                ? ParseInnerMessages(outer.Data.Span, dataFieldStart, frameNumber, onUnknownMessage, dropCounts,
+                    subtick)
+                : [];
+            (byte[]? packetSlab, int packetOffset, int packetCount) = subtick.EndFrame();
+
             return new DemoFrame
             {
                 ServerTick = tick,
@@ -849,9 +864,10 @@ public static class DemoParser
                 RawLength = rawLength,
                 HeaderLength = headerLength,
                 IsCompressed = isCompressed,
-                MessageList = outer is not null
-                    ? ParseInnerMessages(outer.Data.Span, dataFieldStart, frameNumber, onUnknownMessage, dropCounts)
-                    : []
+                MessageList = packetMessages,
+                SubtickSlab = packetSlab,
+                SubtickOffset = packetOffset,
+                SubtickCount = packetCount
             };
         }
 
@@ -890,8 +906,10 @@ public static class DemoParser
                 }
 
                 messages.AddRange(ParseInnerMessages(innerPacket.Data.Span, absoluteDataFieldStart, frameNumber,
-                    onUnknownMessage, dropCounts));
+                    onUnknownMessage, dropCounts, subtick));
             }
+
+            (byte[]? fullSlab, int fullOffset, int fullCount) = subtick.EndFrame();
 
             return new DemoFrame
             {
@@ -902,7 +920,10 @@ public static class DemoParser
                 RawLength = rawLength,
                 HeaderLength = headerLength,
                 IsCompressed = isCompressed,
-                MessageList = messages
+                MessageList = messages,
+                SubtickSlab = fullSlab,
+                SubtickOffset = fullOffset,
+                SubtickCount = fullCount
             };
         }
 
@@ -982,8 +1003,12 @@ public static class DemoParser
     ///     <c>null</c>. Two of the three drop sites are in this method; the third is
     ///     <see cref="HandleUnknown" />'s caller arm.
     /// </param>
+    /// <param name="subtick">
+    ///     This partition's subtick arena. <c>svc_UserCmds</c> payloads are appended here instead of
+    ///     becoming <see cref="NetMessage" /> entries.
+    /// </param>
     private static List<NetMessage> ParseInnerMessages(ReadOnlySpan<byte> data, int dataFieldStart, int frameNumber,
-        Action<UnknownMessageInfo>? onUnknownMessage, Dictionary<string, int>? dropCounts)
+        Action<UnknownMessageInfo>? onUnknownMessage, Dictionary<string, int>? dropCounts, SubtickWriter subtick)
     {
         List<NetMessage> messages = [];
         BitBuffer buf = new(data);
@@ -1031,6 +1056,17 @@ public static class DemoParser
             try
             {
                 buf.ReadBytes(rented.AsSpan(0, size));
+
+                // Subtick input goes to the arena and gets no NetMessage. It is ~90% of the messages
+                // in a demo, so one live object per message is what made parse GC-bound. Skipped
+                // before the drop-site accounting below: this is a routing decision, not a decode
+                // failure, and counting it would grade every demo Degraded.
+                if (typeId == (int)SVC_Messages.SvcUserCmds)
+                {
+                    subtick.Append(rented.AsSpan(0, size));
+                    continue;
+                }
+
                 msg = ParseNetMessage(typeId, new ReadOnlyMemory<byte>(rented, 0, size), typeName,
                     frameNumber, decompStart, onUnknownMessage);
             }
@@ -1119,11 +1155,8 @@ public static class DemoParser
             (int)SVC_Messages.SvcUserMessage => Try(CSVCMsg_UserMessage.Parser, seq, typeName),
             (int)SVC_Messages.SvcBroadcastCommand => Try(CSVCMsg_Broadcast_Command.Parser, seq, typeName),
             (int)SVC_Messages.SvcHltvFixupOperatorStatus => Try(CSVCMsg_HltvFixupOperatorStatus.Parser, seq, typeName),
-            // Deferred: svc_UserCmds (subtick input) is ~1.37M msgs / ~530 MiB retained on a large
-            // demo, read only by the Replay-tab subtick view + Parser inspector. Keep the raw bytes and
-            // materialize on demand (DeferredMessage) instead of expanding the object graph on every
-            // load. See docs/perf/parser-and-entity-decode/subtick-deferral-proposal.md.
-            (int)SVC_Messages.SvcUserCmds => DeferredMessage.Defer(CSVCMsg_UserCommands.Parser, data),
+            // svc_UserCmds never reaches here: ParseInnerMessages routes it into the subtick arena
+            // before this switch.
             _ => HandleUnknown(typeId, typeName, frameNumber, decompressedStart, data.Length, onUnknownMessage)
         };
     }
@@ -1188,4 +1221,15 @@ public static class DemoParser
         int RawPayloadSize,
         bool IsCompressed,
         ReadOnlyMemory<byte> RawPayload);
+
+    /// <summary>
+    ///     One Pass-2 partition's scratch state, threaded through <c>Parallel.For</c>'s local-init
+    ///     overload. Both members MUST stay partition-local: concurrent workers would stomp a shared
+    ///     decompress buffer, and a shared arena writer would interleave two frames' payload runs.
+    /// </summary>
+    private sealed class PartitionState
+    {
+        public byte[] DecompressBuffer = [];
+        public readonly SubtickWriter Subtick = new();
+    }
 }
