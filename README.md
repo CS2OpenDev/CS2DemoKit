@@ -195,8 +195,11 @@ test that hardcodes a tick, a slot, or a count, name its demo the same way.
 it. Re-measure against it before claiming a change helped:
 
 ```sh
-tools/CS2DemoKit.Bench/run-baseline.sh 10 mine.csv
+dotnet run --project tools/CS2DemoKit.Bench -c Release -- sweep --rounds 10 --out mine.csv
 ```
+
+`--demos`, `--cooldown` and `--label` are the other knobs; `--help` lists them. The label
+defaults to the short SHA of the tree being measured, so a CSV stays traceable to a commit.
 
 One process per measurement, a discarded warm-up per process, a forced collection before each
 timed phase, and the machine's load average stamped on every row. Workstation GC, which is what

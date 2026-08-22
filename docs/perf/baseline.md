@@ -9,7 +9,8 @@ helped, and update it when one lands.
     corpus    5 full-match demos, 288-294 MB, 121k-149k frames
     load      1.44 to 3.59 throughout
 
-Raw rows in `baseline-ecfc03d.csv`. Reproduce with `tools/CS2DemoKit.Bench/run-baseline.sh`.
+Raw rows in `baseline-ecfc03d.csv`. Reproduce with
+`dotnet run --project tools/CS2DemoKit.Bench -c Release -- sweep`.
 Medians below, because one thermal or scheduling excursion moves a mean and leaves a median alone.
 
 ## Where the time goes
