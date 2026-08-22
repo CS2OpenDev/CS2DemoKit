@@ -22,6 +22,11 @@ git push origin main v0.9.2
 Tagging a commit whose `version.json` still says something else fails the build at the first step,
 before anything is packed.
 
+The bump can go through a pull request instead, and then the tag lands on the merge commit. That is
+worth the extra step on a prerelease: `ci.yml` packs and smoke-tests with `PublicRelease=true`, so a
+bump PR is the only thing that exercises the prerelease packaging path before the tag build runs it
+for real. A stable bump gets nothing extra from the detour.
+
 ## Prereleases
 
 Same mechanism, prerelease label in both places:
