@@ -80,6 +80,7 @@ jobs:
 
       # Last gate before upload: restore the exact nupkgs about to be published and run against
       # them. A package that cannot be consumed must not reach the feed.
+      #
       # Version from the packed filename rather than a second nbgv call, so the consumer cannot
       # reference a version the pack did not produce. On a tag ref the two agree, but only because
       # the ref matches publicReleaseRefSpec; ci.yml has the same step where they do not.
