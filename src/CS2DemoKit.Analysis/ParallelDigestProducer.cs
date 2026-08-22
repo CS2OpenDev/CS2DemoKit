@@ -15,9 +15,11 @@ namespace CS2DemoKit.Analysis;
 ///     worker can start there with no prior deltas). Every worker drives the SAME
 ///     <see cref="EntityStateLayer.SeekToTick" /> mechanism + the SAME <see cref="EntityDigestExtractor" />
 ///     the sequential scanner uses, just pre-positioned at its chunk's checkpoint via
-///     <see cref="EntityStateLayer.PrimeFromCheckpoint" /> — so the parallel digest array is element-wise
-///     identical to a sequential one (proven by <c>ParallelDigestEquivalenceTests</c>; sequential→golden is
-///     proven by Step 1, so parallel→golden follows by composition).
+///     <see cref="EntityStateLayer.PrimeFromCheckpoint" />, so the digest stream folds to the same
+///     per-pawn snapshot a sequential decode produces, with singletons and molotovs identical frame for
+///     frame (proven by <c>ParallelDigestEquivalenceTests</c>; sequential→golden is proven by Step 1, so
+///     parallel→golden follows by composition). Per-pawn rows are deltas and each worker re-emits every
+///     live cell on its chunk's first frame, so they match after the fold rather than row for row.
 ///     <para>
 ///         <b>Thread safety:</b> each worker owns its own <see cref="EntityStateLayer" /> (hence its own
 ///         <c>EntityTracker</c> + entity set) and its own provider instances (via the factories), and writes
@@ -114,6 +116,10 @@ internal static class ParallelDigestProducer
             IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = perPlayerFactory();
             IReadOnlyList<IEntityValueProvider> singletons = singletonFactory();
 
+            // Per chunk, never shared. This worker has no history before its checkpoint, so its first
+            // frame re-emits every live cell; the consumer's fold makes that redundant, not wrong.
+            PerPawnDeltaState delta = new(perPlayer.Count);
+
             if (chunk.CheckpointFrameIndex >= 0)
             {
                 layer.PrimeFromCheckpoint(chunk.CheckpointFrameIndex, schemaPrefixEnd);
@@ -123,7 +129,7 @@ internal static class ParallelDigestProducer
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 layer.SeekToTick(frames[n].ServerTick);
-                digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, emitMolotov);
+                digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, emitMolotov, delta);
             }
 
             if (prof)
