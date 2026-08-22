@@ -58,6 +58,14 @@ correctly because the padding makes lexical order match numeric order.
 
 `alpha0001`, `beta0001`, `rc0001` all work. So does `0.9.2-beta0001`, `0.9.2-beta0002`, `0.9.2`.
 
+### Never move a prerelease tag, bump the counter
+
+Fixing a beta by force-moving the tag onto a new commit does not republish anything. The version
+string is unchanged, and both pushes run `--skip-duplicate`, so nuget.org keeps the content it
+already has. The workflow goes green and ships nothing, which is the worst possible combination.
+
+A beta that needs a change becomes `beta0002`. The wasted number costs nothing.
+
 ### nuget.org is unlist-only
 
 A published version cannot be deleted, only hidden from search. A typo in a tag is permanent and
@@ -90,6 +98,8 @@ its packaging exercised before the tag exists.
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
 `CS2OpenDev/CS2DemoKit`, workflow `nuget.yml`; the login step trades the run's OIDC token for a
 short-lived key. GitHub Packages uses the built-in `GITHUB_TOKEN`. Both pushes use
-`--skip-duplicate`, so re-running a tag build is safe.
+`--skip-duplicate`, so re-running a tag build on the same commit is safe.
+
+That flag has one sharp edge, and it is aimed at the prerelease line. See below.
 
 Symbol packages ship as a run artifact rather than to GitHub Packages, which rejects `.snupkg`.
