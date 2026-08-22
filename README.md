@@ -189,6 +189,39 @@ Tests whose expectations are specific to one match name that demo through
 they skip cleanly rather than failing against a demo their numbers never described. If you add a
 test that hardcodes a tick, a slot, or a count, name its demo the same way.
 
+## Performance
+
+`docs/perf/baseline.md` is the reference point for demo-load timings, with the raw rows beside
+it. Re-measure against it before claiming a change helped:
+
+```sh
+dotnet run --project tools/CS2DemoKit.Bench -c Release -- sweep --rounds 10 --out mine.csv
+```
+
+`--demos`, `--cooldown` and `--label` are the other knobs; `--help` lists them. The label
+defaults to the short SHA of the tree being measured, so a CSV stays traceable to a commit.
+
+One process per measurement, a discarded warm-up per process, a forced collection before each
+timed phase, and the machine's load average stamped on every row. Workstation GC, which is what
+a consumer gets unless their app opts into server GC; server GC hides most of the collector cost,
+and the collector is roughly a third of this pipeline.
+
+To A/B a change, publish each side and let the tool interleave them:
+
+```sh
+dotnet publish tools/CS2DemoKit.Bench -c Release -o /tmp/arm-before   # from the other checkout
+dotnet publish tools/CS2DemoKit.Bench -c Release -o /tmp/arm-after
+dotnet run --project tools/CS2DemoKit.Bench -c Release -- compare \
+  --a /tmp/arm-before --b /tmp/arm-after --rounds 3 --out ab.csv
+```
+
+Two things this corpus has already taught, both the expensive way. Spread the demos across sizes:
+a set clustered at one size cannot detect a result that only holds at that size, and the first
+version of `demos/` was fifteen megabytes wide. And do not read a per-demo median off three runs,
+because a collection landing inside a timed window makes the distribution bimodal with the modes
+hundreds of milliseconds apart, so three samples can land entirely in the wrong mode. Either take
+the best of N, since the noise only ever adds time, or run enough rounds to see both modes.
+
 ## Regenerating committed artifacts
 
 ```sh

@@ -57,6 +57,10 @@ public sealed class EntityChangeScanner
     private readonly List<IPerPlayerEntityValueProvider> _perPlayerProviders;
     private readonly Dictionary<(int ProviderIdx, int Slot), object?> _preFrameSnapshot = [];
 
+    // This scanner's own cell memory, used only on the sequential fallback path. The parallel path
+    // never reaches BuildDigest, so each chunk worker keeps its own instead.
+    private readonly PerPawnDeltaState _delta;
+
     // Decode-integrity latch (hardening that landed with the EnemyDmg-overcount investigation, but
     // NOT that fix — the fix lives in HurtTeamEnrichmentEdge's same-frame guard): once ANY consumed
     // digest reports DecodeCompromised — the producing tracker had hit an entity-decode error (the
@@ -79,8 +83,9 @@ public sealed class EntityChangeScanner
     private readonly List<TrackedProvider> _tracked;
 
     // When set (via PrecomputeParallelDigests), AdvanceAndPollAt consumes digest[frameIdx]
-    // instead of driving the layer (SeekToTick + BuildDigest) sequentially. These are proven element-wise
-    // identical to the sequential digests (ParallelDigestEquivalenceTests), so golden output is preserved.
+    // instead of driving the layer (SeekToTick + BuildDigest) sequentially. These are proven to fold to
+    // the same snapshot as the sequential digests (ParallelDigestEquivalenceTests), so golden output is
+    // preserved.
 
     // The previous frame's digest. The pre-frame snapshot consumed inside frame N
     // is the per-pawn state from frame N-1 — which is exactly _prevDigest.PerPawn (built last frame from
@@ -147,6 +152,8 @@ public sealed class EntityChangeScanner
         {
             _perPlayerProviderIndex[_perPlayerProviders[i]] = i;
         }
+
+        _delta = new PerPawnDeltaState(_perPlayerProviders.Count);
     }
 
     /// <summary>Test seam: the precomputed digests (ProviderDigestParityTests compares two scanners').</summary>
@@ -527,7 +534,7 @@ public sealed class EntityChangeScanner
         }
 
         EntityFrameDigest d = EntityDigestExtractor.Build(
-            Layer, _perPlayerProviders, _singletonProviders, _emitMolotovThrows);
+            Layer, _perPlayerProviders, _singletonProviders, _emitMolotovThrows, _delta);
         if (prof)
         {
             // Lumped under the historical "snapshot" sub-phase — it is the per-pawn sweep that dominated it;

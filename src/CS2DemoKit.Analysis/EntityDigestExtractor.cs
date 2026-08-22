@@ -22,9 +22,18 @@ internal sealed class EntityFrameDigest
     public readonly List<(int Index, int Serial, int ThrowerSlot)> Molotovs = [];
 
     /// <summary>
-    ///     Per live pawn this frame: its slot and the per-player-provider values (indexed by the
-    ///     provider list order; a null entry means "no value" and is skipped when merged into the
-    ///     pre-frame snapshot).
+    ///     Per-player-provider values that CHANGED this frame, as (slot, values indexed by provider
+    ///     list order). A null entry means "no update" and is skipped when merged into the pre-frame
+    ///     snapshot; a pawn whose values all held contributes no row at all.
+    ///     <para>
+    ///         Deltas rather than a full readout because the consumer
+    ///         (<c>EntityChangeScanner.MergePreFrameSnapshot</c>) folds these into a running
+    ///         last-value-per-(provider, slot) map, so a value equal to the one already folded is a
+    ///         no-op. On the shipped provider set roughly one cell in a thousand actually changes, and
+    ///         materializing the other 999 cost a boxed value each for the whole demo's digest stream.
+    ///         A provider that changes every frame (a position, say) degrades this to the full readout
+    ///         plus a comparison.
+    ///     </para>
     /// </summary>
     public readonly List<(int Slot, object?[] Values)> PerPawn = [];
 
@@ -53,10 +62,61 @@ internal sealed class EntityFrameDigest
 }
 
 /// <summary>
+///     One decode stream's memory of the last per-pawn value emitted for each (slot, provider), so
+///     <see cref="EntityDigestExtractor.Build" /> can emit only the cells that changed.
+///     <para>
+///         One instance per stream and never shared: one per parallel chunk worker, one per sequential
+///         scanner. A worker starting at a checkpoint has no history, so its first frame re-emits every
+///         live cell. That is redundant, not wrong: the consumer folds the values into
+///         <c>EntityChangeScanner._preFrameSnapshot</c>, and re-writing a key with the value it already
+///         holds is a no-op.
+///     </para>
+/// </summary>
+internal sealed class PerPawnDeltaState(int providerCount)
+{
+    // Distinguishes "never recorded" from "recorded null". A provider legitimately reads null (entity
+    // not spawned, field unseen), and that first null must count as a change.
+    private static readonly object Unset = new();
+
+    private object?[]?[] _bySlot = new object?[]?[64];
+
+    /// <summary>
+    ///     Records <paramref name="value" /> for (<paramref name="slot" />, <paramref name="provider" />)
+    ///     and returns whether it differs from the last value recorded for that cell.
+    /// </summary>
+    public bool Record(int slot, int provider, object? value)
+    {
+        if ((uint)slot >= (uint)_bySlot.Length)
+        {
+            Array.Resize(ref _bySlot, Math.Max(slot + 1, _bySlot.Length * 2));
+        }
+
+        object?[]? row = _bySlot[slot];
+        if (row is null)
+        {
+            row = new object?[providerCount];
+            Array.Fill(row, Unset);
+            _bySlot[slot] = row;
+        }
+
+        object? previous = row[provider];
+        if (!ReferenceEquals(previous, Unset) && Equals(previous, value))
+        {
+            return false;
+        }
+
+        row[provider] = value;
+        return true;
+    }
+}
+
+/// <summary>
 ///     Builds an <see cref="EntityFrameDigest" /> from a layer's current (post-seek) entity state. This is
 ///     the single source of truth for digest extraction, shared by the sequential scanner
 ///     (<c>EntityChangeScanner.BuildDigest</c>) and the parallel chunk decoder
-///     (<c>ParallelDigestProducer</c>), so both produce byte-identical digests by construction.
+///     (<c>ParallelDigestProducer</c>). Singletons and molotovs come out identical by construction;
+///     per-pawn rows depend on the caller's <see cref="PerPawnDeltaState" />, so those agree once folded
+///     rather than row for row.
 /// </summary>
 internal static class EntityDigestExtractor
 {
@@ -65,11 +125,22 @@ internal static class EntityDigestExtractor
     ///     <see cref="CSPlayerPawn" /> wrapper per pawn dispatched to every provider), singleton provider
     ///     values, and live molotov projectiles with their resolved thrower slot.
     /// </summary>
+    /// <param name="layer">The layer to read the current (post-seek) entity state from.</param>
+    /// <param name="perPlayerProviders">Per-player providers, read once per live pawn in list order.</param>
+    /// <param name="singletonProviders">Singleton providers, read once per frame in list order.</param>
+    /// <param name="emitMolotovThrows">When true, the digest includes live <c>CMolotovProjectile</c>s.</param>
+    /// <param name="delta">
+    ///     The caller's per-stream cell memory. When supplied, <see cref="EntityFrameDigest.PerPawn" />
+    ///     carries only the cells that changed since the previous frame in that stream, with unchanged
+    ///     positions left null; a pawn whose values all held emits no row at all. Pass <c>null</c> for the
+    ///     full per-frame readout.
+    /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayerProviders,
         IReadOnlyList<IEntityValueProvider> singletonProviders,
-        bool emitMolotovThrows)
+        bool emitMolotovThrows,
+        PerPawnDeltaState? delta = null)
     {
         EntityTracker tracker = layer.Tracker;
         EntityFrameDigest d = new()
@@ -87,13 +158,23 @@ internal static class EntityDigestExtractor
             PawnLookup.ForEachLivePawn(tracker, (slot, pawn) =>
             {
                 CSPlayerPawn wrapper = SdkEntityWorlds.Wrap<CSPlayerPawn>(tracker, pawn)!;
-                object?[] values = new object?[providerCount];
+
+                // Allocated on first write, so an all-unchanged pawn costs nothing. Every provider is
+                // still read: the change is what gets stored, not what gets computed.
+                object?[]? values = null;
                 for (int p = 0; p < providerCount; p++)
                 {
-                    values[p] = perPlayerProviders[p].ReadForPawn(tracker, wrapper);
+                    object? value = perPlayerProviders[p].ReadForPawn(tracker, wrapper);
+                    if (delta is null || delta.Record(slot, p, value))
+                    {
+                        (values ??= new object?[providerCount])[p] = value;
+                    }
                 }
 
-                d.PerPawn.Add((slot, values));
+                if (values is not null)
+                {
+                    d.PerPawn.Add((slot, values));
+                }
             });
         }
 

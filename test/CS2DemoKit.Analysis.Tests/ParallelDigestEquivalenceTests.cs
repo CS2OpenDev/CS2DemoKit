@@ -12,13 +12,20 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     The sharp correctness gate for parallel entity decode.
 ///     <para>
-///         Builds the per-frame <see cref="EntityFrameDigest" /> array two ways — sequentially (drive one
-///         <see cref="EntityStateLayer" /> with <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" />
-///         per frame, exactly what <c>EntityChangeScanner.BuildDigest</c> does) and in parallel
-///         (<see cref="ParallelDigestProducer" />) — and asserts they are element-wise identical for every
-///         frame/field. The digest seam already proved the sequential digest drives byte-identical golden output, so
-///         <em>parallel == sequential ⟹ parallel → golden</em> by composition; a mismatch points at the
-///         exact frame (hence chunk) and field that diverged.
+///         Builds the per-frame <see cref="EntityFrameDigest" /> array two ways. Sequentially, emitting the
+///         full per-frame readout, and in parallel (<see cref="ParallelDigestProducer" />), which emits only
+///         changed cells from each chunk worker. Both must agree on every frame. Singletons and the
+///         molotov list are compared element-wise. Per-pawn values are compared as the FOLD: the running
+///         last-value-per-(provider, slot) map that <c>EntityChangeScanner.MergePreFrameSnapshot</c> derives,
+///         which is the only per-pawn state any rule reads.
+///     </para>
+///     <para>
+///         Folding is what the assertion has to compare, not the raw rows: a worker has no history before its
+///         checkpoint, so it re-emits every live cell on its chunk's first frame, and rows differ there by
+///         construction. Comparing the fold is the stronger statement anyway: it judges the value the
+///         consumer ends up with rather than the encoding it arrived in. The digest seam already proved the
+///         sequential readout drives byte-identical golden output, so <em>same fold ⟹ parallel → golden</em>
+///         by composition; a mismatch points at the exact frame (hence chunk) and cell that diverged.
 ///     </para>
 ///     <para>
 ///         The provider set deliberately includes all four per-player providers AND
@@ -48,7 +55,7 @@ public class ParallelDigestEquivalenceTests
     ];
 
     [Test]
-    public async Task ParallelDigest_IsElementWiseIdenticalTo_SequentialDigest()
+    public async Task ParallelDigest_FoldsToTheSameSnapshotAs_SequentialDigest()
     {
         string path = DemoTestHelper.RequireDemo();
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
@@ -64,12 +71,18 @@ public class ParallelDigestEquivalenceTests
         Console.WriteLine($"chunks={chunks.Count}  schemaPrefixEnd={schemaPrefixEnd}  " +
                           $"checkpoints={chunks.Count(c => c.CheckpointFrameIndex >= 0)}");
 
-        // ── Sequential reference: one layer, SeekToTick + Build per frame (the scanner's mechanism). ──
+        // ── Sequential reference: one layer, SeekToTick + Build per frame, emitting the FULL per-frame
+        //    readout (no delta state). That is the ground truth the fold below is judged against. ──
         EntityFrameDigest[] sequential = BuildSequential(frames);
 
         // ── Parallel under test. ──
         EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
             frames, NewPerPlayer, NewSingletons, true);
+
+        // ── The scanner's own sequential arm: ONE delta stream over every frame, no chunk resets.
+        //    That is what EntityChangeScanner.BuildDigest does on the fallback path, and it is a
+        //    different shape from the parallel arm (which restarts its cell memory per chunk). ──
+        EntityFrameDigest[] sequentialDelta = BuildSequential(frames, new PerPawnDeltaState(NewPerPlayer().Count));
 
         await Assert.That(parallel.Length).IsEqualTo(sequential.Length);
 
@@ -82,6 +95,11 @@ public class ParallelDigestEquivalenceTests
         int molotovRawMismatchFrames = 0;
         int framesWithPawns = 0;
         int framesWithMolotovs = 0;
+        Dictionary<(int Provider, int Slot), object?> seqSnapshot = [];
+        Dictionary<(int Provider, int Slot), object?> parSnapshot = [];
+        Dictionary<(int Provider, int Slot), object?> seqDeltaSnapshot = [];
+        int seqDeltaMismatchFrames = 0;
+        string? firstSeqDelta = null;
         string? firstPawnOrSingleton = null;
         int firstPawnOrSingletonFrame = -1;
         string? firstMolotovRaw = null;
@@ -100,7 +118,22 @@ public class ParallelDigestEquivalenceTests
                 framesWithMolotovs++;
             }
 
-            string? pawnSingle = DiffPawnAndSingleton(s, p);
+            // Per-pawn is compared as the FOLD, not row-for-row: the parallel path emits only changed
+            // cells and each worker re-emits everything on its chunk's first frame, so the raw rows
+            // legitimately differ. What must not differ is the pre-frame snapshot the consumer derives
+            // from them, which is what every rule actually reads.
+            Fold(seqSnapshot, s);
+            Fold(parSnapshot, p);
+
+            // The scanner's arm, judged against the same ground truth.
+            Fold(seqDeltaSnapshot, sequentialDelta[n]);
+            if (DiffSnapshots(seqSnapshot, seqDeltaSnapshot) is { } sd)
+            {
+                seqDeltaMismatchFrames++;
+                firstSeqDelta ??= $"frame {n}: {sd}";
+            }
+
+            string? pawnSingle = DiffSnapshots(seqSnapshot, parSnapshot) ?? DiffSingletons(s, p);
             if (pawnSingle is not null)
             {
                 pawnMismatchFrames++;
@@ -137,7 +170,7 @@ public class ParallelDigestEquivalenceTests
 
         Console.WriteLine($"compared {frames.Count:N0} frames " +
                           $"({framesWithPawns:N0} w/pawns, {framesWithMolotovs:N0} w/molotovs)");
-        Console.WriteLine($"per-pawn/singleton mismatch frames: {pawnMismatchFrames:N0} " +
+        Console.WriteLine($"snapshot/singleton mismatch frames: {pawnMismatchFrames:N0} " +
                           $"(of which singleton-only: {singletonMismatchFrames:N0})");
         if (firstPawnOrSingleton is not null)
         {
@@ -164,12 +197,21 @@ public class ParallelDigestEquivalenceTests
         // the raw list is; it's asserted as an explicit statement of the consume-relevant invariant and was
         // the lens that originally localized the instancebaseline checkpoint bug.) Since Step 1 proved the
         // sequential digest drives byte-identical golden, parallel == sequential ⟹ parallel → golden.
+        Console.WriteLine($"sequential-delta snapshot mismatch frames: {seqDeltaMismatchFrames:N0}"
+                          + (firstSeqDelta is null ? "" : $"  first: {firstSeqDelta}"));
+
         await Assert.That(pawnMismatchFrames).IsEqualTo(0);
+        await Assert.That(seqDeltaMismatchFrames).IsEqualTo(0)
+            .Because("one continuous delta stream is what EntityChangeScanner.BuildDigest produces on "
+                     + "the sequential fallback, and it must fold to the same snapshot");
         await Assert.That(molotovRawMismatchFrames).IsEqualTo(0);
         await Assert.That(dedupDiff).IsNull();
 
         // Sanity: the comparison actually saw entity data (guards against a vacuous all-empty pass).
         await Assert.That(framesWithPawns).IsGreaterThan(0);
+        await Assert.That(seqSnapshot.Count).IsGreaterThan(0)
+            .Because("an empty fold would make the snapshot comparison pass while checking nothing");
+        Console.WriteLine($"folded snapshot keys: sequential={seqSnapshot.Count} parallel={parSnapshot.Count}");
     }
 
     /// <summary>
@@ -177,7 +219,8 @@ public class ParallelDigestEquivalenceTests
     ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
     ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
     /// </summary>
-    private static EntityFrameDigest[] BuildSequential(IReadOnlyList<DemoFrame> frames)
+    private static EntityFrameDigest[] BuildSequential(
+        IReadOnlyList<DemoFrame> frames, PerPawnDeltaState? delta = null)
     {
         EntityStateLayer layer = new(frames);
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = NewPerPlayer();
@@ -187,20 +230,63 @@ public class ParallelDigestEquivalenceTests
         for (int n = 0; n < frames.Count; n++)
         {
             layer.SeekToTick(frames[n].ServerTick);
-            digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, true);
+            digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, true, delta);
         }
 
         return digests;
     }
 
     /// <summary>
-    ///     Returns null when the per-pawn AND singleton portions of the two digests are identical, else a
-    ///     short first-divergence description. These feed the snapshot fold + singleton change-detection
-    ///     every frame with no dedup, so they must match exactly.
+    ///     Folds one digest's per-pawn rows into a running last-value-per-(provider, slot) map, exactly as
+    ///     <c>EntityChangeScanner.MergePreFrameSnapshot</c> does, including skipping nulls, which is what
+    ///     makes an unchanged cell in a delta row a no-op rather than an erasure.
     /// </summary>
-    private static string? DiffPawnAndSingleton(EntityFrameDigest a, EntityFrameDigest b)
+    private static void Fold(Dictionary<(int Provider, int Slot), object?> snapshot, EntityFrameDigest d)
     {
-        // Singletons.
+        foreach ((int slot, object?[] values) in d.PerPawn)
+        {
+            for (int p = 0; p < values.Length; p++)
+            {
+                if (values[p] is not null)
+                {
+                    snapshot[(p, slot)] = values[p];
+                }
+            }
+        }
+    }
+
+    /// <summary>Returns null when the two folded snapshots hold identical values, else a description.</summary>
+    private static string? DiffSnapshots(
+        Dictionary<(int Provider, int Slot), object?> a,
+        Dictionary<(int Provider, int Slot), object?> b)
+    {
+        if (a.Count != b.Count)
+        {
+            return $"snapshot-key-count {a.Count} vs {b.Count}";
+        }
+
+        foreach (((int provider, int slot), object? valueA) in a)
+        {
+            if (!b.TryGetValue((provider, slot), out object? valueB))
+            {
+                return $"snapshot missing slot {slot} provider[{provider}] in parallel";
+            }
+
+            if (!Equals(valueA, valueB))
+            {
+                return $"snapshot slot {slot} provider[{provider}] {Fmt(valueA)} vs {Fmt(valueB)}";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Returns null when the singleton portions of the two digests are identical, else a short
+    ///     description. Singletons are consumed every frame with no dedup, so they still match exactly.
+    /// </summary>
+    private static string? DiffSingletons(EntityFrameDigest a, EntityFrameDigest b)
+    {
         if (a.Singletons.Length != b.Singletons.Length)
         {
             return $"singleton-count {a.Singletons.Length} vs {b.Singletons.Length}";
@@ -211,35 +297,6 @@ public class ParallelDigestEquivalenceTests
             if (!Equals(a.Singletons[i], b.Singletons[i]))
             {
                 return $"singleton[{i}] {Fmt(a.Singletons[i])} vs {Fmt(b.Singletons[i])}";
-            }
-        }
-
-        // Per-pawn (same order — ForEachLivePawn walks the occupied list ascending in both paths).
-        if (a.PerPawn.Count != b.PerPawn.Count)
-        {
-            return $"perpawn-count {a.PerPawn.Count} vs {b.PerPawn.Count}";
-        }
-
-        for (int i = 0; i < a.PerPawn.Count; i++)
-        {
-            (int slotA, object?[] valsA) = a.PerPawn[i];
-            (int slotB, object?[] valsB) = b.PerPawn[i];
-            if (slotA != slotB)
-            {
-                return $"perpawn[{i}] slot {slotA} vs {slotB}";
-            }
-
-            if (valsA.Length != valsB.Length)
-            {
-                return $"perpawn[{i}] slot {slotA} value-count {valsA.Length} vs {valsB.Length}";
-            }
-
-            for (int v = 0; v < valsA.Length; v++)
-            {
-                if (!Equals(valsA[v], valsB[v]))
-                {
-                    return $"perpawn slot {slotA} provider[{v}] {Fmt(valsA[v])} vs {Fmt(valsB[v])}";
-                }
             }
         }
 
