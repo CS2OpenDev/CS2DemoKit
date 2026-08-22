@@ -80,10 +80,22 @@ jobs:
 
       # Last gate before upload: restore the exact nupkgs about to be published and run against
       # them. A package that cannot be consumed must not reach the feed.
+      # Version from the packed filename rather than a second nbgv call, so the consumer cannot
+      # reference a version the pack did not produce. On a tag ref the two agree, but only because
+      # the ref matches publicReleaseRefSpec; ci.yml has the same step where they do not.
       - name: Smoke-test the packages
         working-directory: scripts/nuget-smoke
         run: |
-          version=$(dotnet nbgv get-version -p ../../src/CS2DemoKit.Parser -v NuGetPackageVersion)
+          set -euo pipefail
+          shopt -s nullglob
+          packed=(../../artifacts/pack/CS2DemoKit.Parser.*.nupkg)
+          if [ ${#packed[@]} -ne 1 ]; then
+            echo "::error::expected one packed CS2DemoKit.Parser nupkg, found ${#packed[@]}" >&2
+            exit 1
+          fi
+          version=$(basename "${packed[0]}" .nupkg)
+          version=${version#CS2DemoKit.Parser.}
+          echo "smoke-testing CS2DemoKit $version"
           dotnet run -c Release -p:CS2DemoKitVersion="$version" -- ../../tests/assets/sample-de_nuke.dem
 
       - name: Upload packages as run artifacts
