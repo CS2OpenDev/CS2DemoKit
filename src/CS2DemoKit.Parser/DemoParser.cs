@@ -1011,6 +1011,7 @@ public static class DemoParser
         Action<UnknownMessageInfo>? onUnknownMessage, Dictionary<string, int>? dropCounts, UserCmdsWriter userCmds)
     {
         List<NetMessage> messages = [];
+        int userCmdsSoFar = 0;
         BitBuffer buf = new(data);
 
         while (buf.RemainingBits > 0)
@@ -1063,7 +1064,10 @@ public static class DemoParser
                 // failure, and counting it would grade every demo Degraded.
                 if (typeId == (int)SVC_Messages.SvcUserCmds)
                 {
-                    userCmds.Append(rented.AsSpan(0, size));
+                    // Ordinal is the position this message occupies among the frame's messages, so
+                    // DemoFrame.InnerMessages can present it in wire order without storing an object.
+                    userCmds.Append(rented.AsSpan(0, size), messages.Count + userCmdsSoFar);
+                    userCmdsSoFar++;
                     continue;
                 }
 

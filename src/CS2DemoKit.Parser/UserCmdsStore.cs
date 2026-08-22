@@ -57,19 +57,27 @@ internal sealed class UserCmdsWriter
         _frameCount = 0;
     }
 
-    /// <summary>Appends one payload as a 4-byte little-endian length followed by the bytes.</summary>
-    public void Append(ReadOnlySpan<byte> payload)
+    /// <summary>
+    ///     Appends one payload as a 4-byte little-endian length followed by the bytes, and reports
+    ///     where the bytes landed so a caller can point at them without copying.
+    /// </summary>
+    public (byte[] Block, int Offset) Append(ReadOnlySpan<byte> payload, int ordinal)
     {
-        int need = sizeof(int) + payload.Length;
+        int need = sizeof(int) + sizeof(int) + payload.Length;
         if (_block!.Length - _offset < need)
         {
             Relocate(need);
         }
 
-        BinaryPrimitives.WriteInt32LittleEndian(_block.AsSpan(_offset), payload.Length);
-        payload.CopyTo(_block.AsSpan(_offset + sizeof(int)));
+        // Record: [ordinal][length][bytes]. The ordinal is this payload's position among the
+        // frame's messages, so a composed view can put it back in wire order.
+        BinaryPrimitives.WriteInt32LittleEndian(_block.AsSpan(_offset), ordinal);
+        BinaryPrimitives.WriteInt32LittleEndian(_block.AsSpan(_offset + sizeof(int)), payload.Length);
+        payload.CopyTo(_block.AsSpan(_offset + (2 * sizeof(int))));
+        int payloadAt = _offset + (2 * sizeof(int));
         _offset += need;
         _frameCount++;
+        return (_block, payloadAt);
     }
 
     /// <summary>Closes the frame's run. Returns nulls when the frame carried no subtick input.</summary>
@@ -105,10 +113,21 @@ internal static class UserCmdsStore
     /// </summary>
     public static ReadOnlySpan<byte> Read(byte[] block, scoped ref int offset)
     {
+        offset += sizeof(int); // ordinal
         int length = BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(offset));
         offset += sizeof(int);
         ReadOnlySpan<byte> payload = block.AsSpan(offset, length);
         offset += length;
         return payload;
+    }
+
+    /// <summary>Reads one record's ordinal, length and payload start, advancing past the record.</summary>
+    public static (int Ordinal, int PayloadAt, int Length) ReadHeader(byte[] block, scoped ref int offset)
+    {
+        int ordinal = BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(offset));
+        int length = BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(offset + sizeof(int)));
+        int at = offset + (2 * sizeof(int));
+        offset = at + length;
+        return (ordinal, at, length);
     }
 }

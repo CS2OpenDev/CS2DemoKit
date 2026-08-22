@@ -598,7 +598,7 @@ public sealed class EntityTracker
     {
         CurrentTick = fullPacketFrame.ServerTick;
         CurrentFrameIndex = fullPacketFrame.FrameNumber;
-        foreach (NetMessage msg in fullPacketFrame.InnerMessages)
+        foreach (NetMessage msg in fullPacketFrame.MessageList)
         {
             ProcessNetMessage(msg);
         }
@@ -627,7 +627,7 @@ public sealed class EntityTracker
     public bool LoadInstanceBaselineSnapshot(DemoFrame fullPacketFrame)
     {
         bool loaded = false;
-        foreach (NetMessage msg in fullPacketFrame.InnerMessages)
+        foreach (NetMessage msg in fullPacketFrame.MessageList)
         {
             if (msg.Payload is not CDemoStringTables snapshot)
             {
@@ -1853,7 +1853,7 @@ public sealed class EntityTracker
         // ~5 packets later).
         bool isFullPacketCheckpoint = frame.Command == "DEM_FullPacket";
 
-        foreach (NetMessage msg in frame.InnerMessages)
+        foreach (NetMessage msg in frame.MessageList)
         {
             if (isFullPacketCheckpoint && msg.Payload is CSVCMsg_PacketEntities)
             {

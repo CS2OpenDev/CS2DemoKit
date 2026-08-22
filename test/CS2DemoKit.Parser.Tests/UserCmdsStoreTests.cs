@@ -190,21 +190,161 @@ public class UserCmdsStoreTests
         await Assert.That(mismatches).IsEqualTo(0);
     }
 
-    // svc_UserCmds is deliberately absent from InnerMessages now. This pins that, so a future change
-    // that puts them back lands as a failing test rather than a silent return of the 2.3M objects.
+    // InnerMessages is the complete, ordered message list, so the stored payloads have to appear
+    // there too. They are synthesized on access rather than retained, which is what keeps the store
+    // worth having; this pins that the synthesis is complete and correctly placed.
     [Test]
-    public async Task UserCmdsPayloads_AreNotInInnerMessages()
+    public async Task UserCmdsPayloads_AppearInInnerMessages_InWireOrder()
     {
         string path = DemoTestHelper.RequireDemo();
         byte[] fileBytes = File.ReadAllBytes(path);
         ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
         RequireUserCmds(demo, fileBytes);
 
-        int asNetMessage = demo.Frames
-            .SelectMany(f => f.InnerMessages)
-            .Count(m => m.MessageTypeName == "svc_UserCmds");
+        int framesChecked = 0, surfaced = 0, badCount = 0, outOfOrder = 0;
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            if (frame.UserCmdsPayloadCount == 0)
+            {
+                continue;
+            }
 
-        await Assert.That(asNetMessage).IsEqualTo(0);
+            framesChecked++;
+            IReadOnlyList<NetMessage> inner = frame.InnerMessages;
+            if (inner.Count != frame.MessageList.Count + frame.UserCmdsPayloadCount)
+            {
+                badCount++;
+            }
+
+            // The oracle's payloads, in wire order, must line up with the svc_UserCmds entries in
+            // InnerMessages read in list order.
+            List<byte[]> expected = ReDerive(frame, fileBytes);
+            int seen = 0;
+            for (int i = 0; i < inner.Count; i++)
+            {
+                if (inner[i].MessageTypeName != "svc_UserCmds")
+                {
+                    continue;
+                }
+
+                if (seen >= expected.Count
+                    || inner[i].DecompressedLength != expected[seen].Length)
+                {
+                    outOfOrder++;
+                }
+
+                seen++;
+                surfaced++;
+            }
+
+            if (seen != expected.Count)
+            {
+                badCount++;
+            }
+        }
+
+        Console.WriteLine($"frames: {framesChecked}; surfaced via InnerMessages: {surfaced}; "
+                          + $"count mismatches: {badCount}; order mismatches: {outOfOrder}");
+        await Assert.That(surfaced).IsGreaterThan(0);
+        await Assert.That(badCount).IsEqualTo(0);
+        await Assert.That(outOfOrder).IsEqualTo(0);
+    }
+
+    // A type test must not decode. This is what lets EntityTracker and the enrichment pass run
+    // switch (msg.Payload) over every frame without paying for subtick input.
+    [Test]
+    public async Task StoredPayload_TypeTest_DoesNotDecode()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+        ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(demo, fileBytes);
+
+        int checkedCount = 0, leaked = 0;
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            if (frame.UserCmdsPayloadCount == 0)
+            {
+                continue;
+            }
+
+            IReadOnlyList<NetMessage> inner = frame.InnerMessages;
+            for (int i = 0; i < inner.Count && checkedCount < 5000; i++)
+            {
+                if (inner[i].MessageTypeName != "svc_UserCmds")
+                {
+                    continue;
+                }
+
+                checkedCount++;
+                if (inner[i].Payload is CSVCMsg_UserCommands or CSVCMsg_PacketEntities)
+                {
+                    leaked++;
+                }
+            }
+
+            if (checkedCount >= 5000)
+            {
+                break;
+            }
+        }
+
+        await Assert.That(checkedCount).IsGreaterThan(0);
+        await Assert.That(leaked).IsEqualTo(0)
+            .Because("a payload that answers a type test as the real message would force every "
+                     + "switch (msg.Payload) on the replay path to decode subtick input");
+    }
+
+    // InnerMessages has two read paths: a foreach walks the records once, the indexer scans to
+    // find the record for a position. They must agree, or a consumer's choice of loop changes what
+    // it sees.
+    [Test]
+    public async Task Enumerator_AndIndexer_AgreeExactly()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+        ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(demo, fileBytes);
+
+        int compared = 0, mismatches = 0, framesChecked = 0;
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            if (frame.UserCmdsPayloadCount == 0)
+            {
+                continue;
+            }
+
+            framesChecked++;
+            IReadOnlyList<NetMessage> inner = frame.InnerMessages;
+
+            int i = 0;
+            foreach (NetMessage viaForeach in inner)
+            {
+                NetMessage viaIndexer = inner[i];
+                if (viaForeach.MessageTypeName != viaIndexer.MessageTypeName
+                    || viaForeach.DecompressedLength != viaIndexer.DecompressedLength)
+                {
+                    mismatches++;
+                }
+
+                compared++;
+                i++;
+            }
+
+            if (i != inner.Count)
+            {
+                mismatches++;
+            }
+
+            if (framesChecked >= 2000)
+            {
+                break;
+            }
+        }
+
+        Console.WriteLine($"frames: {framesChecked}; positions compared: {compared}; mismatches: {mismatches}");
+        await Assert.That(compared).IsGreaterThan(0);
+        await Assert.That(mismatches).IsEqualTo(0);
     }
 
     [Test]
