@@ -79,26 +79,46 @@ demo that is 2.7M boxed cells, of which 2874 differ from the previous frame. The
 them into a last-value-per-(provider, slot) map, so the other 99.9% were writing a key the value
 it already held. Carrying only changed cells reproduces the fold exactly.
 
-Interleaved A/B, same tree one commit apart, 5 rounds x 5 demos x 2 variants, 50 runs, zero
-failures, 900 s. Raw rows in `digest-delta-8804862.csv`. Order flips each round so drift hits both
-arms. Load ran 1.59-4.81 (higher than the sweep above), but the control arm's median evaluate came
-out at 1395.1 ms against this baseline's 1398.5, so the two are comparable.
+Evaluation is 72 to 81% of load across the wide corpus, so it is still where the headroom is.
 
-| metric | before | after | change |
+Interleaved A/B, same tree with only the three library files reverted on the before arm, so both
+arms run an identical harness. 3 rounds x 15 demos x 2 variants, 90 runs, zero failures, 1618 s.
+Raw rows in `digest-delta-wide.csv`. Order flips each round so drift hits both arms.
+
+The corpus is deliberately wider than the 5 above, which all sat within 6 MB of each other at the
+library's median size and so could not have detected a result that only holds at one scale. These
+15 span 40 to 524 MB and 36k to 229k frames, across all 13 maps in the local library.
+
+Figures are the best of 3 per demo per arm. The noise here is one-sided: a collection landing
+inside a timed window adds several hundred ms and nothing removes time, so the minimum is the
+least contaminated estimate. Medians over 3 are not enough on a bimodal distribution, which is
+what produced a spurious +44.9% "regression" on map 405 in the first pass of this sweep; ten runs
+per arm on that demo put it at -20.2%, with both arms bimodal and the low mode clearly separated
+(`digest-delta-405-bimodal.csv`).
+
+| metric | median change | range | demos improved |
 |---|---|---|---|
-| parse (control, untouched) | 388.4 ms | 380.4 ms | -2.1% |
-| build | 21.3 ms | 21.3 ms | 0.0% |
-| **evaluate** | **1395.1 ms** | **959.3 ms** | **-31.2%** |
-| evaluate GC pause | 424.6 ms | 280.4 ms | -34.0% |
-| evaluate allocation | 629.8 MB | 549.2 MB | -12.8% |
-| retained by demo (control) | 601.4 MB | 602.3 MB | +0.1% |
-| evaluate gen0 / gen1 / gen2 | 81 / 29 / 1 | 70 / 21 / 0 | |
-| **total load** | **1814.8 ms** | **1363.0 ms** | **-24.9%** |
+| **evaluate** | **-22.1%** | -11.6% to -33.4% | 15/15 |
+| evaluate allocation | -13.0% | -4.3% to -14.5% | 15/15 |
+| **total load** | **-17.2%** | -6.2% to -26.3% | 15/15 |
+| parse (control) | +0.1% | | |
+| retained (control) | +0.3% | | |
 
-Per demo, median evaluate: -32.1%, -31.0%, -22.7%, -34.0%, -32.5%.
+An earlier version of this section reported -31.2% evaluate and -24.9% load. That was measured on
+the 5-demo corpus alone, which happened to hold three demos in the high-gain group. The wider
+corpus is the number to trust.
 
-Parse and retained are the controls. Both are outside the change and both held, which is what
-says the evaluate delta is real rather than a shifted measurement window.
+Allocation is the hardest of these: it is a counter rather than a wall clock, so it barely moves
+between runs. It also carries the mechanism. The saving scales with the retained digest stream, so
+the 36k-frame demo gains 4.3% while the 229k-frame demos gain 14.2%. A win that did not scale that
+way would not be the win this change claims to be.
+
+Parse and retained are the controls, and both sit on zero at the median. Two per-demo outliers are
+worth naming rather than hiding: parse drifts +23.5% on the smallest demo, which is 40 ms on a
+180 ms phase, and retained drifts +53.3% on map 407, whose before arm is bimodal at
+[123, 123, 192] MB against a steady 190 MB after. Retained is captured after parse and before
+evaluation runs at all, so a change living entirely inside evaluation cannot move it; that column
+is measurement instability by construction.
 
 This is a collector win, not a decode win: every provider is still read for every live pawn on
 every frame. It also depends on the shipped providers changing rarely. A provider that moves every

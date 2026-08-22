@@ -206,6 +206,22 @@ timed phase, and the machine's load average stamped on every row. Workstation GC
 a consumer gets unless their app opts into server GC; server GC hides most of the collector cost,
 and the collector is roughly a third of this pipeline.
 
+To A/B a change, publish each side and let the tool interleave them:
+
+```sh
+dotnet publish tools/CS2DemoKit.Bench -c Release -o /tmp/arm-before   # from the other checkout
+dotnet publish tools/CS2DemoKit.Bench -c Release -o /tmp/arm-after
+dotnet run --project tools/CS2DemoKit.Bench -c Release -- compare \
+  --a /tmp/arm-before --b /tmp/arm-after --rounds 3 --out ab.csv
+```
+
+Two things this corpus has already taught, both the expensive way. Spread the demos across sizes:
+a set clustered at one size cannot detect a result that only holds at that size, and the first
+version of `demos/` was fifteen megabytes wide. And do not read a per-demo median off three runs,
+because a collection landing inside a timed window makes the distribution bimodal with the modes
+hundreds of milliseconds apart, so three samples can land entirely in the wrong mode. Either take
+the best of N, since the noise only ever adds time, or run enough rounds to see both modes.
+
 ## Regenerating committed artifacts
 
 ```sh
