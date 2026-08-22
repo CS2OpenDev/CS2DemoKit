@@ -114,7 +114,9 @@ internal sealed class PerPawnDeltaState(int providerCount)
 ///     Builds an <see cref="EntityFrameDigest" /> from a layer's current (post-seek) entity state. This is
 ///     the single source of truth for digest extraction, shared by the sequential scanner
 ///     (<c>EntityChangeScanner.BuildDigest</c>) and the parallel chunk decoder
-///     (<c>ParallelDigestProducer</c>), so both produce byte-identical digests by construction.
+///     (<c>ParallelDigestProducer</c>). Singletons and molotovs come out identical by construction;
+///     per-pawn rows depend on the caller's <see cref="PerPawnDeltaState" />, so those agree once folded
+///     rather than row for row.
 /// </summary>
 internal static class EntityDigestExtractor
 {

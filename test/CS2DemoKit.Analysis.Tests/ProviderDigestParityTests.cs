@@ -13,7 +13,9 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     The data-driven provider migration gate: the five shipped
 ///     hand-written entity providers re-expressed as <see cref="ProviderSpec" /> data must
-///     produce BYTE-IDENTICAL entity digests on a real demo. Every provider's emit-gate
+///     produce IDENTICAL entity digests on a real demo. Both sides run through the same
+///     delta-encoded producer with the same chunking, so a row-for-row comparison still holds:
+///     any divergence is the providers disagreeing, not the encoding. Every provider's emit-gate
 ///     subtlety lives in this comparison — health's 0→null, armor/equipment's
 ///     unseen→lane-default, the weapon handle hop, the freeze-period singleton — and the
 ///     parallel-decode clone path exercises the new <see cref="IWorkerCloneable{T}" /> hook

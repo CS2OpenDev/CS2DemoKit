@@ -79,6 +79,11 @@ public class ParallelDigestEquivalenceTests
         EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
             frames, NewPerPlayer, NewSingletons, true);
 
+        // ── The scanner's own sequential arm: ONE delta stream over every frame, no chunk resets.
+        //    That is what EntityChangeScanner.BuildDigest does on the fallback path, and it is a
+        //    different shape from the parallel arm (which restarts its cell memory per chunk). ──
+        EntityFrameDigest[] sequentialDelta = BuildSequential(frames, new PerPawnDeltaState(NewPerPlayer().Count));
+
         await Assert.That(parallel.Length).IsEqualTo(sequential.Length);
 
         // ── Categorize ALL divergences (don't stop at the first) by the digest field that diverged, so we
@@ -92,6 +97,9 @@ public class ParallelDigestEquivalenceTests
         int framesWithMolotovs = 0;
         Dictionary<(int Provider, int Slot), object?> seqSnapshot = [];
         Dictionary<(int Provider, int Slot), object?> parSnapshot = [];
+        Dictionary<(int Provider, int Slot), object?> seqDeltaSnapshot = [];
+        int seqDeltaMismatchFrames = 0;
+        string? firstSeqDelta = null;
         string? firstPawnOrSingleton = null;
         int firstPawnOrSingletonFrame = -1;
         string? firstMolotovRaw = null;
@@ -116,6 +124,15 @@ public class ParallelDigestEquivalenceTests
             // from them, which is what every rule actually reads.
             Fold(seqSnapshot, s);
             Fold(parSnapshot, p);
+
+            // The scanner's arm, judged against the same ground truth.
+            Fold(seqDeltaSnapshot, sequentialDelta[n]);
+            if (DiffSnapshots(seqSnapshot, seqDeltaSnapshot) is { } sd)
+            {
+                seqDeltaMismatchFrames++;
+                firstSeqDelta ??= $"frame {n}: {sd}";
+            }
+
             string? pawnSingle = DiffSnapshots(seqSnapshot, parSnapshot) ?? DiffSingletons(s, p);
             if (pawnSingle is not null)
             {
@@ -180,7 +197,13 @@ public class ParallelDigestEquivalenceTests
         // the raw list is; it's asserted as an explicit statement of the consume-relevant invariant and was
         // the lens that originally localized the instancebaseline checkpoint bug.) Since Step 1 proved the
         // sequential digest drives byte-identical golden, parallel == sequential ⟹ parallel → golden.
+        Console.WriteLine($"sequential-delta snapshot mismatch frames: {seqDeltaMismatchFrames:N0}"
+                          + (firstSeqDelta is null ? "" : $"  first: {firstSeqDelta}"));
+
         await Assert.That(pawnMismatchFrames).IsEqualTo(0);
+        await Assert.That(seqDeltaMismatchFrames).IsEqualTo(0)
+            .Because("one continuous delta stream is what EntityChangeScanner.BuildDigest produces on "
+                     + "the sequential fallback, and it must fold to the same snapshot");
         await Assert.That(molotovRawMismatchFrames).IsEqualTo(0);
         await Assert.That(dedupDiff).IsNull();
 
@@ -196,7 +219,8 @@ public class ParallelDigestEquivalenceTests
     ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
     ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
     /// </summary>
-    private static EntityFrameDigest[] BuildSequential(IReadOnlyList<DemoFrame> frames)
+    private static EntityFrameDigest[] BuildSequential(
+        IReadOnlyList<DemoFrame> frames, PerPawnDeltaState? delta = null)
     {
         EntityStateLayer layer = new(frames);
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = NewPerPlayer();
@@ -206,7 +230,7 @@ public class ParallelDigestEquivalenceTests
         for (int n = 0; n < frames.Count; n++)
         {
             layer.SeekToTick(frames[n].ServerTick);
-            digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, true);
+            digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, true, delta);
         }
 
         return digests;
