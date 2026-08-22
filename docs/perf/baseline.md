@@ -68,6 +68,51 @@ survivors or transient garbage is the open question, and it is the one worth ans
 in parse the cost turned out to be survivorship rather than volume, and the fix followed from
 that rather than from anything about decode speed.
 
+Answered below: survivors, and the same shape as parse.
+
+## Per-pawn digest deltas
+
+The entity digest precompute was ~55% of evaluation and ~40% of load. It built a full per-pawn
+readout for every frame and held the whole stream until evaluation consumed it. On a 123k-frame
+demo that is 2.7M boxed cells, of which 2874 differ from the previous frame. The consumer folds
+them into a last-value-per-(provider, slot) map, so the other 99.9% were writing a key the value
+it already held. Carrying only changed cells reproduces the fold exactly.
+
+Interleaved A/B, same tree one commit apart, 5 rounds x 5 demos x 2 variants, 50 runs, zero
+failures, 900 s. Raw rows in `digest-delta-8804862.csv`. Order flips each round so drift hits both
+arms. Load ran 1.59-4.81 (higher than the sweep above), but the control arm's median evaluate came
+out at 1395.1 ms against this baseline's 1398.5, so the two are comparable.
+
+| metric | before | after | change |
+|---|---|---|---|
+| parse (control, untouched) | 388.4 ms | 380.4 ms | -2.1% |
+| build | 21.3 ms | 21.3 ms | 0.0% |
+| **evaluate** | **1395.1 ms** | **959.3 ms** | **-31.2%** |
+| evaluate GC pause | 424.6 ms | 280.4 ms | -34.0% |
+| evaluate allocation | 629.8 MB | 549.2 MB | -12.8% |
+| retained by demo (control) | 601.4 MB | 602.3 MB | +0.1% |
+| evaluate gen0 / gen1 / gen2 | 81 / 29 / 1 | 70 / 21 / 0 | |
+| **total load** | **1814.8 ms** | **1363.0 ms** | **-24.9%** |
+
+Per demo, median evaluate: -32.1%, -31.0%, -22.7%, -34.0%, -32.5%.
+
+Parse and retained are the controls. Both are outside the change and both held, which is what
+says the evaluate delta is real rather than a shifted measurement window.
+
+This is a collector win, not a decode win: every provider is still read for every live pawn on
+every frame. It also depends on the shipped providers changing rarely. A provider that moves every
+frame, which is what positional predicates (#5) would add, degrades this to the old cost plus a
+comparison, and the phase would need re-measuring.
+
+Still open here: the precompute gives each chunk worker its own `EntityStateLayer`, so worker
+count and retained entity state are coupled. Measured at ~26 MB and ~25 ms of pause per extra
+worker, with pause rising monotonically in chunk count while wall time traces a U. Six chunks beat
+the shipped `Environment.ProcessorCount` on a 6P+4E machine, but the wall-time signal was inside
+the run-to-run spread at two runs per point, so it is untouched and wants its own sweep.
+
+Ruled out on the way, both cheaply: worker load imbalance (max/median chunk wall time 1.02-1.08,
+so the P/E-core asymmetry is not biting) and the serial layer bootstrap (0.8 ms).
+
 Ruled out already: snapshot capture. `AnalysisOptions.CaptureSnapshots` defaults to on, and
 turning it off does not make evaluation faster.
 
