@@ -41,8 +41,16 @@ a consumer with no rules directory on disk still gets working output:
 using CS2DemoKit.Analysis;
 using CS2DemoKit.Analysis.Yaml;
 
-var rules = YamlConfigLoader.LoadShippedEmbedded();
-AnalysisReport report = DemoAnalysis.Build(demo, rules.Rulesets).Analyze();
+RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets);
+```
+
+`Run` is `Build` then `Evaluate`. Split them when you want to compile a graph once and evaluate it
+against several demos, or to pass `AnalysisOptions` to only one of the two:
+
+```csharp
+BuildResult build = DemoAnalysis.Build(demo, rules.Rulesets);   // CS2DemoKit.Analysis.Graphs
+AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
 ```
 
 ## Tick clocks — read this before comparing ticks

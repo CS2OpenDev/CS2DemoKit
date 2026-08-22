@@ -4,6 +4,7 @@
 //
 // Usage: dotnet run -- <path-to-demo.dem>   (the repo's tests/assets sample works)
 
+using CS2DemoKit.Analysis;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
@@ -37,6 +38,12 @@ if (!ids.SequenceEqual(expected))
     Console.Error.WriteLine($"expected baseline rulesets [{string.Join(", ", expected)}]");
     return 1;
 }
+
+// The analysis entry point, which is the README's quick start and the reason most consumers take
+// CS2DemoKit.Analysis at all. Left uncalled, a rename here reaches consumers as a compile error and
+// nothing in CI notices, because the in-repo tests use the internals rather than this surface.
+AnalysisRun run = DemoAnalysis.Run(demo, loaded.Rulesets);
+Console.WriteLine($"analysis ran: {run.Timeline.Events.Count} rule-chain events");
 
 Console.WriteLine("smoke: OK");
 return 0;
