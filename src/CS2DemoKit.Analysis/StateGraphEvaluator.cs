@@ -317,7 +317,7 @@ public sealed class StateGraphEvaluator
         int totalMessageCapacity = 0;
         for (int f = 0; f < frames.Count; f++)
         {
-            totalMessageCapacity += frames[f].InnerMessages.Count;
+            totalMessageCapacity += frames[f].DecodedMessages.Count;
         }
 
         List<RuleChainEvent> events = new();
@@ -520,7 +520,9 @@ public sealed class StateGraphEvaluator
                 }
             }
 
-            IReadOnlyList<NetMessage> msgs = frame.InnerMessages;
+            // DecodedMessages, not InnerMessages: the stored svc_UserCmds entries are synthesized on
+            // access and their dispatch key is the storage wrapper's type, which matches no rule.
+            IReadOnlyList<NetMessage> msgs = frame.DecodedMessages;
             for (int m = 0; m < msgs.Count; m++)
             {
                 NetMessage message = msgs[m];

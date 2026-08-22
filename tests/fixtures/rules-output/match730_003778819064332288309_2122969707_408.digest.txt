@@ -1,0 +1,22 @@
+frames=130670
+gameEvents=12733
+highlights=194
+ruleChainEvents=328
+materializedPlayers=10
+== kast_game_totals
+dims=match_id,map,player_slot,player_name,team
+vals=KASTRounds,KAST%,2K,3K,4K,5K
+== post_plant_double_context
+dims=match_id,map,round_number,player_slot,player_name,team
+vals=Achieved,PostPlantKills,PlantTick,KillTick
+nodeCount=1634
+chains
+_chain_deagle_hs_round=1
+_chain_kast=134
+_chain_opening_death=20
+_chain_opening_kill=20
+_chain_post_plant_double=4
+_chain_traded_death=15
+has_kast=119
+traded=15
+sha256=15b28368a74cacf022360e8eefa9eae6b45260c8988deea83ba68c13d122474a

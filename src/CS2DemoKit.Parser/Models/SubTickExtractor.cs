@@ -25,22 +25,8 @@ public static class SubTickExtractor
 
         foreach (DemoFrame frame in frames)
         {
-            foreach (NetMessage msg in frame.InnerMessages)
+            foreach (CSVCMsg_UserCommands userCmds in UserCommandsIn(frame))
             {
-                // svc_UserCmds payloads are deferred at parse time (DeferredMessage) — materialize the
-                // real message here, on the one path that actually reads subtick input. A payload that
-                // is already a CSVCMsg_UserCommands (e.g. a hand-built frame) is taken as-is.
-                CSVCMsg_UserCommands? userCmds = msg.Payload switch
-                {
-                    DeferredMessage deferred => deferred.TryMaterialize<CSVCMsg_UserCommands>(),
-                    CSVCMsg_UserCommands direct => direct,
-                    _ => null
-                };
-                if (userCmds is null)
-                {
-                    continue;
-                }
-
                 foreach (CMsgServerUserCmd? serverCmd in userCmds.Commands)
                 {
                     try
@@ -77,6 +63,55 @@ public static class SubTickExtractor
 
         result.Sort((a, b) => a.When.CompareTo(b.When));
         return result;
+    }
+
+    /// <summary>
+    ///     This frame's subtick messages. Parse-time payloads live in the frame's store blocks and are
+    ///     decoded here, on the one path that reads them. A frame built by hand (tests, synthetic
+    ///     input) carries them in <see cref="DemoFrame.InnerMessages" /> instead, so both are read.
+    /// </summary>
+    private static IEnumerable<CSVCMsg_UserCommands> UserCommandsIn(DemoFrame frame)
+    {
+        if (frame.UserCmdsBlock is { } block)
+        {
+            int offset = frame.UserCmdsOffset;
+            for (int i = 0; i < frame.UserCmdsCount; i++)
+            {
+                ReadOnlySpan<byte> payload = UserCmdsStore.Read(block, ref offset);
+                CSVCMsg_UserCommands? parsed = TryParse(payload);
+                if (parsed is not null)
+                {
+                    yield return parsed;
+                }
+            }
+        }
+
+        foreach (NetMessage msg in frame.InnerMessages)
+        {
+            CSVCMsg_UserCommands? direct = msg.Payload switch
+            {
+                CSVCMsg_UserCommands typed => typed,
+                DeferredMessage deferred => deferred.TryMaterialize<CSVCMsg_UserCommands>(),
+                _ => null
+            };
+            if (direct is not null)
+            {
+                yield return direct;
+            }
+        }
+    }
+
+    /// <summary>Decodes one stored payload, returning null rather than throwing on a bad record.</summary>
+    private static CSVCMsg_UserCommands? TryParse(ReadOnlySpan<byte> payload)
+    {
+        try
+        {
+            return CSVCMsg_UserCommands.Parser.ParseFrom(payload);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string BuildDescription(ulong btn, CSubtickMoveStep step)
