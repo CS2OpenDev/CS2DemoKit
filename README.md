@@ -189,6 +189,20 @@ Tests whose expectations are specific to one match name that demo through
 they skip cleanly rather than failing against a demo their numbers never described. If you add a
 test that hardcodes a tick, a slot, or a count, name its demo the same way.
 
+## Performance
+
+`docs/perf/baseline.md` is the reference point for demo-load timings, with the raw rows beside
+it. Re-measure against it before claiming a change helped:
+
+```sh
+tools/CS2DemoKit.Bench/run-baseline.sh 10 mine.csv
+```
+
+One process per measurement, a discarded warm-up per process, a forced collection before each
+timed phase, and the machine's load average stamped on every row. Workstation GC, which is what
+a consumer gets unless their app opts into server GC; server GC hides most of the collector cost,
+and the collector is roughly a third of this pipeline.
+
 ## Regenerating committed artifacts
 
 ```sh
