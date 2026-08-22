@@ -235,6 +235,27 @@ dotnet run --project tools/CS2DemoKit.Codegen -- --schemalens --state ../CS2Open
 Both outputs are committed and gated by tests, so a stale regeneration fails the build rather than
 shipping quietly.
 
+## Releasing
+
+All three packages publish together from a `v*` tag, to nuget.org and to GitHub Packages.
+`docs/releasing.md` has the procedure and the gates the tag build runs.
+
+Prereleases use the same path with a label in both `version.json` and the tag:
+
+```sh
+# version.json: "version": "0.9.2-beta0001"
+git commit -am "0.9.2-beta0001"
+git tag v0.9.2-beta0001
+git push origin main v0.9.2-beta0001
+```
+
+The tag has to land on the commit that carries the matching `version.json`; the tag build compares
+the two and refuses to publish if they disagree.
+
+Consumers take one by naming it, `Version="0.9.2-beta0001"`, and the exact intra-family pins carry
+the label so the set installs together. Label rules are in the doc; the short version is no dots
+and a zero-padded counter, because both are load-bearing.
+
 ## Licence
 
 MIT. Portions of the bit-level decoder are adapted from

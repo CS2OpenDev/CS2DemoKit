@@ -56,8 +56,23 @@ jobs:
 
       # Restores the freshly packed packages from a local feed and runs against them, which is the
       # only way to catch breakage that lives in the packaging rather than in the code.
+      #
+      # The version comes from the packed filename, not from a second nbgv call. The pack above
+      # forces PublicRelease=true and a PR ref does not match publicReleaseRefSpec, so an independent
+      # nbgv call here returns the -g<sha> composite instead. A PackageReference is a floor range, and
+      # 0.9.2-beta0001-g<sha> sorts ABOVE 0.9.2-beta0001, so the floor excludes the package that was
+      # just built and restore fails NU1102. Reading the filename cannot disagree with the pack.
       - name: Smoke-test the packages
         working-directory: scripts/nuget-smoke
         run: |
-          version=$(dotnet nbgv get-version -p ../../src/CS2DemoKit.Parser -v NuGetPackageVersion)
+          set -euo pipefail
+          shopt -s nullglob
+          packed=(../../artifacts/pack/CS2DemoKit.Parser.*.nupkg)
+          if [ ${#packed[@]} -ne 1 ]; then
+            echo "::error::expected one packed CS2DemoKit.Parser nupkg, found ${#packed[@]}" >&2
+            exit 1
+          fi
+          version=$(basename "${packed[0]}" .nupkg)
+          version=${version#CS2DemoKit.Parser.}
+          echo "smoke-testing CS2DemoKit $version"
           dotnet run -c Release -p:CS2DemoKitVersion="$version" -- ../../tests/assets/sample-de_nuke.dem
