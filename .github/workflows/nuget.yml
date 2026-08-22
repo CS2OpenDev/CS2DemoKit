@@ -32,21 +32,30 @@ jobs:
       - name: Restore tools (nbgv)
         run: dotnet tool restore
 
-      # A tag build must stamp a STABLE version. If publicReleaseRefSpec fails to match the ref,
-      # NBGV stamps 0.9.0-g<sha> family-wide, which makes the exact [0.9.0] intra-family pins
-      # unsatisfiable — a broken package set that still uploads happily. Fail here instead.
-      - name: Assert a stable version stamp
+      # A tag build must stamp exactly the version the tag names, with no dev suffix. If
+      # publicReleaseRefSpec fails to match the ref, NBGV appends -g<sha> family-wide and the exact
+      # intra-family pins name versions that were never published: a broken package set that still
+      # uploads happily. Fail here instead.
+      #
+      # Prerelease tags (v0.9.2-beta0001) are a supported release path and reach this step with
+      # PublicRelease=True, because version.json's v\d+\.\d+ pattern is not anchored at the end.
+      # Anchoring it would silently turn every prerelease tag into a dev stamp. See docs/releasing.md.
+      - name: Assert the stamp matches the tag
         run: |
           set -euo pipefail
           version=$(dotnet nbgv get-version -p src/CS2DemoKit.Parser -v NuGetPackageVersion)
           public=$(dotnet nbgv get-version -p src/CS2DemoKit.Parser -v PublicRelease)
           echo "NuGetPackageVersion=$version PublicRelease=$public"
           if [ "$public" != "True" ]; then
-            echo "::error::PublicRelease is $public — this ref does not match publicReleaseRefSpec in version.json." >&2
+            echo "::error::PublicRelease is $public. This ref does not match publicReleaseRefSpec in version.json." >&2
             exit 1
           fi
+          # NBGV's dev suffix is exactly -g plus ten lowercase hex characters, at the end. Matching
+          # that shape rather than a bare -g keeps a real prerelease label out of the guard.
           case "$version" in
-            *-g*) echo "::error::Version $version is a prerelease stamp; exact family pins would be unsatisfiable." >&2; exit 1 ;;
+            *-g[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+              echo "::error::Version $version carries a dev stamp; exact family pins would be unsatisfiable." >&2
+              exit 1 ;;
           esac
           tag="${GITHUB_REF_NAME#v}"
           if [ "$version" != "$tag" ]; then
