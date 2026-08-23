@@ -37,16 +37,37 @@ public class ParallelChunkPlanningTests
             ParallelDigestProducer.PlanChunks(frames, out _);
 
         await AssertWellFormed(frames, chunks);
+        await AssertNoCheckpointClashes(frames, chunks);
         await Assert.That(chunks.Count).IsGreaterThan(1)
-            .Because("six clash-free candidates remain, so the plan should still split");
+            .Because("clash-free candidates remain, so the plan should still split");
+    }
 
-        foreach (ParallelDigestProducer.Chunk chunk in chunks.Where(c => c.CheckpointFrameIndex >= 0))
-        {
-            int cp = chunk.CheckpointFrameIndex;
-            await Assert.That(frames[cp].Command).IsEqualTo("DEM_FullPacket");
-            await Assert.That(frames[cp + 1].ServerTick).IsNotEqualTo(frames[cp].ServerTick)
-                .Because($"checkpoint frame {cp} (tick {frames[cp].ServerTick}) has a same-tick successor");
-        }
+    /// <summary>
+    ///     The same property once coarsening actually bites. With more candidates than the target chunk
+    ///     count the stride exceeds one, so selection INDEXES into the filtered list instead of walking
+    ///     it, which is where an off-by-one against the old full-packet indexing would hide.
+    /// </summary>
+    [Test]
+    public async Task PlanChunks_SkipsClashes_WhenTheStrideIsCoarserThanOne()
+    {
+        // Sized off the core count so the stride is > 1 on any machine: the planner targets
+        // ~ProcessorCount chunks, and clashing every third full packet leaves about 2N/3 candidates.
+        int fullPacketCount = (3 * Environment.ProcessorCount) + 6;
+        List<DemoFrame> frames = BuildFrames(fullPacketCount, 8, f => f % 3 == 0);
+
+        IReadOnlyList<ParallelDigestProducer.Chunk> chunks =
+            ParallelDigestProducer.PlanChunks(frames, out _);
+
+        int candidates = FullPacketIndices(frames).Skip(1)
+            .Count(i => i + 1 >= frames.Count || frames[i + 1].ServerTick != frames[i].ServerTick);
+        int picked = chunks.Count(c => c.CheckpointFrameIndex >= 0);
+        Console.WriteLine($"cores={Environment.ProcessorCount} fullPackets={fullPacketCount} " +
+                          $"candidates={candidates} picked={picked}");
+
+        await AssertWellFormed(frames, chunks);
+        await AssertNoCheckpointClashes(frames, chunks);
+        await Assert.That(picked).IsLessThan(candidates)
+            .Because("the stride has to actually skip candidates for this gate to mean anything");
     }
 
     /// <summary>
@@ -128,6 +149,25 @@ public class ParallelChunkPlanningTests
             {
                 await Assert.That(chunks[i].Start).IsEqualTo(chunks[i - 1].End);
                 await Assert.That(chunks[i].CheckpointFrameIndex).IsEqualTo(chunks[i].Start);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     No selected checkpoint may be a full packet with a same-tick successor. The bounds guard
+    ///     mirrors the planner's: a checkpoint at the very last frame has no successor to clash with.
+    /// </summary>
+    private static async Task AssertNoCheckpointClashes(
+        List<DemoFrame> frames, IReadOnlyList<ParallelDigestProducer.Chunk> chunks)
+    {
+        foreach (ParallelDigestProducer.Chunk chunk in chunks.Where(c => c.CheckpointFrameIndex >= 0))
+        {
+            int cp = chunk.CheckpointFrameIndex;
+            await Assert.That(frames[cp].Command).IsEqualTo("DEM_FullPacket");
+            if (cp + 1 < frames.Count)
+            {
+                await Assert.That(frames[cp + 1].ServerTick).IsNotEqualTo(frames[cp].ServerTick)
+                    .Because($"checkpoint frame {cp} (tick {frames[cp].ServerTick}) has a same-tick successor");
             }
         }
     }
