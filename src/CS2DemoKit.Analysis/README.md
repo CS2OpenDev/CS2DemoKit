@@ -109,9 +109,17 @@ every frame. Measured on a 123,283-frame demo, counting per-pawn cells the diges
 | plus `pos_z` | 379,576 |
 | plus all three axes | 1,442,280 |
 
-One axis is 26x, three are 100x. Read only the axes you need: a height check wants `pos_z` alone,
-not the vector. It is still well under a full per-frame readout, since the other six columns stay
-quiet, but budget for it before putting a position read in a ruleset that runs over a library.
+One axis is 26x, three are 100x. **Read only the axes you need**: that is where the split into three
+providers pays, since a height check gates in one column rather than three.
+
+Three providers rather than one vector-valued provider is forced, not preferred. The rules type
+vocabulary is `bool`/`int`/`float`/`string`/`duration`/`instant` plus list and map of a *scalar*
+element, so there is no type a `Vector3` could be declared as and no member access to read `.z` off
+one. Where that costs: a single vector column would emit 548,787 cells against the split's
+1,442,280 on the same demo, because it boxes once per pawn-frame instead of about 2.7 times. A
+ruleset that genuinely reads all three axes is paying 2.6x for the language's scalar type system.
+Worth revisiting only if positional rules become common enough to justify a new type kind, which
+would reach the checker, the normalizer and canonical ruleset hashing.
 
 ### Zones and bombsites
 
