@@ -181,6 +181,12 @@ internal static class ParallelDigestProducer
     ///     would reconstruct a non-empty tick-0 set and diverge. Decoding <c>[0, F_1)</c> from scratch IS
     ///     the sequential mechanism, so it matches by construction. With fewer than two full packets there
     ///     is no usable split point, so the whole demo is one from-scratch chunk.
+    ///     <para>
+    ///         A full packet with a same-tick successor is never chosen: see
+    ///         <see cref="EntityStateLayer.PrimeFromCheckpoint" />, which cannot represent that position.
+    ///         Skipping one only widens the chunk that would have started there, which is the same
+    ///         coarsening the paragraph below already relies on.
+    ///     </para>
     /// </summary>
     internal static IReadOnlyList<Chunk> PlanChunks(IReadOnlyList<DemoFrame> frames, out int schemaPrefixEnd)
     {
@@ -220,15 +226,36 @@ internal static class ParallelDigestProducer
         // decode) — so coarsening is correctness-neutral (the equivalence gate confirms). Coarse chunks cut
         // both the redundant per-worker schema parse (fewer workers) and the oversubscription that serialized
         // ~39 allocating workers onto ~10 cores.
+        // Candidates, in order. F_0 is never one (schema-bootstrap region), and neither is a full packet
+        // that shares its tick with the frame after it: PrimeFromCheckpoint leaves CurrentTick at the
+        // checkpoint tick, so the worker's first SeekToTick early-returns and that successor's delta
+        // never lands, while a sequential decode folds it into the very same frame.
+        List<int> candidates = [];
+        for (int k = 1; k < fullIdx.Count; k++)
+        {
+            int f = fullIdx[k];
+            if (f + 1 >= frames.Count || frames[f + 1].ServerTick != frames[f].ServerTick)
+            {
+                candidates.Add(f);
+            }
+        }
+
+        // Every full packet after F_0 clashes. Nothing to split on, so decode the demo sequentially
+        // rather than plan a chunk the prime cannot represent.
+        if (candidates.Count == 0)
+        {
+            chunks.Add(new Chunk(0, frames.Count, -1));
+            return chunks;
+        }
+
         int target = ResolveTargetChunks();
-        int candidates = fullIdx.Count - 1; // F_0 is never a checkpoint (schema-bootstrap region)
-        int wantCheckpoints = Math.Max(1, Math.Min(candidates, target - 1));
-        int stride = (candidates + wantCheckpoints - 1) / wantCheckpoints; // ceil
+        int wantCheckpoints = Math.Max(1, Math.Min(candidates.Count, target - 1));
+        int stride = (candidates.Count + wantCheckpoints - 1) / wantCheckpoints; // ceil
 
         List<int> checkpoints = [];
-        for (int k = 1; k < fullIdx.Count; k += stride)
+        for (int k = 0; k < candidates.Count; k += stride)
         {
-            checkpoints.Add(fullIdx[k]);
+            checkpoints.Add(candidates[k]);
         }
 
         chunks.Add(new Chunk(0, checkpoints[0], -1)); // chunk 0: [0, first checkpoint) from scratch
