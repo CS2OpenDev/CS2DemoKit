@@ -125,7 +125,11 @@ public sealed class SiteProvider : IPerPlayerEntityValueProvider, IPawnStateRead
     public string Name => "entity.pawn.site";
     public Type ValueType => typeof(string);
     public string EntityClass => "CCSPlayerPawn";
-    public string FieldName => "CBodyComponent.m_vecX";   // any real leaf, for schema validation
+
+    // The scanner validates this leaf against the demo's schema and THROWS if its wire type is
+    // not compatible with ValueType, so it cannot be an arbitrary field: a string provider needs
+    // a string-ish leaf. A computed provider declares whichever of its inputs matches.
+    public string FieldName => SchemaNames.CCSPlayerPawn.LastPlaceName;
 
     public object? ReadForPawnState(EntityTracker tracker, EntityState pawn) =>
         PositionUtil.CellToWorldVector(pawn) is { } p ? MyZones.Resolve(p) : null;
