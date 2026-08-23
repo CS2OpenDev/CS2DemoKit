@@ -92,6 +92,58 @@ full `EntityTracker`. `null`/≤0 means unbounded (the default). Still gate the 
 *concurrent demos* with your own `SemaphoreSlim`, sized with the parse-side memory multiplier
 in mind.
 
+## Pawn position
+
+Rules read a pawn's world position as `player.pos_x`, `player.pos_y`, `player.pos_z` (floats).
+There is no `m_vecOrigin` leaf on a pawn: position is a cell index plus an in-cell offset on
+`CBodyComponent`, reconstructed as `(cell - 32) * 512 + offset`.
+
+**These three cost more than every other provider combined, and only when you read them.**
+Providers are gated in by name, so a ruleset that reads no axis pays nothing. A ruleset that does
+read one defeats the digest's delta encoding for that column, because a moving player changes it
+every frame. Measured on a 123,283-frame demo, counting per-pawn cells the digest actually emits:
+
+| provider set | cells emitted |
+|---|---|
+| the six shipped providers | 14,455 |
+| plus `pos_z` | 379,576 |
+| plus all three axes | 1,442,280 |
+
+One axis is 26x, three are 100x. Read only the axes you need: a height check wants `pos_z` alone,
+not the vector. It is still well under a full per-frame readout, since the other six columns stay
+quiet, but budget for it before putting a position read in a ruleset that runs over a library.
+
+### Zones and bombsites
+
+The library does not resolve map zones. Bombsite membership needs trigger volumes or baked zone
+geometry, neither of which is in a demo file. Register your own provider instead, and rules
+address it by name like any built-in:
+
+```csharp
+public sealed class SiteProvider : IPerPlayerEntityValueProvider, IPawnStateReader
+{
+    public string Name => "entity.pawn.site";
+    public Type ValueType => typeof(string);
+    public string EntityClass => "CCSPlayerPawn";
+    public string FieldName => "CBodyComponent.m_vecX";   // any real leaf, for schema validation
+
+    public object? ReadForPawnState(EntityTracker tracker, EntityState pawn) =>
+        PositionUtil.CellToWorldVector(pawn) is { } p ? MyZones.Resolve(p) : null;
+    // ... CaptureAllSlots / Read / ReadForPawn as in PawnPositionProvider
+}
+
+var providers = PerPlayerEntityValueProviderRegistry.CreateDefault();
+providers.Register(new SiteProvider());
+var run = DemoAnalysis.Run(demo, rulesets, new AnalysisOptions { PerPlayerEntityProviders = providers });
+```
+
+A zone name is coarse and changes rarely, so it stays cheap in the digest in a way raw coordinates
+cannot. Prefer it over three axis reads plus arithmetic in the rule.
+
+Implement `IPawnStateReader` when your provider needs the raw `EntityState`. The SDK wrapper's
+typed accessors resolve through the Lens lane only, and the `CBodyComponent` pair is not on it, so
+`CSPlayerPawn.Origin` returns null on the decode path this engine uses.
+
 ## Line-of-sight / visibility
 
 The LOS engine ships in this package under `CS2DemoKit.Analysis.Visibility`

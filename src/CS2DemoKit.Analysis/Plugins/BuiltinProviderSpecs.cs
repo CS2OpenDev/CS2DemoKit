@@ -91,7 +91,15 @@ public static class BuiltinProviderSpecs
         new GenericPerPlayerFieldProvider(PawnActiveWeaponClip),
         // Same generic-only pattern (Tier C position/place): spec-constructed on both sides,
         // appended last in both lists, digest parity by construction.
-        new GenericPerPlayerFieldProvider(PawnPlace)
+        new GenericPerPlayerFieldProvider(PawnPlace),
+        // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
+        // lists register the same class, which makes these three pass-through columns in the
+        // parity gate rather than a hand-written-vs-spec comparison. The gate's population is
+        // the providers that HAVE a spec twin; position is judged instead by
+        // PawnPositionProviderTests, which pins it against PositionUtil's oracle formula.
+        new PawnPositionProvider(PawnPositionAxis.X),
+        new PawnPositionProvider(PawnPositionAxis.Y),
+        new PawnPositionProvider(PawnPositionAxis.Z)
     ];
 
     /// <summary>The generic singleton provider equivalent to <see cref="FreezePeriodProvider" />.</summary>
