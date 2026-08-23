@@ -97,8 +97,9 @@ public sealed class DemoFrame
     internal int UserCmdsCount { get; init; }
 
     /// <summary>
-    ///     Number of <c>svc_UserCmds</c> payloads this frame carries. These are not in
-    ///     <see cref="InnerMessages" />; see <see cref="GetUserCmdsPayload" />.
+    ///     Number of <c>svc_UserCmds</c> payloads this frame carries. Absent from
+    ///     <see cref="DecodedMessages" />; <see cref="InnerMessages" /> synthesizes them back into
+    ///     wire order, and <see cref="GetUserCmdsPayload" /> gives the raw bytes.
     /// </summary>
     public int UserCmdsPayloadCount => UserCmdsCount;
 
