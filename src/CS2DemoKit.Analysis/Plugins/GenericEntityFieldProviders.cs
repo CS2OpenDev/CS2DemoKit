@@ -79,6 +79,28 @@ public interface IWorkerCloneable<out T>
 }
 
 /// <summary>
+///     Opt-in capability for per-player providers that must read the raw <see cref="EntityState" />
+///     rather than the SDK wrapper. Callers that hold both prefer this over
+///     <see cref="IPerPlayerEntityValueProvider.ReadForPawn" /> when a provider implements it.
+///     <para>
+///         The SDK's typed accessors resolve through the Lens lane only, so a leaf that is not
+///         lens-curated on the tracker at hand reads null through the wrapper while
+///         <see cref="EntityState" />'s seen-gated indexer still returns it. The pawn's
+///         <c>CBodyComponent</c> cell/offset pair is the shipped case: <c>CSPlayerPawn.Origin</c>
+///         comes back null on trackers where <c>PositionUtil.CellToWorldVector</c> reconstructs a
+///         position, so the position providers read state directly.
+///     </para>
+/// </summary>
+public interface IPawnStateReader
+{
+    /// <summary>
+    ///     Reads this provider's value off the pawn's raw entity state, with the same emit gate as
+    ///     <see cref="IPerPlayerEntityValueProvider.ReadForPawn" />: <c>null</c> emits nothing.
+    /// </summary>
+    object? ReadForPawnState(EntityTracker tracker, EntityState pawn);
+}
+
+/// <summary>
 ///     Generic per-player entity-field provider: reads a <see cref="ProviderSpec" />
 ///     through the seen-gated <see cref="EntityState" /> indexer (lane-mapped and fallback
 ///     fields read identically), replacing one hand-written class per field.

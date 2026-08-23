@@ -2669,6 +2669,27 @@
       "clrType": "string",
       "v2Name": "player.place",
       "v2Type": "String"
+    },
+    {
+      "name": "entity.pawn.pos_x",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.pos_x",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.pos_y",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.pos_y",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.pos_z",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.pos_z",
+      "v2Type": "Float"
     }
   ],
   "profiles": [

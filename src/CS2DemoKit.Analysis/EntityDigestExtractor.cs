@@ -164,7 +164,11 @@ internal static class EntityDigestExtractor
                 object?[]? values = null;
                 for (int p = 0; p < providerCount; p++)
                 {
-                    object? value = perPlayerProviders[p].ReadForPawn(tracker, wrapper);
+                    // A provider reading leaves the SDK wrapper cannot resolve (position's
+                    // CBodyComponent pair) takes the raw state instead. See IPawnStateReader.
+                    object? value = perPlayerProviders[p] is IPawnStateReader stateReader
+                        ? stateReader.ReadForPawnState(tracker, pawn)
+                        : perPlayerProviders[p].ReadForPawn(tracker, wrapper);
                     if (delta is null || delta.Record(slot, p, value))
                     {
                         (values ??= new object?[providerCount])[p] = value;

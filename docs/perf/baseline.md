@@ -121,9 +121,20 @@ evaluation runs at all, so a change living entirely inside evaluation cannot mov
 is measurement instability by construction.
 
 This is a collector win, not a decode win: every provider is still read for every live pawn on
-every frame. It also depends on the shipped providers changing rarely. A provider that moves every
-frame, which is what positional predicates (#5) would add, degrades this to the old cost plus a
-comparison, and the phase would need re-measuring.
+every frame. It also depends on the shipped providers changing rarely.
+
+The position providers added for #5 are the case where that stops holding, and they are now
+measured rather than predicted. Counting cells the digest emits on the 123,283-frame demo:
+
+| provider set | cells emitted |
+|---|---|
+| the six shipped providers | 14,455 |
+| plus `entity.pawn.pos_z` | 379,576 |
+| plus all three axes | 1,442,280 |
+
+One axis is 26x, three are 100x. Providers are gated in by name, so a ruleset that reads no axis
+pays none of it and the figures above stand; a ruleset that reads one should have this phase
+re-measured against it rather than against this baseline.
 
 Still open here: the precompute gives each chunk worker its own `EntityStateLayer`, so worker
 count and retained entity state are coupled. Measured at ~26 MB and ~25 ms of pause per extra

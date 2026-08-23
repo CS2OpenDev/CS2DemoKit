@@ -32,9 +32,19 @@ public sealed class PerPlayerEntityValueProviderRegistry
         // ProviderDigestParityTests gate holds by construction (no hand-written twin).
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnActiveWeaponClip));
         // Nav-mesh place name (Tier C): same spec-constructed-on-both-sides pattern as the clip
-        // provider above — BuiltinProviderSpecs.CreateGenericPerPlayerProviders() appends the
-        // identical PawnPlace spec last, so digest parity holds by construction.
+        // provider above. BuiltinProviderSpecs.CreateGenericPerPlayerProviders() registers the
+        // identical PawnPlace spec at this same position, so digest parity holds by construction.
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnPlace));
+        // World position, one provider per axis. Computed from CBodyComponent's cell + offset
+        // pair rather than a single leaf, so there is no ProviderSpec form; both sides of the
+        // parity gate register these same instances, appended last in the same order.
+        //
+        // These are the only shipped providers whose value changes almost every frame, which
+        // costs the digest's delta encoding a full column each. Gating is by name, so a ruleset
+        // that reads no axis pays nothing.
+        registry.Register(new PawnPositionProvider(PawnPositionAxis.X));
+        registry.Register(new PawnPositionProvider(PawnPositionAxis.Y));
+        registry.Register(new PawnPositionProvider(PawnPositionAxis.Z));
         return registry;
     }
 
