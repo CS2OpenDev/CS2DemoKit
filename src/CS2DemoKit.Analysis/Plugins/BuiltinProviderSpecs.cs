@@ -89,8 +89,8 @@ public static class BuiltinProviderSpecs
         // this same spec-constructed provider (there is no hand-written twin), so the two
         // digest streams contain an identical fifth column by construction.
         new GenericPerPlayerFieldProvider(PawnActiveWeaponClip),
-        // Same generic-only pattern (Tier C position/place): spec-constructed on both sides,
-        // appended last in both lists, digest parity by construction.
+        // Same generic-only pattern (Tier C place): spec-constructed on both sides, at the same
+        // position in both lists, digest parity by construction.
         new GenericPerPlayerFieldProvider(PawnPlace),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the

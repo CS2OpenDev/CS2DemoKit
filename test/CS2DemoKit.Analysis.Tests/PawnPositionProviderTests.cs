@@ -16,13 +16,12 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     The correctness gate for <see cref="PawnPositionProvider" />.
 ///     <para>
-///         The provider reads <see cref="CSPlayerPawn.Origin" />, which is the SDK's own
-///         cell-plus-offset reconstruction. This repo keeps its own oracle-verified copy of that
-///         formula in <see cref="PositionUtil" />, whose doc records why the cell multiplier is
-///         512 and not the classic mis-derived 1024. Two implementations of a constant-sensitive
-///         formula in different packages is exactly the shape that drifts silently, and a drift
-///         here moves every coordinate the engine reports without failing anything else. So the
-///         two are pinned against each other on a real demo.
+///         Position is reconstructed as <c>(cell - 32) * 512 + offset</c>. The multiplier is the
+///         part that goes wrong: <see cref="PositionUtil" />'s doc records 1024 as the classic
+///         mis-derivation, and a wrong constant moves every coordinate the engine reports without
+///         failing anything else. So the gate below recomputes the formula from the raw leaves and
+///         judges the provider against that, rather than against <see cref="PositionUtil" />,
+///         which would let the two agree with each other while both drifted.
 ///     </para>
 /// </summary>
 [Category("Unit")]
@@ -188,7 +187,11 @@ public class PawnPositionProviderTests
         string[] twins = BuiltinProviderSpecs.CreateGenericPerPlayerProviders()
             .Select(p => p.Name).ToArray();
 
-        await Assert.That(twins).IsEquivalentTo(registry);
-        await Assert.That(registry[^3..]).IsEquivalentTo(AxisNames);
+        // Sequence equality, not set equality: ProviderDigestParityTests walks the two lists by
+        // index, so a reorder that preserved the names would break it without failing here.
+        await Assert.That(twins.SequenceEqual(registry, StringComparer.Ordinal)).IsTrue()
+            .Because($"registry=[{string.Join(", ", registry)}] twins=[{string.Join(", ", twins)}]");
+        await Assert.That(registry.TakeLast(3).SequenceEqual(AxisNames, StringComparer.Ordinal)).IsTrue()
+            .Because("the three position providers must be the last three, in x/y/z order");
     }
 }
