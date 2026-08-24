@@ -76,3 +76,31 @@ jobs:
           version=${version#CS2DemoKit.Parser.}
           echo "smoke-testing CS2DemoKit $version"
           dotnet run -c Release -p:CS2DemoKitVersion="$version" -- ../../tests/assets/sample-de_nuke.dem
+
+  # Build and test only. The pack/scan/smoke steps above are shell and python and prove packaging,
+  # which is platform-independent; what this leg exists for is the class of failure the Linux-only
+  # matrix could not see. Committed artifacts are compared byte-for-byte against strings built with
+  # LF, and raw string literals carry the source file's endings into the assertions that search
+  # them, so a CRLF checkout used to fail four tests with nothing wrong. See #43 and #44.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # Nerdbank.GitVersioning needs full history
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore tools (nbgv)
+        run: dotnet tool restore
+
+      - name: Build (Release)
+        run: dotnet build CS2DemoKit.slnx -c Release
+
+      - name: Parser tests
+        run: dotnet run --project test/CS2DemoKit.Parser.Tests -c Release --no-build
+
+      - name: Analysis tests
+        run: dotnet run --project test/CS2DemoKit.Analysis.Tests -c Release --no-build

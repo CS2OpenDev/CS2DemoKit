@@ -55,45 +55,52 @@ public static class SchemaLensCanonicalForm
     private const string FormatVersion = "canon-v1";
 
     /// <summary>
+    ///     The line separator, part of the format rather than of the host. Never
+    ///     <c>StringBuilder.AppendLine</c> here: that emits <see cref="Environment.NewLine" />, which
+    ///     would put CRLF inside the hashed bytes on Windows and make the identity platform-specific.
+    /// </summary>
+    private const char Lf = '\n';
+
+    /// <summary>
     ///     Produces the deterministic canonical-form string for the given <paramref name="state" />.
     ///     The returned string is the exact input to the sha256 hash.
     /// </summary>
     public static string Serialize(LensState state)
     {
         StringBuilder sb = new();
-        sb.AppendLine(FormatVersion);
+        sb.Append(FormatVersion).Append(Lf);
 
         // ── classes (active set) ─────────────────────────────────────────────
-        sb.AppendLine("classes:");
+        sb.Append("classes:").Append(Lf);
         foreach (string cls in state.Classes.OrderBy(c => c, StringComparer.Ordinal))
         {
-            sb.Append("  ").AppendLine(cls);
+            sb.Append("  ").Append(cls).Append(Lf);
         }
 
         // ── fields (per-class canonical field rules) ─────────────────────────
-        sb.AppendLine("fields:");
+        sb.Append("fields:").Append(Lf);
         foreach (string cls in state.Fields.Keys.OrderBy(c => c, StringComparer.Ordinal))
         {
-            sb.Append("  class: ").AppendLine(cls);
+            sb.Append("  class: ").Append(cls).Append(Lf);
             Dictionary<string, FieldRule> fieldMap = state.Fields[cls];
             foreach (string canonical in fieldMap.Keys.OrderBy(k => k, StringComparer.Ordinal))
             {
                 FieldRule rule = fieldMap[canonical];
-                sb.Append("    field: ").AppendLine(canonical);
-                sb.Append("      wireType: ").AppendLine(rule.WireType.ToString());
-                sb.Append("      transform: ").AppendLine(rule.Transform.ToString());
+                sb.Append("    field: ").Append(canonical).Append(Lf);
+                sb.Append("      wireType: ").Append(rule.WireType.ToString()).Append(Lf);
+                sb.Append("      transform: ").Append(rule.Transform.ToString()).Append(Lf);
             }
         }
 
         // ── aliases (per-class engine-name → canonical-name map) ─────────────
-        sb.AppendLine("aliases:");
+        sb.Append("aliases:").Append(Lf);
         foreach (string cls in state.AliasMap.Keys.OrderBy(c => c, StringComparer.Ordinal))
         {
-            sb.Append("  class: ").AppendLine(cls);
+            sb.Append("  class: ").Append(cls).Append(Lf);
             Dictionary<string, string> aliasMap = state.AliasMap[cls];
             foreach (string engineName in aliasMap.Keys.OrderBy(k => k, StringComparer.Ordinal))
             {
-                sb.Append("    ").Append(engineName).Append(" -> ").AppendLine(aliasMap[engineName]);
+                sb.Append("    ").Append(engineName).Append(" -> ").Append(aliasMap[engineName]).Append(Lf);
             }
         }
 

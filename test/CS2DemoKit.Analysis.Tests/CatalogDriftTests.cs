@@ -33,6 +33,7 @@ public class CatalogDriftTests
         string regen = CatalogJson.Serialize(
             CatalogBuilder.Build(FrequencyBaseline.Load(FindRepoRoot())));
 
+        await AssertNotACrlfCheckout(committed, "catalog.json");
         await Assert.That(committed).IsEqualTo(regen)
             .Because("the committed catalog drifted from the engine's registries — "
                      + "run: dotnet run --project tools/CS2DemoKit.RulesCatalog");
@@ -55,10 +56,21 @@ public class CatalogDriftTests
         string regen = RulesSchemaBuilder.Build(
             CatalogBuilder.Build(FrequencyBaseline.Load(FindRepoRoot())));
 
+        await AssertNotACrlfCheckout(committed, "cs2demokit-rules.schema.json");
         await Assert.That(committed).IsEqualTo(regen)
             .Because("the v2 schema drifted from the catalog's views family — "
                      + "run: dotnet run --project tools/CS2DemoKit.RulesCatalog");
     }
+
+    /// <summary>
+    ///     Both comparisons above are exact against a string built in memory with LF, so a CRLF
+    ///     checkout fails them without anything having drifted. Separating the two says which one
+    ///     happened instead of sending a contributor to regenerate an unchanged artifact.
+    /// </summary>
+    private static async Task AssertNotACrlfCheckout(string committed, string what) =>
+        await Assert.That(committed).DoesNotContain("\r")
+            .Because($"{what} is stored eol=lf (see .gitattributes). A CRLF checkout is not drift: "
+                     + "re-clone, or run git add --renormalize .");
 
     /// <summary>
     ///     The embedded resource loads and carries every family. Pins the resource wiring in
