@@ -136,11 +136,12 @@ public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
     ///     <para>
     ///         <b>Invariant (asserted loudly):</b> the checkpoint frame must have no same-tick SUCCESSOR (a
     ///         later frame sharing its <c>ServerTick</c>). <see cref="SeekToTick" /> folds every frame with
-    ///         <c>tick &lt;= target</c> into one advance, so a same-tick successor's delta would be present
-    ///         in the sequential digest but absent from the bare checkpoint snapshot — a silent divergence.
-    ///         CS2 emits the full packet AFTER that tick's delta packet (so the snapshot already includes
-    ///         it) and the following frame is the next tick, so this holds on every observed demo; rather
-    ///         than carry an unvalidated same-tick-replay branch we throw if a demo ever violates it.
+    ///         <c>tick &lt;= target</c> into one advance, so a sequential decode applies that successor at
+    ///         the checkpoint frame itself, while a worker primed here leaves <see cref="CurrentTick" /> at
+    ///         the checkpoint tick, early-returns on it, and stays diverged until the next tick resyncs.
+    ///         <c>ParallelDigestProducer.PlanChunks</c> is what upholds the invariant: it never selects a
+    ///         full packet with a same-tick successor. The throw below is the backstop for a caller that
+    ///         picks its own checkpoint frame.
     ///     </para>
     /// </summary>
     /// <param name="checkpointFrameIndex">Index of the <c>DEM_FullPacket</c> frame to start from.</param>
