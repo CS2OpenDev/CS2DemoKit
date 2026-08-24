@@ -99,6 +99,14 @@ public class BucketKindGoldenTests
                 continue;
             }
 
+            // A world kill carries the 0xFFFF no-player sentinel as its attacker. It is not any
+            // player's kill, and the engine will not materialize a subject for it, so an oracle that
+            // counted it would demand a bucket that can never exist.
+            if (death.Attacker is < 0 or >= 64)
+            {
+                continue;
+            }
+
             if (!bySlot.TryGetValue(death.Attacker, out Dictionary<string, double>? buckets))
             {
                 bySlot[death.Attacker] = buckets = new Dictionary<string, double>(StringComparer.Ordinal);

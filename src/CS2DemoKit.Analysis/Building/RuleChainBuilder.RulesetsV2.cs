@@ -1612,13 +1612,14 @@ public sealed partial class RuleChainBuilder
     /// <summary>
     ///     The per-player actor binding an <c>actor_slot</c> view lowers to
     ///     (<c>event.&lt;ActorSlotField&gt; == player.slot</c>) — the same slot-equality v1 hand-wrote.
-    ///     Null for <c>binding: none</c>/<c>team</c> views,
-    ///     <c>match: {actor: any}</c> suppression, or a non-per-player ruleset.
+    ///     Without a subject to bind to (a non-per-player ruleset, or <c>match: {actor: any}</c>
+    ///     suppression) it lowers to the actor-slot validity test instead. Null for
+    ///     <c>binding: none</c>/<c>team</c> views, which have no actor field.
     /// </summary>
     private static string? BuildActorBinding(CheckedRuleset rs, CheckedStat stat,
         Dictionary<string, CatalogView> views)
     {
-        if (rs.For != RulesetScope.EachPlayer || stat.SuppressActorBinding || stat.ResolvedView is null)
+        if (stat.ResolvedView is null)
         {
             return null;
         }
@@ -1630,8 +1631,31 @@ public sealed partial class RuleChainBuilder
         }
 
         CatalogViewRole? role = view.Roles.FirstOrDefault(r => string.Equals(r.Role, view.Actor, StringComparison.Ordinal));
-        return role is null ? null : $"event.{role.Field} == player.slot";
+        if (role is null)
+        {
+            return null;
+        }
+
+        if (rs.For == RulesetScope.EachPlayer && !stat.SuppressActorBinding)
+        {
+            return $"event.{role.Field} == player.slot";
+        }
+
+        // No subject, so slot equality cannot do the filtering it does above, and the view's baked
+        // predicate only excludes suicides. A player_death whose Attacker is the 0xFFFF no-player
+        // sentinel is a world kill; counting it made `for: match` disagree with the per-player twin,
+        // which drops it for want of a subject. The bound matches MaterializeNewPlayers: any slot in
+        // range does get materialized off the event, so this holds for any demo, not just the one
+        // that surfaced it.
+        return $"event.{role.Field} >= 0 && event.{role.Field} < {PlayerSlotExclusiveUpperBound}";
     }
+
+    /// <summary>
+    ///     One past the last valid player slot. Mirrors the range guard in
+    ///     <c>StateGraphEvaluator.MaterializeNewPlayers</c>, which is what decides whether an
+    ///     event-discovered slot becomes a subject at all.
+    /// </summary>
+    private const int PlayerSlotExclusiveUpperBound = 64;
 
     /// <summary>
     ///     Resolves a <c>while:</c> gate to its parent-as-edge-source node: a single context reference maps (via the catalog v2Name→ruleId table) to the
