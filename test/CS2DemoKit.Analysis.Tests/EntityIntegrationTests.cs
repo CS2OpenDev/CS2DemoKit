@@ -82,7 +82,7 @@ public class EntityIntegrationTests
         // it stays reliable under full-suite memory load). Anchored on a kill rather than the frame
         // midpoint so this holds for any demo; see LivePlayFrameIndex.
         EntityTracker tracker = new();
-        tracker.AdvanceToIndex(DemoTestHelper.LivePlayFrameIndex(parsed), parsed.Frames);
+        tracker.ReplayToIndex(DemoTestHelper.LivePlayFrameIndex(parsed), parsed.Frames);
 
         // 1. No bit-misalignment error replaying there. (Broken decode on AnimGraph2-era demos used
         //    to set this and the other tests SKIPPED on it.)

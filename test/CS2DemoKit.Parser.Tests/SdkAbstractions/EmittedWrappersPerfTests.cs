@@ -163,7 +163,7 @@ public class EmittedWrappersPerfTests
 
         int j3 = 0;
         PerfSample cellPosition = Measure(ReadOps, () =>
-            _sink += PositionUtil.CellToWorldVector(pawns[j3++ % n]) is null ? 0 : 1);
+            _sink += PositionUtil.CellToWorld(pawns[j3++ % n]) is null ? 0 : 1);
 
         int j4 = 0;
         PerfSample bind = Measure(BindOps, () =>
@@ -190,7 +190,7 @@ public class EmittedWrappersPerfTests
         Row("direct TryGetIntSlot", direct);
         Row("wrapper Health", wrapperHealth);
         Row("wrapper LifeState (null.)", wrapperLifeState);
-        Row("CellToWorldVector", cellPosition);
+        Row("CellToWorld", cellPosition);
         Row("bind (reader + Create)", bind);
         Row("resolve ActiveWeapon", resolve);
         Console.WriteLine($"  sink={_sink}"); // defeats dead-code elimination; value meaningless

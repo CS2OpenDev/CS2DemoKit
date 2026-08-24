@@ -25,7 +25,7 @@ public static class EntityTrackerFactory
     /// <summary>
     ///     Returns a fresh <see cref="EntityTracker" /> with the codegen-emitted Schema Lens
     ///     resolver bound. Nothing has been replayed yet: feed it frames with
-    ///     <see cref="EntityTracker.Replay" />, <see cref="EntityTracker.AdvanceToIndex" /> or
+    ///     <see cref="EntityTracker.Replay" />, <see cref="EntityTracker.ReplayToIndex" /> or
     ///     <see cref="EntityTracker.AdvanceOneFrame" /> exactly as you would a hand-built tracker.
     ///     <para>
     ///         Post-construction configuration still works — <c>StoreClassFilter</c>,

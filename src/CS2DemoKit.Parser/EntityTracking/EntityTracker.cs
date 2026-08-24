@@ -278,7 +278,7 @@ public sealed class EntityTracker
     ///         <see cref="AdvanceOneFrame" />.
     ///     </para>
     /// </summary>
-    public void AdvanceTo(int targetTick, IReadOnlyList<DemoFrame> frames)
+    public void ReplayTo(int targetTick, IReadOnlyList<DemoFrame> frames)
     {
         foreach (DemoFrame frame in frames)
         {
@@ -293,7 +293,7 @@ public sealed class EntityTracker
 
     /// <summary>
     ///     Replays up to and including <paramref name="frameIndex" /> (0-based position in the list).
-    ///     Prefer this over <see cref="AdvanceTo" /> when you want frame-accurate seeking, since
+    ///     Prefer this over <see cref="ReplayTo" /> when you want frame-accurate seeking, since
     ///     multiple frames can share the same tick value.
     ///     <para>
     ///         <b>This always starts from frame 0</b>, regardless of where the tracker already is —
@@ -307,7 +307,7 @@ public sealed class EntityTracker
     ///         target; or step frames yourself with <see cref="AdvanceOneFrame" />.
     ///     </para>
     /// </summary>
-    public void AdvanceToIndex(int frameIndex, IReadOnlyList<DemoFrame> frames)
+    public void ReplayToIndex(int frameIndex, IReadOnlyList<DemoFrame> frames)
     {
         int limit = Math.Min(frameIndex + 1, frames.Count);
         for (int i = 0; i < limit; i++)
@@ -321,12 +321,12 @@ public sealed class EntityTracker
     ///     <see cref="CurrentEntities" /> / <see cref="CurrentTick" /> / <see cref="CurrentFrameIndex" />
     ///     in place. The caller guarantees <paramref name="frame" /> is the immediate successor of the
     ///     last processed frame. Enables real-time playback without the O(N)-from-zero cost of
-    ///     <see cref="AdvanceToIndex" />: one <c>AdvanceOneFrame</c> per playback tick is O(1).
+    ///     <see cref="ReplayToIndex" />: one <c>AdvanceOneFrame</c> per playback tick is O(1).
     ///     <para>
-    ///         Behaviour-identical to a single iteration of <see cref="AdvanceToIndex" />'s loop body
+    ///         Behaviour-identical to a single iteration of <see cref="ReplayToIndex" />'s loop body
     ///         (both call the same private per-frame primitive); a fresh tracker stepped
     ///         <c>AdvanceOneFrame</c> N times yields the same <see cref="EntitySet" /> as
-    ///         <c>AdvanceToIndex(N − 1, frames)</c>.
+    ///         <c>ReplayToIndex(N − 1, frames)</c>.
     ///     </para>
     /// </summary>
     public void AdvanceOneFrame(DemoFrame frame) => ProcessFrame(frame);
@@ -335,7 +335,7 @@ public sealed class EntityTracker
     ///     Advances to <paramref name="snapshotAt" />, takes a snapshot, then continues to
     ///     <paramref name="frameIndex" />. Returns the snapshot taken at <paramref name="snapshotAt" />.
     /// </summary>
-    public Dictionary<int, Dictionary<string, object?>> AdvanceToIndexWithSnapshot(
+    public Dictionary<int, Dictionary<string, object?>> ReplayToIndexWithSnapshot(
         int snapshotAt, int frameIndex, IReadOnlyList<DemoFrame> frames)
     {
         int snapLimit = Math.Min(snapshotAt + 1, frames.Count);

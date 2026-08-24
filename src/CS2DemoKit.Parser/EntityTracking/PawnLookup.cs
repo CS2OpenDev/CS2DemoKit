@@ -1,14 +1,8 @@
-#region
-
-using CS2DemoKit.Parser.EntityTracking;
-
-#endregion
-
-namespace CS2DemoKit.Analysis.Plugins;
+namespace CS2DemoKit.Parser.EntityTracking;
 
 /// <summary>
-///     Shared slot ↔ pawn ↔ entity-handle utilities used by every
-///     <see cref="IPerPlayerEntityValueProvider" /> implementation. Reused, not duplicated,
+///     Shared slot ↔ pawn ↔ entity-handle utilities: the "whose pawn is this" half of positional
+///     work, paired with <see cref="PositionUtil" />'s "where is it". Reused, not duplicated,
 ///     because the slot→pawn reverse-lookup and handle-decoding are subtle (forward
 ///     <c>controller.m_hPawn</c> is unreliable; entity handles arrive as ulong/int/short on
 ///     the wire and must be coerced).
@@ -40,10 +34,10 @@ public static class PawnLookup
     }
 
     /// <summary>
-    ///     Per-pawn enumeration helper used by <c>CaptureAllSlots</c> implementations.
-    ///     Invokes <paramref name="onPawn" /> once for each live player pawn paired with
-    ///     its resolved player slot. Skips pawns with no controller handle (just-spawned,
-    ///     not yet bound to a controller).
+    ///     Invokes <paramref name="onPawn" /> once for each live player pawn paired with its
+    ///     resolved player slot. Skips pawns with no controller handle (just-spawned, not yet
+    ///     bound to a controller). One sweep of the entity set, so a caller wanting several
+    ///     values per pawn should read them all inside the callback rather than sweep per value.
     /// </summary>
     public static void ForEachLivePawn(EntityTracker tracker, Action<int, EntityState> onPawn)
     {

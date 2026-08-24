@@ -429,7 +429,7 @@ public static class PlayerSnapshotBuilder
     ///     <c>m_hController</c> reads <c>0x00FFFFFF</c>, which masks to 0x3FFF. Nothing lives at that
     ///     index, so without this it leaves here as a live handle and becomes a garbage slot 16382.
     ///     <para>
-    ///         Same fold as <see cref="Plugins.PawnLookup.IndexOf" /> but to a different sentinel:
+    ///         Same fold as <see cref="PawnLookup.IndexOf" /> but to a different sentinel:
     ///         these are public getters whose documented convention is "0 means no live handle", so
     ///         they cannot switch to -1 without breaking callers.
     ///     </para>

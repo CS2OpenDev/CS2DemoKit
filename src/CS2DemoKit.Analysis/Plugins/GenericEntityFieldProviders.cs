@@ -87,7 +87,7 @@ public interface IWorkerCloneable<out T>
 ///         lens-curated on the tracker at hand reads null through the wrapper while
 ///         <see cref="EntityState" />'s seen-gated indexer still returns it. The pawn's
 ///         <c>CBodyComponent</c> cell/offset pair is the shipped case: <c>CSPlayerPawn.Origin</c>
-///         comes back null on trackers where <c>PositionUtil.CellToWorldVector</c> reconstructs a
+///         comes back null on trackers where <c>PositionUtil.CellToWorld</c> reconstructs a
 ///         position, so the position providers read state directly.
 ///     </para>
 /// </summary>

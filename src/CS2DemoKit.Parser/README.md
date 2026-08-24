@@ -109,13 +109,44 @@ generated Schema Lens (omitting it does not throw — lane-routed reads silently
 fallback dict, so prefer the factory). To read through typed wrappers, register the
 `CS2OpenDev.Sdk.Entities` factories via `TrackerEntityWorld.RegisterWrapper` (or bind a wrapper
 per entity with `new TrackerEntityWorld(tracker).CreateReader(binding, state)`).
-`AdvanceTo`/`AdvanceToIndex` replay from frame 0 on **every** call; for forward walks use
+`ReplayTo`/`ReplayToIndex` replay from frame 0 on **every** call; for forward walks use
 `EntityStateLayer` in `CS2DemoKit.Analysis` instead. Decode diagnostics go to
 `EntityTracker.DecodeDiagnosticSink` (`Action<string>`, defaults to `Console.WriteLine`) — redirect
-or silence it per tracker in batch services. `PositionUtil.CellToWorld` /
-`CellToWorldVector` (namespace `CS2DemoKit.Parser.EntityTracking`) is the oracle-pinned pawn
-cell→world reconstruction; `TickMapper` and `TickBoundaries.FrameIndices` cover demo-tick mapping
-and tick-boundary frame indexing.
+or silence it per tracker in batch services. `PositionUtil.CellToWorld` (namespace
+`CS2DemoKit.Parser.EntityTracking`) is the oracle-pinned pawn cell→world reconstruction and
+`PawnLookup` beside it resolves pawn↔slot. `TickMapper` and `TickBoundaries.FrameIndices` cover
+demo-tick mapping and tick-boundary frame indexing.
+
+### Player trajectories
+
+`PositionSampler.Walk` is those pieces assembled: it steps the tracker one frame at a time,
+enumerates live pawns, resolves each to a slot, and reconstructs world position.
+
+```csharp
+foreach (PositionSample s in PositionSampler.Walk(demo, frameStride: 8))
+{
+    // s.FrameIndex, s.Tick, s.PlayerSlot, s.Position (Vector3), s.Place
+}
+```
+
+`frameStride` subsamples the output only. Every frame is still decoded, because entity state is
+delta-encoded and skipping a frame's deltas corrupts the frames after it, so the stride buys memory
+and downstream work rather than decode time. At 64 tick a player covers roughly 4 units per frame,
+so a stride of 8 draws a path to about 32 units at an eighth of the points.
+
+Measured on a 223,628-frame match, Release, parse excluded: 1,635,249 samples in 3.6 s at stride 1,
+and 204,411 in 2.3 s at stride 8. The stride cuts points 8x and wall time by a third, which is the
+decode floor showing through. `Walk` is lazy, so a consumer that folds rather than collects pays
+that time without the ~50 MB the full list retains.
+
+`maxFrames` stops the walk early. There is deliberately no way to start it late: entity state is
+delta-encoded, so a walk beginning anywhere but frame 0 reports positions built on deltas it never
+saw. For one round's path, walk from the start and filter by `PositionSample.Tick`.
+
+Do **not** reach for the `player.pos_x/y/z` rule providers to extract paths. They emit into the
+digest per change, which is 26x the cells of the whole shipped provider set for one axis and 100x
+for all three (`docs/perf/baseline.md`). Coordinates in rules are for predicates at events; this
+walk is for trajectories.
 
 ## Working with raw net messages
 

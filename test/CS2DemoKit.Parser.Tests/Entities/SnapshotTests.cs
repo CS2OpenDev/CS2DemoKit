@@ -133,7 +133,7 @@ public class SnapshotTests
 
         // Seek to a mid-demo frame so pawns are populated.
         int midFrame = parsed.Frames.Count / 2;
-        tracker.AdvanceToIndex(midFrame, parsed.Frames);
+        tracker.ReplayToIndex(midFrame, parsed.Frames);
 
         (int slot, EntityState? pawn) = FirstSlotOfClass(tracker, "CCSPlayerPawn");
         if (pawn is null)
@@ -168,7 +168,7 @@ public class SnapshotTests
         // Re-seek the live tracker to the very end of the demo. The frozen wrapper +
         // node must NOT change (no live aliasing), even though the live entity's
         // fields may have moved.
-        tracker.AdvanceToIndex(parsed.Frames.Count - 1, parsed.Frames);
+        tracker.ReplayToIndex(parsed.Frames.Count - 1, parsed.Frames);
 
         await Assert.That(frozenWrapper.Health).IsEqualTo(frozenHealthAtSnapshot);
         // The node's captured value is the snapshot-time clone, unchanged by the re-seek.

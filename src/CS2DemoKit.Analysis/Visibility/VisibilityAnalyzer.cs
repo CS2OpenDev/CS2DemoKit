@@ -18,7 +18,7 @@ namespace CS2DemoKit.Analysis.Visibility;
 ///     the demo's <c>spotted</c> bit (Guiding Principle 2). Multi-anchor hitbox sampling (any anchor clear ⇒
 ///     exposed) is our addition over awpy's point-to-point.
 ///     <para>
-///         <b>Layering:</b> the caller injects a position resolver (<c>PositionUtil.CellToWorldVector</c>
+///         <b>Layering:</b> the caller injects a position resolver (<c>PositionUtil.CellToWorld</c>
 ///         is the packaged one) so the oracle-pinned cell constant stays in a single place, and injects the
 ///         geometry as a built <see cref="VisibilityEngine" /> — this type does no file I/O and knows
 ///         nothing about where bakes live (see <see cref="CollisionAssetLocator" />). Runs a standalone sequential
@@ -161,7 +161,7 @@ public static class VisibilityAnalyzer
     /// <param name="engine">The loaded collision geometry every ray is cast against.</param>
     /// <param name="resolvePosition">
     ///     Reconstructs a pawn's world-space FEET position (eye height is derived from it here). The
-    ///     packaged answer is <c>PositionUtil.CellToWorldVector</c>.
+    ///     packaged answer is <c>PositionUtil.CellToWorld</c>.
     /// </param>
     /// <param name="options">Sampling stride, tick rate, FOV, frame window, smoke, bake identity.</param>
     /// <param name="cancellationToken">
@@ -190,7 +190,7 @@ public static class VisibilityAnalyzer
         double maxDt = opt.SampleStrideTicks * 2.0 / opt.TickRate; // cap across demo-pause gaps
 
         EntityTracker tracker = new();
-        tracker.AdvanceToIndex(start, frames);
+        tracker.ReplayToIndex(start, frames);
         int lastSampledTick = frames[start].ServerTick;
 
         List<Vantage> samples = new(12);

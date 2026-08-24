@@ -55,8 +55,13 @@ public static class PositionUtil
     ///         the wire type of a cell index varies by encoder (ushort/int/uint cells,
     ///         float/double offsets).
     ///     </para>
+    ///     <para>
+    ///         Also usable as a method group wherever a <c>Func&lt;EntityState, Vector3?&gt;</c>
+    ///         position resolver is wanted, notably <c>VisibilityAnalyzer.Analyze</c>, which takes
+    ///         one so it does not have to own the cell constant.
+    ///     </para>
     /// </summary>
-    public static (float X, float Y, float Z)? CellToWorld(EntityState pawn)
+    public static Vector3? CellToWorld(EntityState pawn)
     {
         if (!TryCellRead(pawn, "CBodyComponent.m_cellX", out int cx) ||
             !TryCellRead(pawn, "CBodyComponent.m_cellY", out int cy) ||
@@ -68,7 +73,7 @@ public static class PositionUtil
             return null;
         }
 
-        return (Axis(cx, ox), Axis(cy, oy), Axis(cz, oz));
+        return new Vector3(Axis(cx, ox), Axis(cy, oy), Axis(cz, oz));
     }
 
     /// <summary>Typed int-lane read when the leaf is Lens-mapped; boxed coercion otherwise.</summary>
@@ -96,16 +101,6 @@ public static class PositionUtil
 
         return TryOffset(entity[path], out offset);
     }
-
-    /// <summary>
-    ///     <see cref="CellToWorld" /> in <see cref="Vector3" /> form. Supplied as a method group so a
-    ///     caller needing a <c>Func&lt;EntityState, Vector3?&gt;</c> position resolver — notably
-    ///     <c>VisibilityAnalyzer.Analyze</c> in CS2DemoKit.Analysis, which takes one so it does not
-    ///     have to own the cell constant — can pass <c>PositionUtil.CellToWorldVector</c> directly
-    ///     instead of hand-rolling an adapter lambda per call site.
-    /// </summary>
-    public static Vector3? CellToWorldVector(EntityState pawn)
-        => CellToWorld(pawn) is { } p ? new Vector3(p.X, p.Y, p.Z) : null;
 
     /// <summary>The single-axis reconstruction: <c>(cell - 32) * 512 + offset</c> (oracle formula).</summary>
     public static float Axis(int cell, float offset) => (cell - 32) * (float)CellWidth + offset;
