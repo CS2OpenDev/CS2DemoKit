@@ -1,5 +1,7 @@
 #region
 
+using System.Security.Cryptography;
+using System.Text;
 using CS2DemoKit.Parser.Entities.Generated;
 using CS2DemoKit.Parser.Entities.SchemaLens;
 
@@ -47,6 +49,31 @@ public class SchemaLensGeneratedTests
         await Assert.That(recomputed).IsEqualTo(GeneratedLensRegistry.LensHash);
         await Assert.That(state.CanonicalHash).IsEqualTo(GeneratedLensRegistry.LensHash);
     }
+
+    /// <summary>
+    ///     The hash is an identity for a shape, so it must not move with the host. This is the
+    ///     property the round-trip above cannot see: CI is Linux, where <c>AppendLine</c> emitted
+    ///     the right separator by accident and the same code hashed differently on Windows.
+    /// </summary>
+    [Test]
+    [Category("Smoke")]
+    public async Task CanonicalForm_UsesLfRegardlessOfHost()
+    {
+        string canonical = SchemaLensCanonicalForm.Serialize(GeneratedLensRegistry.Load());
+
+        await Assert.That(canonical).DoesNotContain("\r")
+            .Because("the separator belongs to the format, not to Environment.NewLine");
+        await Assert.That(canonical).Contains("\n");
+
+        // Pins the CRLF form as a distinct hash, so a future AppendLine cannot pass by producing
+        // LF on the machine that happens to run the suite.
+        string crlf = canonical.Replace("\n", "\r\n", StringComparison.Ordinal);
+        await Assert.That(Sha256Of(crlf)).IsNotEqualTo(GeneratedLensRegistry.LensHash);
+        await Assert.That(Sha256Of(canonical)).IsEqualTo(GeneratedLensRegistry.LensHash);
+    }
+
+    private static string Sha256Of(string s) =>
+        "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(s)));
 
     [Test]
     [Category("Smoke")]

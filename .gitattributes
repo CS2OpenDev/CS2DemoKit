@@ -1,0 +1,12 @@
+# Line endings are part of the content here, not a checkout preference. Committed artifacts
+# (catalog.json, the v2 schema, the rules-output digests) are compared byte-for-byte against a
+# string built in memory with LF, and raw string literals in .cs carry the source file's endings
+# into the assertions that search them. A CRLF checkout fails those tests without anything being
+# wrong. See #44.
+* text=auto eol=lf
+
+# Never touched. Git's heuristic would get these right anyway; saying so removes the question.
+*.dem binary
+*.png binary
+*.jpg binary
+*.tris binary

@@ -23,7 +23,7 @@ namespace CS2DemoKit.Analysis.Tests.RulesV2;
 public class ShowReferenceValidationTests
 {
     // A highlight, a plain stat, a tally and its targets: one of each thing a show ref may name.
-    private const string Probe = """
+    private const string ProbeSource = """
                                  ruleset: show_probe
                                  for: each_player
                                  stats:
@@ -59,6 +59,14 @@ public class ShowReferenceValidationTests
                                          - { stat: kills }
                                          - { stat: rounds_3k }
                                  """;
+
+    /// <summary>
+    ///     A raw string literal carries the <b>source file's</b> line endings, so a multi-line
+    ///     <c>\n</c> search against <see cref="ProbeSource" /> matches nothing on a CRLF checkout
+    ///     and the test reports a validation gap that is not there. Normalize once here rather
+    ///     than at each call site.
+    /// </summary>
+    private static readonly string Probe = ProbeSource.ReplaceLineEndings("\n");
 
     /// <summary>
     ///     The safety net for making this a hard diagnostic: a bad reference now drops the whole
