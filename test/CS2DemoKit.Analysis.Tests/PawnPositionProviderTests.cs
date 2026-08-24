@@ -144,7 +144,7 @@ public class PawnPositionProviderTests
 
                 // The util and the provider must not disagree either, since the util is what the
                 // rest of the engine (visibility) reads.
-                if (PositionUtil.CellToWorldVector(pawn) is not { } util ||
+                if (PositionUtil.CellToWorld(pawn) is not { } util ||
                     util != new Vector3(ex, ey, ez))
                 {
                     firstMismatch = $"frame {frameIndex} slot {slot}: PositionUtil != oracle ({ex},{ey},{ez})";

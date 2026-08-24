@@ -140,7 +140,7 @@ public sealed class SiteProvider : IPerPlayerEntityValueProvider, IPawnStateRead
     public string FieldName => SchemaNames.CCSPlayerPawn.LastPlaceName;
 
     public object? ReadForPawnState(EntityTracker tracker, EntityState pawn) =>
-        PositionUtil.CellToWorldVector(pawn) is { } p ? MyZones.Resolve(p) : null;
+        PositionUtil.CellToWorld(pawn) is { } p ? MyZones.Resolve(p) : null;
     // ... CaptureAllSlots / Read / ReadForPawn as in PawnPositionProvider
 }
 
@@ -171,7 +171,7 @@ convention now ships in the package: `CollisionAssetLocator` finds the blob via 
 `VisibilityAnalyzer.Options.Bundle` and **persist `Report.Bundle` with any stored result** —
 bundles are selected by map name only, so bake identity is the only way to tell a stale bake from
 a current one after a CS2 map update. `Analyze` accepts a `CancellationToken`. For the analyzer's
-position resolver, pass `CS2DemoKit.Parser.EntityTracking.PositionUtil.CellToWorldVector`. Without
+position resolver, pass `CS2DemoKit.Parser.EntityTracking.PositionUtil.CellToWorld`. Without
 a bundle for a given map, LOS-dependent stats are simply unavailable; the rest of analysis is
 unaffected.
 

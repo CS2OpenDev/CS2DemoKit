@@ -12,7 +12,7 @@ namespace CS2DemoKit.Parser.Tests;
 ///     yield the same <see cref="EntitySet" /> as "seek to frame N." The play loop steps the
 ///     authoritative tracker one frame at a time via the additive
 ///     <see cref="EntityTracker.AdvanceOneFrame" />; a discrete seek replays from zero via
-///     <see cref="EntityTracker.AdvanceToIndex" />. This proves the two paths are byte-identical, so
+///     <see cref="EntityTracker.ReplayToIndex" />. This proves the two paths are byte-identical, so
 ///     the play loop and discrete seeks can never desync the entity state.
 ///     <para>
 ///         The equivalence is exact (not the analysis-relevant parity of the FullPacket checkpoint
@@ -47,7 +47,7 @@ public class AdvanceOneFrameEquivalenceTests
         {
             // "Seek to N": discrete checkpoint-style replay from zero.
             EntityTracker seek = new();
-            seek.AdvanceToIndex(n, frames);
+            seek.ReplayToIndex(n, frames);
 
             // "Play to N": step one frame at a time, exactly as the play loop does.
             EntityTracker play = new();

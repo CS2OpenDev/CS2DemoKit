@@ -66,7 +66,7 @@ public sealed record EntityFieldsSnapshot(
     /// <summary>
     ///     Captures the snapshot for a parsed demo at the given ticks.
     ///     <paramref name="ticks" /> are demo ServerTicks; the method does one
-    ///     <see cref="EntityTracker.AdvanceTo" /> per tick (no cross-tick
+    ///     <see cref="EntityTracker.ReplayTo" /> per tick (no cross-tick
     ///     replay sharing). Slot ordering within each tick is ascending.
     /// </summary>
     /// <remarks>
@@ -86,7 +86,7 @@ public sealed record EntityFieldsSnapshot(
         foreach (int tick in ticks)
         {
             EntityTracker tracker = new();
-            tracker.AdvanceTo(tick, demo.Frames);
+            tracker.ReplayTo(tick, demo.Frames);
 
             List<EntityFieldRow> rows = new();
             foreach ((int slot, EntityState ent) in tracker.CurrentEntities.AllIndexed())

@@ -572,19 +572,19 @@ State held:
 | Method | Behaviour | Use case |
 |---|---|---|
 | `Replay(frames)` | Process every frame in order. | Full-replay stats build (`DemoAnalyzer.BuildContext`). |
-| `AdvanceTo(targetTick, frames)` | Process all frames with `tick <= targetTick`. | Tick-keyed seeking (rare; can hit multiple frames sharing a tick). |
-| `AdvanceToIndex(frameIndex, frames)` | Process frames `[0..frameIndex]` inclusive. | Frame-accurate seeking — preferred over `AdvanceTo` because DEM_FullPacket frames can share ticks. |
+| `ReplayTo(targetTick, frames)` | Process all frames with `tick <= targetTick`. | Tick-keyed seeking (rare; can hit multiple frames sharing a tick). |
+| `ReplayToIndex(frameIndex, frames)` | Process frames `[0..frameIndex]` inclusive. | Frame-accurate seeking — preferred over `ReplayTo` because DEM_FullPacket frames can share ticks. |
 | `AdvanceOneFrame(frame)` | Process exactly one frame. | Forward walks that already own the cursor. |
-| `AdvanceToIndexWithSnapshot(snapshotAt, frameIndex, frames)` | Advance to `snapshotAt`, snapshot all fields, then continue to `frameIndex`. | Pre-event reads (e.g. preHitHp before damage is applied). |
+| `ReplayToIndexWithSnapshot(snapshotAt, frameIndex, frames)` | Advance to `snapshotAt`, snapshot all fields, then continue to `frameIndex`. | Pre-event reads (e.g. preHitHp before damage is applied). |
 | `PeekEntityUpdates(msg)` | Read-only decode of a single `CSVCMsg_PacketEntities` returning a `List<EntityUpdateInfo>` without mutating `CurrentEntities`. | "Show me the entity diff in this packet" without rewinding. |
 | `SnapshotCurrentFields()` | Deep-copy the entire `EntitySet` to `Dictionary<int, Dictionary<string, object?>>`. | Anywhere a non-mutating live view is needed. |
 
-Note that `AdvanceTo` and `AdvanceToIndex` replay from frame 0 on **every**
+Note that `ReplayTo` and `ReplayToIndex` replay from frame 0 on **every**
 call — they are seeks, not steps. A forward walk should use `AdvanceOneFrame`,
 or `EntityStateLayer` in `CS2DemoKit.Analysis`, which keeps its own cursor and
 replays only the frames between where it is and where you asked for.
 
-`Replay`, `AdvanceTo`, and `AdvanceToIndex` all funnel into `ProcessFrame`
+`Replay`, `ReplayTo`, and `ReplayToIndex` all funnel into `ProcessFrame`
 which iterates `frame.InnerMessages` and dispatches each `Payload` to the
 right handler.
 
@@ -920,8 +920,8 @@ this library looks like:
    parser does not retain decompressed payloads: the consumer re-inflates on
    demand, one frame at a time.
 3. **Entity tracking on selection** — own a single `EntityTracker` and advance
-   it with `AdvanceToIndex(frameIndex, frames)` as the selection moves; use
-   `AdvanceToIndexWithSnapshot` to capture pre-frame state, and
+   it with `ReplayToIndex(frameIndex, frames)` as the selection moves; use
+   `ReplayToIndexWithSnapshot` to capture pre-frame state, and
    `PeekEntityUpdates` to show the entity diff carried by one packet without
    disturbing the live set.
 4. **Hex highlighting** — `NetMessage.DecompressedStart` / `DecompressedLength`
@@ -1124,7 +1124,7 @@ Key architectural differences:
 3. Either:
    - Full replay: `tracker.Replay(parsed.Frames);` then walk
      `tracker.CurrentEntities.AllInPvs()`.
-   - Seek to a frame: `tracker.AdvanceToIndex(targetFrameIdx, parsed.Frames);`
+   - Seek to a frame: `tracker.ReplayToIndex(targetFrameIdx, parsed.Frames);`
      — remember this replays from 0 each call. For a forward walk, use
      `AdvanceOneFrame`, or `EntityStateLayer` from `CS2DemoKit.Analysis`.
 4. To read through typed wrappers, register the SDK factories on the tracker

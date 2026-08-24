@@ -245,7 +245,7 @@ public class EmittedWrappersStage3Tests
             await Assert.That(candidate.Fields.ContainsKey("m_vecOrigin")).IsFalse();
             await Assert.That(candidate.Fields.ContainsKey("m_CBodyComponent.m_pSceneNode.m_vecOrigin"))
                 .IsFalse();
-            if (PositionUtil.CellToWorldVector(candidate) is not null)
+            if (PositionUtil.CellToWorld(candidate) is not null)
             {
                 cellPositions++;
             }

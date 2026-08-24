@@ -56,8 +56,8 @@ public class EntityTrackerFactoryTests
         // Half the demo is plenty for every curated class to be live, and keeps two concurrent
         // trackers' combined decode at roughly one full replay.
         int target = parsed.Frames.Count / 2;
-        manual.AdvanceToIndex(target, parsed.Frames);
-        curated.AdvanceToIndex(target, parsed.Frames);
+        manual.ReplayToIndex(target, parsed.Frames);
+        curated.ReplayToIndex(target, parsed.Frames);
 
         int slot = FirstSlotOfClass(manual, "CCSPlayerPawn");
         if (slot < 0)

@@ -45,11 +45,11 @@ public sealed class EntitySeekService
 
         if (frameIndex > 0)
         {
-            snapshot = tracker.AdvanceToIndexWithSnapshot(frameIndex - 1, frameIndex, frames);
+            snapshot = tracker.ReplayToIndexWithSnapshot(frameIndex - 1, frameIndex, frames);
         }
         else
         {
-            tracker.AdvanceToIndex(0, frames);
+            tracker.ReplayToIndex(0, frames);
         }
 
         return new SeekResult(tracker, snapshot);
@@ -62,7 +62,7 @@ public sealed class EntitySeekService
     public SeekResult SeekToFrameNoSnapshot(int frameIndex, IReadOnlyList<DemoFrame> frames)
     {
         EntityTracker tracker = _createTracker();
-        tracker.AdvanceToIndex(frameIndex, frames);
+        tracker.ReplayToIndex(frameIndex, frames);
         return new SeekResult(tracker, null);
     }
 
@@ -79,11 +79,11 @@ public sealed class EntitySeekService
 
         if (takeSnapshot)
         {
-            snapshot = tracker.AdvanceToIndexWithSnapshot(snapshotAt, endFrameIndex, frames);
+            snapshot = tracker.ReplayToIndexWithSnapshot(snapshotAt, endFrameIndex, frames);
         }
         else
         {
-            tracker.AdvanceToIndex(endFrameIndex, frames);
+            tracker.ReplayToIndex(endFrameIndex, frames);
         }
 
         return new SeekResult(tracker, snapshot);

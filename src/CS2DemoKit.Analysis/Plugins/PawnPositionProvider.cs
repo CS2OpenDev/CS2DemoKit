@@ -26,7 +26,7 @@ public enum PawnPositionAxis
 ///     Reads one axis of a pawn's world position, exposed as <c>entity.pawn.pos_x</c> /
 ///     <c>pos_y</c> / <c>pos_z</c>. There is no <c>m_vecOrigin</c> leaf on a pawn: position is
 ///     cell indices plus an in-cell offset on <c>CBodyComponent</c>, reconstructed as
-///     <c>(cell - 32) * 512 + offset</c>, which <see cref="PositionUtil.CellToWorldVector" />
+///     <c>(cell - 32) * 512 + offset</c>, which <see cref="PositionUtil.CellToWorld" />
 ///     owns as this repo's oracle-verified home for the constant.
 ///     <para>
 ///         Read through <see cref="IPawnStateReader" />, not the SDK wrapper.
@@ -99,7 +99,7 @@ public sealed class PawnPositionProvider(PawnPositionAxis axis)
     // Null (slot skipped) when the origin is unresolvable: a pre-spawn or dormant pawn has not
     // networked all six leaves. A resolved 0 is a real coordinate and emits.
     public object? ReadForPawnState(EntityTracker tracker, EntityState pawn) =>
-        PositionUtil.CellToWorldVector(pawn) is { } origin ? Select(origin) : null;
+        PositionUtil.CellToWorld(pawn) is { } origin ? Select(origin) : null;
 
     /// <inheritdoc />
     /// <exception cref="NotSupportedException">Always. Read through <see cref="IPawnStateReader" />.</exception>

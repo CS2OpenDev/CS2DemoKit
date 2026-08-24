@@ -319,7 +319,7 @@ public class VisibilityAssetLayerTests
                 cts.Cancel();
             }
 
-            return PositionUtil.CellToWorldVector(pawn);
+            return PositionUtil.CellToWorld(pawn);
         }
 
         Assert.Throws<OperationCanceledException>(() =>
