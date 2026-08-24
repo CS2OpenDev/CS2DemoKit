@@ -18,14 +18,22 @@ namespace CS2DemoKit.TestSupport;
 ///         <b>Discovery order</b> (first match wins):
 ///         <list type="number">
 ///             <item>The <c>DEMO_PATH</c> environment variable, if it points at an existing file.</item>
-///             <item>The first <c>*.dem</c> under <c>TestData/</c> next to the test assembly.</item>
+///             <item><see cref="ReferenceDemoFileName" />, wherever the named-file lookup finds it.</item>
+///             <item>The first <c>*.dem</c> by ordinal filename under <c>TestData/</c> next to the test assembly.</item>
 ///             <item>
-///                 The first <c>*.dem</c> under <c>&lt;repo-root&gt;/demos/benchmarks/</c> or
-///                 <c>&lt;repo-root&gt;/demos/</c>.
+///                 The first <c>*.dem</c> by ordinal filename under <c>&lt;repo-root&gt;/demos/benchmarks/</c>
+///                 or <c>&lt;repo-root&gt;/demos/</c>.
 ///             </item>
 ///         </list>
 ///         The repo root is located by walking up from <see cref="AppContext.BaseDirectory" /> until
 ///         a folder containing <c>CS2DemoKit.slnx</c> is found. No hard-coded personal paths.
+///     </para>
+///     <para>
+///         <b>Sorted, and announced.</b> Steps 3 and 4 sort rather than taking enumeration order,
+///         which is undefined and filesystem-dependent, and the resolved file is printed once per
+///         process. Both exist because the fallback is a moving target: adding a demo to the corpus
+///         can change which one every demo-agnostic test runs against, and that has to be visible in
+///         the output rather than inferred from a bisect. See issue #39.
 ///     </para>
 /// </summary>
 public static class DemoTestHelper
@@ -146,41 +154,75 @@ public static class DemoTestHelper
         string? env = Environment.GetEnvironmentVariable("DEMO_PATH");
         if (!string.IsNullOrWhiteSpace(env) && File.Exists(env))
         {
-            return env;
+            return Announce(env, "DEMO_PATH");
         }
 
         // 2. Reference demo, if available. Pinning to a specific filename when
         // possible gives tests a deterministic structural shape (addresses
-        // audit S10). Falls through to first-found if the reference isn't
+        // audit S10). Falls through to first-sorted if the reference isn't
         // present locally.
         string? reference = FindDemoPath(ReferenceDemoFileName);
         if (reference is not null)
         {
-            return reference;
+            return Announce(reference, "reference demo");
         }
 
         // 3. TestData/ next to the test assembly.
         string testData = Path.Combine(AppContext.BaseDirectory, "TestData");
         if (Directory.Exists(testData))
         {
-            string? first = Directory.EnumerateFiles(testData, "*.dem").FirstOrDefault();
-            if (first is not null)
+            if (FirstSorted(testData) is { } first)
             {
-                return first;
+                return Announce(first, "TestData fallback");
             }
         }
 
         // 4. <repo-root>/demos/benchmarks/ then <repo-root>/demos/.
         foreach (string dir in RepoRelativeDemoDirs())
         {
-            string? first = Directory.EnumerateFiles(dir, "*.dem").FirstOrDefault();
-            if (first is not null)
+            if (FirstSorted(dir) is { } first)
             {
-                return first;
+                return Announce(first, "corpus fallback");
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     The first <c>*.dem</c> by ordinal filename, or null. Sorted rather than left to
+    ///     <see cref="Directory.EnumerateFiles(string,string)" />, whose order is undefined and not
+    ///     stable across filesystems: unsorted, two machines with an identical corpus can run the
+    ///     same test against different demos.
+    /// </summary>
+    private static string? FirstSorted(string dir) =>
+        Directory.EnumerateFiles(dir, "*.dem")
+            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+    /// <summary>Guards <see cref="_announced" />.</summary>
+    private static readonly Lock _announceLock = new();
+
+    /// <summary>Paths already named on the console, so a repeated lookup stays quiet.</summary>
+    private static readonly HashSet<string> _announced = new(StringComparer.Ordinal);
+
+    /// <summary>
+    ///     Names the resolved demo once per distinct path. The demo is an input to hundreds of
+    ///     assertions and used to be invisible: when the corpus grew, the selected demo changed,
+    ///     tests began failing, and nothing in the output said the subject had moved, so the
+    ///     failures read as a code regression.
+    /// </summary>
+    private static string Announce(string path, string how)
+    {
+        lock (_announceLock)
+        {
+            if (_announced.Add(path))
+            {
+                Console.WriteLine($"[demo] {how}: {Path.GetFileName(path)}");
+            }
+        }
+
+        return path;
     }
 
     /// <summary>
