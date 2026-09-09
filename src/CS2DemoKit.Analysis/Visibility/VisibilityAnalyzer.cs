@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using CS2DemoKit.Analysis.Plugins;
@@ -91,17 +92,50 @@ public static class VisibilityAnalyzer
             ? new ViewFrustum(viewer.Eye, viewer.Forward, yawHalfDeg, pitchHalfDeg)
             : default;
 
+        // Ray budget instrumentation. Off by default; when off, `count` is false and every block
+        // below is a predicted-not-taken branch. The counting never feeds back into the result.
+        bool count = VisibilityCounters.Enabled;
+        int anchorsInFov = 0, raysCast = 0, raysClear = 0, raysOutsideFov = 0, raysSkipped = 0;
+        long rayTicks = 0;
+
         bool exposed = false, couldSee = false;
         for (int i = 0; i < n; i++)
         {
             bool inFov = viewer.HasForward && frustum.Contains(anchors[i]);
+            if (count && inFov)
+            {
+                anchorsInFov++;
+            }
+
             // Skip the ray if it can neither newly-expose nor newly-could-see.
             if (exposed && (!inFov || couldSee))
             {
+                if (count)
+                {
+                    raysSkipped++;
+                }
+
                 continue;
             }
 
-            if (engine.IsVisible(viewer.Eye, anchors[i]))
+            long rayStart = count ? Stopwatch.GetTimestamp() : 0;
+            bool clear = engine.IsVisible(viewer.Eye, anchors[i]);
+            if (count)
+            {
+                rayTicks += Stopwatch.GetTimestamp() - rayStart;
+                raysCast++;
+                if (clear)
+                {
+                    raysClear++;
+                }
+
+                if (!inFov)
+                {
+                    raysOutsideFov++;
+                }
+            }
+
+            if (clear)
             {
                 exposed = true;
                 // Vision additionally requires the sightline not to pass through active smoke.
@@ -113,8 +147,29 @@ public static class VisibilityAnalyzer
 
             if (exposed && couldSee)
             {
+                if (count)
+                {
+                    // Anchors after this one are never visited. Count the frustum membership of
+                    // the unvisited tail too, so the no-anchor-in-frustum verdict is about the
+                    // pair, not about how far the loop got.
+                    raysSkipped += n - i - 1;
+                    for (int j = i + 1; j < n; j++)
+                    {
+                        if (viewer.HasForward && frustum.Contains(anchors[j]))
+                        {
+                            anchorsInFov++;
+                        }
+                    }
+                }
+
                 break;
             }
+        }
+
+        if (count)
+        {
+            VisibilityCounters.RecordPair(
+                n, anchorsInFov, raysCast, raysClear, raysOutsideFov, raysSkipped, rayTicks, exposed, couldSee);
         }
 
         return (exposed, couldSee);

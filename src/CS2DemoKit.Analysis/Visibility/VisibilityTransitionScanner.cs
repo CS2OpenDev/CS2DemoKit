@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics;
 using System.Numerics;
 using CS2DemoKit.Analysis.Events;
 
@@ -167,6 +168,11 @@ public sealed class VisibilityTransitionScanner
         _current.Clear();
         _onTarget.Clear();
 
+        // Ray budget instrumentation, off by default; brackets the whole pairwise pass so the
+        // per-ray figure in VisibilityCounters has a per-tick envelope to be a share of.
+        bool count = VisibilityCounters.Enabled;
+        long sampleStart = count ? Stopwatch.GetTimestamp() : 0;
+
         for (int v = 0; v < vantages.Count; v++)
         {
             AimVantage viewerAim = vantages[v];
@@ -252,6 +258,11 @@ public sealed class VisibilityTransitionScanner
 
         // Swap rather than copy: the outgoing set becomes next tick's scratch and is cleared above.
         (_visible, _current) = (_current, _visible);
+        if (count)
+        {
+            VisibilityCounters.RecordSample(Stopwatch.GetTimestamp() - sampleStart);
+        }
+
         return _spots;
     }
 
