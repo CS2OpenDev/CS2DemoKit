@@ -1,3 +1,9 @@
+#region
+
+using CS2DemoKit.Analysis.Edges;
+
+#endregion
+
 namespace CS2DemoKit.Analysis.Building;
 
 /// <summary>
@@ -280,6 +286,14 @@ public sealed class PlayerContextIndex
             ctx.SprayShotCount = 0;
             ctx.SprayVictimsMask = 0;
             ctx.SprayKillCount = 0;
+            ctx.LastSpotTick = -1;
+            ctx.LastSpotPitch = 0f;
+            ctx.LastSpotYaw = 0f;
+            ctx.LastSpotChestAngle = 0f;
+            ctx.SpotAnsweredByShot = false;
+            ctx.SpotAnsweredByLanded = false;
+            ctx.SpotCount = 0;
+            ctx.AimShot.Reset();
         }
     }
 
@@ -302,6 +316,16 @@ public sealed class PlayerContextIndex
     /// <param name="team">Initial team_num at registration (2 = T, 3 = CT).</param>
     public sealed class PlayerContext(int slot, int team)
     {
+        /// <summary>
+        ///     The shot-anchored aim state: this player's current spray run and the last
+        ///     <see cref="AimShotContext" /> resolved for them. One object rather than seven more
+        ///     properties here because it has one lifetime and one reset, and a field added beside
+        ///     the others that someone forgets to clear in <see cref="ResetRoundState" /> would carry
+        ///     a spray run across a round boundary. Always present (an inert run costs one small
+        ///     object per slot); populated only when a rule reads a shot-anchored enrichment.
+        /// </summary>
+        public AimShotState AimShot { get; } = new();
+
         /// <summary>Tick this player was last flash-blinded, or -1 if never (or already cleared).</summary>
         public int BlindedAtTick { get; set; } = -1;
 
@@ -386,6 +410,70 @@ public sealed class PlayerContextIndex
 
         /// <summary>Bitmask of distinct victim slots (0..63) damaged during the current spray run.</summary>
         public ulong SprayVictimsMask { get; set; }
+
+        // Visibility rising-edge state (written by Edges.SpottedEnrichmentEdge, driven by the
+        // synthesized enemy_spotted event). Per-round like the shot state above: a round boundary
+        // is a hard reset of everyone's contact history, so cleared by ResetRoundState.
+
+        /// <summary>
+        ///     Tick of the last enemy this player spotted, or -1 when they have spotted nobody this
+        ///     round. The clock is the spot event's FRAME clock, so it is directly comparable with a
+        ///     parsed event's <c>GameTick</c>; that is the whole point of latching it here.
+        /// </summary>
+        public int LastSpotTick { get; set; } = -1;
+
+        /// <summary>
+        ///     Where this player's crosshair was pointing at <see cref="LastSpotTick" />, pitch in
+        ///     degrees. Valid only when <see cref="LastSpotTick" /> is not -1.
+        /// </summary>
+        public float LastSpotPitch { get; set; }
+
+        /// <summary>
+        ///     The yaw half of <see cref="LastSpotPitch" />.
+        ///     <para>
+        ///         These two exist so a shot can measure its crosshair travel from the contact that
+        ///         PRECEDED IT rather than from the round's first contact. A YAML capture cannot make
+        ///         that pairing: <c>keep: first</c> pins the round's opening contact and
+        ///         <c>keep: last</c> settles to its final one, so on a round holding more than one
+        ///         engagement neither is the spot the shot actually answered, and the measured travel
+        ///         is the angle between unrelated instants.
+        ///     </para>
+        /// </summary>
+        public float LastSpotYaw { get; set; }
+
+        /// <summary>
+        ///     The crosshair error at <see cref="LastSpotTick" />: degrees between the viewer's eye
+        ///     ray and the target's chest anchor at the instant of contact. Latched alongside the
+        ///     angles so a shot can report how much of its travel was CORRECTION rather than
+        ///     placement, which is the difference between a flick and a held angle.
+        /// </summary>
+        public float LastSpotChestAngle { get; set; }
+
+        /// <summary>
+        ///     Whether a shot has already been FIRED in answer to <see cref="LastSpotTick" />.
+        ///     <para>
+        ///         The timing metrics measure the interval from a contact to the FIRST shot that
+        ///         answered it. Averaging every shot after a contact instead measures something
+        ///         else entirely: a spray of thirty bullets contributes thirty intervals, twenty-nine
+        ///         of which are just the spray's own duration, and the number drifts toward how long
+        ///         players hold the trigger rather than how fast they react.
+        ///     </para>
+        /// </summary>
+        public bool SpotAnsweredByShot { get; set; }
+
+        /// <summary>
+        ///     The same for the first shot that LANDED. Tracked separately from
+        ///     <see cref="SpotAnsweredByShot" /> because time-to-shoot and time-to-damage are
+        ///     different metrics over different events, and a contact answered by a miss has been
+        ///     answered for one and not the other.
+        /// </summary>
+        public bool SpotAnsweredByLanded { get; set; }
+
+        /// <summary>
+        ///     How many enemies this player has spotted so far this round, counting re-acquisitions
+        ///     of the same enemy separately. 0 before their first contact.
+        /// </summary>
+        public int SpotCount { get; set; }
 
         /// <summary>The CS2 player slot this context represents.</summary>
         public int Slot { get; } = slot;

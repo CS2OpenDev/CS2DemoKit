@@ -489,15 +489,32 @@ public static class CatalogBuilder
             + "or exclude the field (compiler-plan §4.1)")
     };
 
-    /// <summary>Provider name → v2 namespace path: <c>entity.pawn.* → player.*</c>, <c>entity.game.* → match.*</c>.</summary>
+    /// <summary>
+    ///     Provider name → v2 namespace path: <c>entity.pawn.* → player.*</c>,
+    ///     <c>entity.weapon.* → player.weapon_*</c>, <c>entity.game.* → match.*</c>.
+    ///     <para>
+    ///         The weapon arm FLATTENS to an underscore rather than nesting under
+    ///         <c>player.weapon.</c>, and the reason is load-bearing. Weapon providers reach the
+    ///         weapon through the pawn's active-weapon handle, so in the rules language they are
+    ///         properties of the player, and a per-player provider is reachable two ways: as a
+    ///         full path in the player scope, and as a member on a role handle. Role members are
+    ///         keyed by the path's LAST segment (<c>CatalogScopeAdapter</c>,
+    ///         <c>RulesetResolver</c>), so a nested <c>player.weapon.recoil_index</c> would be
+    ///         spelled <c>role.recoil_index</c> on the handle: the same value under two different
+    ///         names, and one collision away from an ambiguous member set. Flattening keeps the
+    ///         two spellings identical.
+    ///     </para>
+    /// </summary>
     private static string ProviderV2Name(string name) =>
         name.StartsWith("entity.pawn.", StringComparison.Ordinal)
             ? "player." + name["entity.pawn.".Length..]
-            : name.StartsWith("entity.game.", StringComparison.Ordinal)
-                ? "match." + name["entity.game.".Length..]
-                : throw new InvalidOperationException(
-                    $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
-                    + "(expected entity.pawn.* or entity.game.*)");
+            : name.StartsWith("entity.weapon.", StringComparison.Ordinal)
+                ? "player.weapon_" + name["entity.weapon.".Length..]
+                : name.StartsWith("entity.game.", StringComparison.Ordinal)
+                    ? "match." + name["entity.game.".Length..]
+                    : throw new InvalidOperationException(
+                        $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
+                        + "(expected entity.pawn.*, entity.weapon.* or entity.game.*)");
 
     private static string ContextV2Name(string ruleId) =>
         _contextV2Names.TryGetValue(ruleId, out string? v2)

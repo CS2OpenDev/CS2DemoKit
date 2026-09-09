@@ -1,5 +1,6 @@
 #region
 
+using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
@@ -215,12 +216,62 @@ public class ParallelDigestEquivalenceTests
     }
 
     /// <summary>
+    ///     The active-smoke list is the one digest field with no delta encoding and no dedup: the
+    ///     visibility transition scan reads it whole on every sampled tick, and an empty list does not
+    ///     read as missing data, it reads as "no smoke was in the way". A parallel path that lost the
+    ///     clouds would report every through-smoke sightline as a spot and nothing would complain.
+    ///     Compared frame for frame, unlike per-pawn values, because smoke is absolute state at the
+    ///     seeked tick rather than a delta.
+    /// </summary>
+    [Test]
+    public async Task ParallelDigest_CarriesTheSameActiveSmokesAs_SequentialDigest()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        IReadOnlyList<DemoFrame> frames = demo.Frames;
+
+        EntityFrameDigest[] sequential = BuildSequential(frames, captureSmokes: true);
+        EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
+            frames, NewPerPlayer, NewSingletons, true, true);
+
+        int framesWithSmoke = 0;
+        int mismatchFrames = 0;
+        string? firstMismatch = null;
+        for (int n = 0; n < frames.Count; n++)
+        {
+            List<Vector4> s = sequential[n].Smokes;
+            List<Vector4> p = parallel[n].Smokes;
+            if (s.Count > 0)
+            {
+                framesWithSmoke++;
+            }
+
+            bool same = s.Count == p.Count;
+            for (int i = 0; same && i < s.Count; i++)
+            {
+                same = s[i] == p[i];
+            }
+
+            if (!same)
+            {
+                mismatchFrames++;
+                firstMismatch ??= $"frame {n}: sequential={s.Count} parallel={p.Count}";
+            }
+        }
+
+        Console.WriteLine($"frames carrying active smoke: {framesWithSmoke:N0} / {frames.Count:N0}");
+        await Assert.That(mismatchFrames).IsEqualTo(0).Because(firstMismatch ?? "");
+        await Assert.That(framesWithSmoke).IsGreaterThan(0)
+            .Because("a demo with no smoke at all would make this comparison pass while checking nothing");
+    }
+
+    /// <summary>
     ///     The sequential reference path: drive ONE forward-only layer through every frame with the same
     ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
     ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
     /// </summary>
     private static EntityFrameDigest[] BuildSequential(
-        IReadOnlyList<DemoFrame> frames, PerPawnDeltaState? delta = null)
+        IReadOnlyList<DemoFrame> frames, PerPawnDeltaState? delta = null, bool captureSmokes = false)
     {
         EntityStateLayer layer = new(frames);
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = NewPerPlayer();
@@ -230,7 +281,8 @@ public class ParallelDigestEquivalenceTests
         for (int n = 0; n < frames.Count; n++)
         {
             layer.SeekToTick(frames[n].ServerTick);
-            digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, true, delta);
+            digests[n] = EntityDigestExtractor.Build(
+                layer, perPlayer, singletons, true, delta, captureSmokes);
         }
 
         return digests;

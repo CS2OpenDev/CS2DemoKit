@@ -1,7 +1,9 @@
 #region
 
+using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
+using CS2DemoKit.Analysis.Visibility;
 using CS2OpenDev.Sdk.Entities;
 using CS2DemoKit.Parser.EntityTracking;
 
@@ -20,6 +22,15 @@ internal sealed class EntityFrameDigest
 {
     /// <summary>Live CMolotovProjectiles this frame: (entity index, serial, resolved thrower slot or -1).</summary>
     public readonly List<(int Index, int Serial, int ThrowerSlot)> Molotovs = [];
+
+    /// <summary>
+    ///     Active smoke clouds this frame as spheres <c>(centre.xyz, radius)</c>, or empty when the
+    ///     producing decode was not asked for them. Carried on the digest because the consumer that
+    ///     needs them (the visibility transition scan) runs on the sequential consume side, where the
+    ///     parallel path's entity set is long gone: without this the scan would have no way to know a
+    ///     sightline passed through smoke, and every through-smoke sightline would read as a spot.
+    /// </summary>
+    public readonly List<Vector4> Smokes = [];
 
     /// <summary>
     ///     Per-player-provider values that CHANGED this frame, as (slot, values indexed by provider
@@ -135,12 +146,18 @@ internal static class EntityDigestExtractor
     ///     positions left null; a pawn whose values all held emits no row at all. Pass <c>null</c> for the
     ///     full per-frame readout.
     /// </param>
+    /// <param name="captureSmokes">
+    ///     When true, the digest carries this frame's active smoke clouds (see
+    ///     <see cref="EntityFrameDigest.Smokes" />). Off by default because it costs a second walk of
+    ///     the entity set per frame, which only the visibility transition scan has any use for.
+    /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayerProviders,
         IReadOnlyList<IEntityValueProvider> singletonProviders,
         bool emitMolotovThrows,
-        PerPawnDeltaState? delta = null)
+        PerPawnDeltaState? delta = null,
+        bool captureSmokes = false)
     {
         EntityTracker tracker = layer.Tracker;
         EntityFrameDigest d = new()
@@ -199,6 +216,16 @@ internal static class EntityDigestExtractor
 
                 d.Molotovs.Add((idx, ent.Serial, ResolveThrowerSlot(tracker, ent)));
             }
+        }
+
+        if (captureSmokes)
+        {
+            // Delegates to the analyzer's own collector rather than inlining the sweep into the
+            // molotov walk above. The gate it applies (m_nSmokeEffectTickBegin > 0 for a billowing
+            // cloud, a non-degenerate detonation position) is the proven one, and having the
+            // transition scan and the accumulating analyzer disagree about which clouds are active
+            // would be a silent divergence in the one place both are supposed to agree.
+            VisibilityAnalyzer.CollectActiveSmokes(tracker, d.Smokes);
         }
 
         return d;

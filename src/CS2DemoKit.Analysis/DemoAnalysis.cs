@@ -8,6 +8,7 @@ using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Registry;
+using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
@@ -76,6 +77,21 @@ public sealed record AnalysisOptions
     ///     <see cref="PerPlayerEntityValueProviderRegistry.CreateDefault" />.
     /// </summary>
     public PerPlayerEntityValueProviderRegistry? PerPlayerEntityProviders { get; init; }
+
+    /// <summary>
+    ///     Baked map collision geometry, enabling the synthesized <c>enemy_spotted</c> event. Unlike
+    ///     every other option here, <c>null</c> means "the capability is unavailable for this run",
+    ///     not "use the default": visibility has no wire signal to fall back on, so a rule
+    ///     subscribing to <c>enemy_spotted</c> simply never fires without geometry.
+    ///     <para>
+    ///         The analysis layer does no file I/O and does not know where bakes live. Load one with
+    ///         <c>VisibilityEngine.Load</c> against the path <c>CollisionAssetLocator</c> resolves for
+    ///         the demo's map, off the calling thread (the BVH build is seconds), and hand it in. The
+    ///         engine is immutable after construction and safe to share across runs of the same map,
+    ///         which is what makes reusing one across a batch worthwhile.
+    ///     </para>
+    /// </summary>
+    public VisibilityEngine? VisibilityEngine { get; init; }
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
@@ -296,7 +312,8 @@ public static class DemoAnalysis
         options.Events ?? EventRegistry.Build(),
         demo,
         entityProviders: options.EntityProviders ?? EntityValueProviderRegistry.CreateDefault(),
-        perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault());
+        perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault(),
+        visibilityEngine: options.VisibilityEngine);
 
     /// <summary>Evaluates a compiled graph over the demo's frames.</summary>
     public static AnalysisRun Evaluate(ParsedDemo demo, BuildResult build, AnalysisOptions? options = null)

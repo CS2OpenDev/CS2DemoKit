@@ -55,6 +55,35 @@ public static class PlayerVantage
     }
 
     /// <summary>
+    ///     Angle in degrees between a viewer's eye ray (<paramref name="forward" />) and the ray from
+    ///     that eye to <paramref name="point" />: "how far off target was the crosshair", the primitive
+    ///     behind preaim and crosshair-placement metrics.
+    ///     <para>
+    ///         This is the VECTOR form, deliberately distinct from <c>ShotEnrichmentEdge.AngleDeltaDegrees</c>,
+    ///         which differences two <c>QAngle</c> view directions. Here the target is a world POINT, so
+    ///         there is no second angle to difference and the eye position is load-bearing: the same
+    ///         angular error is a hit at 200 units and a clean miss at 2000.
+    ///     </para>
+    ///     <para>
+    ///         Returns 0 when the point coincides with the eye or the forward vector is degenerate. With
+    ///         no direction to measure, 0 is the only answer that cannot manufacture a phantom miss.
+    ///     </para>
+    /// </summary>
+    public static float AngleToPointDegrees(Vector3 eye, Vector3 forward, Vector3 point)
+    {
+        Vector3 toTarget = point - eye;
+        float targetLen = toTarget.Length();
+        float forwardLen = forward.Length();
+        if (targetLen <= 1e-6f || forwardLen <= 1e-6f)
+        {
+            return 0f;
+        }
+
+        float dot = Math.Clamp(Vector3.Dot(forward / forwardLen, toTarget / targetLen), -1f, 1f);
+        return MathF.Acos(dot) / DegToRad;
+    }
+
+    /// <summary>
     ///     Fills <paramref name="anchors" /> with up to <see cref="MaxAnchors" /> world points sampling the
     ///     target's body (centre spine + lateral shoulders). Shoulders are offset perpendicular to the
     ///     <b>horizontal</b> <paramref name="viewerEye" />→target sightline (the axis a corner-peek sliver

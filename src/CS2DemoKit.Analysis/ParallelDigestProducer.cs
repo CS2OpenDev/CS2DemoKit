@@ -59,6 +59,11 @@ internal static class ParallelDigestProducer
     ///     state.
     /// </param>
     /// <param name="emitMolotov">When true, each digest includes live <c>CMolotovProjectile</c>s.</param>
+    /// <param name="captureSmokes">
+    ///     When true, each digest carries the frame's active smoke clouds. The consumer that needs
+    ///     them runs sequentially after this returns, by which point a worker's entity set is gone,
+    ///     so they have to be collected here or not at all.
+    /// </param>
     /// <param name="maxDegreeOfParallelism">Optional cap on concurrent workers (default: unbounded).</param>
     /// <param name="onProgress">
     ///     Optional fraction-complete callback (0..1), invoked once per chunk as it finishes. Called from
@@ -74,6 +79,7 @@ internal static class ParallelDigestProducer
         Func<IReadOnlyList<IPerPlayerEntityValueProvider>> perPlayerFactory,
         Func<IReadOnlyList<IEntityValueProvider>> singletonFactory,
         bool emitMolotov,
+        bool captureSmokes = false,
         int? maxDegreeOfParallelism = null,
         Action<double>? onProgress = null,
         CancellationToken cancellationToken = default)
@@ -129,7 +135,8 @@ internal static class ParallelDigestProducer
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 layer.SeekToTick(frames[n].ServerTick);
-                digests[n] = EntityDigestExtractor.Build(layer, perPlayer, singletons, emitMolotov, delta);
+                digests[n] = EntityDigestExtractor.Build(
+                    layer, perPlayer, singletons, emitMolotov, delta, captureSmokes);
             }
 
             if (prof)

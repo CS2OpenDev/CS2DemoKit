@@ -12,6 +12,7 @@ using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Analysis.RulesetsV2.Compile;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
+using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
@@ -41,6 +42,20 @@ public sealed partial class RuleChainBuilder
     private readonly PerPlayerEntityValueProviderRegistry? _perPlayerEntityProviders;
     private readonly EventRegistry _registry;
 
+    // Output names of the shot-anchored aim enrichments. A rule reads one of THESE; the six entity
+    // columns AimShotContextEdge assembles them from appear nowhere in any ruleset, so the gate has
+    // to be spelled at the output end. Listed rather than derived from the node set because the gate
+    // runs before CreateEnrichment builds it.
+    private static readonly string[] _aimShotEnrichments =
+    [
+        "enrich.shot.counter_strafe_good",
+        "enrich.shot.counter_strafe_admitted",
+        "enrich.shot.is_first_bullet",
+        "enrich.shot.spray_residual_pitch",
+        "enrich.shot.spray_residual_yaw",
+        "enrich.shot.spray_residual_measured"
+    ];
+
     // The per-player equipment provider, set (and snapshotted by the scanner) only when a v2 ruleset
     // reads round.team.equipment / round.enemies.equipment — the B6 freeze-end economy maintenance
     // edge sums it. Null otherwise, so no economy nodes/edges are built (and GetPreFrameValue, which
@@ -64,6 +79,11 @@ public sealed partial class RuleChainBuilder
     private EntityChangeScanner? _entityScanner;
     private PlayerContextIndex? _playerContextIndex;
 
+    // Baked map collision for the visibility rising-edge scan, or null when the caller supplied
+    // none. Null is not an error: it means enemy_spotted cannot be produced for this run, which is
+    // the same shape as a profile that does not bind an event.
+    private readonly VisibilityEngine? _visibilityEngine;
+
     // Per-slot condition-node overlay for the v2 per-player template (gap G1, event-gated per-player
     // aggregate reads). While a v2 slot's stats/highlights are being built, this holds a SUPERSET of
     // _enrichmentNodes that also exposes the subject slot's per-player context / B6 aggregate nodes
@@ -79,16 +99,26 @@ public sealed partial class RuleChainBuilder
     /// <param name="profile">Explicit source profile override; falls back to the demo's profile or the default.</param>
     /// <param name="entityProviders">Optional singleton-entity providers (game-rules etc.).</param>
     /// <param name="perPlayerEntityProviders">Optional per-player entity providers (pawn health, active weapon, etc.).</param>
+    /// <param name="visibilityEngine">
+    ///     Optional baked map collision. Supplying it is what makes the synthesized
+    ///     <c>enemy_spotted</c> event producible: visibility is recomputed from geometry, never read
+    ///     off the wire, so with no geometry there is nothing to recompute and any rule subscribing to
+    ///     the event simply never fires. The builder does no file I/O and knows nothing about where
+    ///     bakes live (see <c>CollisionAssetLocator</c>): the caller loads and injects, exactly as
+    ///     <c>VisibilityAnalyzer.Analyze</c> requires.
+    /// </param>
     public RuleChainBuilder(
         EventRegistry registry,
         ParsedDemo? demo = null,
         DemoSourceProfile? profile = null,
         EntityValueProviderRegistry? entityProviders = null,
-        PerPlayerEntityValueProviderRegistry? perPlayerEntityProviders = null)
+        PerPlayerEntityValueProviderRegistry? perPlayerEntityProviders = null,
+        VisibilityEngine? visibilityEngine = null)
     {
         _registry = registry;
         _entityProviders = entityProviders;
         _perPlayerEntityProviders = perPlayerEntityProviders;
+        _visibilityEngine = visibilityEngine;
         _demo = demo;
 
         DemoSourceProfile resolved = profile
@@ -207,6 +237,32 @@ public sealed partial class RuleChainBuilder
         // config side. The two providers consumed by C# enrichment (HurtTeamEnrichmentEdge)
         // gate on their enrichment OUTPUT names instead — the C# read exists to feed those
         // transient nodes, so a config that reads neither needs neither provider.
+        // The synthesized `enemy_spotted` event needs both halves: a rule that subscribes to it AND
+        // baked map geometry to recompute visibility against. Computed here rather than beside the
+        // molotov gate below because it also forces its six vantage providers into the digest, and
+        // that has to happen before the provider loop closes.
+        bool emitSpotted = _visibilityEngine is not null
+                           && (IsReferencedByBuiltins("enemy_spotted", builtinContexts)
+                               || RulesetsSubscribeToEvent("enemy_spotted", rulesets));
+
+        // The shot-anchored aim enrichments gate on their OUTPUT names, like the hurt enrichment
+        // providers above: a rule reads `counter_strafe_good` off the shot view, never the six
+        // entity columns AimShotContextEdge assembles it from. Unlike enemy_spotted this needs no
+        // map bake (counter-strafing is a movement fact, not a visibility one), so the vantage
+        // sampler it shares with the spot scan gets built for either reason.
+        bool emitAimShotContext = false;
+        foreach (string aimEnrichment in _aimShotEnrichments)
+        {
+            if (IsReferencedByBuiltins(aimEnrichment, builtinContexts)
+                || IsReferencedByV2Reads(aimEnrichment, rulesets))
+            {
+                emitAimShotContext = true;
+                break;
+            }
+        }
+
+        bool needVantage = emitSpotted || emitAimShotContext;
+
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
         bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false;
         if (_perPlayerEntityProviders is { All.Count: > 0 })
@@ -241,6 +297,23 @@ public sealed partial class RuleChainBuilder
                                                      || IsReferencedByBuiltins(provider.Name, builtinContexts),
                     _ => IsReferencedByBuiltins(provider.Name, builtinContexts)
                 };
+
+                // The vantage columns are gated in by the event that consumes them, not by a rule
+                // naming them: a ruleset triggering on enemy_spotted references no provider at all,
+                // and without this the scan would build from six empty columns and emit nothing.
+                if (needVantage && AimVantageScanner.RequiredProviders.Contains(provider.Name))
+                {
+                    referenced = true;
+                }
+
+                // Same argument for the shot-context columns, one step further removed: the rule
+                // names an enrichment, the enrichment is assembled from these six, and none of the
+                // six appears anywhere in the ruleset text.
+                if (emitAimShotContext && AimShotContextEdge.RequiredProviders.Contains(provider.Name))
+                {
+                    referenced = true;
+                }
+
                 if (referenced)
                 {
                     perPlayerList.Add(provider);
@@ -263,6 +336,36 @@ public sealed partial class RuleChainBuilder
         bool emitMolotov = IsReferencedByBuiltins("molotov_thrown", builtinContexts)
                            || RulesetsSubscribeToEvent("molotov_thrown", rulesets);
 
+        // Built only when something asks for them, so an ordinary run allocates none and the
+        // per-frame consume short-circuits on the null check. The team callback is where liveness
+        // enters: the digest columns cannot say whether a slot is a corpse, and PlayerContext already
+        // tracks exactly that (alive from the death/spawn edges, connected from the disconnect
+        // edges). A slot not yet materialized reads as ineligible, so the scan warms up with the
+        // first player-scoped event of the demo, well before the first round's freeze end.
+        //
+        // The provider-presence re-check is not belt-and-braces: the vantage constructor throws on a
+        // missing column (deliberately, so a silent column of nulls cannot masquerade as "nobody had
+        // a position"), and a build with no per-player provider registry at all reaches here with the
+        // gate set and the columns absent. Leaving both scanners null there degrades to the same
+        // inert state as an unreferenced ruleset instead of failing the whole build.
+        AimVantageScanner? vantageScanner = null;
+        VisibilityTransitionScanner? transitionScanner = null;
+        if (needVantage && HasAllProviders(perPlayerList, AimVantageScanner.RequiredProviders))
+        {
+            vantageScanner = new AimVantageScanner(
+                perPlayerList.Select(p => p.Name).ToList(),
+                slot => playerContextIndex.TryGet(slot, out PlayerContextIndex.PlayerContext? ctx)
+                        && ctx!.Connected && ctx.IsAlive
+                    ? ctx.Team
+                    : -1,
+                _demo?.TickRate ?? 64.0);
+
+            if (emitSpotted)
+            {
+                transitionScanner = new VisibilityTransitionScanner(_visibilityEngine!);
+            }
+        }
+
         if ((matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov) && _demo is not null)
         {
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
@@ -281,7 +384,9 @@ public sealed partial class RuleChainBuilder
                 new EntityStateLayer(_demo.Frames),
                 trackedForScanner,
                 perPlayerList,
-                emitMolotov);
+                emitMolotov,
+                vantageScanner,
+                transitionScanner);
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve
@@ -307,9 +412,33 @@ public sealed partial class RuleChainBuilder
         IPerPlayerEntityValueProvider? activeWeaponProvider = weaponNeeded
             ? _perPlayerEntityProviders?.Get("entity.pawn.active_weapon_class")
             : null;
+
+        // Same lockstep rule as the two providers above, six times over: every read named here was
+        // force-gated into perPlayerList by the emitAimShotContext arm of the provider loop, so it
+        // is snapshotted and GetPreFrameValue will resolve it. All four conditions have to hold
+        // together (the gate, the scanner, the vantage sampler, and the whole required set present),
+        // and when any is missing the edge is handed null and stays inert rather than throwing on
+        // its first shot.
+        AimShotContextSources? aimShotSources = null;
+        if (emitAimShotContext && entityScanner is not null && vantageScanner is not null
+            && HasAllProviders(perPlayerList, AimShotContextEdge.RequiredProviders))
+        {
+            aimShotSources = new AimShotContextSources(
+                entityScanner,
+                _perPlayerEntityProviders!.Get("entity.pawn.max_speed")!,
+                _perPlayerEntityProviders.Get("entity.weapon.recoil_index")!,
+                _perPlayerEntityProviders.Get(AimVantageScanner.EyePitchProvider)!,
+                _perPlayerEntityProviders.Get(AimVantageScanner.EyeYawProvider)!,
+                _perPlayerEntityProviders.Get("entity.pawn.punch_pitch")!,
+                _perPlayerEntityProviders.Get("entity.pawn.punch_yaw")!,
+                vantageScanner,
+                transitionScanner,
+                _demo?.TickRate ?? 64.0);
+        }
+
         BuiltinContexts.EnrichmentInfrastructure enrichment = BuiltinContexts.CreateEnrichment(
             graph.Root, playerContextIndex, _registry, _logicalResolver,
-            entityScanner, pawnHealthProvider, activeWeaponProvider);
+            entityScanner, pawnHealthProvider, activeWeaponProvider, aimShotSources);
         foreach ((string key, StateNode node) in enrichment.NodeLookup)
         {
             nodeLookup[key] = node;
@@ -1147,6 +1276,37 @@ public sealed partial class RuleChainBuilder
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Did every name in <paramref name="required" /> survive the reference gate into
+    ///     <paramref name="gated" />? Asked before constructing anything that resolves digest columns
+    ///     by name, because those constructors throw on a missing one rather than reading nulls, and
+    ///     a build with no per-player provider registry at all can reach that point with the gate set
+    ///     and every column absent.
+    /// </summary>
+    private static bool HasAllProviders(
+        IReadOnlyList<IPerPlayerEntityValueProvider> gated, IReadOnlyList<string> required)
+    {
+        foreach (string name in required)
+        {
+            bool found = false;
+            foreach (IPerPlayerEntityValueProvider provider in gated)
+            {
+                if (string.Equals(provider.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

@@ -8,11 +8,13 @@ using SchemaNames = CS2OpenSchema.SchemaNames;
 namespace CS2DemoKit.Analysis.Plugins;
 
 /// <summary>
-///     The five shipped entity reads as <see cref="ProviderSpec" /> data: the
+///     The shipped entity reads as <see cref="ProviderSpec" /> data: the
 ///     declarative equivalents of the hand-written provider classes, byte-identical by the
 ///     <c>ProviderDigestParityTests</c> gate. Once parity has baked, the default registries can
 ///     construct from these and the hand-written classes retire; until then both forms coexist
-///     and the gate pins them together.
+///     and the gate pins them together. Reads added since the original five have no hand-written
+///     twin at all: they are spec-constructed on BOTH sides of the gate, so parity holds by
+///     construction rather than by comparison.
 /// </summary>
 public static class BuiltinProviderSpecs
 {
@@ -69,6 +71,98 @@ public static class BuiltinProviderSpecs
         "entity.pawn.place", "CCSPlayerPawn",
         SchemaNames.CCSPlayerPawn.LastPlaceName, typeof(string));
 
+    /// <summary>
+    ///     entity.pawn.duck_amount: the pawn's crouch ramp, dotted through
+    ///     <c>CCSPlayer_MovementServices</c>. A <c>float32</c> in 0..1, CONTINUOUS rather than a
+    ///     bool: it interpolates over the crouch transition, so a threshold test on it means
+    ///     "how far into the crouch", not "is crouching". <c>VisibilityAnalyzer</c> already reads
+    ///     this exact path to place the eye height, so the two stay consistent by sharing it.
+    /// </summary>
+    public static ProviderSpec PawnDuckAmount { get; } = new(
+        "entity.pawn.duck_amount", "CCSPlayerPawn",
+        SchemaNames.CBasePlayerPawn.MovementServices + "." + SchemaNames.CCSPlayerMovementServices.DuckAmount,
+        typeof(float));
+
+    /// <summary>
+    ///     entity.pawn.max_speed: the pawn's current movement cap in units/second, dotted
+    ///     through the movement services. Per-weapon (an AWP out caps far lower than a knife),
+    ///     which is what makes it the right denominator for a counter-strafe test: the engine's
+    ///     own "moving enough to spoil the shot" line sits at <c>0.34</c> of this, not at a
+    ///     fixed speed. Quantised to 12 bits over 0..2048 (about 0.5 u/s steps), comfortably
+    ///     finer than that threshold needs but not a full float.
+    /// </summary>
+    public static ProviderSpec PawnMaxSpeed { get; } = new(
+        "entity.pawn.max_speed", "CCSPlayerPawn",
+        SchemaNames.CBasePlayerPawn.MovementServices + "." + SchemaNames.CPlayerMovementServices.MaxSpeed,
+        typeof(float));
+
+    /// <summary>
+    ///     entity.pawn.shots_fired: the pawn's position WITHIN the current burst, not a round
+    ///     or match counter: it resets on trigger release and on weapon change, so it reads as
+    ///     "how deep into this spray" and is the natural spray-index companion to
+    ///     <see cref="WeaponRecoilIndex" />.
+    /// </summary>
+    public static ProviderSpec PawnShotsFired { get; } = new(
+        "entity.pawn.shots_fired", "CCSPlayerPawn",
+        SchemaNames.CCSPlayerPawn.ShotsFired, typeof(int));
+
+    /// <summary>entity.pawn.is_scoped: whether the pawn is currently looking down a scope.</summary>
+    public static ProviderSpec PawnIsScoped { get; } = new(
+        "entity.pawn.is_scoped", "CCSPlayerPawn",
+        SchemaNames.CCSPlayerPawn.IsScoped, typeof(bool));
+
+    /// <summary>
+    ///     entity.pawn.flash_duration: remaining blind time in SECONDS; <c>0</c> means not
+    ///     flashed. Present so aim metrics can exclude blinded engagements, which otherwise
+    ///     enter the population as catastrophic crosshair placement that says nothing about aim.
+    /// </summary>
+    public static ProviderSpec PawnFlashDuration { get; } = new(
+        "entity.pawn.flash_duration", "CCSPlayerPawn",
+        SchemaNames.CCSPlayerPawnBase.FlashDuration, typeof(float));
+
+    /// <summary>
+    ///     entity.weapon.recoil_index: two-hop read (pawn's active-weapon handle, then
+    ///     <c>m_flRecoilIndex</c> on the resolved weapon): the fractional index into the
+    ///     weapon's recoil pattern, rising per shot and decaying between sprays. Fractional, so
+    ///     it is the reliable spray-segmentation signal (a run in which it never drops is one
+    ///     spray) where a per-shot count is not.
+    ///     <para>
+    ///         <b>The two-hop caveat, restated because it bites quietly.</b> Prime-time schema
+    ///         validation judges hop 1 only. If the hop-2 field name drifts, every slot is
+    ///         skipped and the column reads null, which looks like "this player had no weapon"
+    ///         rather than an error. Confirmed present on <c>CCSWeaponBaseGun</c> by probe, but
+    ///         that is a per-demo guarantee.
+    ///     </para>
+    ///     <para>
+    ///         The constant lives under the SDK's <c>SchemaNames.CCSWeaponBase</c> group, which is
+    ///         a naming convenience only: <c>CCSWeaponBase</c> is not a serializer class at all
+    ///         (a schema probe reports it NOT FOUND). The class that carries these fields on the
+    ///         wire is <c>CCSWeaponBaseGun</c>, and a spec naming <c>CCSWeaponBase</c> as its
+    ///         entity class would not validate.
+    ///     </para>
+    /// </summary>
+    public static ProviderSpec WeaponRecoilIndex { get; } = new(
+        "entity.weapon.recoil_index", "CCSPlayerPawn",
+        "", typeof(float),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
+            SchemaNames.CCSWeaponBase.FlRecoilIndex));
+
+    /// <summary>
+    ///     entity.weapon.accuracy_penalty: two-hop read of the active weapon's accumulated
+    ///     inaccuracy state (<c>m_fAccuracyPenalty</c>). This is the weapon's own decaying
+    ///     penalty term and does NOT include the movement contribution, so a counter-strafe
+    ///     judgement still needs speed against <see cref="PawnMaxSpeed" />; reading this alone
+    ///     as "how inaccurate was the shot" understates a running player. Same hop-2 caveat as
+    ///     <see cref="WeaponRecoilIndex" />.
+    /// </summary>
+    public static ProviderSpec WeaponAccuracyPenalty { get; } = new(
+        "entity.weapon.accuracy_penalty", "CCSPlayerPawn",
+        "", typeof(float),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
+            SchemaNames.CCSWeaponBase.AccuracyPenalty));
+
     /// <summary>entity.game.freeze_period — the singleton freeze-period poll.</summary>
     public static ProviderSpec GameFreezePeriod { get; } = new(
         "entity.game.freeze_period", "CCSGameRulesProxy",
@@ -92,6 +186,27 @@ public static class BuiltinProviderSpecs
         // Same generic-only pattern (Tier C place): spec-constructed on both sides, at the same
         // position in both lists, digest parity by construction.
         new GenericPerPlayerFieldProvider(PawnPlace),
+        // Aim-rating reads (same spec-constructed-on-both-sides pattern: no hand-written twin,
+        // so digest parity holds by construction). Inserted BEFORE the position trio rather than
+        // appended, because PawnPositionProviderTests pins those three as the last three.
+        //
+        // Every one of these changes far more often than the economy reads above, so each costs
+        // the digest's delta encoding a full column. Gating is by name: a ruleset that reads none
+        // of them pays nothing at all.
+        new GenericPerPlayerFieldProvider(PawnDuckAmount),
+        new GenericPerPlayerFieldProvider(PawnMaxSpeed),
+        new GenericPerPlayerFieldProvider(PawnShotsFired),
+        new GenericPerPlayerFieldProvider(PawnIsScoped),
+        new GenericPerPlayerFieldProvider(PawnFlashDuration),
+        new GenericPerPlayerFieldProvider(WeaponRecoilIndex),
+        new GenericPerPlayerFieldProvider(WeaponAccuracyPenalty),
+        // Angle components. QAngle has no scalar leaf to name and the rules language has no
+        // vector type, so these are hand-written classes with no spec form, registered
+        // identically on both sides of the parity gate exactly like the position trio.
+        new PawnEyeAngleProvider(PawnAngleAxis.Pitch),
+        new PawnEyeAngleProvider(PawnAngleAxis.Yaw),
+        new PawnAimPunchProvider(PawnAngleAxis.Pitch),
+        new PawnAimPunchProvider(PawnAngleAxis.Yaw),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
         // parity gate rather than a hand-written-vs-spec comparison. The gate's population is

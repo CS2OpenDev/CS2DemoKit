@@ -101,6 +101,33 @@ public interface IPawnStateReader
 }
 
 /// <summary>
+///     Opt-in for a provider whose field moved between CS2 schema versions, so its declared
+///     <see cref="IPerPlayerEntityValueProvider.FieldName" /> is only one of several spellings a
+///     demo might carry.
+///     <para>
+///         Schema validation normally judges the single declared path and throws when it is
+///         missing, which is the right default: a typo or a drifted field has to be loud. But a
+///         field Valve RENAMED has two correct spellings depending on when the demo was recorded,
+///         and both are in circulation. Declaring one of them makes every demo of the other
+///         vintage throw at prime time, which aborts the whole analysis rather than degrading a
+///         single column.
+///     </para>
+///     <para>
+///         A provider implementing this is validated against <see cref="CandidateFieldNames" />
+///         instead: at least one must exist and be type-compatible. The gate stays loud, because
+///         a demo carrying NONE of them still throws.
+///     </para>
+/// </summary>
+public interface IMultiSchemaFieldProvider
+{
+    /// <summary>
+    ///     Every path this provider can read, in preference order. Validation passes when any one
+    ///     of them resolves on the demo at hand.
+    /// </summary>
+    IReadOnlyList<string> CandidateFieldNames { get; }
+}
+
+/// <summary>
 ///     Generic per-player entity-field provider: reads a <see cref="ProviderSpec" />
 ///     through the seen-gated <see cref="EntityState" /> indexer (lane-mapped and fallback
 ///     fields read identically), replacing one hand-written class per field.

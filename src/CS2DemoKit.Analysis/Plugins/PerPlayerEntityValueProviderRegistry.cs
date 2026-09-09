@@ -35,13 +35,38 @@ public sealed class PerPlayerEntityValueProviderRegistry
         // provider above. BuiltinProviderSpecs.CreateGenericPerPlayerProviders() registers the
         // identical PawnPlace spec at this same position, so digest parity holds by construction.
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnPlace));
+        // Aim-rating reads: the per-tick entity state the aim-quality metrics (counter-strafing,
+        // spray control, crosshair placement) need and the engine did not previously surface.
+        // Spec-constructed on both sides of the parity gate at these same positions, so the two
+        // digest streams stay identical by construction. Registered BEFORE the position trio, not
+        // appended, because PawnPositionProviderTests pins those three as the last three.
+        //
+        // Unlike the economy reads above, every one of these changes on nearly every frame for
+        // nearly every pawn, so each costs the digest's delta encoding a full column. That is
+        // accepted only because gating is by name: a ruleset referencing none of them pays
+        // nothing at all.
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnDuckAmount));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnMaxSpeed));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnShotsFired));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnIsScoped));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnFlashDuration));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.WeaponRecoilIndex));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.WeaponAccuracyPenalty));
+        // Eye angle and aim-punch base angle, one provider per component. Both sources are QAngle,
+        // which the rules type vocabulary cannot express (no vector type, no member access) and
+        // which offers no scalar leaf to name, so these are hand-written classes with no spec
+        // form, registered identically on both sides. See PawnAimPunchProvider for why the two
+        // punch columns are a raw spring sample and not a resolved punch angle.
+        registry.Register(new PawnEyeAngleProvider(PawnAngleAxis.Pitch));
+        registry.Register(new PawnEyeAngleProvider(PawnAngleAxis.Yaw));
+        registry.Register(new PawnAimPunchProvider(PawnAngleAxis.Pitch));
+        registry.Register(new PawnAimPunchProvider(PawnAngleAxis.Yaw));
         // World position, one provider per axis. Computed from CBodyComponent's cell + offset
         // pair rather than a single leaf, so there is no ProviderSpec form; both sides of the
         // parity gate register these same instances, appended last in the same order.
         //
-        // These are the only shipped providers whose value changes almost every frame, which
-        // costs the digest's delta encoding a full column each. Gating is by name, so a ruleset
-        // that reads no axis pays nothing.
+        // These change almost every frame too, costing the digest's delta encoding a full column
+        // each. Gating is by name, so a ruleset that reads no axis pays nothing.
         registry.Register(new PawnPositionProvider(PawnPositionAxis.X));
         registry.Register(new PawnPositionProvider(PawnPositionAxis.Y));
         registry.Register(new PawnPositionProvider(PawnPositionAxis.Z));

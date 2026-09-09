@@ -105,6 +105,7 @@
         "damage_dealt",
         "damage_taken",
         "death",
+        "enemy_spotted",
         "flash_grenade",
         "he_grenade",
         "kill",
@@ -126,6 +127,9 @@
         "amount": {
           "markdownDescription": "Facet \u0060amount\u0060 (type \u0060int\u0060). Exposed by: damage_dealt, damage_taken. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "angle_to_chest": {
+          "markdownDescription": "Facet \u0060angle_to_chest\u0060 (type \u0060float\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "attacker_blind": {
           "markdownDescription": "Facet \u0060attacker_blind\u0060 (type \u0060bool\u0060). Exposed by: death. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
@@ -134,6 +138,12 @@
         },
         "capped": {
           "markdownDescription": "Facet \u0060capped\u0060 (type \u0060int\u0060). Exposed by: damage_dealt. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "counter_strafe_admitted": {
+          "markdownDescription": "Facet \u0060counter_strafe_admitted\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "counter_strafe_good": {
+          "markdownDescription": "Facet \u0060counter_strafe_good\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "distance": {
           "markdownDescription": "Facet \u0060distance\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -144,11 +154,20 @@
         "enemy": {
           "markdownDescription": "Facet \u0060enemy\u0060 (type \u0060bool\u0060). Exposed by: assist, blinded, blinded_enemy, damage_dealt, damage_taken, death, kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "first_bullet": {
+          "markdownDescription": "Facet \u0060first_bullet\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "first_contact": {
+          "markdownDescription": "Facet \u0060first_contact\u0060 (type \u0060bool\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "flash": {
           "markdownDescription": "Facet \u0060flash\u0060 (type \u0060bool\u0060). Exposed by: assist. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "flash_assisted": {
           "markdownDescription": "Facet \u0060flash_assisted\u0060 (type \u0060bool\u0060). Exposed by: kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "flick_error_deg": {
+          "markdownDescription": "Facet \u0060flick_error_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "has_winner": {
           "markdownDescription": "Facet \u0060has_winner\u0060 (type \u0060bool\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -162,6 +181,9 @@
         "in_air": {
           "markdownDescription": "Facet \u0060in_air\u0060 (type \u0060bool\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "is_first_after_spot": {
+          "markdownDescription": "Facet \u0060is_first_after_spot\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "no_scope": {
           "markdownDescription": "Facet \u0060no_scope\u0060 (type \u0060bool\u0060). Exposed by: death, kill, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
@@ -173,6 +195,21 @@
         },
         "site": {
           "markdownDescription": "Facet \u0060site\u0060 (type \u0060int\u0060). Exposed by: bomb_defused, bomb_planted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "spot_index": {
+          "markdownDescription": "Facet \u0060spot_index\u0060 (type \u0060int\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "spray_residual_deg": {
+          "markdownDescription": "Facet \u0060spray_residual_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "spray_residual_measured": {
+          "markdownDescription": "Facet \u0060spray_residual_measured\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "spray_residual_pitch": {
+          "markdownDescription": "Facet \u0060spray_residual_pitch\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "spray_residual_yaw": {
+          "markdownDescription": "Facet \u0060spray_residual_yaw\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "spray_shots": {
           "markdownDescription": "Facet \u0060spray_shots\u0060 (type \u0060int\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -192,8 +229,17 @@
         "ticks_since_last_shot": {
           "markdownDescription": "Facet \u0060ticks_since_last_shot\u0060 (type \u0060int\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "ticks_since_last_spot": {
+          "markdownDescription": "Facet \u0060ticks_since_last_spot\u0060 (type \u0060int\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "ticks_since_spot": {
+          "markdownDescription": "Facet \u0060ticks_since_spot\u0060 (type \u0060int\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "trade": {
           "markdownDescription": "Facet \u0060trade\u0060 (type \u0060bool\u0060). Exposed by: kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "travel_from_spot_deg": {
+          "markdownDescription": "Facet \u0060travel_from_spot_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "turn_degrees": {
           "markdownDescription": "Facet \u0060turn_degrees\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -909,6 +955,39 @@
             "properties": {
               "match": {
                 "$ref": "#/$defs/match_death"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "enemy_spotted"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "enemy_spotted"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_enemy_spotted"
               }
             }
           }
@@ -1691,6 +1770,31 @@
         }
       }
     },
+    "match_enemy_spotted": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060enemy_spotted\u0060 (event \u0060enemy_spotted\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "properties": {
+        "angle_to_chest": {
+          "markdownDescription": "\u0060angle_to_chest\u0060 (type \u0060float\u0060) on view \u0060enemy_spotted\u0060."
+        },
+        "first_contact": {
+          "markdownDescription": "\u0060first_contact\u0060 (type \u0060bool\u0060) on view \u0060enemy_spotted\u0060."
+        },
+        "spot_index": {
+          "markdownDescription": "\u0060spot_index\u0060 (type \u0060int\u0060) on view \u0060enemy_spotted\u0060."
+        },
+        "ticks_since_last_spot": {
+          "markdownDescription": "\u0060ticks_since_last_spot\u0060 (type \u0060int\u0060) on view \u0060enemy_spotted\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
     "match_flash_grenade": {
       "type": "object",
       "additionalProperties": false,
@@ -1819,8 +1923,41 @@
         "bullet": {
           "markdownDescription": "\u0060bullet\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
         },
+        "counter_strafe_admitted": {
+          "markdownDescription": "\u0060counter_strafe_admitted\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
+        "counter_strafe_good": {
+          "markdownDescription": "\u0060counter_strafe_good\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
+        "first_bullet": {
+          "markdownDescription": "\u0060first_bullet\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
+        "flick_error_deg": {
+          "markdownDescription": "\u0060flick_error_deg\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
+        },
+        "is_first_after_spot": {
+          "markdownDescription": "\u0060is_first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
         "silenced": {
           "markdownDescription": "\u0060silenced\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
+        "spray_residual_deg": {
+          "markdownDescription": "\u0060spray_residual_deg\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
+        },
+        "spray_residual_measured": {
+          "markdownDescription": "\u0060spray_residual_measured\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
+        "spray_residual_pitch": {
+          "markdownDescription": "\u0060spray_residual_pitch\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
+        },
+        "spray_residual_yaw": {
+          "markdownDescription": "\u0060spray_residual_yaw\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
+        },
+        "ticks_since_spot": {
+          "markdownDescription": "\u0060ticks_since_spot\u0060 (type \u0060int\u0060) on view \u0060shot\u0060."
+        },
+        "travel_from_spot_deg": {
+          "markdownDescription": "\u0060travel_from_spot_deg\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
         },
         "weapon": {
           "markdownDescription": "\u0060weapon\u0060 (type \u0060string\u0060) on view \u0060shot\u0060."
@@ -1838,17 +1975,44 @@
       "additionalProperties": false,
       "markdownDescription": "match: facets for view \u0060shot_landed\u0060 (event \u0060bullet_damage\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
+        "counter_strafe_admitted": {
+          "markdownDescription": "\u0060counter_strafe_admitted\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
+        "counter_strafe_good": {
+          "markdownDescription": "\u0060counter_strafe_good\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
         "distance": {
           "markdownDescription": "\u0060distance\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
         },
+        "first_bullet": {
+          "markdownDescription": "\u0060first_bullet\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
+        "flick_error_deg": {
+          "markdownDescription": "\u0060flick_error_deg\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
+        },
         "in_air": {
           "markdownDescription": "\u0060in_air\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
+        "is_first_after_spot": {
+          "markdownDescription": "\u0060is_first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
         },
         "no_scope": {
           "markdownDescription": "\u0060no_scope\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
         },
         "recoil_index": {
           "markdownDescription": "\u0060recoil_index\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
+        },
+        "spray_residual_deg": {
+          "markdownDescription": "\u0060spray_residual_deg\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
+        },
+        "spray_residual_measured": {
+          "markdownDescription": "\u0060spray_residual_measured\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
+        "spray_residual_pitch": {
+          "markdownDescription": "\u0060spray_residual_pitch\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
+        },
+        "spray_residual_yaw": {
+          "markdownDescription": "\u0060spray_residual_yaw\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
         },
         "spray_shots": {
           "markdownDescription": "\u0060spray_shots\u0060 (type \u0060int\u0060) on view \u0060shot_landed\u0060."
@@ -1858,6 +2022,12 @@
         },
         "ticks_since_last_shot": {
           "markdownDescription": "\u0060ticks_since_last_shot\u0060 (type \u0060int\u0060) on view \u0060shot_landed\u0060."
+        },
+        "ticks_since_spot": {
+          "markdownDescription": "\u0060ticks_since_spot\u0060 (type \u0060int\u0060) on view \u0060shot_landed\u0060."
+        },
+        "travel_from_spot_deg": {
+          "markdownDescription": "\u0060travel_from_spot_deg\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
         },
         "turn_degrees": {
           "markdownDescription": "\u0060turn_degrees\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."

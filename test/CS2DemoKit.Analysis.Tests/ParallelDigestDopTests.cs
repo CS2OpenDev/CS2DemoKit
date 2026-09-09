@@ -118,7 +118,7 @@ public class ParallelDigestDopTests
                 probe.NewPerPlayer,
                 NewSingletons,
                 false,
-                cap);
+                maxDegreeOfParallelism: cap);
 
             Console.WriteLine($"cap={cap}  workers={probe.Invocations}  peak={probe.PeakConcurrency}");
             await Assert.That(probe.PeakConcurrency).IsLessThanOrEqualTo(cap);

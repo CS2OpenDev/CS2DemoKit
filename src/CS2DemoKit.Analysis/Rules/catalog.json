@@ -648,6 +648,44 @@
       ]
     },
     {
+      "name": "enemy_spotted",
+      "clrType": "EnemySpottedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "AngleToChestDeg",
+          "type": "float",
+          "v2Name": "event.AngleToChestDeg",
+          "v2Type": "Float"
+        },
+        {
+          "name": "TargetSlot",
+          "type": "int",
+          "v2Name": "event.TargetSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ViewerPitchDeg",
+          "type": "float",
+          "v2Name": "event.ViewerPitchDeg",
+          "v2Type": "Float"
+        },
+        {
+          "name": "ViewerSlot",
+          "type": "int",
+          "v2Name": "event.ViewerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ViewerYawDeg",
+          "type": "float",
+          "v2Name": "event.ViewerYawDeg",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
       "name": "flashbang_detonate",
       "clrType": "FlashbangDetonateEvent",
       "synthesized": false,
@@ -2299,6 +2337,51 @@
       "scope": "round"
     },
     {
+      "name": "enrich.shot.counter_strafe_admitted",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.counter_strafe_good",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.flick_error_deg",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.is_first_after_spot",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.is_first_bullet",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_deg",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_measured",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_pitch",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_yaw",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
       "name": "enrich.shot.spray_shots",
       "valueType": "int",
       "scope": "shot"
@@ -2314,9 +2397,34 @@
       "scope": "shot"
     },
     {
+      "name": "enrich.shot.ticks_since_spot",
+      "valueType": "int",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.travel_from_spot_deg",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
       "name": "enrich.shot.turn_degrees",
       "valueType": "double",
       "scope": "shot"
+    },
+    {
+      "name": "enrich.spotted.is_first_contact",
+      "valueType": "bool",
+      "scope": "spotted"
+    },
+    {
+      "name": "enrich.spotted.spot_index",
+      "valueType": "int",
+      "scope": "spotted"
+    },
+    {
+      "name": "enrich.spotted.ticks_since_last_spot",
+      "valueType": "int",
+      "scope": "spotted"
     },
     {
       "name": "enrich.weapon_fire.is_bullet",
@@ -2650,6 +2758,13 @@
       "v2Type": "Int"
     },
     {
+      "name": "entity.pawn.duck_amount",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.duck_amount",
+      "v2Type": "Float"
+    },
+    {
       "name": "entity.pawn.equipment_value",
       "scope": "perPlayer",
       "clrType": "int",
@@ -2657,11 +2772,46 @@
       "v2Type": "Int"
     },
     {
+      "name": "entity.pawn.eye_pitch",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.eye_pitch",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.eye_yaw",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.eye_yaw",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.flash_duration",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.flash_duration",
+      "v2Type": "Float"
+    },
+    {
       "name": "entity.pawn.health",
       "scope": "perPlayer",
       "clrType": "int",
       "v2Name": "player.health",
       "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.is_scoped",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.is_scoped",
+      "v2Type": "Bool"
+    },
+    {
+      "name": "entity.pawn.max_speed",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.max_speed",
+      "v2Type": "Float"
     },
     {
       "name": "entity.pawn.place",
@@ -2689,6 +2839,41 @@
       "scope": "perPlayer",
       "clrType": "float",
       "v2Name": "player.pos_z",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.punch_pitch",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.punch_pitch",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.punch_yaw",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.punch_yaw",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.shots_fired",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.shots_fired",
+      "v2Type": "Int"
+    },
+    {
+      "name": "entity.weapon.accuracy_penalty",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.weapon_accuracy_penalty",
+      "v2Type": "Float"
+    },
+    {
+      "name": "entity.weapon.recoil_index",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.weapon_recoil_index",
       "v2Type": "Float"
     }
   ],
@@ -2800,6 +2985,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
           ]
         },
         {
@@ -3188,6 +3380,13 @@
           ]
         },
         {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
           "logicalName": "$flashbang_detonate",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3563,6 +3762,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
           ]
         },
         {
@@ -3951,6 +4157,13 @@
           ]
         },
         {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
           "logicalName": "$flashbang_detonate",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4298,6 +4511,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
           ]
         },
         {
@@ -5153,6 +5373,82 @@
       ]
     },
     {
+      "name": "enemy_spotted",
+      "event": "enemy_spotted",
+      "binding": "actor_slot",
+      "actor": "viewer",
+      "roles": [
+        {
+          "role": "target",
+          "field": "TargetSlot"
+        },
+        {
+          "role": "viewer",
+          "field": "ViewerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "angle_to_chest",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "AngleToChestDeg"
+        },
+        {
+          "name": "first_contact",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.spotted.is_first_contact"
+        },
+        {
+          "name": "spot_index",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.spotted.spot_index"
+        },
+        {
+          "name": "ticks_since_last_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.spotted.ticks_since_last_spot"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        }
+      ]
+    },
+    {
       "name": "flash_grenade",
       "event": "flashbang_detonate",
       "binding": "actor_slot",
@@ -5551,10 +5847,76 @@
           "enrichment": "enrich.weapon_fire.is_bullet"
         },
         {
+          "name": "counter_strafe_admitted",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_admitted"
+        },
+        {
+          "name": "counter_strafe_good",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_good"
+        },
+        {
+          "name": "first_bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_bullet"
+        },
+        {
+          "name": "flick_error_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.flick_error_deg"
+        },
+        {
+          "name": "is_first_after_spot",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_spot"
+        },
+        {
           "name": "silenced",
           "type": "bool",
           "v2Type": "Bool",
           "field": "Silenced"
+        },
+        {
+          "name": "spray_residual_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_deg"
+        },
+        {
+          "name": "spray_residual_measured",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.spray_residual_measured"
+        },
+        {
+          "name": "spray_residual_pitch",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_pitch"
+        },
+        {
+          "name": "spray_residual_yaw",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_yaw"
+        },
+        {
+          "name": "ticks_since_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_spot"
+        },
+        {
+          "name": "travel_from_spot_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.travel_from_spot_deg"
         },
         {
           "name": "weapon",
@@ -5615,16 +5977,46 @@
       "baked": [],
       "facets": [
         {
+          "name": "counter_strafe_admitted",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_admitted"
+        },
+        {
+          "name": "counter_strafe_good",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_good"
+        },
+        {
           "name": "distance",
           "type": "float",
           "v2Type": "Float",
           "field": "Distance"
         },
         {
+          "name": "first_bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_bullet"
+        },
+        {
+          "name": "flick_error_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.flick_error_deg"
+        },
+        {
           "name": "in_air",
           "type": "bool",
           "v2Type": "Bool",
           "field": "InAir"
+        },
+        {
+          "name": "is_first_after_spot",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_spot"
         },
         {
           "name": "no_scope",
@@ -5637,6 +6029,30 @@
           "type": "float",
           "v2Type": "Float",
           "field": "RecoilIndex"
+        },
+        {
+          "name": "spray_residual_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_deg"
+        },
+        {
+          "name": "spray_residual_measured",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.spray_residual_measured"
+        },
+        {
+          "name": "spray_residual_pitch",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_pitch"
+        },
+        {
+          "name": "spray_residual_yaw",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_yaw"
         },
         {
           "name": "spray_shots",
@@ -5655,6 +6071,18 @@
           "type": "int",
           "v2Type": "Int",
           "enrichment": "enrich.shot.ticks_since_last_shot"
+        },
+        {
+          "name": "ticks_since_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_spot"
+        },
+        {
+          "name": "travel_from_spot_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.travel_from_spot_deg"
         },
         {
           "name": "turn_degrees",
