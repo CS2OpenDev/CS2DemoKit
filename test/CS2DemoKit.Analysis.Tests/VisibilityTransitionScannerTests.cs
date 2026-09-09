@@ -311,6 +311,118 @@ public class VisibilityTransitionScannerTests
         await Assert.That(transitions.Sample(1002, 1002, vantage.Sample(1002)).Count).IsEqualTo(0);
     }
 
+    // ── On-target acquisition ────────────────────────────────────────────────
+
+    /// <summary>
+    ///     The acquisition tick is the moment the crosshair ARRIVED, and it holds for as long as the
+    ///     crosshair stays there. A stamp that advanced on every sample would make every aimed
+    ///     reaction measured from it read as one tick.
+    /// </summary>
+    [Test]
+    public async Task OnTarget_StampsTheArrivalTick_AndHoldsItWhileTheCrosshairStays()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+
+        // Putting the viewer's feet 16 units BELOW the target's puts its eye level with the target's
+        // 48-unit chest anchor, so a level crosshair down +X is a zero-degree error.
+        vantage.Observe(0, Row(0f, 0f, -16f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+
+        transitions.Sample(1000, 1000, vantage.Sample(1000));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+
+        transitions.Sample(1001, 1001, vantage.Sample(1001));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000)
+            .Because("holding the crosshair on an enemy is one acquisition, not one per tick");
+    }
+
+    /// <summary>
+    ///     Leaving every enemy re-arms the viewer, so the next arrival anchors a fresh interval
+    ///     rather than the stale one they turned away from.
+    /// </summary>
+    [Test]
+    public async Task OnTarget_ReArms_AfterTheCrosshairLeavesEveryEnemy()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+
+        vantage.Observe(0, Row(0f, 0f, -16f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        transitions.Sample(1000, 1000, vantage.Sample(1000));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+
+        // 30 degrees off: still inside the ~106 degree frustum, so still a spot, but nowhere near
+        // the body.
+        vantage.Observe(0, [null, null, null, 30f, null, null, null]);
+        transitions.Sample(1001, 1001, vantage.Sample(1001));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(-1);
+
+        vantage.Observe(0, [null, null, null, 0f, null, null, null]);
+        transitions.Sample(1002, 1002, vantage.Sample(1002));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1002);
+    }
+
+    /// <summary>
+    ///     A viewer already on one enemy does not re-acquire because a SECOND enemy walks into the
+    ///     same crosshair.
+    ///     <para>
+    ///         The stamp is per VIEWER (the crosshair is on an enemy, or it is not) and the
+    ///         re-arm drops it only once the crosshair has left them all. Keying the arrival on the
+    ///         PAIR instead restarts the clock on a player who never moved their aim, and every
+    ///         aimed reaction measured through that instant reads short by however long they had
+    ///         been holding.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task OnTarget_DoesNotRestamp_WhenASecondEnemyEntersTheSameCrosshair()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3), (2, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+
+        vantage.Observe(0, Row(0f, 0f, -16f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        transitions.Sample(1000, 1000, vantage.Sample(1000));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+
+        // A second enemy steps onto the same sightline, nearer. The crosshair never moved.
+        vantage.Observe(2, Row(300f, 0f, 0f, 0f, 0f));
+        transitions.Sample(1001, 1001, vantage.Sample(1001));
+
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000)
+            .Because("the crosshair has been on an enemy continuously since 1000");
+    }
+
+    /// <summary>
+    ///     The tolerance is the angle a 16-unit half-width subtends AT THE POINT THE ANGLE WAS
+    ///     MEASURED TO, which is the chest anchor. Taking the range to the target's feet instead
+    ///     inflates it by the eye-to-chest height difference: nothing at 500 units, but a tenth of a
+    ///     degree out of nine inside 100, which is where duels are decided.
+    /// </summary>
+    [Test]
+    public async Task OnTarget_ToleranceIsMeasuredAtTheChestAnchorsRange()
+    {
+        // Eye level with the chest anchor, 100 units from it: 16 units of half-width subtends
+        // atan(16 / 100) = 9.09 degrees. The feet are 110.9 away and would give 8.21.
+        AimVantageScanner inside = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner acquired = new(VisibilityEngine.FromTriangles([], 0));
+        inside.Observe(0, Row(0f, 0f, -16f, 0f, 8.6f));
+        inside.Observe(1, Row(100f, 0f, 0f, 0f, 0f));
+        acquired.Sample(1000, 1000, inside.Sample(1000));
+
+        await Assert.That(acquired.OnTargetSince(0)).IsEqualTo(1000)
+            .Because("8.6 degrees is 15 units off centre at 100 units, still inside the body");
+
+        AimVantageScanner outside = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner missed = new(VisibilityEngine.FromTriangles([], 0));
+        outside.Observe(0, Row(0f, 0f, -16f, 0f, 9.5f));
+        outside.Observe(1, Row(100f, 0f, 0f, 0f, 0f));
+        missed.Sample(1000, 1000, outside.Sample(1000));
+
+        await Assert.That(missed.OnTargetSince(0)).IsEqualTo(-1)
+            .Because("9.5 degrees clears the body, and a tolerance that admitted it would admit misses");
+    }
+
     // ── Catalog surface ──────────────────────────────────────────────────────
 
     [Test]

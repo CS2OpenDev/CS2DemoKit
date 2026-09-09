@@ -51,9 +51,8 @@ public class AimShotContextEdgeTests
     private const int Shooter = 0;
 
     /// <summary>
-    ///     A shot from a player who has been standing still all round is not a failed
-    ///     counter-strafe, it is not an attempt: admitting it would turn the metric into "how often
-    ///     did this player hold an angle", which is what the lookback gate exists to prevent.
+    ///     The denominator gate from the population side: a player who stood still all round is not
+    ///     in it. See <see cref="AimShotContext.AboveThresholdInLookback" />.
     /// </summary>
     [Test]
     public async Task StandingStill_IsNotAdmittedToTheCounterStrafePopulation()
@@ -423,6 +422,83 @@ public class AimShotContextEdgeTests
         await Assert.That(rig.TravelFromSpot.Value).IsGreaterThanOrEqualTo(0.0);
     }
 
+    /// <summary>
+    ///     Whether a shot is the first to answer an acquisition is decided per ARM, exactly as
+    ///     <c>is_first_after_spot</c> is.
+    ///     <para>
+    ///         One shared latch never survives to the landed arm; see
+    ///         <see cref="PlayerContextIndex.PlayerContext.AnsweredOnTargetSinceLanded" />. What the
+    ///         regression costs is an aimed-reaction metric on the landed arm reporting an empty
+    ///         population, with nothing to say the gate emptied it rather than the data.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task FirstShotAfterAcquisition_IsAnsweredPerArm()
+    {
+        Rig rig = new(OnTargetSince(100));
+        rig.Tick(100, Row(recoil: 0f, eyePitch: 0f, eyeYaw: 0f));
+
+        await Assert.That(rig.Fire(105)).IsTrue();
+        await Assert.That(rig.TicksSinceOnTarget.Value).IsEqualTo(5);
+        await Assert.That(rig.FirstAfterOnTarget.IsActive).IsTrue();
+
+        await Assert.That(rig.Land(105, 0f, 0f)).IsTrue();
+        await Assert.That(rig.TicksSinceOnTarget.Value).IsEqualTo(5);
+        await Assert.That(rig.FirstAfterOnTarget.IsActive).IsTrue()
+            .Because("time-to-shoot and time-to-damage are different metrics over different events: "
+                     + "the fired arm answering an acquisition does not answer it for the landed arm");
+
+        // Neither arm answers the same acquisition twice.
+        await Assert.That(rig.Fire(112)).IsTrue();
+        await Assert.That(rig.FirstAfterOnTarget.IsActive).IsFalse();
+        await Assert.That(rig.Land(112, 0f, 0f)).IsTrue();
+        await Assert.That(rig.FirstAfterOnTarget.IsActive).IsFalse();
+    }
+
+    /// <summary>
+    ///     A shot with no acquisition behind it reports the sentinel rather than a zero interval, and
+    ///     is not the first shot of anything.
+    /// </summary>
+    [Test]
+    public async Task ShotWithNoAcquisition_ReportsTheSentinel()
+    {
+        Rig rig = new();
+        rig.Tick(100, Row(recoil: 0f, eyePitch: 0f, eyeYaw: 0f));
+
+        await Assert.That(rig.Fire(105)).IsTrue();
+        await Assert.That(rig.TicksSinceOnTarget.Value).IsEqualTo(AimShotContextEdge.NoSpotSentinel);
+        await Assert.That(rig.FirstAfterOnTarget.IsActive).IsFalse();
+    }
+
+    /// <summary>
+    ///     A visibility scanner whose only viewer is <see cref="Shooter" />, crosshair on an enemy
+    ///     since <paramref name="tick" />. Real geometry rather than a stub: <c>OnTargetSince</c> is
+    ///     the scanner's own derivation off its vantage set and there is no seam to inject at.
+    /// </summary>
+    /// <param name="tick">The tick the crosshair arrives on the enemy.</param>
+    private static VisibilityTransitionScanner OnTargetSince(int tick)
+    {
+        string[] columns =
+        [
+            AimVantageScanner.DuckAmountProvider,
+            AimVantageScanner.EyePitchProvider,
+            AimVantageScanner.EyeYawProvider,
+            AimVantageScanner.PosXProvider,
+            AimVantageScanner.PosYProvider,
+            AimVantageScanner.PosZProvider
+        ];
+
+        // Shooter's feet 16 below the enemy's puts its eye level with the enemy's chest anchor, so a
+        // level crosshair down +X is a zero-degree error and unambiguously on target.
+        AimVantageScanner sight = new(columns, slot => slot == Shooter ? 2 : 3);
+        sight.Observe(Shooter, [0f, 0f, 0f, 0f, 0f, -16f]);
+        sight.Observe(1, [0f, 0f, 0f, 500f, 0f, 0f]);
+
+        VisibilityTransitionScanner visibility = new(VisibilityEngine.FromTriangles([], 0));
+        visibility.Sample(tick, tick, sight.Sample(tick));
+        return visibility;
+    }
+
     private sealed class Rig
     {
         // Comfortably more frames than any test here advances, and never reaching the last index:
@@ -436,7 +512,7 @@ public class AimShotContextEdgeTests
         private readonly EntityChangeScanner _scanner;
         private int _frame;
 
-        internal Rig()
+        internal Rig(VisibilityTransitionScanner? visibility = null)
         {
             Players.Register(Shooter, new PlayerContextIndex.PlayerContext(Shooter, 2));
 
@@ -468,18 +544,26 @@ public class AimShotContextEdgeTests
                 _scanner, providers[ColMaxSpeed], providers[ColRecoil],
                 providers[ColEyePitch], providers[ColEyeYaw],
                 providers[ColPunchPitch], providers[ColPunchYaw],
-                Vantage, null, 64.0);
+                Vantage, visibility, 64.0);
 
             GenericBoolNode root = new("root");
             _fired = new AimShotContextEdge(
                 root, Players, Good, Admitted, FirstBullet, ResidualPitch, ResidualYaw, ResidualMeasured,
-                TicksSinceSpot, TravelFromSpot, FlickError, FirstAfterSpot, ResidualDeg, typeof(WeaponFireEvent), sources);
+                TicksSinceSpot, TravelFromSpot, FlickError, FirstAfterSpot, ResidualDeg,
+                TicksSinceOnTarget, FirstAfterOnTarget, typeof(WeaponFireEvent), sources);
             _landed = new AimShotContextEdge(
                 root, Players, Good, Admitted, FirstBullet, ResidualPitch, ResidualYaw, ResidualMeasured,
-                TicksSinceSpot, TravelFromSpot, FlickError, FirstAfterSpot, ResidualDeg, typeof(BulletDamageEvent), sources);
+                TicksSinceSpot, TravelFromSpot, FlickError, FirstAfterSpot, ResidualDeg,
+                TicksSinceOnTarget, FirstAfterOnTarget, typeof(BulletDamageEvent), sources);
         }
 
         internal TransientBoolNode FirstAfterSpot { get; } = new("enrich.shot.is_first_after_spot");
+
+        internal TransientValueNode<int> TicksSinceOnTarget { get; } =
+            new("enrich.shot.ticks_since_on_target", AimShotContextEdge.NoSpotSentinel);
+
+        internal TransientBoolNode FirstAfterOnTarget { get; } =
+            new("enrich.shot.is_first_after_on_target");
 
         internal TransientValueNode<double> ResidualDeg { get; } = new("enrich.shot.spray_residual_deg");
 
@@ -568,6 +652,8 @@ public class AimShotContextEdgeTests
             ((ITransientNode)TravelFromSpot).Reset();
             ((ITransientNode)FlickError).Reset();
             FirstAfterSpot.Reset();
+            ((ITransientNode)TicksSinceOnTarget).Reset();
+            FirstAfterOnTarget.Reset();
             ((ITransientNode)ResidualDeg).Reset();
 
             GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(evt);

@@ -292,6 +292,8 @@ public sealed class PlayerContextIndex
             ctx.LastSpotChestAngle = 0f;
             ctx.SpotAnsweredByShot = false;
             ctx.SpotAnsweredByLanded = false;
+            ctx.AnsweredOnTargetSinceShot = -1;
+            ctx.AnsweredOnTargetSinceLanded = -1;
             ctx.SpotCount = 0;
             ctx.AimShot.Reset();
         }
@@ -468,6 +470,29 @@ public sealed class PlayerContextIndex
         ///     answered for one and not the other.
         /// </summary>
         public bool SpotAnsweredByLanded { get; set; }
+
+        /// <summary>
+        ///     The acquisition tick (see <c>VisibilityTransitionScanner.OnTargetSince</c>) that a
+        ///     FIRED shot has already answered, or -1.
+        ///     <para>
+        ///         Stored as the acquisition's own tick rather than a bool, because the scanner
+        ///         re-arms whenever the crosshair leaves every enemy: comparing the two values tells a
+        ///         later shot whether it belongs to the SAME acquisition or a new one, which a flag
+        ///         cannot.
+        ///     </para>
+        /// </summary>
+        public int AnsweredOnTargetSinceShot { get; set; } = -1;
+
+        /// <summary>
+        ///     The same for the first shot that LANDED. Tracked separately from
+        ///     <see cref="AnsweredOnTargetSinceShot" /> for the reason
+        ///     <see cref="SpotAnsweredByLanded" /> is tracked separately from
+        ///     <see cref="SpotAnsweredByShot" />: <c>weapon_fire</c> always precedes the
+        ///     <c>bullet_damage</c> it produced, so one shared latch is consumed by the fired arm
+        ///     before the landed arm sees the shot at all, and the landed arm's copy of
+        ///     <c>is_first_after_on_target</c> is then false on every shot in the demo.
+        /// </summary>
+        public int AnsweredOnTargetSinceLanded { get; set; } = -1;
 
         /// <summary>
         ///     How many enemies this player has spotted so far this round, counting re-acquisitions

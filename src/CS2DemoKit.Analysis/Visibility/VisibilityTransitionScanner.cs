@@ -36,12 +36,29 @@ namespace CS2DemoKit.Analysis.Visibility;
 /// </summary>
 public sealed class VisibilityTransitionScanner
 {
+    /// <summary>
+    ///     Half-width of a player used to decide whether the crosshair is ON them, in world units.
+    ///     Matches the lateral offset <c>PlayerVantage.BuildAnchors</c> puts its shoulder anchors at,
+    ///     so "on target" means the same body this scanner already tests visibility against.
+    /// </summary>
+    public const float OnTargetHalfWidthUnits = 16f;
+
     private readonly List<EnemySpottedEvent> _spots = new(4);
     private readonly VisibilityEngine _engine;
     private readonly Options _options;
     private HashSet<(int Viewer, int Target)> _current = new();
     private int _lastSampledTick = int.MinValue;
     private HashSet<(int Viewer, int Target)> _visible = new();
+
+    // Per viewer, the tick their crosshair most recently ARRIVED on an enemy, and the pairs it is
+    // on THIS sample. Re-armed when the crosshair leaves, so a held angle reports the moment of
+    // arrival rather than the start of the hold.
+    //
+    // The dictionary doubles as the "was on someone last sample" record: the re-arm sweep removes a
+    // viewer key exactly when the crosshair has left every enemy, so a key still present when the
+    // next sample starts means the hold is unbroken and the arrival tick stands.
+    private readonly Dictionary<int, int> _onTargetSince = [];
+    private readonly HashSet<(int Viewer, int Target)> _onTarget = [];
 
     /// <param name="engine">The loaded collision geometry every sightline is cast against.</param>
     /// <param name="options">Sampling stride and frustum half-angles; defaults are the ones the metrics need.</param>
@@ -77,6 +94,24 @@ public sealed class VisibilityTransitionScanner
 
         return false;
     }
+
+    /// <summary>
+    ///     The tick <paramref name="viewerSlot" />'s crosshair arrived on an enemy, or -1 when it is
+    ///     not on one.
+    ///     <para>
+    ///         This is the anchor an AIMED REACTION is measured from, and it is deliberately not the
+    ///         spot: time-to-shoot spans the whole act of turning onto a target, while aimed reaction
+    ///         is only what happens once the crosshair is already there. Separating them is the
+    ///         difference between measuring aim travel and measuring the player.
+    ///     </para>
+    ///     <para>
+    ///         "On target" is range-corrected: a player subtends a smaller angle further away, so a
+    ///         fixed degree tolerance would call a distant miss an acquisition and a close one a
+    ///         miss. See <see cref="OnTargetHalfWidthUnits" />.
+    ///     </para>
+    /// </summary>
+    /// <param name="viewerSlot">The player whose crosshair is being asked about.</param>
+    public int OnTargetSince(int viewerSlot) => _onTargetSince.GetValueOrDefault(viewerSlot, -1);
 
     /// <summary>Overload without dynamic smoke occluders (equivalent to no active smokes).</summary>
     /// <param name="tick">The absolute server tick being sampled.</param>
@@ -130,6 +165,7 @@ public sealed class VisibilityTransitionScanner
 
         _lastSampledTick = tick;
         _current.Clear();
+        _onTarget.Clear();
 
         for (int v = 0; v < vantages.Count; v++)
         {
@@ -152,6 +188,32 @@ public sealed class VisibilityTransitionScanner
 
                 (int Viewer, int Target) pair = (viewer.Slot, target.Slot);
                 _current.Add(pair);
+
+                // Range-corrected acquisition test. A player 300 units away subtends about 3 degrees
+                // of half-width and one 1500 away about 0.6, so a fixed tolerance would call a
+                // distant miss an acquisition and a close one a miss. The range is the one to the
+                // CHEST ANCHOR, which is the point the angle was measured to; the feet are further
+                // off by the eye-to-chest height difference, which is nothing at 500 units and
+                // nearly a degree out of nine inside 100.
+                (float chest, float range) = ChestAim(viewer, target);
+                float halfWidth = range <= 1f
+                    ? 90f
+                    : (float)(Math.Atan2(OnTargetHalfWidthUnits, range) * 180.0 / Math.PI);
+                if (chest <= halfWidth)
+                {
+                    _onTarget.Add(pair);
+
+                    // Arrival, not continuation, and per VIEWER rather than per pair: the crosshair
+                    // is on an enemy or it is not, and the re-arm below drops a viewer only once it
+                    // has left them ALL. Stamping per pair restarts the clock when a second enemy
+                    // walks into a held crosshair, on a player who never moved their aim, and every
+                    // aimed reaction measured through that instant then reads short.
+                    if (!_onTargetSince.ContainsKey(viewer.Slot))
+                    {
+                        _onTargetSince[viewer.Slot] = tick;
+                    }
+                }
+
                 if (_visible.Contains(pair))
                 {
                     continue; // still visible, not an edge
@@ -163,8 +225,28 @@ public sealed class VisibilityTransitionScanner
                 // pairing a spot against a shot compares.
                 _spots.Add(new EnemySpottedEvent(
                     tick, tick, gameTick, viewer.Slot, target.Slot,
-                    ChestAngleDegrees(viewer, target),
+                    chest,
                     viewerAim.EyePitchDeg, viewerAim.EyeYawDeg));
+            }
+        }
+
+        // A viewer whose crosshair left every enemy re-arms, so the next arrival is a fresh one
+        // rather than the stale tick of an acquisition they have since turned away from.
+        foreach (int viewer in _onTargetSince.Keys.ToList())
+        {
+            bool stillOn = false;
+            foreach ((int v, int _) in _onTarget)
+            {
+                if (v == viewer)
+                {
+                    stillOn = true;
+                    break;
+                }
+            }
+
+            if (!stillOn)
+            {
+                _onTargetSince.Remove(viewer);
             }
         }
 
@@ -174,13 +256,20 @@ public sealed class VisibilityTransitionScanner
     }
 
     /// <summary>
-    ///     Angle between the viewer's eye ray and the target's chest anchor. Rebuilds the anchor set
-    ///     rather than threading one out of <c>VisibilityAnalyzer.EvaluatePair</c>: this runs
-    ///     only on a rising edge, which is rare next to the per-tick pair sweep, and taking the anchor
-    ///     from the same builder is what keeps the measured point identical to the one the visibility
-    ///     test cleared.
+    ///     Angle between the viewer's eye ray and the target's chest anchor, and the range to that
+    ///     same anchor. Both come back together because the range is what turns the angle into an
+    ///     acquisition verdict, and measuring the two against different points is what makes a
+    ///     tolerance that is right at 500 units wrong at 100.
+    ///     <para>
+    ///         Rebuilds the anchor set rather than threading one out of
+    ///         <c>VisibilityAnalyzer.EvaluatePair</c>: taking the anchor from the same builder is what
+    ///         keeps the measured point identical to the one the visibility test cleared. It runs for
+    ///         every pair the viewer could see, not only on a rising edge.
+    ///     </para>
     /// </summary>
-    private static float ChestAngleDegrees(
+    /// <param name="viewer">The player whose crosshair is being measured.</param>
+    /// <param name="target">The enemy being measured against.</param>
+    private static (float AngleDeg, float RangeUnits) ChestAim(
         in VisibilityAnalyzer.Vantage viewer, in VisibilityAnalyzer.Vantage target)
     {
         Span<Vector3> anchors = stackalloc Vector3[PlayerVantage.MaxAnchors];
@@ -189,7 +278,9 @@ public sealed class VisibilityTransitionScanner
         // Anchor 0 is chest (48 units, duck-scaled). Chest is the most stable body point across a
         // crouch transition, so a preaim number taken against it is comparable between engagements
         // in a way one taken against the head is not.
-        return PlayerVantage.AngleToPointDegrees(viewer.Eye, viewer.Forward, anchors[0]);
+        return (
+            PlayerVantage.AngleToPointDegrees(viewer.Eye, viewer.Forward, anchors[0]),
+            Vector3.Distance(viewer.Eye, anchors[0]));
     }
 
     /// <summary>Sampling and frustum knobs for <c>Sample</c>.</summary>

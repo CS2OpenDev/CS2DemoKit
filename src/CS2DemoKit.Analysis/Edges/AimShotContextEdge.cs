@@ -203,6 +203,8 @@ public sealed class AimShotContextEdge(
     TransientValueNode<double> flickErrorDeg,
     TransientBoolNode isFirstAfterSpot,
     TransientValueNode<double> sprayResidualDeg,
+    TransientValueNode<int> ticksSinceOnTarget,
+    TransientBoolNode isFirstAfterOnTarget,
     Type messageType,
     AimShotContextSources? sources = null) : StateEdge(source)
 {
@@ -324,27 +326,21 @@ public sealed class AimShotContextEdge(
     private readonly int _lookbackTicks = (int)Math.Round(
         CounterStrafeLookbackSeconds * (sources is { TickRate: > 0 } s ? s.TickRate : 64.0));
 
-    // Which of the two arms this instance is. Cached rather than compared per access because
-    // AdditionalWrittenNodes is read on every graph rebuild and re-sort.
+    // Which of the two arms this instance is. Cached rather than compared per access because the
+    // per-arm answer latches below are read on every shot in the demo.
     private readonly bool _isLandedArm = messageType == typeof(BulletDamageEvent);
 
     /// <inheritdoc />
-    // The landed arm deliberately declares no residual writes: it does not emit them (see the class
-    // doc on why a spray is defined over fired shots), and declaring a write it never makes would
-    // register the residual nodes as transients under the bullet_damage dispatch key, resetting them
-    // to zero for every consumer of that slot.
+    // BOTH arms declare the same set, including the residuals: each measures spray control from its
+    // own anchor (see the class doc), so both write them and both must register them as transients
+    // under their dispatch key. An arm that emitted a node without declaring it would leave that
+    // node unreset between fires, and a consumer would read the previous shot's number.
     public override IReadOnlyList<StateNode>? AdditionalWrittenNodes =>
-        _isLandedArm
-            ? [
-                counterStrafeAdmitted, isFirstBullet, ticksSinceSpot, travelFromSpotDeg, flickErrorDeg,
-                isFirstAfterSpot, sprayResidualPitch, sprayResidualYaw, sprayResidualMeasured,
-                sprayResidualDeg
-            ]
-            : [
-                counterStrafeAdmitted, isFirstBullet, ticksSinceSpot, travelFromSpotDeg, flickErrorDeg,
-                isFirstAfterSpot,
-                sprayResidualPitch, sprayResidualYaw, sprayResidualMeasured, sprayResidualDeg
-            ];
+    [
+        counterStrafeAdmitted, isFirstBullet, ticksSinceSpot, travelFromSpotDeg, flickErrorDeg,
+        isFirstAfterSpot, sprayResidualPitch, sprayResidualYaw, sprayResidualMeasured,
+        sprayResidualDeg, ticksSinceOnTarget, isFirstAfterOnTarget
+    ];
 
     /// <inheritdoc />
     public override EdgeEffect? DeclaredEffect => EdgeEffect.SetValue;
@@ -634,6 +630,35 @@ public sealed class AimShotContextEdge(
     {
         bool haveSpot = ctx.LastSpotTick >= 0 && tick >= ctx.LastSpotTick;
         ticksSinceSpot.SetValue(haveSpot ? tick - ctx.LastSpotTick : NoSpotSentinel);
+
+        // Aimed reaction: from the crosshair ARRIVING on an enemy to this shot. Distinct from the
+        // spot interval, which also contains the turn onto the target: separating them is what makes
+        // one number a reaction and the other a reaction plus aim travel.
+        int since = sources?.Visibility?.OnTargetSince(ctx.Slot) ?? -1;
+        bool haveOnTarget = since >= 0 && tick >= since;
+        ticksSinceOnTarget.SetValue(haveOnTarget ? tick - since : NoSpotSentinel);
+
+        // First shot of THIS acquisition, compared by the acquisition's own tick rather than a flag,
+        // so a second burst after the crosshair left and returned counts again. Latched per ARM for
+        // the same reason the spot answer below is: weapon_fire always precedes the bullet_damage it
+        // produced, so one shared latch would be spent by the fired arm before the landed arm ever
+        // saw the shot, leaving the shot_landed view's copy false on every shot in the demo.
+        int answeredOnTarget = _isLandedArm
+            ? ctx.AnsweredOnTargetSinceLanded
+            : ctx.AnsweredOnTargetSinceShot;
+        bool firstOnTarget = haveOnTarget && answeredOnTarget != since;
+        Emit(isFirstAfterOnTarget, firstOnTarget);
+        if (firstOnTarget)
+        {
+            if (_isLandedArm)
+            {
+                ctx.AnsweredOnTargetSinceLanded = since;
+            }
+            else
+            {
+                ctx.AnsweredOnTargetSinceShot = since;
+            }
+        }
 
         // Is this the first shot answering the current contact, on THIS arm? The timing metrics
         // want that one interval; every later shot in the same engagement measures the spray, not

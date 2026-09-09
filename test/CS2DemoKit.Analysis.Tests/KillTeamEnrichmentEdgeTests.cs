@@ -42,7 +42,8 @@ public class KillTeamEnrichmentEdgeTests
         TransientBoolNode EnemyKill,
         TransientBoolNode TeamKill,
         TransientBoolNode SelfKill,
-        TransientBoolNode EnemyAssist);
+        TransientBoolNode EnemyAssist,
+        TransientValueNode<int> TicksSinceSpot);
 
     private static Fixture Build(PlayerContextIndex index)
     {
@@ -54,12 +55,14 @@ public class KillTeamEnrichmentEdgeTests
         TransientBoolNode flashKill = new("enrich.kill.was_flash_kill");
         TransientValueNode<int> flashSlot = new("enrich.kill.flash_attacker_slot", -1);
         TransientBoolNode enemyAssist = new("enrich.kill.was_enemy_assist");
+        TransientValueNode<int> killSinceSpot = new(
+            "enrich.kill.ticks_since_spot", AimShotContextEdge.NoSpotSentinel);
 
         GenericBoolNode root = new("root");
         KillTeamEnrichmentEdge edge = new(
             root, index, enemyKill, teamKill, selfKill,
-            tradeKill, tradedSlot, flashKill, flashSlot, enemyAssist);
-        return new Fixture(edge, enemyKill, teamKill, selfKill, enemyAssist);
+            tradeKill, tradedSlot, flashKill, flashSlot, killSinceSpot, enemyAssist);
+        return new Fixture(edge, enemyKill, teamKill, selfKill, enemyAssist, killSinceSpot);
     }
 
     private static bool Apply(Fixture f, int victim, int killer, int assister, string weapon = "ak47")
@@ -70,7 +73,11 @@ public class KillTeamEnrichmentEdgeTests
         {
             Command = "DEM_Packet",
             FrameNumber = 0,
-            ServerTick = 0,
+            // Deliberately NOT the event tick. The two are the same CLOCK (a frame header tick is
+            // already the frame clock, and GameTick reaches it as ServerTick - ServerStartTick),
+            // but they are not the same INSTANT: an event carries its own tick, which is what the
+            // rest of this edge measures on.
+            ServerTick = 99,
             RawStart = 0,
             RawLength = 1,
             HeaderLength = 1,
@@ -165,6 +172,48 @@ public class KillTeamEnrichmentEdgeTests
         await Assert.That(f.EnemyAssist.IsActive).IsTrue()
             .Because("assister↔victim enmity is independent of the kill shape; the assist view's "
                      + "baked Attacker != UserId is what excludes suicides from assist counts");
+    }
+
+    /// <summary>
+    ///     Time-to-kill is measured from the killer's latched contact on the same instant the rest of
+    ///     this edge uses: the event's own <c>GameTick</c>.
+    ///     <para>
+    ///         There is no clock mismatch to correct for. <c>GameTick</c> is
+    ///         <c>ServerTick - ServerStartTick</c>, which IS the frame clock <c>LastSpotTick</c> is
+    ///         latched in, so both the trade window and this interval already run on it. Reading the
+    ///         frame header instead measures this one output from a different instant than the trade
+    ///         window and the recorded death, and the two disagree whenever an event's own tick is
+    ///         not its frame's.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task KillAfterAContact_MeasuresTheIntervalOnTheEventsOwnTick()
+    {
+        PlayerContextIndex index = TwoVsTwo();
+        Fixture f = Build(index);
+        index.TryGet(5, out PlayerContextIndex.PlayerContext? killer);
+        killer!.LastSpotTick = 40;
+
+        bool applied = Apply(f, victim: 1, killer: 5, assister: NoPlayer);
+
+        await Assert.That(applied).IsTrue();
+        await Assert.That(f.TicksSinceSpot.Value).IsEqualTo(60)
+            .Because("the kill is at event tick 100 and the contact was latched at 40");
+    }
+
+    /// <summary>
+    ///     A killer who has spotted nobody this round reports the sentinel, not a zero interval: a
+    ///     bound is written as <c>ticks_since_spot &lt;= N</c>, and 0 would pass every one of them.
+    /// </summary>
+    [Test]
+    public async Task KillWithNoContact_ReportsTheSentinel()
+    {
+        Fixture f = Build(TwoVsTwo());
+
+        bool applied = Apply(f, victim: 1, killer: 5, assister: NoPlayer);
+
+        await Assert.That(applied).IsTrue();
+        await Assert.That(f.TicksSinceSpot.Value).IsEqualTo(AimShotContextEdge.NoSpotSentinel);
     }
 
     /// <summary>Assister with an unknown team (never registered → team 0) must not classify as enemy.</summary>

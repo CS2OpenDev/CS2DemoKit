@@ -2287,6 +2287,11 @@
       "scope": "kill"
     },
     {
+      "name": "enrich.kill.ticks_since_spot",
+      "valueType": "int",
+      "scope": "kill"
+    },
+    {
       "name": "enrich.kill.traded_player_slot",
       "valueType": "int",
       "scope": "kill"
@@ -2352,6 +2357,11 @@
       "scope": "shot"
     },
     {
+      "name": "enrich.shot.is_first_after_on_target",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
       "name": "enrich.shot.is_first_after_spot",
       "valueType": "bool",
       "scope": "shot"
@@ -2393,6 +2403,11 @@
     },
     {
       "name": "enrich.shot.ticks_since_last_shot",
+      "valueType": "int",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.ticks_since_on_target",
       "valueType": "int",
       "scope": "shot"
     },
@@ -5602,6 +5617,12 @@
           "field": "ThruSmoke"
         },
         {
+          "name": "ticks_since_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.kill.ticks_since_spot"
+        },
+        {
           "name": "trade",
           "type": "bool",
           "v2Type": "Bool",
@@ -5871,6 +5892,12 @@
           "enrichment": "enrich.shot.flick_error_deg"
         },
         {
+          "name": "is_first_after_on_target",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_on_target"
+        },
+        {
           "name": "is_first_after_spot",
           "type": "bool",
           "v2Type": "Bool",
@@ -5905,6 +5932,12 @@
           "type": "float",
           "v2Type": "Float",
           "enrichment": "enrich.shot.spray_residual_yaw"
+        },
+        {
+          "name": "ticks_since_on_target",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_on_target"
         },
         {
           "name": "ticks_since_spot",
@@ -6013,6 +6046,12 @@
           "field": "InAir"
         },
         {
+          "name": "is_first_after_on_target",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_on_target"
+        },
+        {
           "name": "is_first_after_spot",
           "type": "bool",
           "v2Type": "Bool",
@@ -6071,6 +6110,12 @@
           "type": "int",
           "v2Type": "Int",
           "enrichment": "enrich.shot.ticks_since_last_shot"
+        },
+        {
+          "name": "ticks_since_on_target",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_on_target"
         },
         {
           "name": "ticks_since_spot",

@@ -58,6 +58,7 @@ views:
       - "event.Attacker != event.UserId"   # a kill excludes suicides/world deaths
     facets:
       enemy: { type: bool,   enrichment: enrich.kill.was_enemy_kill }
+      ticks_since_spot: { type: int,   enrichment: enrich.kill.ticks_since_spot }
       teamkill: { type: bool,   enrichment: enrich.kill.was_team_kill }
       trade: { type: bool,   enrichment: enrich.kill.was_trade_kill }
       flash_assisted: { type: bool,   enrichment: enrich.kill.was_flash_kill }
@@ -179,6 +180,8 @@ views:
       travel_from_spot_deg: { type: float, enrichment: enrich.shot.travel_from_spot_deg }
       flick_error_deg: { type: float, enrichment: enrich.shot.flick_error_deg }
       is_first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
+      ticks_since_on_target: { type: int,   enrichment: enrich.shot.ticks_since_on_target }
+      is_first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
     availability: all
 
   # ── bullet_damage (actor_slot) ───────────────────────────────────────────────
@@ -221,6 +224,8 @@ views:
       travel_from_spot_deg: { type: float, enrichment: enrich.shot.travel_from_spot_deg }
       flick_error_deg: { type: float, enrichment: enrich.shot.flick_error_deg }
       is_first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
+      ticks_since_on_target: { type: int,   enrichment: enrich.shot.ticks_since_on_target }
+      is_first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
       spray_residual_pitch: { type: float, enrichment: enrich.shot.spray_residual_pitch }
       spray_residual_yaw: { type: float, enrichment: enrich.shot.spray_residual_yaw }
       spray_residual_measured: { type: bool,  enrichment: enrich.shot.spray_residual_measured }

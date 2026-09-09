@@ -24,13 +24,17 @@ public sealed class KillTeamEnrichmentEdge(
     TransientValueNode<int> tradedPlayerSlot,
     TransientBoolNode wasFlashKill,
     TransientValueNode<int> flashAttackerSlot,
+    TransientValueNode<int> killTicksSinceSpot,
     TransientBoolNode wasEnemyAssist) : StateEdge(source)
 {
     private const int FlashKillWindowTicks = 320;
 
     /// <inheritdoc />
     public override IReadOnlyList<StateNode>? AdditionalWrittenNodes =>
-        [wasTeamKill, wasSelfKill, wasTradeKill, tradedPlayerSlot, wasFlashKill, flashAttackerSlot, wasEnemyAssist];
+        [
+            wasTeamKill, wasSelfKill, wasTradeKill, tradedPlayerSlot, wasFlashKill, flashAttackerSlot,
+            wasEnemyAssist, killTicksSinceSpot
+        ];
 
     /// <inheritdoc />
     public override EdgeEffect? DeclaredEffect => EdgeEffect.Activate;
@@ -80,6 +84,21 @@ public sealed class KillTeamEnrichmentEdge(
 
             playerContext.ClearBlind(death.UserId);
         }
+
+        // Ticks from the killer's last enemy contact to this kill, for time-to-kill.
+        //
+        // currentTick, the same instant the trade window and RecordDeath below use. There is no
+        // clock to convert: a parsed event's GameTick IS the frame clock (ServerTick minus the
+        // demo's ServerStartTick), which is the clock LastSpotTick is latched in. The absolute
+        // GameEvent.ServerTick is the one that would be wrong here, and wrong silently: it counts
+        // from the server's boot, so the subtraction returns the start-tick offset as though it
+        // were an interval.
+        killTicksSinceSpot.SetValue(
+            playerContext.TryGet(death.Attacker, out PlayerContextIndex.PlayerContext? killer)
+            && killer!.LastSpotTick >= 0
+            && currentTick >= killer.LastSpotTick
+                ? currentTick - killer.LastSpotTick
+                : AimShotContextEdge.NoSpotSentinel);
 
         // Record death and mark dead
         playerContext.RecordDeath(death.UserId, death.Attacker, death.Assister, currentTick);

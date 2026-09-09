@@ -56,6 +56,11 @@ public static class BuiltinContexts
         // NOT was_enemy_kill, which tests killer-vs-victim).
         TransientBoolNode killEnemyAssist = new("enrich.kill.was_enemy_assist");
 
+        // Ticks from the killer's last enemy contact to the kill, for time-to-kill. Declared here
+        // rather than beside the shot enrichments because the kill edge is constructed first.
+        TransientValueNode<int> killTicksSinceSpot = new(
+            "enrich.kill.ticks_since_spot", AimShotContextEdge.NoSpotSentinel);
+
         // Trade enrichment
         TransientBoolNode wasTradeKill = new("enrich.kill.was_trade_kill");
         TransientValueNode<int> tradedPlayerSlot = new("enrich.kill.traded_player_slot", -1);
@@ -88,7 +93,7 @@ public static class BuiltinContexts
         KillTeamEnrichmentEdge killEnrichEdge = new(
             graphRoot, playerContext, killEnemyKill, killTeamKill, killSelfKill,
             wasTradeKill, tradedPlayerSlot, wasFlashKill, flashAttackerSlot,
-            killEnemyAssist);
+            killTicksSinceSpot, killEnemyAssist);
         ClutchEnrichmentEdge clutchEnrichEdge = new(
             graphRoot, playerContext, clutchDetected, clutchPlayerSlot);
         HurtTeamEnrichmentEdge hurtEnrichEdge = new(
@@ -165,15 +170,22 @@ public static class BuiltinContexts
 
         // The single-number spray-control residual: angular distance from the run anchor.
         TransientValueNode<double> shotSprayResidualDeg = new("enrich.shot.spray_residual_deg");
+
+        // Aimed reaction: crosshair arriving on an enemy, then this shot. Separate from the spot
+        // interval, which also contains the turn onto the target.
+        TransientValueNode<int> shotTicksSinceOnTarget = new(
+            "enrich.shot.ticks_since_on_target", AimShotContextEdge.NoSpotSentinel);
+        TransientBoolNode shotIsFirstAfterOnTarget = new("enrich.shot.is_first_after_on_target");
+
         AimShotContextEdge aimShotFiredEdge = new(
             graphRoot, playerContext, shotCounterStrafeGood, shotCounterStrafeAdmitted,
             shotIsFirstBullet, shotSprayResidualPitch, shotSprayResidualYaw, shotSprayResidualMeasured,
-            shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg,
+            shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg, shotTicksSinceOnTarget, shotIsFirstAfterOnTarget,
             typeof(WeaponFireEvent), aimShotSources);
         AimShotContextEdge aimShotLandedEdge = new(
             graphRoot, playerContext, shotCounterStrafeGood, shotCounterStrafeAdmitted,
             shotIsFirstBullet, shotSprayResidualPitch, shotSprayResidualYaw, shotSprayResidualMeasured,
-            shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg,
+            shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg, shotTicksSinceOnTarget, shotIsFirstAfterOnTarget,
             typeof(BulletDamageEvent), aimShotSources);
 
         BombPlantedEdge bombPlantedEdge = new(graphRoot, playerContext);
@@ -254,7 +266,8 @@ public static class BuiltinContexts
                 spottedTicksSinceLast, spottedSpotIndex, spottedFirstContact,
                 shotCounterStrafeGood, shotCounterStrafeAdmitted, shotIsFirstBullet,
                 shotSprayResidualPitch, shotSprayResidualYaw, shotSprayResidualMeasured,
-                shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg
+                shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg,
+                shotTicksSinceOnTarget, shotIsFirstAfterOnTarget, killTicksSinceSpot
             ],
             allEdges,
             new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase)
@@ -303,7 +316,10 @@ public static class BuiltinContexts
                 ["enrich.shot.travel_from_spot_deg"] = shotTravelFromSpot,
                 ["enrich.shot.flick_error_deg"] = shotFlickError,
                 ["enrich.shot.is_first_after_spot"] = shotIsFirstAfterSpot,
-                ["enrich.shot.spray_residual_deg"] = shotSprayResidualDeg
+                ["enrich.shot.spray_residual_deg"] = shotSprayResidualDeg,
+                ["enrich.shot.ticks_since_on_target"] = shotTicksSinceOnTarget,
+                ["enrich.shot.is_first_after_on_target"] = shotIsFirstAfterOnTarget,
+                ["enrich.kill.ticks_since_spot"] = killTicksSinceSpot
             }
         );
     }

@@ -181,6 +181,9 @@
         "in_air": {
           "markdownDescription": "Facet \u0060in_air\u0060 (type \u0060bool\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "is_first_after_on_target": {
+          "markdownDescription": "Facet \u0060is_first_after_on_target\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "is_first_after_spot": {
           "markdownDescription": "Facet \u0060is_first_after_spot\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
@@ -232,8 +235,11 @@
         "ticks_since_last_spot": {
           "markdownDescription": "Facet \u0060ticks_since_last_spot\u0060 (type \u0060int\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "ticks_since_on_target": {
+          "markdownDescription": "Facet \u0060ticks_since_on_target\u0060 (type \u0060int\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "ticks_since_spot": {
-          "markdownDescription": "Facet \u0060ticks_since_spot\u0060 (type \u0060int\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060ticks_since_spot\u0060 (type \u0060int\u0060). Exposed by: kill, shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "trade": {
           "markdownDescription": "Facet \u0060trade\u0060 (type \u0060bool\u0060). Exposed by: kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -1844,6 +1850,9 @@
         "through_smoke": {
           "markdownDescription": "\u0060through_smoke\u0060 (type \u0060bool\u0060) on view \u0060kill\u0060."
         },
+        "ticks_since_spot": {
+          "markdownDescription": "\u0060ticks_since_spot\u0060 (type \u0060int\u0060) on view \u0060kill\u0060."
+        },
         "trade": {
           "markdownDescription": "\u0060trade\u0060 (type \u0060bool\u0060) on view \u0060kill\u0060."
         },
@@ -1935,6 +1944,9 @@
         "flick_error_deg": {
           "markdownDescription": "\u0060flick_error_deg\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
         },
+        "is_first_after_on_target": {
+          "markdownDescription": "\u0060is_first_after_on_target\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
         "is_first_after_spot": {
           "markdownDescription": "\u0060is_first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
         },
@@ -1952,6 +1964,9 @@
         },
         "spray_residual_yaw": {
           "markdownDescription": "\u0060spray_residual_yaw\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
+        },
+        "ticks_since_on_target": {
+          "markdownDescription": "\u0060ticks_since_on_target\u0060 (type \u0060int\u0060) on view \u0060shot\u0060."
         },
         "ticks_since_spot": {
           "markdownDescription": "\u0060ticks_since_spot\u0060 (type \u0060int\u0060) on view \u0060shot\u0060."
@@ -1993,6 +2008,9 @@
         "in_air": {
           "markdownDescription": "\u0060in_air\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
         },
+        "is_first_after_on_target": {
+          "markdownDescription": "\u0060is_first_after_on_target\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
         "is_first_after_spot": {
           "markdownDescription": "\u0060is_first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
         },
@@ -2022,6 +2040,9 @@
         },
         "ticks_since_last_shot": {
           "markdownDescription": "\u0060ticks_since_last_shot\u0060 (type \u0060int\u0060) on view \u0060shot_landed\u0060."
+        },
+        "ticks_since_on_target": {
+          "markdownDescription": "\u0060ticks_since_on_target\u0060 (type \u0060int\u0060) on view \u0060shot_landed\u0060."
         },
         "ticks_since_spot": {
           "markdownDescription": "\u0060ticks_since_spot\u0060 (type \u0060int\u0060) on view \u0060shot_landed\u0060."
