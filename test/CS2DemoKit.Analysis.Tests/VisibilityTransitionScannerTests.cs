@@ -423,6 +423,39 @@ public class VisibilityTransitionScannerTests
             .Because("9.5 degrees clears the body, and a tolerance that admitted it would admit misses");
     }
 
+    /// <summary>
+    ///     Pair state is a bit per slot, so a slot the rows cannot hold is refused outright rather
+    ///     than reported on partially. PawnLookup derives slot from a controller entity index that a
+    ///     well-formed demo keeps in 1..64, so this cannot fire on one; it is the loud arm for a
+    ///     malformed one. The last legal slot is exercised too, so the bound is exact.
+    /// </summary>
+    [Test]
+    public async Task Sample_RefusesASlotOutsideTheRows_AndAcceptsTheLastLegalOne()
+    {
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+        static AimVantage At(int slot, int team, float x)
+        {
+            Vector3 feet = new(x, 0f, 0f);
+            return new AimVantage(
+                new VisibilityAnalyzer.Vantage(slot, team, feet, PlayerVantage.Eye(feet, 0f), PlayerVantage.Forward(0f, 0f), true, 0f),
+                0f, 0f, 0f);
+        }
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => transitions.Sample(1000, 1000, [At(0, 2, 0f), At(VisibilityTransitionScanner.MaxSlots, 3, 500f)]));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => transitions.Sample(1000, 1000, [At(-1, 2, 0f), At(1, 3, 500f)]));
+
+        IReadOnlyList<EnemySpottedEvent> spots = transitions.Sample(
+            1000, 1000, [At(VisibilityTransitionScanner.MaxSlots - 1, 2, 0f), At(0, 3, 500f)]);
+        await Assert.That(spots.Count).IsEqualTo(1);
+        await Assert.That(spots[0].ViewerSlot).IsEqualTo(VisibilityTransitionScanner.MaxSlots - 1);
+        await Assert.That(transitions.IsAnyEnemyVisibleTo(VisibilityTransitionScanner.MaxSlots - 1)).IsTrue();
+        await Assert.That(transitions.IsAnyEnemyVisibleTo(VisibilityTransitionScanner.MaxSlots)).IsFalse()
+            .Because("a slot outside the rows is not visible to anyone, not an exception on a read");
+        await Assert.That(transitions.OnTargetSince(-1)).IsEqualTo(-1);
+    }
+
     // ── Catalog surface ──────────────────────────────────────────────────────
 
     [Test]

@@ -17,7 +17,8 @@ namespace CS2DemoKit.Analysis.Visibility;
 ///     (viewer, target) enemy pair.
 ///     <para>
 ///         <b>The geometry is not reimplemented.</b> <see cref="VisibilityAnalyzer.AreEnemies" />,
-///         <c>VisibilityAnalyzer.EvaluatePair</c> and
+///         <see cref="VisibilityAnalyzer.CouldSee(VisibilityEngine, in VisibilityAnalyzer.Vantage, in VisibilityAnalyzer.Vantage, float, float, ReadOnlySpan{Vector4}, Span{int})" /> (the same pair loop
+///         <c>VisibilityAnalyzer.EvaluatePair</c> runs, told that <c>exposed</c> is not wanted) and
 ///         <see cref="PlayerVantage.BuildAnchors" /> are the same primitives the accumulating analyzer
 ///         uses, so the two agree by construction; what is added here is edge detection and an event
 ///         to hang it on.
@@ -34,6 +35,23 @@ namespace CS2DemoKit.Analysis.Visibility;
 ///         reason falls to false, and their reappearance is a genuine rising edge rather than a
 ///         suppressed one.
 ///     </para>
+///     <para>
+///         <b>Pair state is a bit per (viewer, target).</b> Slots are player slots, which a
+///         well-formed demo keeps in 0..63 (controller entity index minus one, and controllers
+///         occupy indices 1..64), so the visible set is one <c>ulong</c> row per viewer and the
+///         on-target record one <c>ulong</c> of viewers plus a stamp per slot. A slot outside that
+///         range is a malformed demo and <c>Sample</c> throws rather than reporting on it: no
+///         partial report on a malformed demo, the same posture as every other analyzer here.
+///     </para>
+///     <para>
+///         <b>Rays remember their last occluder.</b> Per (viewer, target, anchor) the scanner keeps
+///         the triangle that blocked the sightline last sample and hands it to the pair loop as a
+///         hint (<see cref="OccluderHintTable" />). At stride 1 consecutive samples of a sightline
+///         are nearly always stopped by the same surface, so most rays are answered by one
+///         triangle test instead of a BVH traversal. The hints change nothing about a verdict.
+///         They are per-scanner mutable state, which is the one thing a parallel evaluation would
+///         have to give each worker its own copy of.
+///     </para>
 /// </summary>
 public sealed class VisibilityTransitionScanner
 {
@@ -44,22 +62,26 @@ public sealed class VisibilityTransitionScanner
     /// </summary>
     public const float OnTargetHalfWidthUnits = 16f;
 
+    /// <summary>Player slots the scanner can hold state for: 0 to <c>MaxSlots - 1</c>.</summary>
+    public const int MaxSlots = 64;
+
     private readonly List<EnemySpottedEvent> _spots = new(4);
     private readonly VisibilityEngine _engine;
+    private readonly OccluderHintTable _hints = new();
     private readonly Options _options;
-    private HashSet<(int Viewer, int Target)> _current = new();
+    private ulong[] _current = new ulong[MaxSlots];
     private int _lastSampledTick = int.MinValue;
-    private HashSet<(int Viewer, int Target)> _visible = new();
+    private ulong[] _visible = new ulong[MaxSlots];
 
-    // Per viewer, the tick their crosshair most recently ARRIVED on an enemy, and the pairs it is
-    // on THIS sample. Re-armed when the crosshair leaves, so a held angle reports the moment of
-    // arrival rather than the start of the hold.
+    // Per viewer, the tick their crosshair most recently ARRIVED on an enemy. Re-armed when the
+    // crosshair leaves, so a held angle reports the moment of arrival rather than the start of the
+    // hold.
     //
-    // The dictionary doubles as the "was on someone last sample" record: the re-arm sweep removes a
-    // viewer key exactly when the crosshair has left every enemy, so a key still present when the
-    // next sample starts means the hold is unbroken and the arrival tick stands.
-    private readonly Dictionary<int, int> _onTargetSince = [];
-    private readonly HashSet<(int Viewer, int Target)> _onTarget = [];
+    // _onTargetViewers is the "was on someone last sample" record: the re-arm sweep clears a
+    // viewer's bit exactly when the crosshair has left every enemy, so a bit still set when the next
+    // sample starts means the hold is unbroken and the arrival tick in _onTargetSince stands.
+    private readonly int[] _onTargetSince = new int[MaxSlots];
+    private ulong _onTargetViewers;
 
     /// <param name="engine">The loaded collision geometry every sightline is cast against.</param>
     /// <param name="options">Sampling stride and frustum half-angles; defaults are the ones the metrics need.</param>
@@ -83,18 +105,8 @@ public sealed class VisibilityTransitionScanner
     ///     </para>
     /// </summary>
     /// <param name="viewerSlot">The player whose view is being asked about.</param>
-    public bool IsAnyEnemyVisibleTo(int viewerSlot)
-    {
-        foreach ((int viewer, int _) in _visible)
-        {
-            if (viewer == viewerSlot)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    public bool IsAnyEnemyVisibleTo(int viewerSlot) =>
+        (uint)viewerSlot < MaxSlots && _visible[viewerSlot] != 0;
 
     /// <summary>
     ///     The tick <paramref name="viewerSlot" />'s crosshair arrived on an enemy, or -1 when it is
@@ -112,7 +124,10 @@ public sealed class VisibilityTransitionScanner
     ///     </para>
     /// </summary>
     /// <param name="viewerSlot">The player whose crosshair is being asked about.</param>
-    public int OnTargetSince(int viewerSlot) => _onTargetSince.GetValueOrDefault(viewerSlot, -1);
+    public int OnTargetSince(int viewerSlot) =>
+        (uint)viewerSlot < MaxSlots && (_onTargetViewers & (1UL << viewerSlot)) != 0
+            ? _onTargetSince[viewerSlot]
+            : -1;
 
     /// <summary>Overload without dynamic smoke occluders (equivalent to no active smokes).</summary>
     /// <param name="tick">The absolute server tick being sampled.</param>
@@ -164,9 +179,21 @@ public sealed class VisibilityTransitionScanner
             return _spots;
         }
 
+        // Every slot has to index the rows below; a slot outside them is a malformed demo, and the
+        // check is per vantage per sample, not per pair.
+        for (int i = 0; i < vantages.Count; i++)
+        {
+            int slot = vantages[i].Vantage.Slot;
+            if ((uint)slot >= MaxSlots)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(vantages), slot, $"player slot must be in 0..{MaxSlots - 1}");
+            }
+        }
+
         _lastSampledTick = tick;
-        _current.Clear();
-        _onTarget.Clear();
+        Array.Clear(_current);
+        ulong onTargetThisSample = 0;
 
         // Ray budget instrumentation, off by default; brackets the whole pairwise pass so the
         // per-ray figure in VisibilityCounters has a per-tick envelope to be a share of.
@@ -177,6 +204,7 @@ public sealed class VisibilityTransitionScanner
         {
             AimVantage viewerAim = vantages[v];
             VisibilityAnalyzer.Vantage viewer = viewerAim.Vantage;
+            ulong viewerBit = 1UL << viewer.Slot;
             for (int t = 0; t < vantages.Count; t++)
             {
                 VisibilityAnalyzer.Vantage target = vantages[t].Vantage;
@@ -185,15 +213,18 @@ public sealed class VisibilityTransitionScanner
                     continue;
                 }
 
-                (bool _, bool couldSee) = VisibilityAnalyzer.EvaluatePair(
-                    _engine, viewer, target, _options.YawHalfDeg, _options.PitchHalfDeg, smokes);
-                if (!couldSee)
+                // Could-see only: this scanner never reads exposed, and saying so lets the pair
+                // loop skip every ray that could only have decided it. The hint slots are this
+                // pair's own; the slot check above guarantees the table has a row for it.
+                if (!VisibilityAnalyzer.CouldSee(
+                        _engine, viewer, target, _options.YawHalfDeg, _options.PitchHalfDeg, smokes,
+                        _hints.For(viewer.Slot, target.Slot)))
                 {
                     continue;
                 }
 
-                (int Viewer, int Target) pair = (viewer.Slot, target.Slot);
-                _current.Add(pair);
+                ulong targetBit = 1UL << target.Slot;
+                _current[viewer.Slot] |= targetBit;
 
                 // Range-corrected acquisition test. A player 300 units away subtends about 3 degrees
                 // of half-width and one 1500 away about 0.6, so a fixed tolerance would call a
@@ -207,20 +238,21 @@ public sealed class VisibilityTransitionScanner
                     : (float)(Math.Atan2(OnTargetHalfWidthUnits, range) * 180.0 / Math.PI);
                 if (chest <= halfWidth)
                 {
-                    _onTarget.Add(pair);
+                    onTargetThisSample |= viewerBit;
 
                     // Arrival, not continuation, and per VIEWER rather than per pair: the crosshair
                     // is on an enemy or it is not, and the re-arm below drops a viewer only once it
                     // has left them ALL. Stamping per pair restarts the clock when a second enemy
                     // walks into a held crosshair, on a player who never moved their aim, and every
                     // aimed reaction measured through that instant then reads short.
-                    if (!_onTargetSince.ContainsKey(viewer.Slot))
+                    if ((_onTargetViewers & viewerBit) == 0)
                     {
+                        _onTargetViewers |= viewerBit;
                         _onTargetSince[viewer.Slot] = tick;
                     }
                 }
 
-                if (_visible.Contains(pair))
+                if ((_visible[viewer.Slot] & targetBit) != 0)
                 {
                     continue; // still visible, not an edge
                 }
@@ -237,26 +269,11 @@ public sealed class VisibilityTransitionScanner
         }
 
         // A viewer whose crosshair left every enemy re-arms, so the next arrival is a fresh one
-        // rather than the stale tick of an acquisition they have since turned away from.
-        foreach (int viewer in _onTargetSince.Keys.ToList())
-        {
-            bool stillOn = false;
-            foreach ((int v, int _) in _onTarget)
-            {
-                if (v == viewer)
-                {
-                    stillOn = true;
-                    break;
-                }
-            }
+        // rather than the stale tick of an acquisition they have since turned away from. Stamps
+        // survive only for viewers on someone THIS sample.
+        _onTargetViewers &= onTargetThisSample;
 
-            if (!stillOn)
-            {
-                _onTargetSince.Remove(viewer);
-            }
-        }
-
-        // Swap rather than copy: the outgoing set becomes next tick's scratch and is cleared above.
+        // Swap rather than copy: the outgoing rows become next tick's scratch and are cleared above.
         (_visible, _current) = (_current, _visible);
         if (count)
         {
@@ -272,10 +289,11 @@ public sealed class VisibilityTransitionScanner
     ///     acquisition verdict, and measuring the two against different points is what makes a
     ///     tolerance that is right at 500 units wrong at 100.
     ///     <para>
-    ///         Rebuilds the anchor set rather than threading one out of
-    ///         <c>VisibilityAnalyzer.EvaluatePair</c>: taking the anchor from the same builder is what
-    ///         keeps the measured point identical to the one the visibility test cleared. It runs for
-    ///         every pair the viewer could see, not only on a rising edge.
+    ///         The chest point comes from <see cref="PlayerVantage.ChestAnchor" />, the same
+    ///         expression <see cref="PlayerVantage.BuildAnchors" /> writes as anchor 0, so the
+    ///         measured point is identical to the one the visibility test cleared without rebuilding
+    ///         the whole set to read one entry. It runs for every pair the viewer could see, not only
+    ///         on a rising edge.
     ///     </para>
     /// </summary>
     /// <param name="viewer">The player whose crosshair is being measured.</param>
@@ -283,15 +301,13 @@ public sealed class VisibilityTransitionScanner
     private static (float AngleDeg, float RangeUnits) ChestAim(
         in VisibilityAnalyzer.Vantage viewer, in VisibilityAnalyzer.Vantage target)
     {
-        Span<Vector3> anchors = stackalloc Vector3[PlayerVantage.MaxAnchors];
-        _ = PlayerVantage.BuildAnchors(target.Feet, target.Duck, viewer.Eye, anchors);
-
-        // Anchor 0 is chest (48 units, duck-scaled). Chest is the most stable body point across a
-        // crouch transition, so a preaim number taken against it is comparable between engagements
-        // in a way one taken against the head is not.
+        // Chest (48 units, duck-scaled) is the most stable body point across a crouch transition,
+        // so a preaim number taken against it is comparable between engagements in a way one taken
+        // against the head is not.
+        Vector3 chest = PlayerVantage.ChestAnchor(target.Feet, PlayerVantage.HeightScale(target.Duck));
         return (
-            PlayerVantage.AngleToPointDegrees(viewer.Eye, viewer.Forward, anchors[0]),
-            Vector3.Distance(viewer.Eye, anchors[0]));
+            PlayerVantage.AngleToPointDegrees(viewer.Eye, viewer.Forward, chest),
+            Vector3.Distance(viewer.Eye, chest));
     }
 
     /// <summary>Sampling and frustum knobs for <c>Sample</c>.</summary>

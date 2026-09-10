@@ -57,6 +57,36 @@ public sealed class VisibilityEngine
     }
 
     /// <summary>
+    ///     <see cref="IsVisible(Vector3, Vector3)" /> with a last-occluder hint, for a caller that
+    ///     asks about the same sightline again and again: <paramref name="hint" /> is the triangle
+    ///     that blocked it last time (or -1), it is tested before the BVH is entered, and the
+    ///     triangle that blocks it this time is written back. The answer is identical to the
+    ///     hint-free overload's on every ray, whatever the hint holds, see
+    ///     <see cref="TriangleBvh.AnyHit(Vector3, Vector3, float, float, ref int)" />; only the
+    ///     work changes.
+    /// </summary>
+    /// <param name="a">Segment start (the viewer's eye).</param>
+    /// <param name="b">Segment end (the body anchor).</param>
+    /// <param name="hint">In: the triangle to try first, or -1. Out: the blocking triangle when not visible, else unchanged.</param>
+    public bool IsVisible(Vector3 a, Vector3 b, ref int hint) => IsVisible(a, b, ref hint, out _);
+
+    // shortCircuited is true when the hinted triangle decided the ray without a traversal; it
+    // exists for the ray budget counters and feeds nothing else.
+    internal bool IsVisible(Vector3 a, Vector3 b, ref int hint, out bool shortCircuited)
+    {
+        shortCircuited = false;
+        Vector3 d = b - a;
+        float len = d.Length();
+        if (len <= 2f * SegmentEps)
+        {
+            return true;
+        }
+
+        Vector3 dir = d / len;
+        return !_bvh.AnyHit(a, dir, len, SegmentEps, ref hint, out shortCircuited);
+    }
+
+    /// <summary>
     ///     Distance straight down from <paramref name="origin" /> to the nearest collision triangle within
     ///     <paramref name="maxDrop" /> units, or false if none. Used by the coordinate-frame gate.
     /// </summary>

@@ -79,6 +79,25 @@ internal static class BruteForceOracle
         return -1;
     }
 
+    /// <summary>
+    ///     True iff <paramref name="triangle" /> alone is hit for <c>t</c> in <c>(lo, hi)</c>: the
+    ///     check a last-occluder hint is held to after an occluded ray, since the hint is only
+    ///     allowed to name a triangle that blocks the ray it was written for.
+    /// </summary>
+    /// <param name="vertices">Triangle soup, 9 floats per triangle.</param>
+    /// <param name="triangle">Index of the triangle to test.</param>
+    /// <param name="origin">Ray origin.</param>
+    /// <param name="dir">Unit ray direction.</param>
+    /// <param name="tMax">Far limit, in world units.</param>
+    /// <param name="eps">Endpoint exclusion, matching the caller's.</param>
+    public static bool Blocks(
+        float[] vertices, int triangle, Vector3 origin, Vector3 dir, float tMax, float eps)
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        float lo = eps, hi = tMax - eps;
+        return hi > lo && RayTriangle(vertices, origin, dir, triangle, out float t) && t > lo && t < hi;
+    }
+
     // Moller-Trumbore, copied from TriangleBvh.RayTriangle so the two cannot disagree about what a
     // hit is. Only the storage differs (a plain array rather than the BVH's field).
     private static bool RayTriangle(float[] v, Vector3 o, Vector3 d, int tri, out float t)

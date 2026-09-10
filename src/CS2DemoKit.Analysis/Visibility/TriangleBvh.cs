@@ -9,7 +9,7 @@ namespace CS2DemoKit.Analysis.Visibility;
 /// <summary>
 ///     A bounding-volume hierarchy over a world-collision triangle soup, built once and queried per ray.
 ///     Median-split on the largest-spread centroid axis (awpy's construction). Two query modes:
-///     <see cref="AnyHit" /> (early-exit occlusion — the hot path for line-of-sight) and
+///     <see cref="AnyHit(Vector3, Vector3, float, float)" /> (early-exit occlusion, the hot path for line-of-sight) and
 ///     <see cref="NearestHit" /> (closest surface — used by the ray-down frame gate). Directions are
 ///     <b>unit vectors</b> and <c>t</c> is in <b>world units</b>, so hit distances read directly.
 ///     Pure geometry; parser-blind; allocation-free per query (stackalloc traversal stack).
@@ -20,13 +20,15 @@ public sealed class TriangleBvh
     private const int MaxDepth = 64; // median split ⇒ ~log2(n/LeafSize); 64 is a safe traversal-stack bound.
     private readonly Node[] _nodes;
     private readonly int[] _order; // triangle indices grouped by leaf
+    private readonly int[] _leafOf; // leaf node index per triangle, for the hinted test
 
     private readonly float[] _v; // 9 floats per triangle (world verts), original order
 
-    private TriangleBvh(float[] v, int[] order, Node[] nodes, int triangleCount)
+    private TriangleBvh(float[] v, int[] order, int[] leafOf, Node[] nodes, int triangleCount)
     {
         _v = v;
         _order = order;
+        _leafOf = leafOf;
         _nodes = nodes;
         TriangleCount = triangleCount;
     }
@@ -39,6 +41,7 @@ public sealed class TriangleBvh
     public static TriangleBvh Build(float[] v, int count)
     {
         int[] order = new int[count];
+        int[] leafOf = new int[count];
         float[] cx = new float[count];
         float[] cy = new float[count];
         float[] cz = new float[count];
@@ -76,13 +79,13 @@ public sealed class TriangleBvh
         }
         else
         {
-            BuildRecursive(0, count, order, cx, cy, cz, tmin, tmax, nodes);
+            BuildRecursive(0, count, order, leafOf, cx, cy, cz, tmin, tmax, nodes);
         }
 
-        return new TriangleBvh(v, order, nodes.ToArray(), count);
+        return new TriangleBvh(v, order, leafOf, nodes.ToArray(), count);
     }
 
-    private static int BuildRecursive(int start, int count, int[] order,
+    private static int BuildRecursive(int start, int count, int[] order, int[] leafOf,
         float[] cx, float[] cy, float[] cz, Vector3[] tmin, Vector3[] tmax, List<Node> nodes)
     {
         // Reserve this node's slot BEFORE recursing (children are appended after it).
@@ -114,6 +117,11 @@ public sealed class TriangleBvh
                 Start = start,
                 Count = count
             };
+            for (int i = start; i < start + count; i++)
+            {
+                leafOf[order[i]] = nodeIdx;
+            }
+
             return nodeIdx;
         }
 
@@ -133,14 +141,19 @@ public sealed class TriangleBvh
                 Start = start,
                 Count = count
             };
+            for (int i = start; i < start + count; i++)
+            {
+                leafOf[order[i]] = nodeIdx;
+            }
+
             return nodeIdx;
         }
 
         Array.Sort(order, start, count, Comparer<int>.Create((p, q) => key[p].CompareTo(key[q])));
         int mid = count / 2;
 
-        int left = BuildRecursive(start, mid, order, cx, cy, cz, tmin, tmax, nodes);
-        int right = BuildRecursive(start + mid, count - mid, order, cx, cy, cz, tmin, tmax, nodes);
+        int left = BuildRecursive(start, mid, order, leafOf, cx, cy, cz, tmin, tmax, nodes);
+        int right = BuildRecursive(start + mid, count - mid, order, leafOf, cx, cy, cz, tmin, tmax, nodes);
         nodes[nodeIdx] = new Node
         {
             Min = bmin,
@@ -159,16 +172,90 @@ public sealed class TriangleBvh
     /// </summary>
     public bool AnyHit(Vector3 origin, Vector3 dir, float tMax, float eps)
     {
+        int hint = -1;
+        return AnyHit(origin, dir, tMax, eps, ref hint, out _);
+    }
+
+    /// <summary>
+    ///     <see cref="AnyHit(Vector3, Vector3, float, float)" /> with a last-occluder hint: the
+    ///     triangle at index <paramref name="hint" /> is tested before the tree is entered, and
+    ///     whichever triangle ends up blocking the ray is written back to it. Pass -1 (or any index
+    ///     outside <c>0..TriangleCount-1</c>) for no hint.
+    ///     <para>
+    ///         The verdict is identical to the plain overload's on every ray, by construction and
+    ///         not only in practice. The hinted test is the hinted triangle's leaf box through
+    ///         <c>SlabHit</c> and then the triangle through <c>RayTriangle</c>, with the same
+    ///         <c>inv</c>, the same <c>lo</c> and the same <c>hi</c> the traversal below uses. The
+    ///         traversal reaches a leaf iff the leaf box and every box above it pass the slab test,
+    ///         and every box above contains the leaf box, so a passing leaf means passing ancestors:
+    ///         the slab test is monotone in the bounds for a finite or positive-infinite <c>inv</c>
+    ///         component (a wider face moves its crossing outward, and a face on the origin's plane
+    ///         leaves the window as it was), and with a negative-infinite one the only leaf that can
+    ///         pass while a box above it fails is flat on the origin's plane, whose triangles a ray
+    ///         lying in that plane cannot hit. A hinted triangle that hits inside a passing leaf is
+    ///         therefore one the traversal would have tested with the identical predicate, so a
+    ///         hinted true is a traversal true; a hinted miss runs the traversal unchanged.
+    ///     </para>
+    ///     <para>
+    ///         The leaf test is load-bearing, not decoration. The slab crossing time for a node face
+    ///         and Moller-Trumbore's hit time for a triangle on that face come from different float
+    ///         arithmetic and can land a few ulp apart, so the traversal rejects a node whose
+    ///         triangle the ray really hits when the segment's far limit falls in that gap. Testing
+    ///         the triangle alone would answer occluded there: the geometrically right answer, but
+    ///         not the traversal's, and every fixture pins the traversal.
+    ///         <c>OccluderHintTests.HintOnATriangleTheTraversalWouldMiss_TakesTheTraversal</c>
+    ///         constructs a ray of that class. A replacement tree (a wider or SIMD one) must keep
+    ///         this leaf test, with its own slab arithmetic, for the identity to survive.
+    ///     </para>
+    ///     <para>
+    ///         What it is for: nearly every line-of-sight ray in a demo is occluded, and consecutive
+    ///         samples of the same sightline are usually stopped by the same surface, so the hinted
+    ///         test answers most rays for the price of one triangle test instead of a traversal. On a
+    ///         clear ray the hint is left alone: the surface that blocked the sightline a moment ago
+    ///         is still the likeliest one to block it next.
+    ///     </para>
+    /// </summary>
+    /// <param name="origin">Ray origin.</param>
+    /// <param name="dir">Unit ray direction.</param>
+    /// <param name="tMax">Segment length in world units.</param>
+    /// <param name="eps">Endpoint exclusion in world units.</param>
+    /// <param name="hint">
+    ///     In: a triangle index to try first, or -1. Out: the index of the triangle that blocked the
+    ///     ray when the result is true, else unchanged.
+    /// </param>
+    public bool AnyHit(Vector3 origin, Vector3 dir, float tMax, float eps, ref int hint) =>
+        AnyHit(origin, dir, tMax, eps, ref hint, out _);
+
+    // The one traversal body behind every AnyHit overload. shortCircuited reports whether the
+    // hinted triangle decided the ray, for the ray budget counters; nothing else reads it.
+    internal bool AnyHit(Vector3 origin, Vector3 dir, float tMax, float eps, ref int hint, out bool shortCircuited)
+    {
+        shortCircuited = false;
         if (_nodes.Length == 0)
         {
             return false;
         }
 
-        Vector3 inv = new(1f / dir.X, 1f / dir.Y, 1f / dir.Z);
         float lo = eps, hi = tMax - eps;
         if (hi <= lo)
         {
             return false;
+        }
+
+        Vector3 inv = new(1f / dir.X, 1f / dir.Y, 1f / dir.Z);
+
+        // The hinted test: the hinted triangle's leaf through the same SlabHit, then the triangle
+        // through the same RayTriangle, against the same inv, lo and hi as the traversal below. See
+        // the public overload's doc for why that, and only that, makes a hinted true a traversal true.
+        if ((uint)hint < (uint)TriangleCount)
+        {
+            ref Node leaf = ref _nodes[_leafOf[hint]];
+            if (SlabHit(leaf.Min, leaf.Max, origin, inv, lo, hi)
+                && RayTriangle(origin, dir, hint, out float hintT) && hintT > lo && hintT < hi)
+            {
+                shortCircuited = true;
+                return true;
+            }
         }
 
         Span<int> stack = stackalloc int[MaxDepth];
@@ -188,6 +275,7 @@ public sealed class TriangleBvh
                 {
                     if (RayTriangle(origin, dir, _order[i], out float t) && t > lo && t < hi)
                     {
+                        hint = _order[i];
                         return true;
                     }
                 }

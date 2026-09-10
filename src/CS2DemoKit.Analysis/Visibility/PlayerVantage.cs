@@ -92,7 +92,7 @@ public static class PlayerVantage
     /// </summary>
     public static int BuildAnchors(Vector3 feet, float duckAmount, Vector3 viewerEye, Span<Vector3> anchors)
     {
-        float f = Lerp(1f, EyeCrouched / EyeStanding, Math.Clamp(duckAmount, 0f, 1f)); // height compression
+        float f = HeightScale(duckAmount);
 
         // Lateral axis: perpendicular to the horizontal sightline, in the XY plane.
         float dx = feet.X - viewerEye.X, dy = feet.Y - viewerEye.Y;
@@ -102,7 +102,7 @@ public static class PlayerVantage
             : new Vector3(0f, 1f, 0f); // degenerate (viewer directly above/below) — arbitrary
 
         int n = 0;
-        anchors[n++] = new Vector3(feet.X, feet.Y, feet.Z + ChestZ * f);
+        anchors[n++] = ChestAnchor(feet, f);
         anchors[n++] = new Vector3(feet.X, feet.Y, feet.Z + HeadZ * f);
         anchors[n++] = new Vector3(feet.X, feet.Y, feet.Z + PelvisZ * f);
         anchors[n++] = new Vector3(feet.X, feet.Y, feet.Z + KneeZ * f);
@@ -111,6 +111,26 @@ public static class PlayerVantage
         anchors[n++] = shoulder + lateral * ShoulderHalfWidth;
         return n;
     }
+
+    /// <summary>
+    ///     The height compression <see cref="BuildAnchors" /> applies to every anchor's height above
+    ///     the feet: 1 standing, <c>EyeCrouched / EyeStanding</c> fully crouched, interpolated by
+    ///     <paramref name="duckAmount" />.
+    /// </summary>
+    /// <param name="duckAmount">Live duck amount, 0 standing to 1 fully crouched (clamped).</param>
+    public static float HeightScale(float duckAmount) =>
+        Lerp(1f, EyeCrouched / EyeStanding, Math.Clamp(duckAmount, 0f, 1f));
+
+    /// <summary>
+    ///     Anchor 0 of <see cref="BuildAnchors" />, the chest, on its own: the point the crosshair
+    ///     test measures to. Exposed so a caller that needs only this point takes it from the same
+    ///     expression the anchor set is built from, rather than rebuilding the set to read one
+    ///     entry of it. <paramref name="heightScale" /> is <see cref="HeightScale" />.
+    /// </summary>
+    /// <param name="feet">The target's feet.</param>
+    /// <param name="heightScale">The duck-derived height compression.</param>
+    public static Vector3 ChestAnchor(Vector3 feet, float heightScale) =>
+        new(feet.X, feet.Y, feet.Z + ChestZ * heightScale);
 
     private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 }
