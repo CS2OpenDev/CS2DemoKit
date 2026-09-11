@@ -247,12 +247,15 @@ public sealed class AimShotContextEdge(
     ///     counter-strafing population if the player exceeded the threshold inside this window, so
     ///     this value sets the denominator and therefore the metric.
     ///     <para>
-    ///         <b>Calibrated, not published.</b> Leetify never documented this rule, so 0.5 s is a
-    ///         fit, not a citation: it is chosen against <c>counterStrafingShotsAll</c> in
-    ///         <c>demos/benchmarks/*.leetify.json</c>, which carries their numerator, denominator
-    ///         and ratio per player, and the window is the free parameter that makes our denominator
-    ///         match theirs. Re-fit it there if it drifts; do not adjust it to make a ratio look
-    ///         better.
+    ///         <b>UNFITTED. Revisit before this column is trusted.</b> No public tool documents its
+    ///         own admission rule and nothing in this repository derives 0.5 s from measurement: it
+    ///         is a plausible half-second, not a fit. The whole apparatus for fitting it exists
+    ///         (<c>CounterStrafeAdmissionFold</c> in the app's test suite records, per shot, the
+    ///         narrowest window that would admit it, so one pass yields the whole curve), but the
+    ///         objective it was fitted against has been removed and no replacement has been chosen.
+    ///         Pick an objective that stands on our own data (a rank-segmented admitted share, or a
+    ///         hand-labelled set of counter-strafes) and re-fit; do not adjust it to make a ratio
+    ///         look better.
     ///     </para>
     /// </summary>
     public const double CounterStrafeLookbackSeconds = 0.5;
