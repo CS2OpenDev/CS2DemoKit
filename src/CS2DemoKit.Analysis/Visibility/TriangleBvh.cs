@@ -461,6 +461,55 @@ public sealed class TriangleBvh
 
     private static int EncodeLeaf(int start, int count) => ~((count << StartBits) | start);
 
+    /// <summary>
+    ///     FNV-1a over everything a caller can observe about the tree, in a fixed order: node count,
+    ///     depth, stack capacity, triangle count, the root bounds, then every lane's box bits and
+    ///     child reference, then every slot's triangle and lane. The leaf storage is not hashed
+    ///     because it is a pure function of the slot order and the soup. Two trees with the same
+    ///     digest are the same tree, so a builder change that keeps the digest keeps every ray's
+    ///     answer without a differential run; the bench's <c>build</c> verb prints it and the
+    ///     identity tests pin it per bake.
+    /// </summary>
+    internal ulong StructuralDigest()
+    {
+        ulong h = 14695981039346656037UL;
+        Mix(ref h, (uint)NodeCount);
+        Mix(ref h, (uint)Depth);
+        Mix(ref h, (uint)StackCapacity);
+        Mix(ref h, (uint)TriangleCount);
+        Mix(ref h, (uint)BitConverter.SingleToInt32Bits(Min.X));
+        Mix(ref h, (uint)BitConverter.SingleToInt32Bits(Min.Y));
+        Mix(ref h, (uint)BitConverter.SingleToInt32Bits(Min.Z));
+        Mix(ref h, (uint)BitConverter.SingleToInt32Bits(Max.X));
+        Mix(ref h, (uint)BitConverter.SingleToInt32Bits(Max.Y));
+        Mix(ref h, (uint)BitConverter.SingleToInt32Bits(Max.Z));
+        int lanes = NodeCount * Width;
+        for (int lane = 0; lane < lanes; lane++)
+        {
+            Mix(ref h, (uint)BitConverter.SingleToInt32Bits(_minX[lane]));
+            Mix(ref h, (uint)BitConverter.SingleToInt32Bits(_minY[lane]));
+            Mix(ref h, (uint)BitConverter.SingleToInt32Bits(_minZ[lane]));
+            Mix(ref h, (uint)BitConverter.SingleToInt32Bits(_maxX[lane]));
+            Mix(ref h, (uint)BitConverter.SingleToInt32Bits(_maxY[lane]));
+            Mix(ref h, (uint)BitConverter.SingleToInt32Bits(_maxZ[lane]));
+            Mix(ref h, (uint)_child[lane]);
+        }
+
+        for (int slot = 0; slot < TriangleCount; slot++)
+        {
+            Mix(ref h, (uint)_perm[slot]);
+            Mix(ref h, (uint)_laneOfSlot[slot]);
+        }
+
+        return h;
+
+        static void Mix(ref ulong h, uint v)
+        {
+            h ^= v;
+            h *= 1099511628211UL;
+        }
+    }
+
     // The plain entry points run the widest accelerated tier. IsHardwareAccelerated is a JIT-time
     // constant, so each of these compiles to a direct call of one specialisation.
     private bool AnyHitCore<TStats>(
@@ -975,11 +1024,24 @@ public sealed class TriangleBvh
     }
 
     /// <summary>
-    ///     The build, in two passes. First a binary tree by binned SAH over an index array, which
-    ///     partitions that array in place so every binary leaf is a contiguous run of slots. Then the
-    ///     binary tree is collapsed into eight-wide nodes: starting from a binary node's two children,
-    ///     the inner child with the largest box is repeatedly replaced by its own two children until
-    ///     eight remain or none is inner, and the eight are laid into lanes by octant.
+    ///     The build, in one pass. Every binary node a binned-SAH build would have produced is
+    ///     decided exactly once (a leaf, or a split of its slot range into two child ranges with
+    ///     their bounds), but only when the eight-wide layout needs to know it, and the decision
+    ///     lives in the frontier of the wide node being laid out rather than in a binary tree that is
+    ///     built whole and collapsed afterwards. A wide node starts from its binary root's two
+    ///     children, decides each, and repeatedly replaces the inner child with the largest box by
+    ///     that child's own two (deciding those) until eight remain or none is inner; the eight are
+    ///     laid into lanes by octant, and an inner one becomes a wide node of its own with its split
+    ///     already decided. The SAH partitions an index array in place, so every leaf is a
+    ///     contiguous run of slots.
+    ///     <para>
+    ///         A node's decision depends only on its own range and bounds, so deciding nodes in
+    ///         layout order instead of depth-first gives the same decisions, and the lane arrays,
+    ///         the slot order and the leaf contents come out identical to the two-pass build this
+    ///         replaced: <c>TriangleBvhBuildIdentityTests</c> pins the digest per bake. What the fold
+    ///         removes is the binary tree as a whole (a million forty-byte nodes on a large bake,
+    ///         in a list that doubled twice) and the two walks that collapsed it.
+    ///     </para>
     ///     <para>
     ///         Serial and deterministic: no sort, no comparer, no parallelism; the same soup gives the
     ///         same tree on every run and every machine.
@@ -987,7 +1049,12 @@ public sealed class TriangleBvh
     /// </summary>
     private sealed class Builder
     {
-        private readonly List<BinaryNode> _binary;
+        // Wide nodes the lane arrays are first sized for, as a fraction of the triangle count: the
+        // real bakes come out between one node per 6.7 and one per 8.6 triangles, so this covers
+        // them with slack and a denser soup grows the arrays by doubling. The arrays are trimmed to
+        // the exact count at the end, so the guess costs nothing retained.
+        private const int TrianglesPerWideNodeGuess = 6;
+
         private readonly int[] _binCount = new int[3 * Bins];
         private readonly Vector3[] _binCentroidMax = new Vector3[3 * Bins];
         private readonly Vector3[] _binCentroidMin = new Vector3[3 * Bins];
@@ -995,10 +1062,10 @@ public sealed class TriangleBvh
         private readonly Vector3[] _binMin = new Vector3[3 * Bins];
         private readonly int _count;
         private readonly int[] _order;
-        private readonly TriangleRecord[] _rec;
         private readonly float[] _rightArea = new float[Bins];
         private readonly int[] _rightCount = new int[Bins];
         private readonly float[] _v;
+        private int _capacity; // wide nodes the lane arrays hold
         private int[] _child = [];
         private int _depth;
         private int[] _laneOfSlot = [];
@@ -1008,6 +1075,7 @@ public sealed class TriangleBvh
         private float[] _minX = [];
         private float[] _minY = [];
         private float[] _minZ = [];
+        private TriangleRecord[] _rec; // released once the tree is laid out, before the leaf pack
         private int _stackCapacity;
         private int _wideCount;
 
@@ -1017,7 +1085,6 @@ public sealed class TriangleBvh
             _count = count;
             _order = new int[count];
             _rec = new TriangleRecord[count];
-            _binary = new List<BinaryNode>(Math.Max(1, count / 2));
 
             for (int i = 0; i < count; i++)
             {
@@ -1044,13 +1111,10 @@ public sealed class TriangleBvh
                 Fold(in _rec[i], ref bmin, ref bmax, ref cmin, ref cmax);
             }
 
-            BuildBinary(0, _count, bmin, bmax, cmin, cmax, 0);
+            Decision root = Decide(new Range(0, _count, 0, bmin, bmax, cmin, cmax));
 
-            // The lane arrays are sized exactly, by a pass that collapses the binary tree the same
-            // way the layout pass will and only counts. Sizing them to the binary node count instead
-            // would allocate about eight times the final tree and copy it down: on a map bake that
-            // is a few hundred megabytes of short-lived arrays for a saving of one cheap walk.
-            int lanes = CountWide(0) * Width;
+            _capacity = Math.Max(1, _count / TrianglesPerWideNodeGuess);
+            int lanes = _capacity * Width;
             _minX = new float[lanes];
             _minY = new float[lanes];
             _minZ = new float[lanes];
@@ -1059,8 +1123,17 @@ public sealed class TriangleBvh
             _maxZ = new float[lanes];
             _child = new int[lanes];
             _laneOfSlot = new int[_count];
-            BuildWide(0, 0, 1);
-            Debug.Assert(_wideCount * Width == lanes, "the counting pass and the layout pass collapsed differently");
+            BuildWide(in root, 0, 1);
+
+            // The records are done with; dropping them before the trim and the leaf pack keeps
+            // those arrays from sitting on top of them at the build's high-water mark, which is
+            // then the lane arrays plus the leaf storage, about the size of the finished tree.
+            // (Trim resizes one lane array at a time, so its own transient is one array's copy.)
+            // Nothing the bench reports would move if this line were lost: allocation and
+            // retained bytes are unchanged and the digest is unchanged. Only the live-set peak
+            // the bench's build --live flag samples would rise by the records, 33 MB on de_ancient.
+            _rec = [];
+            Trim();
 
             // Leaf storage in slot order: vertex a and the two edges, formed exactly as the
             // soup-order triangle test formed them.
@@ -1085,10 +1158,9 @@ public sealed class TriangleBvh
                 tri[dst + 8] = v[src + 8] - az;
             }
 
-            BinaryNode root = _binary[0];
             return new TriangleBvh(
                 _minX, _minY, _minZ, _maxX, _maxY, _maxZ, _child, tri, _order, slotOf, _laneOfSlot,
-                _wideCount, _stackCapacity, _depth, root.Min, root.Max, _count);
+                _wideCount, _stackCapacity, _depth, root.Self.Min, root.Self.Max, _count);
         }
 
         private static void Fold(in TriangleRecord r, ref Vector3 bmin, ref Vector3 bmax, ref Vector3 cmin, ref Vector3 cmax)
@@ -1119,15 +1191,16 @@ public sealed class TriangleBvh
             return axis == 0 ? r.Centroid.X : axis == 1 ? r.Centroid.Y : r.Centroid.Z;
         }
 
-        private int BuildBinary(
-            int start, int count, Vector3 bmin, Vector3 bmax, Vector3 cmin, Vector3 cmax, int depth)
+        // Decides one binary node: a leaf, or a split with the two child ranges and their bounds.
+        // The bin sweep and the partition are exactly the two-pass build's; only the destination
+        // of the answer changed.
+        private Decision Decide(in Range r)
         {
-            int idx = _binary.Count;
-            _binary.Add(default);
+            int start = r.Start, count = r.Count, depth = r.Depth;
+            Vector3 bmin = r.Min, bmax = r.Max, cmin = r.CentroidMin, cmax = r.CentroidMax;
             if (count == 1)
             {
-                _binary[idx] = BinaryNode.Leaf(bmin, bmax, start, count);
-                return idx;
+                return Decision.Leaf(in r);
             }
 
             Vector3 cext = cmax - cmin;
@@ -1155,26 +1228,26 @@ public sealed class TriangleBvh
                 // max, so the bins hold what three separate passes would have put in them.
                 for (int i = start; i < start + count; i++)
                 {
-                    ref TriangleRecord r = ref _rec[i];
+                    ref TriangleRecord rec = ref _rec[i];
                     if (binX)
                     {
-                        int b = BinIndex(r.Centroid.X, cmin.X, scaleX);
+                        int b = BinIndex(rec.Centroid.X, cmin.X, scaleX);
                         _binCount[b]++;
-                        Fold(in r, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
+                        Fold(in rec, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
                     }
 
                     if (binY)
                     {
-                        int b = Bins + BinIndex(r.Centroid.Y, cmin.Y, scaleY);
+                        int b = Bins + BinIndex(rec.Centroid.Y, cmin.Y, scaleY);
                         _binCount[b]++;
-                        Fold(in r, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
+                        Fold(in rec, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
                     }
 
                     if (binZ)
                     {
-                        int b = (2 * Bins) + BinIndex(r.Centroid.Z, cmin.Z, scaleZ);
+                        int b = (2 * Bins) + BinIndex(rec.Centroid.Z, cmin.Z, scaleZ);
                         _binCount[b]++;
-                        Fold(in r, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
+                        Fold(in rec, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
                     }
                 }
 
@@ -1231,17 +1304,15 @@ public sealed class TriangleBvh
                 // No split can separate the centroids (all coincide), or the depth cap was reached.
                 if (count <= MaxLeaf)
                 {
-                    _binary[idx] = BinaryNode.Leaf(bmin, bmax, start, count);
-                    return idx;
+                    return Decision.Leaf(in r);
                 }
 
-                return HalfSplit(idx, start, count, bmin, bmax, depth);
+                return HalfSplit(in r);
             }
 
             if (count <= MaxLeaf && parentArea * count <= bestCost)
             {
-                _binary[idx] = BinaryNode.Leaf(bmin, bmax, start, count);
-                return idx;
+                return Decision.Leaf(in r);
             }
 
             // Partition the range in place around the chosen bin, records and indices together;
@@ -1295,17 +1366,18 @@ public sealed class TriangleBvh
                 }
             }
 
-            int left = BuildBinary(start, leftCount, lbmin, lbmax, lcmin, lcmax, depth + 1);
-            int right = BuildBinary(mid, rightCount, rbmin, rbmax, rcmin, rcmax, depth + 1);
-            _binary[idx] = BinaryNode.Inner(bmin, bmax, left, right);
-            return idx;
+            return Decision.Inner(
+                in r,
+                new Range(start, leftCount, depth + 1, lbmin, lbmax, lcmin, lcmax),
+                new Range(mid, rightCount, depth + 1, rbmin, rbmax, rcmin, rcmax));
         }
 
         // Halves the range by index. Only for a range the SAH cannot split (coincident centroids
         // past the leaf size) or one past the depth cap; the children are scanned for their bounds
         // because no bin sweep priced them.
-        private int HalfSplit(int idx, int start, int count, Vector3 bmin, Vector3 bmax, int depth)
+        private Decision HalfSplit(in Range r)
         {
+            int start = r.Start, count = r.Count;
             int leftCount = count / 2;
             Vector3 lbmin = new(float.MaxValue), lbmax = new(float.MinValue);
             Vector3 lcmin = new(float.MaxValue), lcmax = new(float.MinValue);
@@ -1321,28 +1393,27 @@ public sealed class TriangleBvh
                 Fold(in _rec[i], ref rbmin, ref rbmax, ref rcmin, ref rcmax);
             }
 
-            int left = BuildBinary(start, leftCount, lbmin, lbmax, lcmin, lcmax, depth + 1);
-            int right = BuildBinary(start + leftCount, count - leftCount, rbmin, rbmax, rcmin, rcmax, depth + 1);
-            _binary[idx] = BinaryNode.Inner(bmin, bmax, left, right);
-            return idx;
+            return Decision.Inner(
+                in r,
+                new Range(start, leftCount, r.Depth + 1, lbmin, lbmax, lcmin, lcmax),
+                new Range(start + leftCount, count - leftCount, r.Depth + 1, rbmin, rbmax, rcmin, rcmax));
         }
 
-        // The children of the wide node that stands for the binary subtree at binaryIdx: the two
+        // The children of the wide node that stands for the binary subtree rooted at node: its two
         // binary children, then repeatedly the inner one with the largest box replaced by its own
-        // two, until eight remain or none is inner. Returns how many; the binary root itself is the
-        // one child when it is a leaf. The counting pass and the layout pass both call this, so the
-        // count cannot drift from the layout.
-        private int Collapse(int binaryIdx, Span<int> children)
+        // two, until eight remain or none is inner. Each child is decided as it enters the frontier,
+        // which is the only time its bin sweep runs. Returns how many; the root itself is the one
+        // child when it is a leaf.
+        private int Collapse(in Decision node, Span<Decision> children)
         {
-            BinaryNode node = _binary[binaryIdx];
             if (node.IsLeaf)
             {
-                children[0] = binaryIdx;
+                children[0] = node;
                 return 1;
             }
 
-            children[0] = node.Left;
-            children[1] = node.Right;
+            children[0] = Decide(in node.Left);
+            children[1] = Decide(in node.Right);
             int n = 2;
             while (n < Width)
             {
@@ -1350,13 +1421,13 @@ public sealed class TriangleBvh
                 float pickArea = float.MinValue;
                 for (int k = 0; k < n; k++)
                 {
-                    BinaryNode c = _binary[children[k]];
+                    ref Decision c = ref children[k];
                     if (c.IsLeaf)
                     {
                         continue;
                     }
 
-                    float area = Area(c.Min, c.Max);
+                    float area = Area(c.Self.Min, c.Self.Max);
                     if (area > pickArea)
                     {
                         pickArea = area;
@@ -1369,42 +1440,28 @@ public sealed class TriangleBvh
                     break;
                 }
 
-                BinaryNode expanded = _binary[children[pick]];
-                children[pick] = expanded.Left;
-                children[n++] = expanded.Right;
+                Decision expanded = children[pick];
+                children[pick] = Decide(in expanded.Left);
+                children[n++] = Decide(in expanded.Right);
             }
 
             return n;
         }
 
-        // Wide nodes the subtree at binaryIdx collapses into. Sizes the lane arrays before the
-        // layout pass writes them.
-        private int CountWide(int binaryIdx)
-        {
-            Span<int> children = stackalloc int[Width];
-            int n = Collapse(binaryIdx, children);
-            int wide = 1;
-            for (int k = 0; k < n; k++)
-            {
-                if (!_binary[children[k]].IsLeaf)
-                {
-                    wide += CountWide(children[k]);
-                }
-            }
-
-            return wide;
-        }
-
-        // Lays the binary subtree at binaryIdx out as one wide node and returns its index.
+        // Lays the binary subtree rooted at node out as one wide node and returns its index.
         // pathWaiting is the number of sibling lanes that can be waiting on the stack above this
         // node along the current path; it sizes the traversal stack exactly.
-        private int BuildWide(int binaryIdx, int pathWaiting, int depth)
+        private int BuildWide(in Decision node, int pathWaiting, int depth)
         {
-            Span<int> children = stackalloc int[Width];
-            int n = Collapse(binaryIdx, children);
-            BinaryNode node = _binary[binaryIdx];
+            Span<Decision> children = stackalloc Decision[Width];
+            int n = Collapse(in node, children);
 
             int wide = _wideCount++;
+            if (wide == _capacity)
+            {
+                Grow();
+            }
+
             int laneBase = wide * Width;
             for (int l = 0; l < Width; l++)
             {
@@ -1422,33 +1479,67 @@ public sealed class TriangleBvh
             _depth = Math.Max(_depth, depth);
 
             Span<int> laneOf = stackalloc int[Width];
-            AssignLanes(children[..n], node, laneOf);
+            AssignLanes(children[..n], in node.Self, laneOf);
 
             for (int k = 0; k < n; k++)
             {
                 int lane = laneBase + laneOf[k];
-                BinaryNode c = _binary[children[k]];
-                _minX[lane] = c.Min.X;
-                _minY[lane] = c.Min.Y;
-                _minZ[lane] = c.Min.Z;
-                _maxX[lane] = c.Max.X;
-                _maxY[lane] = c.Max.Y;
-                _maxZ[lane] = c.Max.Z;
+                ref Decision c = ref children[k];
+                _minX[lane] = c.Self.Min.X;
+                _minY[lane] = c.Self.Min.Y;
+                _minZ[lane] = c.Self.Min.Z;
+                _maxX[lane] = c.Self.Max.X;
+                _maxY[lane] = c.Self.Max.Y;
+                _maxZ[lane] = c.Self.Max.Z;
                 if (c.IsLeaf)
                 {
-                    _child[lane] = EncodeLeaf(c.Start, c.Count);
-                    for (int s = c.Start; s < c.Start + c.Count; s++)
+                    _child[lane] = EncodeLeaf(c.Self.Start, c.Self.Count);
+                    for (int s = c.Self.Start; s < c.Self.Start + c.Self.Count; s++)
                     {
                         _laneOfSlot[s] = lane;
                     }
                 }
                 else
                 {
-                    _child[lane] = BuildWide(children[k], waiting, depth + 1);
+                    // Into a local first: the recursion can grow the lane arrays, and an element
+                    // assignment evaluates its array reference before its right-hand side.
+                    int child = BuildWide(in c, waiting, depth + 1);
+                    _child[lane] = child;
                 }
             }
 
             return wide;
+        }
+
+        private void Grow()
+        {
+            _capacity *= 2;
+            int lanes = _capacity * Width;
+            Array.Resize(ref _minX, lanes);
+            Array.Resize(ref _minY, lanes);
+            Array.Resize(ref _minZ, lanes);
+            Array.Resize(ref _maxX, lanes);
+            Array.Resize(ref _maxY, lanes);
+            Array.Resize(ref _maxZ, lanes);
+            Array.Resize(ref _child, lanes);
+        }
+
+        private void Trim()
+        {
+            if (_capacity == _wideCount)
+            {
+                return;
+            }
+
+            _capacity = _wideCount;
+            int lanes = _capacity * Width;
+            Array.Resize(ref _minX, lanes);
+            Array.Resize(ref _minY, lanes);
+            Array.Resize(ref _minZ, lanes);
+            Array.Resize(ref _maxX, lanes);
+            Array.Resize(ref _maxY, lanes);
+            Array.Resize(ref _maxZ, lanes);
+            Array.Resize(ref _child, lanes);
         }
 
         // Lays children into lanes by octant. Each child's preferred lane has a bit set per axis on
@@ -1456,7 +1547,7 @@ public sealed class TriangleBvh
         // lane, the assignment is the greedy best-score one over (child, lane) pairs, with offsets
         // scaled by the node's extent so no axis dominates by unit alone. Ties fall to the lower
         // child index, then the lower lane, so the layout is deterministic.
-        private void AssignLanes(ReadOnlySpan<int> children, BinaryNode node, Span<int> laneOf)
+        private static void AssignLanes(ReadOnlySpan<Decision> children, in Range node, Span<int> laneOf)
         {
             int n = children.Length;
             Vector3 centre = (node.Min + node.Max) * 0.5f;
@@ -1469,7 +1560,7 @@ public sealed class TriangleBvh
             Span<Vector3> offset = stackalloc Vector3[Width];
             for (int k = 0; k < n; k++)
             {
-                BinaryNode c = _binary[children[k]];
+                ref readonly Range c = ref children[k].Self;
                 offset[k] = (((c.Min + c.Max) * 0.5f) - centre) * scale;
             }
 
@@ -1540,32 +1631,39 @@ public sealed class TriangleBvh
             public readonly Vector3 Centroid = centroid;
         }
 
-        private readonly struct BinaryNode
+        // A binary node before it is decided: its slot range, its depth (for the cap), its box and
+        // its centroid box (the bin sweep's domain).
+        private readonly struct Range(int start, int count, int depth, Vector3 min, Vector3 max, Vector3 centroidMin, Vector3 centroidMax)
         {
-            public readonly Vector3 Min;
-            public readonly Vector3 Max;
-            public readonly int Left; // inner: left child; leaf: -1
-            public readonly int Right; // inner: right child
-            public readonly int Start; // leaf: first slot
-            public readonly int Count; // leaf: slots; 0 on an inner node
+            public readonly int Start = start;
+            public readonly int Count = count;
+            public readonly int Depth = depth;
+            public readonly Vector3 Min = min;
+            public readonly Vector3 Max = max;
+            public readonly Vector3 CentroidMin = centroidMin;
+            public readonly Vector3 CentroidMax = centroidMax;
+        }
 
-            private BinaryNode(Vector3 min, Vector3 max, int left, int right, int start, int count)
+        // A decided binary node: a leaf over Self, or a split of Self into Left and Right, which are
+        // undecided until they enter a frontier.
+        private readonly struct Decision
+        {
+            public readonly Range Self;
+            public readonly Range Left;
+            public readonly Range Right;
+            public readonly bool IsLeaf;
+
+            private Decision(in Range self, in Range left, in Range right, bool isLeaf)
             {
-                Min = min;
-                Max = max;
+                Self = self;
                 Left = left;
                 Right = right;
-                Start = start;
-                Count = count;
+                IsLeaf = isLeaf;
             }
 
-            public bool IsLeaf => Left < 0;
+            public static Decision Leaf(in Range self) => new(in self, default, default, true);
 
-            public static BinaryNode Leaf(Vector3 min, Vector3 max, int start, int count) =>
-                new(min, max, -1, -1, start, count);
-
-            public static BinaryNode Inner(Vector3 min, Vector3 max, int left, int right) =>
-                new(min, max, left, right, 0, 0);
+            public static Decision Inner(in Range self, in Range left, in Range right) => new(in self, in left, in right, false);
         }
     }
 }

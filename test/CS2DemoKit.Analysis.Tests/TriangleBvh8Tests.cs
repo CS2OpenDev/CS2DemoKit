@@ -624,7 +624,7 @@ public class TriangleBvh8Tests
 
     // Small separated triangles spaced along x, well away from the origin, so the origin is in no
     // real box and a soup of fewer than eight leaves a root with empty lanes.
-    private static float[] SeparatedTriangles(int count)
+    internal static float[] SeparatedTriangles(int count)
     {
         float[] vertices = new float[count * 9];
         for (int i = 0; i < count; i++)
@@ -642,7 +642,7 @@ public class TriangleBvh8Tests
         lo.Y + ((hi.Y - lo.Y) * (float)rng.NextDouble()),
         lo.Z + ((hi.Z - lo.Z) * (float)rng.NextDouble()));
 
-    private static float[] RandomSoup(Random rng, int count, float half)
+    internal static float[] RandomSoup(Random rng, int count, float half)
     {
         float[] v = new float[count * 9];
         for (int i = 0; i < count; i++)

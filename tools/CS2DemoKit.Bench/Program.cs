@@ -6,6 +6,7 @@ using CS2DemoKit.Bench;
 //   compare   interleaved A/B between two published builds, both arms into one CSV
 //   measure   one measured load, one CSV row on stdout (what the other two spawn)
 //   rays      per-ray occlusion throughput and work on one bake, old tree and new side by side
+//   build     build cost, memory and a structural digest of the eight-wide tree per bake
 //
 // measure is separate because a fresh process per measurement is the property the numbers rest on.
 
@@ -15,6 +16,7 @@ return args switch
     ["compare", .. var compareArgs] => StartCompare(compareArgs),
     ["sweep", .. var sweepArgs] => StartSweep(sweepArgs),
     ["rays", .. var raysArgs] => Rays.Run(raysArgs),
+    ["build", .. var buildArgs] => Build.Run(buildArgs),
     _ when args.Contains("--help") || args.Contains("-h") => Help(),
     _ => StartSweep(args)
 };
@@ -85,6 +87,14 @@ static int Help()
           eight-wide tree on the same seeded corpus, interleaved for R rounds and reported as
           medians, with nodes, box tests and triangles per ray so a change in speed can be
           traced to a change in work (default: 1M rays, one thread, 3 rounds)
+
+        build <collision.tris> [...] [--rounds R] [--live]
+          builds the eight-wide tree R times per bake (default 5; round 0 is the cold build) and
+          prints per round the wall-clock, bytes allocated, the tree's retained size and the
+          heap's sampled high-water mark (garbage included), plus a digest of the tree's
+          structure: two builders with the same digest produce the same tree, so every ray
+          answers identically. --live forces a collection before every sample so the peak is
+          the builder's live set instead; it is slow, so no wall-clock is printed
 
         Rows are written as they complete, so a long run can be read while it runs.
         Progress goes to stderr.
