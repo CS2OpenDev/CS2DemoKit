@@ -98,6 +98,38 @@ internal static class BruteForceOracle
         return hi > lo && RayTriangle(vertices, origin, dir, triangle, out float t) && t > lo && t < hi;
     }
 
+    /// <summary>
+    ///     The smallest hit <c>t</c> in <c>(eps, tMax)</c> over every triangle, with the identical
+    ///     body and predicate <c>TriangleBvh.NearestHit</c> uses per triangle, and the triangle that
+    ///     produced it. False, <see cref="float.MaxValue" /> and -1 when nothing is hit.
+    /// </summary>
+    /// <param name="vertices">Triangle soup, 9 floats per triangle.</param>
+    /// <param name="triangleCount">Number of triangles packed in <paramref name="vertices" />.</param>
+    /// <param name="origin">Ray origin.</param>
+    /// <param name="dir">Unit ray direction.</param>
+    /// <param name="tMax">Far limit, in world units.</param>
+    /// <param name="eps">Near exclusion, matching the caller's.</param>
+    /// <param name="distance">The nearest hit's <c>t</c>.</param>
+    /// <param name="triangle">The triangle hit at <paramref name="distance" />, or -1.</param>
+    public static bool NearestHit(
+        float[] vertices, int triangleCount, Vector3 origin, Vector3 dir, float tMax, float eps,
+        out float distance, out int triangle)
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        distance = float.MaxValue;
+        triangle = -1;
+        for (int tri = 0; tri < triangleCount; tri++)
+        {
+            if (RayTriangle(vertices, origin, dir, tri, out float t) && t > eps && t < tMax && t < distance)
+            {
+                distance = t;
+                triangle = tri;
+            }
+        }
+
+        return triangle >= 0;
+    }
+
     // Moller-Trumbore, copied from TriangleBvh.RayTriangle so the two cannot disagree about what a
     // hit is. Only the storage differs (a plain array rather than the BVH's field).
     private static bool RayTriangle(float[] v, Vector3 o, Vector3 d, int tri, out float t)

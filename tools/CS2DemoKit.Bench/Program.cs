@@ -5,6 +5,7 @@ using CS2DemoKit.Bench;
 //   sweep     run the whole benchmark: one child process per (round, demo), CSV out
 //   compare   interleaved A/B between two published builds, both arms into one CSV
 //   measure   one measured load, one CSV row on stdout (what the other two spawn)
+//   rays      per-ray occlusion throughput and work on one bake, old tree and new side by side
 //
 // measure is separate because a fresh process per measurement is the property the numbers rest on.
 
@@ -13,6 +14,7 @@ return args switch
     ["measure", ..] => Measure(args),
     ["compare", .. var compareArgs] => StartCompare(compareArgs),
     ["sweep", .. var sweepArgs] => StartSweep(sweepArgs),
+    ["rays", .. var raysArgs] => Rays.Run(raysArgs),
     _ when args.Contains("--help") || args.Contains("-h") => Help(),
     _ => StartSweep(args)
 };
@@ -77,6 +79,12 @@ static int Help()
 
         measure <demo.dem> <label> <round>
           one measured load, one CSV row on stdout
+
+        rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
+          per-ray occlusion throughput on one bake, the binary tree and every tier of the
+          eight-wide tree on the same seeded corpus, interleaved for R rounds and reported as
+          medians, with nodes, box tests and triangles per ray so a change in speed can be
+          traced to a change in work (default: 1M rays, one thread, 3 rounds)
 
         Rows are written as they complete, so a long run can be read while it runs.
         Progress goes to stderr.

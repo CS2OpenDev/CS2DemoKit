@@ -22,6 +22,19 @@ namespace CS2DemoKit.Analysis.Tests;
 /// </summary>
 internal static class RayDifferentialHarness
 {
+    /// <summary>
+    ///     How wide, in world units along the ray, the double-precision window of a float-rejected
+    ///     box may be, in either direction, and the rejection still count as rounding: the float
+    ///     slab and the float triangle test each carry a handful of ulp, about 5e-4 at map
+    ///     coordinates, so a true miss of under a thousandth of a unit with a float triangle hit
+    ///     inside, or a true pass that narrow the float slab closed, is the two disagreeing about a
+    ///     hair, not a wrong tree. A box the ray truly passes through by more than this, rejected in
+    ///     float, is a defect, and so is one it truly misses by more than this with a float triangle
+    ///     hit inside; the bound is two-sided so that a slab test rejecting real boxes cannot hide
+    ///     as the boundary class.
+    /// </summary>
+    public const double BoundaryTolerance = 1e-3;
+
     /// <summary>One ray on which the frozen and live traversals disagreed.</summary>
     /// <param name="Origin">Ray origin.</param>
     /// <param name="Direction">Unit direction.</param>
@@ -29,7 +42,9 @@ internal static class RayDifferentialHarness
     /// <param name="LegacyOccluded">What the frozen traversal said.</param>
     /// <param name="CurrentOccluded">What the live traversal said.</param>
     /// <param name="OracleOccluded">What the brute-force oracle said.</param>
-    /// <param name="OracleTriangle">First triangle the oracle hit, or -1.</param>
+    /// <param name="OracleTriangle">Nearest triangle the oracle hit, or -1.</param>
+    /// <param name="OracleDistance">The oracle's nearest hit <c>t</c>, or <see cref="float.MaxValue" />.</param>
+    /// <param name="Loss">Why the live traversal missed the oracle's triangle; default when it did not.</param>
     internal readonly record struct Divergence(
         Vector3 Origin,
         Vector3 Direction,
@@ -37,10 +52,20 @@ internal static class RayDifferentialHarness
         bool LegacyOccluded,
         bool CurrentOccluded,
         bool OracleOccluded,
-        int OracleTriangle)
+        int OracleTriangle,
+        float OracleDistance,
+        LossClassification Loss)
     {
         /// <summary>Whether the live traversal is the one the oracle agrees with.</summary>
         public bool CurrentIsCorrect => CurrentOccluded == OracleOccluded;
+
+        /// <summary>
+        ///     A wrong live verdict that rounding explains: a box on the path to the oracle's
+        ///     triangle was rejected by the float slab test while the same box in double precision
+        ///     admits the ray, or misses it by under <see cref="BoundaryTolerance" />. Counted and
+        ///     reported, never a pass by itself.
+        /// </summary>
+        public bool IsBoundaryClass => !CurrentIsCorrect && Loss.IsRounding;
 
         /// <summary>A one-line description naming the ray and all three verdicts.</summary>
         public override string ToString() =>
@@ -48,7 +73,35 @@ internal static class RayDifferentialHarness
             + $"dir=({Direction.X:F5},{Direction.Y:F5},{Direction.Z:F5}) len={Distance:F3} "
             + $"legacy={(LegacyOccluded ? "OCCLUDED" : "CLEAR")} "
             + $"current={(CurrentOccluded ? "OCCLUDED" : "CLEAR")} "
-            + $"oracle={(OracleOccluded ? "OCCLUDED" : "CLEAR")} tri={OracleTriangle}";
+            + $"oracle={(OracleOccluded ? "OCCLUDED" : "CLEAR")} tri={OracleTriangle} t={OracleDistance:F4}"
+            + (CurrentIsCorrect ? string.Empty : $" {Loss}");
+    }
+
+    /// <summary>
+    ///     Where and why the live traversal lost a triangle the oracle hits: the first lane on the
+    ///     root-to-leaf path whose float slab test rejects the ray, and how far the same box, in
+    ///     double precision, admits the ray (positive: the ray truly passes through it and the float
+    ///     rejection is rounding) or misses it (negative). No failing lane means every box on the
+    ///     path admits the ray and the traversal still did not test the triangle, which no rounding
+    ///     explains.
+    /// </summary>
+    /// <param name="FailingLane">Lane index that rejected the ray, or -1 when none did.</param>
+    /// <param name="DoubleMargin">Width of the double-precision slab window at that lane; NaN when no lane failed.</param>
+    /// <param name="Depth">Lanes from the root to the failing lane, or the leaf when none failed.</param>
+    internal readonly record struct LossClassification(int FailingLane, double DoubleMargin, int Depth)
+    {
+        /// <summary>
+        ///     Whether the rejected box's double-precision window is within
+        ///     <see cref="BoundaryTolerance" /> of empty on either side: a box the ray truly
+        ///     passes through by a wide margin is not rounding whichever precision rejected it.
+        /// </summary>
+        public bool IsRounding => FailingLane >= 0 && Math.Abs(DoubleMargin) < BoundaryTolerance;
+
+        /// <inheritdoc />
+        public override string ToString() => FailingLane < 0
+            ? $"NO BOX REJECTED THE RAY (path depth {Depth}): unexplained"
+            : $"lane {FailingLane} at depth {Depth} rejected it; double-precision window {DoubleMargin:E2}"
+              + (IsRounding ? " (rounding, boundary class)" : " (NOT rounding: unexplained)");
     }
 
     /// <summary>The outcome of running one corpus.</summary>
@@ -56,16 +109,35 @@ internal static class RayDifferentialHarness
     /// <param name="Divergences">Every ray on which the two traversals disagreed.</param>
     internal readonly record struct Result(int RayCount, IReadOnlyList<Divergence> Divergences)
     {
-        /// <summary>Divergences where the live traversal disagrees with the oracle. Must always be empty.</summary>
+        /// <summary>Divergences where the live traversal disagrees with the oracle.</summary>
         public IReadOnlyList<Divergence> CurrentWrong =>
             [.. Divergences.Where(d => !d.CurrentIsCorrect)];
 
-        /// <summary>A report naming the counts and the first few diverging rays.</summary>
+        /// <summary>Divergences where the frozen traversal disagrees with the oracle.</summary>
+        public IReadOnlyList<Divergence> LegacyWrong =>
+            [.. Divergences.Where(d => d.LegacyOccluded != d.OracleOccluded)];
+
+        /// <summary>Live-wrong divergences that rounding at a box edge or the window explains.</summary>
+        public IReadOnlyList<Divergence> CurrentWrongBoundaryClass =>
+            [.. Divergences.Where(d => d.IsBoundaryClass)];
+
+        /// <summary>Live-wrong divergences that nothing explains. Must always be empty.</summary>
+        public IReadOnlyList<Divergence> CurrentWrongOutsideBoundary =>
+            [.. Divergences.Where(d => !d.CurrentIsCorrect && !d.IsBoundaryClass)];
+
+        /// <summary>
+        ///     A report naming the counts, then every live-wrong ray with the lane that rejected it
+        ///     and its double-precision margin (so a "boundary class" claim is shown, not asserted),
+        ///     then the first few rays where the live tree is the right one.
+        /// </summary>
         public string Describe(int sample = 5) =>
-            $"{RayCount} rays, {Divergences.Count} divergent, {CurrentWrong.Count} where current is wrong"
+            $"{RayCount} rays, {Divergences.Count} divergent, {LegacyWrong.Count} where legacy is wrong, "
+            + $"{CurrentWrong.Count} where current is wrong ({CurrentWrongBoundaryClass.Count} boundary class, "
+            + $"{CurrentWrongOutsideBoundary.Count} unexplained)"
             + (Divergences.Count == 0
                 ? string.Empty
-                : Environment.NewLine + string.Join(Environment.NewLine, Divergences.Take(sample)));
+                : Environment.NewLine + string.Join(Environment.NewLine,
+                    Divergences.Where(d => !d.CurrentIsCorrect).Concat(Divergences.Where(d => d.CurrentIsCorrect).Take(sample))));
     }
 
     /// <summary>One ray on which the hinted and plain traversals of the live BVH disagreed.</summary>
@@ -236,6 +308,7 @@ internal static class RayDifferentialHarness
         LegacyTriangleBvh legacy = LegacyTriangleBvh.Build(vertices, triangleCount);
         TriangleBvh current = TriangleBvh.Build(vertices, triangleCount);
         List<Divergence> divergences = [];
+        int[]? parents = null;
 
         for (int i = 0; i < segments.Count; i++)
         {
@@ -255,12 +328,110 @@ internal static class RayDifferentialHarness
                 continue;
             }
 
+            // The oracle's window is the same open interval (eps, len - eps) AnyHit uses.
+            bool oracleHit = BruteForceOracle.NearestHit(
+                vertices, triangleCount, a, dir, len - eps, eps, out float oracleT, out int oracleTriangle);
+            LossClassification loss = default;
+            if (currentHit != oracleHit && oracleHit)
+            {
+                parents ??= ParentLanes(current);
+                loss = Classify(current, parents, oracleTriangle, a, dir, eps, len - eps);
+            }
+
             divergences.Add(new Divergence(
-                a, dir, len, legacyHit, currentHit,
-                BruteForceOracle.AnyHit(vertices, triangleCount, a, dir, len, eps),
-                BruteForceOracle.FirstHitTriangle(vertices, triangleCount, a, dir, len, eps)));
+                a, dir, len, legacyHit, currentHit, oracleHit, oracleTriangle, oracleT, loss));
         }
 
         return new Result(segments.Count, divergences);
     }
+
+    /// <summary>For every node, the lane index in its parent that references it; -1 for the root.</summary>
+    /// <param name="bvh">The live tree.</param>
+    public static int[] ParentLanes(TriangleBvh bvh)
+    {
+        ArgumentNullException.ThrowIfNull(bvh);
+        int[] parents = new int[Math.Max(1, bvh.NodeCount)];
+        Array.Fill(parents, -1);
+        for (int lane = 0; lane < bvh.NodeCount * TriangleBvh.Width; lane++)
+        {
+            int child = bvh.LaneChild(lane);
+            if (child >= 0)
+            {
+                parents[child] = lane;
+            }
+        }
+
+        return parents;
+    }
+
+    /// <summary>
+    ///     Walks the lanes from the root down to the leaf holding <paramref name="triangle" /> and
+    ///     finds the first one the float slab test rejects over <c>[lo, hi]</c>; then measures that
+    ///     box's window in double precision. See <see cref="LossClassification" />.
+    /// </summary>
+    /// <param name="bvh">The live tree.</param>
+    /// <param name="parents">From <see cref="ParentLanes" />.</param>
+    /// <param name="triangle">The triangle the oracle hit.</param>
+    /// <param name="origin">Ray origin.</param>
+    /// <param name="dir">Unit direction.</param>
+    /// <param name="lo">Window start.</param>
+    /// <param name="hi">Window end.</param>
+    public static LossClassification Classify(
+        TriangleBvh bvh, int[] parents, int triangle, Vector3 origin, Vector3 dir, float lo, float hi)
+    {
+        ArgumentNullException.ThrowIfNull(bvh);
+        ArgumentNullException.ThrowIfNull(parents);
+        List<int> path = [];
+        int lane = bvh.LaneOfTriangle(triangle);
+        while (lane >= 0)
+        {
+            path.Add(lane);
+            lane = parents[lane / TriangleBvh.Width];
+        }
+
+        path.Reverse();
+        for (int i = 0; i < path.Count; i++)
+        {
+            if (bvh.LanePasses(path[i], origin, dir, lo, hi))
+            {
+                continue;
+            }
+
+            (Vector3 min, Vector3 max) = bvh.LaneBounds(path[i]);
+            double tNear = lo, tFar = hi;
+            Axis(min.X, max.X, origin.X, dir.X, ref tNear, ref tFar);
+            Axis(min.Y, max.Y, origin.Y, dir.Y, ref tNear, ref tFar);
+            Axis(min.Z, max.Z, origin.Z, dir.Z, ref tNear, ref tFar);
+            return new LossClassification(path[i], tFar - tNear, i + 1);
+        }
+
+        return new LossClassification(-1, double.NaN, path.Count);
+    }
+
+    // One axis of a double-precision slab test. A zero direction component constrains the window
+    // only through whether the origin lies inside the slab.
+    private static void Axis(float min, float max, float o, float d, ref double tNear, ref double tFar)
+    {
+        if (d == 0f)
+        {
+            if (o < min || o > max)
+            {
+                tNear = double.PositiveInfinity;
+            }
+
+            return;
+        }
+
+        double inv = 1.0 / d;
+        double t0 = (min - (double)o) * inv;
+        double t1 = (max - (double)o) * inv;
+        if (t0 > t1)
+        {
+            (t0, t1) = (t1, t0);
+        }
+
+        tNear = Math.Max(tNear, t0);
+        tFar = Math.Min(tFar, t1);
+    }
+
 }
