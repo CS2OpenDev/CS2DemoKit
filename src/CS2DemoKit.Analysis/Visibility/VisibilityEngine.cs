@@ -29,7 +29,13 @@ public sealed class VisibilityEngine
     public Vector3 Min => _bvh.Min;
     public Vector3 Max => _bvh.Max;
 
-    /// <summary>Loads a baked <c>collision.tris</c> and builds the BVH. Do this off the UI thread (BVH build is O(seconds)).</summary>
+    /// <summary>
+    ///     Loads a baked <c>collision.tris</c> and builds the BVH on up to one thread per processor.
+    ///     Do this off the UI thread: the build is tenths of a second on the large bakes, and the
+    ///     calling thread works alongside the pool for all of it. A caller that wants the build
+    ///     kept to fewer threads loads the bake with <see cref="CollisionTris.Load(string)" /> and passes
+    ///     the degree to <see cref="FromTriangles(float[], int, int)" />.
+    /// </summary>
     public static VisibilityEngine Load(string trisPath)
     {
         // Split rather than one span around the pair: reading 35 MB off disk and building a tree over
@@ -43,9 +49,21 @@ public sealed class VisibilityEngine
         return engine;
     }
 
-    /// <summary>Builds from an in-memory triangle soup (9 floats/triangle in <paramref name="vertices" />).</summary>
+    /// <summary>Builds from an in-memory triangle soup (9 floats/triangle in <paramref name="vertices" />) on up to one thread per processor.</summary>
     public static VisibilityEngine FromTriangles(float[] vertices, int triangleCount) =>
-        new(TriangleBvh.Build(vertices, triangleCount));
+        FromTriangles(vertices, triangleCount, 0);
+
+    /// <summary>
+    ///     <see cref="FromTriangles(float[], int)" /> on at most <paramref name="maxDegreeOfParallelism" />
+    ///     threads. The tree is the same at every degree; only the wall-clock changes. Pass one
+    ///     from a caller that is already saturating the pool (an analysis run's parallel scan,
+    ///     say) and wants the build kept to its own thread.
+    /// </summary>
+    /// <param name="vertices">Triangle soup, 9 floats per triangle.</param>
+    /// <param name="triangleCount">Triangles packed in <paramref name="vertices" />.</param>
+    /// <param name="maxDegreeOfParallelism">Threads the build may use; zero or negative means <see cref="Environment.ProcessorCount" />.</param>
+    public static VisibilityEngine FromTriangles(float[] vertices, int triangleCount, int maxDegreeOfParallelism) =>
+        new(TriangleBvh.Build(vertices, triangleCount, maxDegreeOfParallelism));
 
     /// <summary>
     ///     True iff the straight segment <paramref name="a" />→<paramref name="b" /> is clear of collision

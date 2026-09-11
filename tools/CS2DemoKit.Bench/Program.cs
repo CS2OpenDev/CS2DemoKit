@@ -109,8 +109,9 @@ static int Help()
           medians, with nodes, box tests and triangles per ray so a change in speed can be
           traced to a change in work (default: 1M rays, one thread, 3 rounds)
 
-        build <collision.tris> [...] [--rounds R] [--live]
-          builds the eight-wide tree R times per bake (default 5; round 0 is the cold build) and
+        build <collision.tris> [...] [--rounds R] [--threads T] [--live]
+          builds the eight-wide tree R times per bake (default 5; round 0 is the cold build) on
+          T threads (default: one per processor; 1 is the serial build) and
           prints per round the wall-clock, bytes allocated, the tree's retained size and the
           heap's sampled high-water mark (garbage included), plus a digest of the tree's
           structure: two builders with the same digest produce the same tree, so every ray

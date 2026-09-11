@@ -10,8 +10,10 @@ namespace CS2DemoKit.Bench;
 /// <summary>
 ///     Cost and shape of building the eight-wide tree over one or more bakes: wall-clock per
 ///     build, bytes allocated per build, the heap's sampled high-water mark during the build, the
-///     tree's retained size, and a digest of its structure (every lane's box bits and child
-///     reference, every slot's triangle and lane, node count, depth and stack capacity).
+///     tree's retained size, a digest of its structure (every lane's box bits and child
+///     reference, every slot's triangle and lane, node count, depth and stack capacity) and the
+///     most threads the build ran on at once, which is one with <c>--threads 1</c> and never
+///     more than the flag.
 ///     <para>
 ///         The digest is the identity check for a builder change: two builders that produce the
 ///         same digest produce the same tree, and every ray then answers identically without a
@@ -33,11 +35,12 @@ internal static class Build
     {
         if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
         {
-            Console.Error.WriteLine("usage: CS2DemoKit.Bench build <collision.tris> [<collision.tris> ...] [--rounds R] [--live]");
+            Console.Error.WriteLine("usage: CS2DemoKit.Bench build <collision.tris> [<collision.tris> ...] [--rounds R] [--threads T] [--live]");
             return 2;
         }
 
         int rounds = 5;
+        int threads = 0;
         bool live = false;
         List<string> paths = [];
         for (int i = 0; i < args.Length; i++)
@@ -46,6 +49,13 @@ internal static class Build
             if (args[i] == "--rounds" && next is not null && int.TryParse(next, out int r) && r > 0)
             {
                 rounds = r;
+                i++;
+                continue;
+            }
+
+            if (args[i] == "--threads" && next is not null && int.TryParse(next, out int t) && t > 0)
+            {
+                threads = t;
                 i++;
                 continue;
             }
@@ -67,30 +77,30 @@ internal static class Build
 
         foreach (string path in paths)
         {
-            Measure(path, rounds, live);
+            Measure(path, rounds, threads, live);
         }
 
         return 0;
     }
 
-    private static void Measure(string path, int rounds, bool live)
+    private static void Measure(string path, int rounds, int threads, bool live)
     {
         CollisionTris.Data bake = CollisionTris.Load(path);
         string name = Path.GetFileName(Path.GetDirectoryName(path)) ?? path;
-        Console.WriteLine($"{name}: {bake.TriangleCount} triangles");
+        Console.WriteLine($"{name}: {bake.TriangleCount} triangles, {(threads > 0 ? threads : Environment.ProcessorCount)} threads");
 
         // Round 0 is the cold build an engine load pays, JIT tier-up included; the rest are the
         // builder's steady state. Every round is reported, none is dropped.
         for (int round = 0; round < rounds; round++)
         {
-            Console.WriteLine(Round(bake, round, live));
+            Console.WriteLine(Round(bake, round, threads, live));
         }
     }
 
     // One build in its own frame, so the previous round's tree is unreachable when this round's
     // baseline is taken; inside the loop the JIT keeps the old reference alive across iterations
     // and every round after the first reports a retained size of zero.
-    private static string Round(CollisionTris.Data bake, int round, bool live)
+    private static string Round(CollisionTris.Data bake, int round, int threads, bool live)
     {
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -100,14 +110,14 @@ internal static class Build
 
         using HeapSampler sampler = new(live);
         Stopwatch sw = Stopwatch.StartNew();
-        TriangleBvh bvh = TriangleBvh.Build(bake.Vertices, bake.TriangleCount);
+        TriangleBvh bvh = TriangleBvh.Build(bake.Vertices, bake.TriangleCount, threads);
         double ms = sw.Elapsed.TotalMilliseconds;
         long peak = sampler.Stop();
 
         long alloc = GC.GetTotalAllocatedBytes(true) - allocBefore;
         long retained = GC.GetTotalMemory(true) - baseline;
         string digest = round == 0
-            ? $" digest {bvh.StructuralDigest():X16} nodes {bvh.NodeCount} depth {bvh.Depth} stack {bvh.StackCapacity}"
+            ? $" digest {bvh.StructuralDigest():X16} nodes {bvh.NodeCount} depth {bvh.Depth} stack {bvh.StackCapacity} workers {bvh.PeakBuildWorkers}"
             : string.Empty;
         GC.KeepAlive(bvh);
         string clock = live ? "  (live, no clock)" : $"{ms,7:F1} ms,";

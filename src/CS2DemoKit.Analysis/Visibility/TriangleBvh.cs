@@ -1,8 +1,10 @@
 #region
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 
@@ -121,8 +123,9 @@ public sealed class TriangleBvh
     private TriangleBvh(
         float[] minX, float[] minY, float[] minZ, float[] maxX, float[] maxY, float[] maxZ, int[] child,
         float[] tri, int[] perm, int[] slotOf, int[] laneOfSlot, int nodeCount, int stackCapacity, int depth,
-        Vector3 min, Vector3 max, int triangleCount)
+        Vector3 min, Vector3 max, int triangleCount, int peakBuildWorkers)
     {
+        PeakBuildWorkers = peakBuildWorkers;
         _minX = minX;
         _minY = minY;
         _minZ = minZ;
@@ -163,10 +166,43 @@ public sealed class TriangleBvh
     /// </summary>
     internal int StackCapacity { get; }
 
-    /// <summary>Builds the BVH over <paramref name="count" /> triangles packed as 9 floats each in <paramref name="v" />.</summary>
+    /// <summary>
+    ///     The most threads the build was observed running on at once: one for a build that never
+    ///     forked, and never more than the degree it was given. The bench prints it and
+    ///     <c>TriangleBvhParallelBuildTests</c> holds it to the degree.
+    /// </summary>
+    internal int PeakBuildWorkers { get; }
+
+    /// <summary>
+    ///     Builds the BVH over <paramref name="count" /> triangles packed as 9 floats each in
+    ///     <paramref name="v" />, using up to one thread per processor. The tree is the same one
+    ///     <see cref="Build(float[], int, int)" /> gives at every degree of parallelism.
+    /// </summary>
     /// <param name="v">Triangle soup, 9 floats per triangle (three vertices), not retained.</param>
     /// <param name="count">Number of triangles packed in <paramref name="v" />.</param>
-    public static TriangleBvh Build(float[] v, int count)
+    public static TriangleBvh Build(float[] v, int count) => Build(v, count, 0);
+
+    /// <summary>
+    ///     Builds the BVH over <paramref name="count" /> triangles packed as 9 floats each in
+    ///     <paramref name="v" /> on at most <paramref name="maxDegreeOfParallelism" /> threads. The
+    ///     tree does not depend on the degree: the build is deterministic by construction (see the
+    ///     builder), and <c>TriangleBvhParallelBuildTests</c> holds every degree to the digests
+    ///     <c>TriangleBvhBuildIdentityTests</c> pins per bake. One means the calling thread alone
+    ///     (no loop is entered, not even with one worker), which is what a caller that is already
+    ///     saturating the pool should pass; the app's engine cache builds on a pool thread with the
+    ///     default, and a build overlapping another parallel loop there shares the pool with it
+    ///     rather than waiting for it, as any two such loops do.
+    ///     <para>
+    ///         A throw inside the build reaches the caller as the original exception, not as the
+    ///         <see cref="AggregateException" /> a worker's throw is delivered in, and leaves
+    ///         nothing behind: the builder is private to the call and the tree is constructed only
+    ///         at the end. Only several distinct failures at once arrive aggregated.
+    ///     </para>
+    /// </summary>
+    /// <param name="v">Triangle soup, 9 floats per triangle (three vertices), not retained.</param>
+    /// <param name="count">Number of triangles packed in <paramref name="v" />.</param>
+    /// <param name="maxDegreeOfParallelism">Threads the build may use; zero or negative means <see cref="Environment.ProcessorCount" />.</param>
+    public static TriangleBvh Build(float[] v, int count, int maxDegreeOfParallelism)
     {
         ArgumentNullException.ThrowIfNull(v);
         if (count < 0 || (long)count * 9 > v.Length)
@@ -181,10 +217,24 @@ public sealed class TriangleBvh
 
         if (count == 0)
         {
-            return new TriangleBvh([], [], [], [], [], [], [], [], [], [], [], 0, 0, 0, Vector3.Zero, Vector3.Zero, 0);
+            return new TriangleBvh([], [], [], [], [], [], [], [], [], [], [], 0, 0, 0, Vector3.Zero, Vector3.Zero, 0, 1);
         }
 
-        return new Builder(v, count).Finish();
+        int parallelism = maxDegreeOfParallelism > 0 ? maxDegreeOfParallelism : Environment.ProcessorCount;
+        try
+        {
+            return new Builder(v, count, parallelism).Finish();
+        }
+        catch (AggregateException e)
+        {
+            AggregateException flat = e.Flatten();
+            if (flat.InnerExceptions.Count == 1)
+            {
+                ExceptionDispatchInfo.Throw(flat.InnerExceptions[0]);
+            }
+
+            throw flat;
+        }
     }
 
     /// <summary>
@@ -1043,124 +1093,480 @@ public sealed class TriangleBvh
     ///         in a list that doubled twice) and the two walks that collapsed it.
     ///     </para>
     ///     <para>
-    ///         Serial and deterministic: no sort, no comparer, no parallelism; the same soup gives the
-    ///         same tree on every run and every machine.
+    ///         Parallel, and deterministic by construction rather than by observation: the tree is
+    ///         a pure function of the soup, the same on one thread as on thirty-two, and the identity
+    ///         tests hold every degree of parallelism to the same digests. The work is cut into
+    ///         <em>segments</em>, each built into private lane arrays numbered from zero in its own
+    ///         preorder. A wide node whose range holds more than <see cref="DeferBelow" /> triangles
+    ///         is a segment of one node (a <em>top</em> node): it is collapsed and its lanes laid out,
+    ///         and each inner child becomes a pending segment of its own instead of a recursion. A
+    ///         node at or below the threshold is a segment of the whole subtree under it, built
+    ///         depth first exactly as the serial build builds it. The top nodes are built level by
+    ///         level, every node of a level concurrently, and the subtree segments afterwards on the
+    ///         pool, largest first; within a top node, a bin sweep over a range of at least twice
+    ///         <see cref="SweepChunkMin" /> triangles runs as chunks of the range when the level has
+    ///         fewer nodes than there are threads to give them.
+    ///     </para>
+    ///     <para>
+    ///         Why the numbering cannot depend on scheduling: the serial build numbers nodes in
+    ///         preorder, and a segment's nodes are contiguous in that order, so a walk over the
+    ///         segment tree (a segment's own nodes, then its pending children in collapse order,
+    ///         recursively) hands every segment the index its first node would have had, from the
+    ///         segment sizes alone. The relocation copies each segment into the final arrays at
+    ///         that index, adds it to the segment's inner references, points each pending lane at
+    ///         its child segment's index and writes the slot-to-lane map from the leaves. The walk
+    ///         runs after every segment is built and reads nothing a thread wrote out of order.
+    ///     </para>
+    ///     <para>
+    ///         Why a chunked sweep is the serial sweep: each chunk folds its part of the range into
+    ///         its own bins, and the node's bins are the fold of the chunk bins in chunk order. The
+    ///         bins hold counts (exact) and minima and maxima, and on this runtime
+    ///         <see cref="Vector3.Min" /> and <see cref="Vector3.Max" /> are the IEEE 754 minimum
+    ///         and maximum: a NaN propagates from either side and negative zero orders below
+    ///         positive zero, in optimised and unoptimised code alike. Each fold is then
+    ///         associative and idempotent bit for bit, so folding chunk results equals folding the
+    ///         triangles in index order. The one thing the runtime does not fix is which of two
+    ///         NaNs a fold keeps (see <c>CanonicalNaN</c>), so the records carry a single NaN
+    ///         payload and the question never arises. Nothing sums a float. The partition of a
+    ///         range stays serial: its output order is the slot order, and it runs once per node
+    ///         on the thread that owns the node. The per-triangle passes (records, root bounds,
+    ///         leaf pack) are chunked the same way; the root bounds are the one other fold, and
+    ///         the same argument covers it.
+    ///     </para>
+    ///     <para>
+    ///         The minimum's NaN and signed-zero rules are a fact about the runtime (verified on
+    ///         net10.0, the engine's target, in both JIT tiers), not a contract of the type on
+    ///         every runtime: earlier vector minimums were the hardware <c>minps</c>, which returns
+    ///         its second operand when either is NaN or both are zero, and under that rule a NaN
+    ///         in the middle of a range resets the serial fold but not the chunk fold, so the two
+    ///         trees differ. <c>TriangleBvhParallelBuildTests</c> pins the rule directly (NaN from
+    ///         either side, both signed zeros) so a retarget fails there by name rather than as a
+    ///         moved digest, and holds a soup of mixed NaN payloads to the tree of the same soup
+    ///         with every NaN canonical.
+    ///     </para>
+    ///     <para>
+    ///         Threads: every loop carries the degree as its cap, and the one nested pair (a
+    ///         level's top nodes, each sweeping in chunks) stays within it because a level of
+    ///         <c>n</c> nodes hands each node <c>degree / n</c> chunks, and a chunk loop has that
+    ///         many iterations. Each body counts the thread it runs on in <see cref="PeakWorkers" />
+    ///         (a chunk on the node's own thread counts once), which the bench prints and the
+    ///         tests hold to the degree. With a degree of one no loop is entered at all: every
+    ///         parallel site is skipped rather than run with one worker, so the calling thread is
+    ///         the only thread the build touches, which is what a caller saturating the pool wants.
+    ///     </para>
+    ///     <para>
+    ///         What one thread sees is the old serial build: with a degree of parallelism of one
+    ///         (or a soup no larger than the threshold) the whole tree is one subtree segment built
+    ///         on the calling thread, and the relocation is the copy into exact-size arrays that
+    ///         the trim used to be. It allocates what the serial build allocated, to the array:
+    ///         <c>TriangleBvhBuildAllocationTests</c> holds a build to that budget, after a closure
+    ///         in the decision path was found costing a heap object per decision (see
+    ///         <c>Segment.SweepChunked</c>).
     ///     </para>
     /// </summary>
     private sealed class Builder
     {
-        // Wide nodes the lane arrays are first sized for, as a fraction of the triangle count: the
-        // real bakes come out between one node per 6.7 and one per 8.6 triangles, so this covers
-        // them with slack and a denser soup grows the arrays by doubling. The arrays are trimmed to
-        // the exact count at the end, so the guess costs nothing retained.
+        // Wide nodes a subtree segment's lane arrays are first sized for, as a fraction of its
+        // triangle count: the real bakes come out between one node per 6.7 and one per 8.6
+        // triangles, so this covers them with slack and a denser soup grows the arrays by doubling.
+        // Every segment is copied into exact-size arrays at the end, so the guess costs nothing
+        // retained.
         private const int TrianglesPerWideNodeGuess = 6;
 
-        private readonly int[] _binCount = new int[3 * Bins];
-        private readonly Vector3[] _binCentroidMax = new Vector3[3 * Bins];
-        private readonly Vector3[] _binCentroidMin = new Vector3[3 * Bins];
-        private readonly Vector3[] _binMax = new Vector3[3 * Bins];
-        private readonly Vector3[] _binMin = new Vector3[3 * Bins];
-        private readonly int _count;
-        private readonly int[] _order;
-        private readonly float[] _rightArea = new float[Bins];
-        private readonly int[] _rightCount = new int[Bins];
-        private readonly float[] _v;
-        private int _capacity; // wide nodes the lane arrays hold
-        private int[] _child = [];
-        private int _depth;
-        private int[] _laneOfSlot = [];
-        private float[] _maxX = [];
-        private float[] _maxY = [];
-        private float[] _maxZ = [];
-        private float[] _minX = [];
-        private float[] _minY = [];
-        private float[] _minZ = [];
-        private TriangleRecord[] _rec; // released once the tree is laid out, before the leaf pack
-        private int _stackCapacity;
-        private int _wideCount;
+        // The hot methods below are compiled optimised on first call rather than tiered up. A
+        // bake is built once per map load, so the build runs cold, and tier-0 instrumented code
+        // is several times slower under thirty-two threads than serially (its counters share
+        // cache lines): the bench measured the cold parallel build at two to three times its warm
+        // time on the small bakes before this, and close to it after.
 
-        public Builder(float[] v, int count)
+        // A wide node over more than this many triangles is a top node, built as a segment of one;
+        // at or below it the whole subtree is one segment. Above it are the top few binary levels,
+        // whose nodes are few and large; below it a real bake has hundreds of independent subtrees.
+        private const int DeferBelow = 16384;
+
+        // A chunk of a parallel bin sweep or per-triangle pass covers at least this many triangles,
+        // so the fork is amortised over real work.
+        private const int SweepChunkMin = 8192;
+        private const int PassChunkMin = 32768;
+
+        // A top node's lane whose child is a pending segment, until the relocation resolves it to
+        // that segment's first node. Never a leaf encoding (a leaf holds at most MaxLeaf slots) and
+        // never a node index; the relocation resolves from the pending list, not from this value.
+        private const int PendingLane = int.MinValue;
+
+        // How many bodies of this build the current thread is inside; see EnterBody.
+        [ThreadStatic]
+        private static int _nesting;
+
+        private readonly int _count;
+        private readonly int[] _laneOfSlot;
+        private readonly ParallelOptions _options;
+        private readonly int[] _order;
+        private readonly int _parallelism;
+        private readonly float[] _v;
+        private int _activeWorkers;
+        private int _peakWorkers;
+        private TriangleRecord[] _rec; // released once every decision is made, before the final arrays
+
+        public Builder(float[] v, int count, int parallelism)
         {
             _v = v;
             _count = count;
+            _parallelism = parallelism;
+            _options = new ParallelOptions { MaxDegreeOfParallelism = parallelism };
             _order = new int[count];
             _rec = new TriangleRecord[count];
+            _laneOfSlot = new int[count];
 
-            for (int i = 0; i < count; i++)
+            RunChunks(Chunks(count, PassChunkMin), count, (_, from, to) =>
             {
-                _order[i] = i;
-                int b = i * 9;
-                Vector3 a = new(v[b], v[b + 1], v[b + 2]);
-                Vector3 bb = new(v[b + 3], v[b + 4], v[b + 5]);
-                Vector3 c = new(v[b + 6], v[b + 7], v[b + 8]);
-                Vector3 lo = Vector3.Min(a, Vector3.Min(bb, c));
-                Vector3 hi = Vector3.Max(a, Vector3.Max(bb, c));
-                // Binned on the box centre, which is what the SAH literature calls the centroid.
-                _rec[i] = new TriangleRecord(lo, hi, (lo + hi) * 0.5f);
-            }
+                for (int i = from; i < to; i++)
+                {
+                    _order[i] = i;
+                    int b = i * 9;
+                    Vector3 a = new(v[b], v[b + 1], v[b + 2]);
+                    Vector3 bb = new(v[b + 3], v[b + 4], v[b + 5]);
+                    Vector3 c = new(v[b + 6], v[b + 7], v[b + 8]);
+                    Vector3 lo = CanonicalNaN(Vector3.Min(a, Vector3.Min(bb, c)));
+                    Vector3 hi = CanonicalNaN(Vector3.Max(a, Vector3.Max(bb, c)));
+                    // Binned on the box centre, which is what the SAH literature calls the centroid.
+                    _rec[i] = new TriangleRecord(lo, hi, (lo + hi) * 0.5f);
+                }
+            });
+        }
+
+        // Every NaN a record carries is float.NaN, whatever payload the soup had. A fold of two
+        // NaNs keeps one of them, and which one is not fixed by the runtime: the vector minimum
+        // keeps the left payload in unoptimised code and the right in optimised code, and a sum
+        // of two NaNs keeps whichever operand the JIT placed first (observed on net10.0 with a
+        // harness over both tiers). A soup with two NaN payloads therefore built a different tree
+        // in Debug than in Release, and could in principle build a different one once a method
+        // tiered up. With one payload in play the choice is invisible: the records are where soup
+        // floats enter the build's folds, and everything downstream (bins, bounds, centroids)
+        // derives from them, so the tree is a function of the soup in every tier and at every
+        // degree. The leaf storage keeps the soup's own floats; no verdict reads a payload from it.
+        // The identity pins do not move: no bake carries a NaN, and the pinned soups' NaNs are
+        // float.NaN already.
+        private static Vector3 CanonicalNaN(Vector3 v)
+        {
+            Vector128<float> x = v.AsVector128();
+            return Vector128.ConditionalSelect(Vector128.Equals(x, x), x, Vector128.Create(float.NaN)).AsVector3();
         }
 
         public TriangleBvh Finish()
         {
             // The root's bounds are the one scan the build does over a whole range; every child's
-            // come out of its parent's bin sweep.
+            // come out of its parent's bin sweep. Chunked partial folds, combined in chunk order.
+            int chunks = Chunks(_count, PassChunkMin);
+            Vector3[] partial = new Vector3[chunks * 4];
+            RunChunks(chunks, _count, (c, from, to) =>
+            {
+                Vector3 pbmin = new(float.MaxValue), pbmax = new(float.MinValue);
+                Vector3 pcmin = new(float.MaxValue), pcmax = new(float.MinValue);
+                for (int i = from; i < to; i++)
+                {
+                    Fold(in _rec[i], ref pbmin, ref pbmax, ref pcmin, ref pcmax);
+                }
+
+                partial[c * 4] = pbmin;
+                partial[(c * 4) + 1] = pbmax;
+                partial[(c * 4) + 2] = pcmin;
+                partial[(c * 4) + 3] = pcmax;
+            });
+
             Vector3 bmin = new(float.MaxValue), bmax = new(float.MinValue);
             Vector3 cmin = new(float.MaxValue), cmax = new(float.MinValue);
-            for (int i = 0; i < _count; i++)
+            for (int c = 0; c < chunks; c++)
             {
-                Fold(in _rec[i], ref bmin, ref bmax, ref cmin, ref cmax);
+                bmin = Vector3.Min(bmin, partial[c * 4]);
+                bmax = Vector3.Max(bmax, partial[(c * 4) + 1]);
+                cmin = Vector3.Min(cmin, partial[(c * 4) + 2]);
+                cmax = Vector3.Max(cmax, partial[(c * 4) + 3]);
             }
 
-            Decision root = Decide(new Range(0, _count, 0, bmin, bmax, cmin, cmax));
+            // The root segment: one node of the top when there is a pool to hand its children to,
+            // otherwise the whole tree on this thread.
+            bool top = _parallelism > 1 && _count > DeferBelow;
+            Segment root = new(this, top, top ? _parallelism : 1, top ? 1 : Math.Max(1, _count / TrianglesPerWideNodeGuess));
+            Decision rootDecision = root.Decide(new Range(0, _count, 0, bmin, bmax, cmin, cmax));
+            root.BuildWide(in rootDecision, 0, 1);
 
-            _capacity = Math.Max(1, _count / TrianglesPerWideNodeGuess);
-            int lanes = _capacity * Width;
-            _minX = new float[lanes];
-            _minY = new float[lanes];
-            _minZ = new float[lanes];
-            _maxX = new float[lanes];
-            _maxY = new float[lanes];
-            _maxZ = new float[lanes];
-            _child = new int[lanes];
-            _laneOfSlot = new int[_count];
-            BuildWide(in root, 0, 1);
+            // The top, level by level: every node of a level concurrently, each with a share of the
+            // threads for its sweeps. Subtree segments are only created here and built below.
+            List<Segment> segments = [root];
+            List<Segment> subtrees = [];
+            List<Segment> level = [root];
+            while (level.Count > 0)
+            {
+                List<Segment> next = [];
+                foreach (Segment s in level)
+                {
+                    foreach (Pending p in s.Pending)
+                    {
+                        bool topChild = p.Root.Self.Count > DeferBelow;
+                        p.Built = new Segment(this, topChild, 1, topChild ? 1 : Math.Max(1, p.Root.Self.Count / TrianglesPerWideNodeGuess));
+                        segments.Add(p.Built);
+                        (topChild ? next : subtrees).Add(p.Built);
+                    }
+                }
 
-            // The records are done with; dropping them before the trim and the leaf pack keeps
-            // those arrays from sitting on top of them at the build's high-water mark, which is
-            // then the lane arrays plus the leaf storage, about the size of the finished tree.
-            // (Trim resizes one lane array at a time, so its own transient is one array's copy.)
-            // Nothing the bench reports would move if this line were lost: allocation and
-            // retained bytes are unchanged and the digest is unchanged. Only the live-set peak
-            // the bench's build --live flag samples would rise by the records, 33 MB on de_ancient.
+                if (next.Count > 0)
+                {
+                    // Each node's chunked sweeps get a share of the degree, and the shares sum to
+                    // at most the degree, so the nested loops together stay within it.
+                    int sweepChunks = Math.Max(1, _parallelism / next.Count);
+                    Parallel.ForEach(next, _options, s =>
+                    {
+                        EnterBody();
+                        try
+                        {
+                            s.BuildTop(sweepChunks);
+                        }
+                        finally
+                        {
+                            LeaveBody();
+                        }
+                    });
+                }
+
+                level = next;
+            }
+
+            if (subtrees.Count > 0)
+            {
+                // Largest first, one at a time per worker, so a few big subtrees do not trail the
+                // rest; the order changes nothing but the wall-clock, since each is built into its
+                // own arrays and placed by the walk below.
+                subtrees.Sort((a, b) => b.Job.Root.Self.Count.CompareTo(a.Job.Root.Self.Count));
+                Parallel.ForEach(Partitioner.Create(subtrees, EnumerablePartitionerOptions.NoBuffering), _options, s =>
+                {
+                    EnterBody();
+                    try
+                    {
+                        s.BuildSubtree();
+                    }
+                    finally
+                    {
+                        LeaveBody();
+                    }
+                });
+            }
+
+            // Every decision is made, so the records are dead from here; nothing below reads them.
+            // Dropping them before the final arrays exist keeps the build's live set at the
+            // segment arrays plus the final ones, which is under the finished tree's own size, as
+            // the serial build's was. (The bench's build --live flag is what sees this; allocation
+            // and retained bytes do not move.)
             _rec = [];
-            Trim();
+
+            // The serial numbering, from the segment sizes alone: preorder over the segment tree.
+            int nodeCount = 0, depth = 0, stackCapacity = 0;
+            Place(root, ref nodeCount);
+            foreach (Segment s in segments)
+            {
+                depth = Math.Max(depth, s.Depth);
+                stackCapacity = Math.Max(stackCapacity, s.StackCapacity);
+            }
+
+            int lanes = nodeCount * Width;
+            float[] minX = new float[lanes], minY = new float[lanes], minZ = new float[lanes];
+            float[] maxX = new float[lanes], maxY = new float[lanes], maxZ = new float[lanes];
+            int[] child = new int[lanes];
+            if (segments.Count == 1)
+            {
+                // One segment (a degree of one, or a soup under the deferral size): no fork.
+                Relocate(root, minX, minY, minZ, maxX, maxY, maxZ, child);
+            }
+            else
+            {
+                Parallel.ForEach(segments, _options, s =>
+                {
+                    EnterBody();
+                    try
+                    {
+                        Relocate(s, minX, minY, minZ, maxX, maxY, maxZ, child);
+                    }
+                    finally
+                    {
+                        LeaveBody();
+                    }
+                });
+            }
+
+            // The segments are done with; dropping them before the leaf pack keeps that array
+            // from sitting on top of them at the build's high-water mark.
+            segments.Clear();
+            subtrees.Clear();
+            root = null!;
 
             // Leaf storage in slot order: vertex a and the two edges, formed exactly as the
             // soup-order triangle test formed them.
             float[] tri = new float[_count * 9];
             int[] slotOf = new int[_count];
             float[] v = _v;
-            for (int s = 0; s < _count; s++)
+            int[] order = _order;
+            RunChunks(Chunks(_count, PassChunkMin), _count, (_, from, to) =>
             {
-                int t = _order[s];
-                slotOf[t] = s;
-                int src = t * 9;
-                int dst = s * 9;
-                float ax = v[src], ay = v[src + 1], az = v[src + 2];
-                tri[dst] = ax;
-                tri[dst + 1] = ay;
-                tri[dst + 2] = az;
-                tri[dst + 3] = v[src + 3] - ax;
-                tri[dst + 4] = v[src + 4] - ay;
-                tri[dst + 5] = v[src + 5] - az;
-                tri[dst + 6] = v[src + 6] - ax;
-                tri[dst + 7] = v[src + 7] - ay;
-                tri[dst + 8] = v[src + 8] - az;
-            }
+                for (int s = from; s < to; s++)
+                {
+                    int t = order[s];
+                    slotOf[t] = s;
+                    int src = t * 9;
+                    int dst = s * 9;
+                    float ax = v[src], ay = v[src + 1], az = v[src + 2];
+                    tri[dst] = ax;
+                    tri[dst + 1] = ay;
+                    tri[dst + 2] = az;
+                    tri[dst + 3] = v[src + 3] - ax;
+                    tri[dst + 4] = v[src + 4] - ay;
+                    tri[dst + 5] = v[src + 5] - az;
+                    tri[dst + 6] = v[src + 6] - ax;
+                    tri[dst + 7] = v[src + 7] - ay;
+                    tri[dst + 8] = v[src + 8] - az;
+                }
+            });
 
             return new TriangleBvh(
-                _minX, _minY, _minZ, _maxX, _maxY, _maxZ, _child, tri, _order, slotOf, _laneOfSlot,
-                _wideCount, _stackCapacity, _depth, root.Self.Min, root.Self.Max, _count);
+                minX, minY, minZ, maxX, maxY, maxZ, child, tri, _order, slotOf, _laneOfSlot,
+                nodeCount, stackCapacity, depth, rootDecision.Self.Min, rootDecision.Self.Max, _count, _peakWorkers);
+        }
+
+        /// <summary>The most threads observed inside this build's bodies at once; one for a build that never forked.</summary>
+        public int PeakWorkers => _peakWorkers;
+
+        // Every loop body, parallel or not, brackets itself with these. A thread counts itself on
+        // its outermost body only, so a chunk sweep run inline on the thread that owns the top
+        // node adds nothing, and the peak is threads rather than bodies. The bracket is per body,
+        // not per triangle: a build enters a few thousand at most.
+        private void EnterBody()
+        {
+            if (_nesting++ != 0)
+            {
+                return;
+            }
+
+            int active = Interlocked.Increment(ref _activeWorkers);
+            int peak = _peakWorkers;
+            while (active > peak && Interlocked.CompareExchange(ref _peakWorkers, active, peak) != peak)
+            {
+                peak = _peakWorkers;
+            }
+        }
+
+        private void LeaveBody()
+        {
+            if (--_nesting == 0)
+            {
+                Interlocked.Decrement(ref _activeWorkers);
+            }
+        }
+
+        // Preorder over the segment tree: a segment's own nodes take the next indices, then each
+        // pending child's segment in collapse order. A subtree segment has no pending children, so
+        // its block is its local numbering shifted by its offset.
+        private static void Place(Segment s, ref int next)
+        {
+            s.Offset = next;
+            next += s.WideCount;
+            foreach (Pending p in s.Pending)
+            {
+                Place(p.Built!, ref next);
+            }
+        }
+
+        // Copies a segment's nodes into the final arrays at their serial indices, offsets its inner
+        // references, points each pending lane at its child segment, and points each leaf's run of
+        // slots at its final lane. Segments cover disjoint index and slot ranges, so this runs for
+        // all of them at once.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private void Relocate(
+            Segment s, float[] minX, float[] minY, float[] minZ, float[] maxX, float[] maxY, float[] maxZ, int[] child)
+        {
+            int offset = s.Offset;
+            int n = s.WideCount * Width;
+            int at = offset * Width;
+            Array.Copy(s.MinX, 0, minX, at, n);
+            Array.Copy(s.MinY, 0, minY, at, n);
+            Array.Copy(s.MinZ, 0, minZ, at, n);
+            Array.Copy(s.MaxX, 0, maxX, at, n);
+            Array.Copy(s.MaxY, 0, maxY, at, n);
+            Array.Copy(s.MaxZ, 0, maxZ, at, n);
+
+            for (int lane = 0; lane < n; lane++)
+            {
+                int c = s.Child[lane];
+                if (c >= 0)
+                {
+                    child[at + lane] = c + offset;
+                }
+                else if (c == EmptyLane || c == PendingLane)
+                {
+                    child[at + lane] = c;
+                }
+                else
+                {
+                    child[at + lane] = c;
+                    (int start, int run) = DecodeLeaf(c);
+                    for (int slot = start; slot < start + run; slot++)
+                    {
+                        _laneOfSlot[slot] = at + lane;
+                    }
+                }
+            }
+
+            foreach (Pending p in s.Pending)
+            {
+                Debug.Assert(child[at + p.Lane] == PendingLane, "a pending lane holds something other than the sentinel");
+                child[at + p.Lane] = p.Built!.Offset;
+            }
+
+            // The segment's arrays are dead the moment they are copied, and they are released here
+            // rather than by letting the segments go out of reach: a segment object stays
+            // reachable from this frame until Finish returns whatever is nulled (a weak reference
+            // to the root survived a forced collection after every field and local naming it was
+            // cleared; the JIT may keep a reference in a slot it does not track), and with the
+            // arrays still attached the leaf pack landed on top of them, 37 MB over the finished
+            // tree on de_ancient. Released per segment, the live set peaks at the tree's own size,
+            // as the serial build's did; the bench's build --live flag is what sees it.
+            s.ReleaseArrays();
+        }
+
+        // Chunks for a pass over count items: as many as the parallelism allows with at least
+        // minPerChunk items each, and one when there is nothing to fork for.
+        private int Chunks(int count, int minPerChunk) =>
+            _parallelism <= 1 ? 1 : (int)Math.Clamp(count / minPerChunk, 1, _parallelism);
+
+        // Runs body over the chunk ranges of [0, count): chunk c is [c * count / chunks,
+        // (c + 1) * count / chunks), and body gets c with its range. Serial when there is one chunk.
+        private void RunChunks(int chunks, int count, Action<int, int, int> body)
+        {
+            if (chunks <= 1)
+            {
+                EnterBody();
+                try
+                {
+                    body(0, 0, count);
+                }
+                finally
+                {
+                    LeaveBody();
+                }
+
+                return;
+            }
+
+            Parallel.For(0, chunks, _options, c =>
+            {
+                EnterBody();
+                try
+                {
+                    body(c, (int)(((long)c * count) / chunks), (int)(((long)(c + 1) * count) / chunks));
+                }
+                finally
+                {
+                    LeaveBody();
+                }
+            });
         }
 
         private static void Fold(in TriangleRecord r, ref Vector3 bmin, ref Vector3 bmax, ref Vector3 cmin, ref Vector3 cmax)
@@ -1185,442 +1591,684 @@ public sealed class TriangleBvh
             return bin >= Bins ? Bins - 1 : bin < 0 ? 0 : bin;
         }
 
-        private float Centroid(int axis, int position)
+        /// <summary>
+        ///     One segment's build state: the bins the SAH sweeps into, lane arrays numbered from
+        ///     zero in the segment's own preorder, and for a top node the children it left pending.
+        ///     A top node also owns chunk bins for its parallel sweeps.
+        /// </summary>
+        private sealed class Segment
         {
-            ref TriangleRecord r = ref _rec[position];
-            return axis == 0 ? r.Centroid.X : axis == 1 ? r.Centroid.Y : r.Centroid.Z;
-        }
+            private readonly BinSet _bins = new();
+            private readonly Builder _owner;
+            private readonly float[] _rightArea = new float[Bins];
+            private readonly int[] _rightCount = new int[Bins];
+            private readonly bool _top;
+            private int _capacity; // wide nodes the lane arrays hold
+            private BinSet[] _chunkBins = [];
+            private int _sweepChunks = 1;
 
-        // Decides one binary node: a leaf, or a split with the two child ranges and their bounds.
-        // The bin sweep and the partition are exactly the two-pass build's; only the destination
-        // of the answer changed.
-        private Decision Decide(in Range r)
-        {
-            int start = r.Start, count = r.Count, depth = r.Depth;
-            Vector3 bmin = r.Min, bmax = r.Max, cmin = r.CentroidMin, cmax = r.CentroidMax;
-            if (count == 1)
+            public Segment(Builder owner, bool top, int sweepChunks, int initialCapacity)
             {
-                return Decision.Leaf(in r);
+                _owner = owner;
+                _top = top;
+                SweepChunks = sweepChunks;
+                _capacity = initialCapacity;
+                int lanes = _capacity * Width;
+                MinX = new float[lanes];
+                MinY = new float[lanes];
+                MinZ = new float[lanes];
+                MaxX = new float[lanes];
+                MaxY = new float[lanes];
+                MaxZ = new float[lanes];
+                Child = new int[lanes];
             }
 
-            Vector3 cext = cmax - cmin;
-            float parentArea = Area(bmin, bmax);
-            float bestCost = float.MaxValue;
-            int bestAxis = -1, bestBin = -1;
-            float bestScale = 0f;
+            /// <summary>The subtree this segment stands for, as its parent left it; unset for the root, which is decided in place.</summary>
+            public Pending Job { get; set; } = null!;
 
-            if (depth < MaxBinaryDepth)
+            /// <summary>The children a top node left for segments of their own, in collapse order.</summary>
+            public List<Pending> Pending { get; } = [];
+
+            /// <summary>The serial index of this segment's first node, once placed.</summary>
+            public int Offset { get; set; }
+
+            /// <summary>Drops the lane arrays once they are copied into the final ones; see <c>Relocate</c>.</summary>
+            public void ReleaseArrays()
             {
-                bool binX = cext.X > 0f, binY = cext.Y > 0f, binZ = cext.Z > 0f;
-                float scaleX = binX ? Bins / cext.X : 0f;
-                float scaleY = binY ? Bins / cext.Y : 0f;
-                float scaleZ = binZ ? Bins / cext.Z : 0f;
-                for (int b = 0; b < 3 * Bins; b++)
+                MinX = [];
+                MinY = [];
+                MinZ = [];
+                MaxX = [];
+                MaxY = [];
+                MaxZ = [];
+                Child = [];
+            }
+
+            public int WideCount { get; private set; }
+
+            public int Depth { get; private set; }
+
+            public int StackCapacity { get; private set; }
+
+            public float[] MinX { get; private set; }
+
+            public float[] MinY { get; private set; }
+
+            public float[] MinZ { get; private set; }
+
+            public float[] MaxX { get; private set; }
+
+            public float[] MaxY { get; private set; }
+
+            public float[] MaxZ { get; private set; }
+
+            public int[] Child { get; private set; }
+
+            // Chunks a sweep of this segment's nodes may split into; one means serial sweeps.
+            private int SweepChunks
+            {
+                set
                 {
-                    _binCount[b] = 0;
-                    _binMin[b] = new Vector3(float.MaxValue);
-                    _binMax[b] = new Vector3(float.MinValue);
-                    _binCentroidMin[b] = new Vector3(float.MaxValue);
-                    _binCentroidMax[b] = new Vector3(float.MinValue);
-                }
-
-                // One pass over the range feeds every axis's bins; each fold is an exact min or
-                // max, so the bins hold what three separate passes would have put in them.
-                for (int i = start; i < start + count; i++)
-                {
-                    ref TriangleRecord rec = ref _rec[i];
-                    if (binX)
+                    _sweepChunks = Math.Max(1, value);
+                    if (_chunkBins.Length < _sweepChunks)
                     {
-                        int b = BinIndex(rec.Centroid.X, cmin.X, scaleX);
-                        _binCount[b]++;
-                        Fold(in rec, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
-                    }
-
-                    if (binY)
-                    {
-                        int b = Bins + BinIndex(rec.Centroid.Y, cmin.Y, scaleY);
-                        _binCount[b]++;
-                        Fold(in rec, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
-                    }
-
-                    if (binZ)
-                    {
-                        int b = (2 * Bins) + BinIndex(rec.Centroid.Z, cmin.Z, scaleZ);
-                        _binCount[b]++;
-                        Fold(in rec, ref _binMin[b], ref _binMax[b], ref _binCentroidMin[b], ref _binCentroidMax[b]);
-                    }
-                }
-
-                for (int axis = 0; axis < 3; axis++)
-                {
-                    bool active = axis == 0 ? binX : axis == 1 ? binY : binZ;
-                    if (!active)
-                    {
-                        continue;
-                    }
-
-                    float scale = axis == 0 ? scaleX : axis == 1 ? scaleY : scaleZ;
-                    int binBase = axis * Bins;
-
-                    // Right-to-left: the cost of everything right of a split after bin k.
-                    Vector3 rmin = new(float.MaxValue), rmax = new(float.MinValue);
-                    int rcount = 0;
-                    for (int b = Bins - 1; b >= 1; b--)
-                    {
-                        rcount += _binCount[binBase + b];
-                        rmin = Vector3.Min(rmin, _binMin[binBase + b]);
-                        rmax = Vector3.Max(rmax, _binMax[binBase + b]);
-                        _rightCount[b - 1] = rcount;
-                        _rightArea[b - 1] = Area(rmin, rmax);
-                    }
-
-                    // Left-to-right: fold the left side and price each split.
-                    Vector3 lmin = new(float.MaxValue), lmax = new(float.MinValue);
-                    int lcount = 0;
-                    for (int k = 0; k < Bins - 1; k++)
-                    {
-                        lcount += _binCount[binBase + k];
-                        lmin = Vector3.Min(lmin, _binMin[binBase + k]);
-                        lmax = Vector3.Max(lmax, _binMax[binBase + k]);
-                        if (lcount == 0 || _rightCount[k] == 0)
+                        _chunkBins = new BinSet[_sweepChunks];
+                        for (int c = 0; c < _chunkBins.Length; c++)
                         {
-                            continue;
-                        }
-
-                        float cost = (NodeCost * parentArea) + (Area(lmin, lmax) * lcount) + (_rightArea[k] * _rightCount[k]);
-                        if (cost < bestCost)
-                        {
-                            bestCost = cost;
-                            bestAxis = axis;
-                            bestBin = k;
-                            bestScale = scale;
+                            _chunkBins[c] = new BinSet();
                         }
                     }
                 }
             }
 
-            if (bestAxis < 0)
+            /// <summary>Builds a top node from its job: one wide node, its inner children left pending.</summary>
+            /// <param name="sweepChunks">Threads this node may use for its sweeps.</param>
+            public void BuildTop(int sweepChunks)
             {
-                // No split can separate the centroids (all coincide), or the depth cap was reached.
-                if (count <= MaxLeaf)
+                Debug.Assert(_top, "BuildTop on a subtree segment");
+                SweepChunks = sweepChunks;
+                Decision root = Job.Root;
+                BuildWide(in root, Job.Waiting, Job.Depth);
+            }
+
+            /// <summary>Builds a subtree segment from its job: the whole subtree, depth first.</summary>
+            public void BuildSubtree()
+            {
+                Debug.Assert(!_top, "BuildSubtree on a top node");
+                Decision root = Job.Root;
+                BuildWide(in root, Job.Waiting, Job.Depth);
+            }
+
+            // Decides one binary node: a leaf, or a split with the two child ranges and their bounds.
+            // The bin sweep and the partition are exactly the two-pass build's; only the destination
+            // of the answer changed.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public Decision Decide(in Range r)
+            {
+                int start = r.Start, count = r.Count, depth = r.Depth;
+                Vector3 bmin = r.Min, bmax = r.Max, cmin = r.CentroidMin, cmax = r.CentroidMax;
+                if (count == 1)
                 {
                     return Decision.Leaf(in r);
                 }
 
-                return HalfSplit(in r);
-            }
+                Vector3 cext = cmax - cmin;
+                float parentArea = Area(bmin, bmax);
+                float bestCost = float.MaxValue;
+                int bestAxis = -1, bestBin = -1;
+                float bestScale = 0f;
+                TriangleRecord[] rec = _owner._rec;
 
-            if (count <= MaxLeaf && parentArea * count <= bestCost)
-            {
-                return Decision.Leaf(in r);
-            }
-
-            // Partition the range in place around the chosen bin, records and indices together;
-            // the children's bounds and centroid bounds come from the bins, not from a rescan.
-            float splitMin = bestAxis == 0 ? cmin.X : bestAxis == 1 ? cmin.Y : cmin.Z;
-            int lo = start, hi = start + count - 1;
-            while (lo <= hi)
-            {
-                if (BinIndex(Centroid(bestAxis, lo), splitMin, bestScale) <= bestBin)
+                if (depth < MaxBinaryDepth)
                 {
-                    lo++;
-                }
-                else
-                {
-                    (_order[lo], _order[hi]) = (_order[hi], _order[lo]);
-                    (_rec[lo], _rec[hi]) = (_rec[hi], _rec[lo]);
-                    hi--;
-                }
-            }
-
-            int mid = lo;
-            int leftCount = mid - start;
-            int rightCount = count - leftCount;
-            Debug.Assert(leftCount > 0 && rightCount > 0, "a priced split left one side empty");
-
-            int bestBase = bestAxis * Bins;
-            Vector3 lbmin = new(float.MaxValue), lbmax = new(float.MinValue);
-            Vector3 lcmin = new(float.MaxValue), lcmax = new(float.MinValue);
-            Vector3 rbmin = new(float.MaxValue), rbmax = new(float.MinValue);
-            Vector3 rcmin = new(float.MaxValue), rcmax = new(float.MinValue);
-            for (int b = 0; b < Bins; b++)
-            {
-                if (_binCount[bestBase + b] == 0)
-                {
-                    continue;
-                }
-
-                if (b <= bestBin)
-                {
-                    lbmin = Vector3.Min(lbmin, _binMin[bestBase + b]);
-                    lbmax = Vector3.Max(lbmax, _binMax[bestBase + b]);
-                    lcmin = Vector3.Min(lcmin, _binCentroidMin[bestBase + b]);
-                    lcmax = Vector3.Max(lcmax, _binCentroidMax[bestBase + b]);
-                }
-                else
-                {
-                    rbmin = Vector3.Min(rbmin, _binMin[bestBase + b]);
-                    rbmax = Vector3.Max(rbmax, _binMax[bestBase + b]);
-                    rcmin = Vector3.Min(rcmin, _binCentroidMin[bestBase + b]);
-                    rcmax = Vector3.Max(rcmax, _binCentroidMax[bestBase + b]);
-                }
-            }
-
-            return Decision.Inner(
-                in r,
-                new Range(start, leftCount, depth + 1, lbmin, lbmax, lcmin, lcmax),
-                new Range(mid, rightCount, depth + 1, rbmin, rbmax, rcmin, rcmax));
-        }
-
-        // Halves the range by index. Only for a range the SAH cannot split (coincident centroids
-        // past the leaf size) or one past the depth cap; the children are scanned for their bounds
-        // because no bin sweep priced them.
-        private Decision HalfSplit(in Range r)
-        {
-            int start = r.Start, count = r.Count;
-            int leftCount = count / 2;
-            Vector3 lbmin = new(float.MaxValue), lbmax = new(float.MinValue);
-            Vector3 lcmin = new(float.MaxValue), lcmax = new(float.MinValue);
-            for (int i = start; i < start + leftCount; i++)
-            {
-                Fold(in _rec[i], ref lbmin, ref lbmax, ref lcmin, ref lcmax);
-            }
-
-            Vector3 rbmin = new(float.MaxValue), rbmax = new(float.MinValue);
-            Vector3 rcmin = new(float.MaxValue), rcmax = new(float.MinValue);
-            for (int i = start + leftCount; i < start + count; i++)
-            {
-                Fold(in _rec[i], ref rbmin, ref rbmax, ref rcmin, ref rcmax);
-            }
-
-            return Decision.Inner(
-                in r,
-                new Range(start, leftCount, r.Depth + 1, lbmin, lbmax, lcmin, lcmax),
-                new Range(start + leftCount, count - leftCount, r.Depth + 1, rbmin, rbmax, rcmin, rcmax));
-        }
-
-        // The children of the wide node that stands for the binary subtree rooted at node: its two
-        // binary children, then repeatedly the inner one with the largest box replaced by its own
-        // two, until eight remain or none is inner. Each child is decided as it enters the frontier,
-        // which is the only time its bin sweep runs. Returns how many; the root itself is the one
-        // child when it is a leaf.
-        private int Collapse(in Decision node, Span<Decision> children)
-        {
-            if (node.IsLeaf)
-            {
-                children[0] = node;
-                return 1;
-            }
-
-            children[0] = Decide(in node.Left);
-            children[1] = Decide(in node.Right);
-            int n = 2;
-            while (n < Width)
-            {
-                int pick = -1;
-                float pickArea = float.MinValue;
-                for (int k = 0; k < n; k++)
-                {
-                    ref Decision c = ref children[k];
-                    if (c.IsLeaf)
+                    bool binX = cext.X > 0f, binY = cext.Y > 0f, binZ = cext.Z > 0f;
+                    float scaleX = binX ? Bins / cext.X : 0f;
+                    float scaleY = binY ? Bins / cext.Y : 0f;
+                    float scaleZ = binZ ? Bins / cext.Z : 0f;
+                    int chunks = Math.Clamp(count / SweepChunkMin, 1, _sweepChunks);
+                    if (chunks == 1)
                     {
-                        continue;
+                        _bins.Reset();
+                        _bins.Sweep(rec, start, start + count, cmin, scaleX, scaleY, scaleZ, binX, binY, binZ);
+                    }
+                    else
+                    {
+                        SweepChunked(rec, start, count, chunks, cmin, scaleX, scaleY, scaleZ, binX, binY, binZ);
                     }
 
-                    float area = Area(c.Self.Min, c.Self.Max);
-                    if (area > pickArea)
+                    int[] binCount = _bins.Count;
+                    Vector3[] binMin = _bins.Min;
+                    Vector3[] binMax = _bins.Max;
+                    for (int axis = 0; axis < 3; axis++)
                     {
-                        pickArea = area;
-                        pick = k;
-                    }
-                }
-
-                if (pick < 0)
-                {
-                    break;
-                }
-
-                Decision expanded = children[pick];
-                children[pick] = Decide(in expanded.Left);
-                children[n++] = Decide(in expanded.Right);
-            }
-
-            return n;
-        }
-
-        // Lays the binary subtree rooted at node out as one wide node and returns its index.
-        // pathWaiting is the number of sibling lanes that can be waiting on the stack above this
-        // node along the current path; it sizes the traversal stack exactly.
-        private int BuildWide(in Decision node, int pathWaiting, int depth)
-        {
-            Span<Decision> children = stackalloc Decision[Width];
-            int n = Collapse(in node, children);
-
-            int wide = _wideCount++;
-            if (wide == _capacity)
-            {
-                Grow();
-            }
-
-            int laneBase = wide * Width;
-            for (int l = 0; l < Width; l++)
-            {
-                _minX[laneBase + l] = float.PositiveInfinity;
-                _minY[laneBase + l] = float.PositiveInfinity;
-                _minZ[laneBase + l] = float.PositiveInfinity;
-                _maxX[laneBase + l] = float.NegativeInfinity;
-                _maxY[laneBase + l] = float.NegativeInfinity;
-                _maxZ[laneBase + l] = float.NegativeInfinity;
-                _child[laneBase + l] = EmptyLane;
-            }
-
-            int waiting = pathWaiting + (n - 1);
-            _stackCapacity = Math.Max(_stackCapacity, 1 + waiting);
-            _depth = Math.Max(_depth, depth);
-
-            Span<int> laneOf = stackalloc int[Width];
-            AssignLanes(children[..n], in node.Self, laneOf);
-
-            for (int k = 0; k < n; k++)
-            {
-                int lane = laneBase + laneOf[k];
-                ref Decision c = ref children[k];
-                _minX[lane] = c.Self.Min.X;
-                _minY[lane] = c.Self.Min.Y;
-                _minZ[lane] = c.Self.Min.Z;
-                _maxX[lane] = c.Self.Max.X;
-                _maxY[lane] = c.Self.Max.Y;
-                _maxZ[lane] = c.Self.Max.Z;
-                if (c.IsLeaf)
-                {
-                    _child[lane] = EncodeLeaf(c.Self.Start, c.Self.Count);
-                    for (int s = c.Self.Start; s < c.Self.Start + c.Self.Count; s++)
-                    {
-                        _laneOfSlot[s] = lane;
-                    }
-                }
-                else
-                {
-                    // Into a local first: the recursion can grow the lane arrays, and an element
-                    // assignment evaluates its array reference before its right-hand side.
-                    int child = BuildWide(in c, waiting, depth + 1);
-                    _child[lane] = child;
-                }
-            }
-
-            return wide;
-        }
-
-        private void Grow()
-        {
-            _capacity *= 2;
-            int lanes = _capacity * Width;
-            Array.Resize(ref _minX, lanes);
-            Array.Resize(ref _minY, lanes);
-            Array.Resize(ref _minZ, lanes);
-            Array.Resize(ref _maxX, lanes);
-            Array.Resize(ref _maxY, lanes);
-            Array.Resize(ref _maxZ, lanes);
-            Array.Resize(ref _child, lanes);
-        }
-
-        private void Trim()
-        {
-            if (_capacity == _wideCount)
-            {
-                return;
-            }
-
-            _capacity = _wideCount;
-            int lanes = _capacity * Width;
-            Array.Resize(ref _minX, lanes);
-            Array.Resize(ref _minY, lanes);
-            Array.Resize(ref _minZ, lanes);
-            Array.Resize(ref _maxX, lanes);
-            Array.Resize(ref _maxY, lanes);
-            Array.Resize(ref _maxZ, lanes);
-            Array.Resize(ref _child, lanes);
-        }
-
-        // Lays children into lanes by octant. Each child's preferred lane has a bit set per axis on
-        // which its centre lies on the positive side of the node's; when two children want the same
-        // lane, the assignment is the greedy best-score one over (child, lane) pairs, with offsets
-        // scaled by the node's extent so no axis dominates by unit alone. Ties fall to the lower
-        // child index, then the lower lane, so the layout is deterministic.
-        private static void AssignLanes(ReadOnlySpan<Decision> children, in Range node, Span<int> laneOf)
-        {
-            int n = children.Length;
-            Vector3 centre = (node.Min + node.Max) * 0.5f;
-            Vector3 extent = node.Max - node.Min;
-            Vector3 scale = new(
-                extent.X > 0f ? 1f / extent.X : 0f,
-                extent.Y > 0f ? 1f / extent.Y : 0f,
-                extent.Z > 0f ? 1f / extent.Z : 0f);
-
-            Span<Vector3> offset = stackalloc Vector3[Width];
-            for (int k = 0; k < n; k++)
-            {
-                ref readonly Range c = ref children[k].Self;
-                offset[k] = (((c.Min + c.Max) * 0.5f) - centre) * scale;
-            }
-
-            Span<float> scores = stackalloc float[Width * Width];
-            for (int k = 0; k < n; k++)
-            {
-                for (int lane = 0; lane < Width; lane++)
-                {
-                    scores[(k * Width) + lane] = ((lane & 1) != 0 ? offset[k].X : -offset[k].X)
-                                                 + ((lane & 2) != 0 ? offset[k].Y : -offset[k].Y)
-                                                 + ((lane & 4) != 0 ? offset[k].Z : -offset[k].Z);
-                }
-            }
-
-            int assignedChildren = 0, usedLanes = 0;
-            for (int k = 0; k < n; k++)
-            {
-                laneOf[k] = -1;
-            }
-
-            for (int round = 0; round < n; round++)
-            {
-                int bestChild = -1, bestLane = -1;
-                float bestScore = float.MinValue;
-                for (int k = 0; k < n; k++)
-                {
-                    if ((assignedChildren & (1 << k)) != 0)
-                    {
-                        continue;
-                    }
-
-                    for (int lane = 0; lane < Width; lane++)
-                    {
-                        if ((usedLanes & (1 << lane)) != 0)
+                        bool active = axis == 0 ? binX : axis == 1 ? binY : binZ;
+                        if (!active)
                         {
                             continue;
                         }
 
-                        float score = scores[(k * Width) + lane];
-                        if (score > bestScore)
+                        float scale = axis == 0 ? scaleX : axis == 1 ? scaleY : scaleZ;
+                        int binBase = axis * Bins;
+
+                        // Right-to-left: the cost of everything right of a split after bin k.
+                        Vector3 rmin = new(float.MaxValue), rmax = new(float.MinValue);
+                        int rcount = 0;
+                        for (int b = Bins - 1; b >= 1; b--)
                         {
-                            bestScore = score;
-                            bestChild = k;
-                            bestLane = lane;
+                            rcount += binCount[binBase + b];
+                            rmin = Vector3.Min(rmin, binMin[binBase + b]);
+                            rmax = Vector3.Max(rmax, binMax[binBase + b]);
+                            _rightCount[b - 1] = rcount;
+                            _rightArea[b - 1] = Area(rmin, rmax);
+                        }
+
+                        // Left-to-right: fold the left side and price each split.
+                        Vector3 lmin = new(float.MaxValue), lmax = new(float.MinValue);
+                        int lcount = 0;
+                        for (int k = 0; k < Bins - 1; k++)
+                        {
+                            lcount += binCount[binBase + k];
+                            lmin = Vector3.Min(lmin, binMin[binBase + k]);
+                            lmax = Vector3.Max(lmax, binMax[binBase + k]);
+                            if (lcount == 0 || _rightCount[k] == 0)
+                            {
+                                continue;
+                            }
+
+                            float cost = (NodeCost * parentArea) + (Area(lmin, lmax) * lcount) + (_rightArea[k] * _rightCount[k]);
+                            if (cost < bestCost)
+                            {
+                                bestCost = cost;
+                                bestAxis = axis;
+                                bestBin = k;
+                                bestScale = scale;
+                            }
                         }
                     }
                 }
 
-                if (bestChild < 0)
+                if (bestAxis < 0)
                 {
-                    // Every remaining score is NaN (a NaN vertex in the soup). The layout is only
-                    // an ordering heuristic, so any free lane will do; take the first of each.
-                    bestChild = BitOperations.TrailingZeroCount(~assignedChildren);
-                    bestLane = BitOperations.TrailingZeroCount(~usedLanes);
+                    // No split can separate the centroids (all coincide), or the depth cap was reached.
+                    if (count <= MaxLeaf)
+                    {
+                        return Decision.Leaf(in r);
+                    }
+
+                    return HalfSplit(in r);
                 }
 
-                laneOf[bestChild] = bestLane;
-                assignedChildren |= 1 << bestChild;
-                usedLanes |= 1 << bestLane;
+                if (count <= MaxLeaf && parentArea * count <= bestCost)
+                {
+                    return Decision.Leaf(in r);
+                }
+
+                // Partition the range in place around the chosen bin, records and indices together;
+                // the children's bounds and centroid bounds come from the bins, not from a rescan.
+                int[] order = _owner._order;
+                float splitMin = bestAxis == 0 ? cmin.X : bestAxis == 1 ? cmin.Y : cmin.Z;
+                int lo = start, hi = start + count - 1;
+                while (lo <= hi)
+                {
+                    if (BinIndex(Centroid(rec, bestAxis, lo), splitMin, bestScale) <= bestBin)
+                    {
+                        lo++;
+                    }
+                    else
+                    {
+                        (order[lo], order[hi]) = (order[hi], order[lo]);
+                        (rec[lo], rec[hi]) = (rec[hi], rec[lo]);
+                        hi--;
+                    }
+                }
+
+                int mid = lo;
+                int leftCount = mid - start;
+                int rightCount = count - leftCount;
+                Debug.Assert(leftCount > 0 && rightCount > 0, "a priced split left one side empty");
+
+                int bestBase = bestAxis * Bins;
+                Vector3 lbmin = new(float.MaxValue), lbmax = new(float.MinValue);
+                Vector3 lcmin = new(float.MaxValue), lcmax = new(float.MinValue);
+                Vector3 rbmin = new(float.MaxValue), rbmax = new(float.MinValue);
+                Vector3 rcmin = new(float.MaxValue), rcmax = new(float.MinValue);
+                for (int b = 0; b < Bins; b++)
+                {
+                    if (_bins.Count[bestBase + b] == 0)
+                    {
+                        continue;
+                    }
+
+                    if (b <= bestBin)
+                    {
+                        lbmin = Vector3.Min(lbmin, _bins.Min[bestBase + b]);
+                        lbmax = Vector3.Max(lbmax, _bins.Max[bestBase + b]);
+                        lcmin = Vector3.Min(lcmin, _bins.CentroidMin[bestBase + b]);
+                        lcmax = Vector3.Max(lcmax, _bins.CentroidMax[bestBase + b]);
+                    }
+                    else
+                    {
+                        rbmin = Vector3.Min(rbmin, _bins.Min[bestBase + b]);
+                        rbmax = Vector3.Max(rbmax, _bins.Max[bestBase + b]);
+                        rcmin = Vector3.Min(rcmin, _bins.CentroidMin[bestBase + b]);
+                        rcmax = Vector3.Max(rcmax, _bins.CentroidMax[bestBase + b]);
+                    }
+                }
+
+                return Decision.Inner(
+                    in r,
+                    new Range(start, leftCount, depth + 1, lbmin, lbmax, lcmin, lcmax),
+                    new Range(mid, rightCount, depth + 1, rbmin, rbmax, rcmin, rcmax));
             }
+
+            // Lays the binary subtree rooted at node out as one wide node and returns its index in
+            // this segment. A subtree segment recurses into its inner children; a top node leaves
+            // them pending. pathWaiting is the number of sibling lanes that can be waiting on the
+            // stack above this node along the current path; it sizes the traversal stack exactly.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public int BuildWide(in Decision node, int pathWaiting, int depth)
+            {
+                Span<Decision> children = stackalloc Decision[Width];
+                int n = Collapse(in node, children);
+
+                int wide = WideCount++;
+                if (wide == _capacity)
+                {
+                    Grow();
+                }
+
+                int laneBase = wide * Width;
+                for (int l = 0; l < Width; l++)
+                {
+                    MinX[laneBase + l] = float.PositiveInfinity;
+                    MinY[laneBase + l] = float.PositiveInfinity;
+                    MinZ[laneBase + l] = float.PositiveInfinity;
+                    MaxX[laneBase + l] = float.NegativeInfinity;
+                    MaxY[laneBase + l] = float.NegativeInfinity;
+                    MaxZ[laneBase + l] = float.NegativeInfinity;
+                    Child[laneBase + l] = EmptyLane;
+                }
+
+                int waiting = pathWaiting + (n - 1);
+                StackCapacity = Math.Max(StackCapacity, 1 + waiting);
+                Depth = Math.Max(Depth, depth);
+
+                Span<int> laneOf = stackalloc int[Width];
+                AssignLanes(children[..n], in node.Self, laneOf);
+
+                for (int k = 0; k < n; k++)
+                {
+                    int lane = laneBase + laneOf[k];
+                    ref Decision c = ref children[k];
+                    MinX[lane] = c.Self.Min.X;
+                    MinY[lane] = c.Self.Min.Y;
+                    MinZ[lane] = c.Self.Min.Z;
+                    MaxX[lane] = c.Self.Max.X;
+                    MaxY[lane] = c.Self.Max.Y;
+                    MaxZ[lane] = c.Self.Max.Z;
+                    if (c.IsLeaf)
+                    {
+                        Child[lane] = EncodeLeaf(c.Self.Start, c.Self.Count);
+                    }
+                    else if (_top)
+                    {
+                        Pending.Add(new Pending(in c, waiting, depth + 1, lane));
+                        Child[lane] = PendingLane;
+                    }
+                    else
+                    {
+                        // Into a local first: the recursion can grow the lane arrays, and an element
+                        // assignment evaluates its array reference before its right-hand side.
+                        int child = BuildWide(in c, waiting, depth + 1);
+                        Child[lane] = child;
+                    }
+                }
+
+                return wide;
+            }
+
+            // The chunked sweep of Decide, in a method of its own on purpose: the loop body closes
+            // over its arguments, and the compiler allocates a closure's captured variables when
+            // their scope is entered, not when the lambda is reached. Written inline in Decide,
+            // that was one heap object per decision (about seventy bytes, over a million times on
+            // de_ancient, whether or not the chunked branch was taken), which the allocation
+            // budget test now holds against. Here it is one per chunked sweep, a few dozen per
+            // build. Each chunk sweeps its part of the range into its own bins; the node's bins
+            // are then the fold of the chunk bins in chunk order, which the class doc argues is
+            // the serial sweep's answer bit for bit. The loop has as many iterations as this
+            // segment's share of the degree allows, so it occupies at most that many threads
+            // whatever the options would permit.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            private void SweepChunked(
+                TriangleRecord[] rec, int start, int count, int chunks, Vector3 cmin, float scaleX, float scaleY, float scaleZ,
+                bool binX, bool binY, bool binZ)
+            {
+                Debug.Assert(chunks > 1 && chunks <= _sweepChunks, "a chunked sweep outside its segment's share");
+                BinSet[] chunkBins = _chunkBins;
+                Builder owner = _owner;
+                Parallel.For(0, chunks, owner._options, c =>
+                {
+                    owner.EnterBody();
+                    try
+                    {
+                        int from = start + (int)(((long)c * count) / chunks);
+                        int to = start + (int)(((long)(c + 1) * count) / chunks);
+                        chunkBins[c].Reset();
+                        chunkBins[c].Sweep(rec, from, to, cmin, scaleX, scaleY, scaleZ, binX, binY, binZ);
+                    }
+                    finally
+                    {
+                        owner.LeaveBody();
+                    }
+                });
+
+                _bins.Reset();
+                for (int c = 0; c < chunks; c++)
+                {
+                    _bins.Absorb(chunkBins[c]);
+                }
+            }
+
+            private static float Centroid(TriangleRecord[] rec, int axis, int position)
+            {
+                ref TriangleRecord r = ref rec[position];
+                return axis == 0 ? r.Centroid.X : axis == 1 ? r.Centroid.Y : r.Centroid.Z;
+            }
+
+            // Halves the range by index. Only for a range the SAH cannot split (coincident centroids
+            // past the leaf size) or one past the depth cap; the children are scanned for their bounds
+            // because no bin sweep priced them.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            private Decision HalfSplit(in Range r)
+            {
+                TriangleRecord[] rec = _owner._rec;
+                int start = r.Start, count = r.Count;
+                int leftCount = count / 2;
+                Vector3 lbmin = new(float.MaxValue), lbmax = new(float.MinValue);
+                Vector3 lcmin = new(float.MaxValue), lcmax = new(float.MinValue);
+                for (int i = start; i < start + leftCount; i++)
+                {
+                    Fold(in rec[i], ref lbmin, ref lbmax, ref lcmin, ref lcmax);
+                }
+
+                Vector3 rbmin = new(float.MaxValue), rbmax = new(float.MinValue);
+                Vector3 rcmin = new(float.MaxValue), rcmax = new(float.MinValue);
+                for (int i = start + leftCount; i < start + count; i++)
+                {
+                    Fold(in rec[i], ref rbmin, ref rbmax, ref rcmin, ref rcmax);
+                }
+
+                return Decision.Inner(
+                    in r,
+                    new Range(start, leftCount, r.Depth + 1, lbmin, lbmax, lcmin, lcmax),
+                    new Range(start + leftCount, count - leftCount, r.Depth + 1, rbmin, rbmax, rcmin, rcmax));
+            }
+
+            // The children of the wide node that stands for the binary subtree rooted at node: its two
+            // binary children, then repeatedly the inner one with the largest box replaced by its own
+            // two, until eight remain or none is inner. Each child is decided as it enters the frontier,
+            // which is the only time its bin sweep runs. Returns how many; the root itself is the one
+            // child when it is a leaf.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            private int Collapse(in Decision node, Span<Decision> children)
+            {
+                if (node.IsLeaf)
+                {
+                    children[0] = node;
+                    return 1;
+                }
+
+                children[0] = Decide(in node.Left);
+                children[1] = Decide(in node.Right);
+                int n = 2;
+                while (n < Width)
+                {
+                    int pick = -1;
+                    float pickArea = float.MinValue;
+                    for (int k = 0; k < n; k++)
+                    {
+                        ref Decision c = ref children[k];
+                        if (c.IsLeaf)
+                        {
+                            continue;
+                        }
+
+                        float area = Area(c.Self.Min, c.Self.Max);
+                        if (area > pickArea)
+                        {
+                            pickArea = area;
+                            pick = k;
+                        }
+                    }
+
+                    if (pick < 0)
+                    {
+                        break;
+                    }
+
+                    Decision expanded = children[pick];
+                    children[pick] = Decide(in expanded.Left);
+                    children[n++] = Decide(in expanded.Right);
+                }
+
+                return n;
+            }
+
+            private void Grow()
+            {
+                _capacity *= 2;
+                int lanes = _capacity * Width;
+                MinX = Resized(MinX, lanes);
+                MinY = Resized(MinY, lanes);
+                MinZ = Resized(MinZ, lanes);
+                MaxX = Resized(MaxX, lanes);
+                MaxY = Resized(MaxY, lanes);
+                MaxZ = Resized(MaxZ, lanes);
+                Child = Resized(Child, lanes);
+            }
+
+            private static T[] Resized<T>(T[] array, int length)
+            {
+                Array.Resize(ref array, length);
+                return array;
+            }
+
+            // Lays children into lanes by octant. Each child's preferred lane has a bit set per axis on
+            // which its centre lies on the positive side of the node's; when two children want the same
+            // lane, the assignment is the greedy best-score one over (child, lane) pairs, with offsets
+            // scaled by the node's extent so no axis dominates by unit alone. Ties fall to the lower
+            // child index, then the lower lane, so the layout is deterministic.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            private static void AssignLanes(ReadOnlySpan<Decision> children, in Range node, Span<int> laneOf)
+            {
+                int n = children.Length;
+                Vector3 centre = (node.Min + node.Max) * 0.5f;
+                Vector3 extent = node.Max - node.Min;
+                Vector3 scale = new(
+                    extent.X > 0f ? 1f / extent.X : 0f,
+                    extent.Y > 0f ? 1f / extent.Y : 0f,
+                    extent.Z > 0f ? 1f / extent.Z : 0f);
+
+                Span<Vector3> offset = stackalloc Vector3[Width];
+                for (int k = 0; k < n; k++)
+                {
+                    ref readonly Range c = ref children[k].Self;
+                    offset[k] = (((c.Min + c.Max) * 0.5f) - centre) * scale;
+                }
+
+                Span<float> scores = stackalloc float[Width * Width];
+                for (int k = 0; k < n; k++)
+                {
+                    for (int lane = 0; lane < Width; lane++)
+                    {
+                        scores[(k * Width) + lane] = ((lane & 1) != 0 ? offset[k].X : -offset[k].X)
+                                                     + ((lane & 2) != 0 ? offset[k].Y : -offset[k].Y)
+                                                     + ((lane & 4) != 0 ? offset[k].Z : -offset[k].Z);
+                    }
+                }
+
+                int assignedChildren = 0, usedLanes = 0;
+                for (int k = 0; k < n; k++)
+                {
+                    laneOf[k] = -1;
+                }
+
+                for (int round = 0; round < n; round++)
+                {
+                    int bestChild = -1, bestLane = -1;
+                    float bestScore = float.MinValue;
+                    for (int k = 0; k < n; k++)
+                    {
+                        if ((assignedChildren & (1 << k)) != 0)
+                        {
+                            continue;
+                        }
+
+                        for (int lane = 0; lane < Width; lane++)
+                        {
+                            if ((usedLanes & (1 << lane)) != 0)
+                            {
+                                continue;
+                            }
+
+                            float score = scores[(k * Width) + lane];
+                            if (score > bestScore)
+                            {
+                                bestScore = score;
+                                bestChild = k;
+                                bestLane = lane;
+                            }
+                        }
+                    }
+
+                    if (bestChild < 0)
+                    {
+                        // Every remaining score is NaN (a NaN vertex in the soup). The layout is only
+                        // an ordering heuristic, so any free lane will do; take the first of each.
+                        bestChild = BitOperations.TrailingZeroCount(~assignedChildren);
+                        bestLane = BitOperations.TrailingZeroCount(~usedLanes);
+                    }
+
+                    laneOf[bestChild] = bestLane;
+                    assignedChildren |= 1 << bestChild;
+                    usedLanes |= 1 << bestLane;
+                }
+            }
+        }
+
+        /// <summary>
+        ///     The three axes' bins for one sweep: per bin, how many triangles fell in it, the fold
+        ///     of their boxes and the fold of their centroids. Every fold is a min or a max, so a
+        ///     set can absorb another (a chunk of the same range) and hold what one sweep over both
+        ///     ranges would have held.
+        /// </summary>
+        private sealed class BinSet
+        {
+            public readonly Vector3[] CentroidMax = new Vector3[3 * Bins];
+            public readonly Vector3[] CentroidMin = new Vector3[3 * Bins];
+            public readonly int[] Count = new int[3 * Bins];
+            public readonly Vector3[] Max = new Vector3[3 * Bins];
+            public readonly Vector3[] Min = new Vector3[3 * Bins];
+
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public void Reset()
+            {
+                for (int b = 0; b < 3 * Bins; b++)
+                {
+                    Count[b] = 0;
+                    Min[b] = new Vector3(float.MaxValue);
+                    Max[b] = new Vector3(float.MinValue);
+                    CentroidMin[b] = new Vector3(float.MaxValue);
+                    CentroidMax[b] = new Vector3(float.MinValue);
+                }
+            }
+
+            // One pass over [from, to) feeds every axis's bins; each fold is an exact min or max,
+            // so the bins hold what three separate passes would have put in them.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public void Sweep(
+                TriangleRecord[] rec, int from, int to, Vector3 cmin, float scaleX, float scaleY, float scaleZ,
+                bool binX, bool binY, bool binZ)
+            {
+                for (int i = from; i < to; i++)
+                {
+                    ref TriangleRecord r = ref rec[i];
+                    if (binX)
+                    {
+                        int b = BinIndex(r.Centroid.X, cmin.X, scaleX);
+                        Count[b]++;
+                        Fold(in r, ref Min[b], ref Max[b], ref CentroidMin[b], ref CentroidMax[b]);
+                    }
+
+                    if (binY)
+                    {
+                        int b = Bins + BinIndex(r.Centroid.Y, cmin.Y, scaleY);
+                        Count[b]++;
+                        Fold(in r, ref Min[b], ref Max[b], ref CentroidMin[b], ref CentroidMax[b]);
+                    }
+
+                    if (binZ)
+                    {
+                        int b = (2 * Bins) + BinIndex(r.Centroid.Z, cmin.Z, scaleZ);
+                        Count[b]++;
+                        Fold(in r, ref Min[b], ref Max[b], ref CentroidMin[b], ref CentroidMax[b]);
+                    }
+                }
+            }
+
+            // Folds another set's bins into these, bin by bin. An empty bin there holds the
+            // initial values, which the fold leaves alone.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public void Absorb(BinSet other)
+            {
+                for (int b = 0; b < 3 * Bins; b++)
+                {
+                    Count[b] += other.Count[b];
+                    Min[b] = Vector3.Min(Min[b], other.Min[b]);
+                    Max[b] = Vector3.Max(Max[b], other.Max[b]);
+                    CentroidMin[b] = Vector3.Min(CentroidMin[b], other.CentroidMin[b]);
+                    CentroidMax[b] = Vector3.Max(CentroidMax[b], other.CentroidMax[b]);
+                }
+            }
+        }
+
+        /// <summary>
+        ///     A child a top node left for a segment of its own: its decided root, the stack-sizing
+        ///     arguments the serial recursion would have passed, the lane of the top node that
+        ///     references it, and the segment once created.
+        /// </summary>
+        private sealed class Pending
+        {
+            public Pending(in Decision root, int waiting, int depth, int lane)
+            {
+                Root = root;
+                Waiting = waiting;
+                Depth = depth;
+                Lane = lane;
+            }
+
+            public Decision Root { get; }
+
+            public int Waiting { get; }
+
+            public int Depth { get; }
+
+            public int Lane { get; }
+
+            public Segment? Built
+            {
+                get => _built;
+                set
+                {
+                    _built = value;
+                    if (value is not null)
+                    {
+                        value.Job = this;
+                    }
+                }
+            }
+
+            private Segment? _built;
         }
 
         // One triangle's box and box centre, interleaved so a fold reads one contiguous record.

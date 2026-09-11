@@ -105,7 +105,7 @@ public class TriangleBvhBuildIdentityTests
         DepthCapChain
     }
 
-    private static (float[] Vertices, int Count) Make(Soup soup)
+    internal static (float[] Vertices, int Count) Make(Soup soup)
     {
         switch (soup)
         {

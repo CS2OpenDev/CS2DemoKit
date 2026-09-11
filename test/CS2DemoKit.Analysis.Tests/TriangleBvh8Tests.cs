@@ -219,9 +219,11 @@ public class TriangleBvh8Tests
 
     /// <summary>
     ///     The same soup twice gives the same tree, bit for bit: every lane box, every reference,
-    ///     the slot order and the stack capacity. The build is serial with no sort and no comparer,
-    ///     which is why, but the differential and tier digests are only comparable between runs if
-    ///     it stays so, and nothing else would notice if it stopped.
+    ///     the slot order and the stack capacity. The build has no sort and no comparer, and its
+    ///     parallel parts are deterministic by construction (<c>TriangleBvhParallelBuildTests</c>
+    ///     holds every degree of parallelism to the same digests), which is why; but the
+    ///     differential and tier digests are only comparable between runs if it stays so, and
+    ///     nothing else would notice if it stopped.
     /// </summary>
     [Test]
     public async Task Build_IsDeterministic_RunToRun()
