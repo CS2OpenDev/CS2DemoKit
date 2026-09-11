@@ -4,122 +4,11 @@ using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Visibility;
-using CS2OpenDev.Sdk.Entities;
 using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
 
 namespace CS2DemoKit.Analysis;
-
-/// <summary>
-///     The per-frame entity readout the scanner consumes — everything the analysis layer reads off the
-///     entity set for one frame, decoupled from the decode that produced it. Built by
-///     <see cref="EntityDigestExtractor" /> from a post-seek <see cref="EntityStateLayer" />, whether the
-///     decode ran sequentially or in a parallel chunk worker. The (stateful) consume
-///     path reads only this — never the live layer — so it is identical for either decode.
-/// </summary>
-internal sealed class EntityFrameDigest
-{
-    /// <summary>Live CMolotovProjectiles this frame: (entity index, serial, resolved thrower slot or -1).</summary>
-    public readonly List<(int Index, int Serial, int ThrowerSlot)> Molotovs = [];
-
-    /// <summary>
-    ///     Active smoke clouds this frame as spheres <c>(centre.xyz, radius)</c>, or empty when the
-    ///     producing decode was not asked for them. Carried on the digest because the consumer that
-    ///     needs them (the visibility transition scan) runs on the sequential consume side, where the
-    ///     parallel path's entity set is long gone: without this the scan would have no way to know a
-    ///     sightline passed through smoke, and every through-smoke sightline would read as a spot.
-    /// </summary>
-    public readonly List<Vector4> Smokes = [];
-
-    /// <summary>
-    ///     Per-player-provider values that CHANGED this frame, as (slot, values indexed by provider
-    ///     list order). A null entry means "no update" and is skipped when merged into the pre-frame
-    ///     snapshot; a pawn whose values all held contributes no row at all.
-    ///     <para>
-    ///         Deltas rather than a full readout because the consumer
-    ///         (<c>EntityChangeScanner.MergePreFrameSnapshot</c>) folds these into a running
-    ///         last-value-per-(provider, slot) map, so a value equal to the one already folded is a
-    ///         no-op. On the shipped provider set roughly one cell in a thousand actually changes, and
-    ///         materializing the other 999 cost a boxed value each for the whole demo's digest stream.
-    ///         A provider that changes every frame (a position, say) degrades this to the full readout
-    ///         plus a comparison.
-    ///     </para>
-    /// </summary>
-    public readonly List<(int Slot, object?[] Values)> PerPawn = [];
-
-    /// <summary>Singleton provider values this frame (indexed by the singleton-provider list order; null = no value yet).</summary>
-    public object?[] Singletons = [];
-
-    /// <summary>
-    ///     True when the producing tracker had recorded an entity-decode error
-    ///     (<see cref="EntityTracker.LastEntityError" />) by the time this digest was built — i.e. the
-    ///     entity state behind <see cref="PerPawn" /> is no longer trustworthy (on a bit-misaligned
-    ///     demo the per-pawn values freeze at their last successfully-decoded state). The scanner stops
-    ///     folding <see cref="PerPawn" /> into the pre-frame snapshot from the first compromised digest
-    ///     onward, so consumers see event-tracked fallbacks instead of silently-stale entity values;
-    ///     singleton and molotov consumption are deliberately unaffected. This is decode-integrity
-    ///     hardening — the EnemyDmg-overcount fix itself is the same-frame guard in
-    ///     <c>HurtTeamEnrichmentEdge</c>.
-    ///     <para>
-    ///         The flag is per-producing-tracker, so a parallel chunk worker that re-primed from a
-    ///         checkpoint AFTER an earlier chunk's error reports <c>false</c> again — the scanner's
-    ///         sequential consume latches instead (see <c>EntityChangeScanner.MergePreFrameSnapshot</c>),
-    ///         which is what restores the sequential single-tracker behaviour the goldens were
-    ///         verified against.
-    ///     </para>
-    /// </summary>
-    public bool DecodeCompromised;
-}
-
-/// <summary>
-///     One decode stream's memory of the last per-pawn value emitted for each (slot, provider), so
-///     <see cref="EntityDigestExtractor.Build" /> can emit only the cells that changed.
-///     <para>
-///         One instance per stream and never shared: one per parallel chunk worker, one per sequential
-///         scanner. A worker starting at a checkpoint has no history, so its first frame re-emits every
-///         live cell. That is redundant, not wrong: the consumer folds the values into
-///         <c>EntityChangeScanner._preFrameSnapshot</c>, and re-writing a key with the value it already
-///         holds is a no-op.
-///     </para>
-/// </summary>
-internal sealed class PerPawnDeltaState(int providerCount)
-{
-    // Distinguishes "never recorded" from "recorded null". A provider legitimately reads null (entity
-    // not spawned, field unseen), and that first null must count as a change.
-    private static readonly object Unset = new();
-
-    private object?[]?[] _bySlot = new object?[]?[64];
-
-    /// <summary>
-    ///     Records <paramref name="value" /> for (<paramref name="slot" />, <paramref name="provider" />)
-    ///     and returns whether it differs from the last value recorded for that cell.
-    /// </summary>
-    public bool Record(int slot, int provider, object? value)
-    {
-        if ((uint)slot >= (uint)_bySlot.Length)
-        {
-            Array.Resize(ref _bySlot, Math.Max(slot + 1, _bySlot.Length * 2));
-        }
-
-        object?[]? row = _bySlot[slot];
-        if (row is null)
-        {
-            row = new object?[providerCount];
-            Array.Fill(row, Unset);
-            _bySlot[slot] = row;
-        }
-
-        object? previous = row[provider];
-        if (!ReferenceEquals(previous, Unset) && Equals(previous, value))
-        {
-            return false;
-        }
-
-        row[provider] = value;
-        return true;
-    }
-}
 
 /// <summary>
 ///     Builds an <see cref="EntityFrameDigest" /> from a layer's current (post-seek) entity state. This is
@@ -128,37 +17,47 @@ internal sealed class PerPawnDeltaState(int providerCount)
 ///     (<c>ParallelDigestProducer</c>). Singletons and molotovs come out identical by construction;
 ///     per-pawn rows depend on the caller's <see cref="PerPawnDeltaState" />, so those agree once folded
 ///     rather than row for row.
+///     <para>
+///         Per pawn, every column is read through its typed cell reader where the provider has one
+///         (every shipped provider does) and compared unboxed against the stream's last value; a
+///         provider without a typed reader is read boxed and unboxed into its declared column, which
+///         is correct but pays the allocation this path otherwise avoids. The per-frame sweep passes
+///         its state through <see cref="PawnLookup.ForEachLivePawn{TState}" /> with a static
+///         callback, so a frame allocates nothing per pawn beyond the rows it emits.
+///     </para>
 /// </summary>
 internal static class EntityDigestExtractor
 {
     /// <summary>
-    ///     Extracts the per-frame digest: per-player provider values per live pawn (one
-    ///     <see cref="CSPlayerPawn" /> wrapper per pawn dispatched to every provider), singleton provider
-    ///     values, and live molotov projectiles with their resolved thrower slot.
+    ///     Extracts the per-frame digest: changed per-player provider cells per live pawn, singleton
+    ///     provider values, and live molotov projectiles with their resolved thrower slot.
     /// </summary>
     /// <param name="layer">The layer to read the current (post-seek) entity state from.</param>
-    /// <param name="perPlayerProviders">Per-player providers, read once per live pawn in list order.</param>
+    /// <param name="delta">
+    ///     The caller's per-stream cell memory, which also carries the column layout (hence the
+    ///     per-player providers, read in column order) and the read context. With
+    ///     <see cref="PerPawnDeltaState.Dedup" /> on, <see cref="EntityFrameDigest.PerPawn" /> carries
+    ///     only the cells that changed since the previous frame in that stream; off, the full per-frame
+    ///     readout.
+    /// </param>
     /// <param name="singletonProviders">Singleton providers, read once per frame in list order.</param>
     /// <param name="emitMolotovThrows">When true, the digest includes live <c>CMolotovProjectile</c>s.</param>
-    /// <param name="delta">
-    ///     The caller's per-stream cell memory. When supplied, <see cref="EntityFrameDigest.PerPawn" />
-    ///     carries only the cells that changed since the previous frame in that stream, with unchanged
-    ///     positions left null; a pawn whose values all held emits no row at all. Pass <c>null</c> for the
-    ///     full per-frame readout.
-    /// </param>
     /// <param name="captureSmokes">
     ///     When true, the digest carries this frame's active smoke clouds (see
-    ///     <see cref="EntityFrameDigest.Smokes" />). Off by default because it costs a second walk of
-    ///     the entity set per frame, which only the visibility transition scan has any use for.
+    ///     <see cref="EntityFrameDigest.Smokes" />). Off by default because only the visibility
+    ///     transition scan has any use for them. Shares the molotov walk when both are on.
     /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
-        IReadOnlyList<IPerPlayerEntityValueProvider> perPlayerProviders,
+        PerPawnDeltaState delta,
         IReadOnlyList<IEntityValueProvider> singletonProviders,
         bool emitMolotovThrows,
-        PerPawnDeltaState? delta = null,
         bool captureSmokes = false)
     {
+        ArgumentNullException.ThrowIfNull(layer);
+        ArgumentNullException.ThrowIfNull(delta);
+        ArgumentNullException.ThrowIfNull(singletonProviders);
+
         EntityTracker tracker = layer.Tracker;
         EntityFrameDigest d = new()
         {
@@ -169,34 +68,11 @@ internal static class EntityDigestExtractor
             DecodeCompromised = tracker.LastEntityError is not null
         };
 
-        int providerCount = perPlayerProviders.Count;
-        if (providerCount > 0)
+        if (delta.Layout.Count > 0)
         {
-            PawnLookup.ForEachLivePawn(tracker, (slot, pawn) =>
-            {
-                CSPlayerPawn wrapper = SdkEntityWorlds.Wrap<CSPlayerPawn>(tracker, pawn)!;
-
-                // Allocated on first write, so an all-unchanged pawn costs nothing. Every provider is
-                // still read: the change is what gets stored, not what gets computed.
-                object?[]? values = null;
-                for (int p = 0; p < providerCount; p++)
-                {
-                    // A provider reading leaves the SDK wrapper cannot resolve (position's
-                    // CBodyComponent pair) takes the raw state instead. See IPawnStateReader.
-                    object? value = perPlayerProviders[p] is IPawnStateReader stateReader
-                        ? stateReader.ReadForPawnState(tracker, pawn)
-                        : perPlayerProviders[p].ReadForPawn(tracker, wrapper);
-                    if (delta is null || delta.Record(slot, p, value))
-                    {
-                        (values ??= new object?[providerCount])[p] = value;
-                    }
-                }
-
-                if (values is not null)
-                {
-                    d.PerPawn.Add((slot, values));
-                }
-            });
+            PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
+                static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            delta.LastRowCount = d.PerPawn.Count;
         }
 
         d.Singletons = singletonProviders.Count > 0 ? new object?[singletonProviders.Count] : [];
@@ -205,27 +81,26 @@ internal static class EntityDigestExtractor
             d.Singletons[i] = singletonProviders[i].Read(layer);
         }
 
-        if (emitMolotovThrows)
+        if (emitMolotovThrows || captureSmokes)
         {
+            // One walk serves both: the two class names are disjoint, so this visits exactly the
+            // entities two separate walks would, in the same ascending index order.
             foreach ((int idx, EntityState ent) in tracker.CurrentEntities.AllIndexed())
             {
-                if (ent.ClassName != "CMolotovProjectile")
+                if (emitMolotovThrows && ent.ClassName == "CMolotovProjectile")
                 {
+                    d.AddMolotov(idx, ent.Serial, ResolveThrowerSlot(tracker, ent));
                     continue;
                 }
 
-                d.Molotovs.Add((idx, ent.Serial, ResolveThrowerSlot(tracker, ent)));
+                // The gate (m_nSmokeEffectTickBegin > 0 for a billowing cloud, a non-degenerate
+                // detonation position) is the analyzer's own, so the transition scan and the
+                // accumulating analyzer cannot disagree about which clouds are active.
+                if (captureSmokes && VisibilityAnalyzer.TryActiveSmoke(ent, out Vector4 sphere))
+                {
+                    d.AddSmoke(sphere);
+                }
             }
-        }
-
-        if (captureSmokes)
-        {
-            // Delegates to the analyzer's own collector rather than inlining the sweep into the
-            // molotov walk above. The gate it applies (m_nSmokeEffectTickBegin > 0 for a billowing
-            // cloud, a non-degenerate detonation position) is the proven one, and having the
-            // transition scan and the accumulating analyzer disagree about which clouds are active
-            // would be a silent divergence in the one place both are supposed to agree.
-            VisibilityAnalyzer.CollectActiveSmokes(tracker, d.Smokes);
         }
 
         return d;
@@ -233,7 +108,7 @@ internal static class EntityDigestExtractor
 
     /// <summary>
     ///     Resolves a projectile's thrower to a player slot via the validated chain
-    ///     <c>m_hThrower → pawn → m_hController → slot</c> (slot = controller index − 1). Returns
+    ///     <c>m_hThrower -> pawn -> m_hController -> slot</c> (slot = controller index - 1). Returns
     ///     <c>-1</c> when the handle is missing or doesn't resolve to a controller-bound pawn.
     /// </summary>
     internal static int ResolveThrowerSlot(EntityTracker tracker, EntityState projectile)
@@ -254,7 +129,7 @@ internal static class EntityDigestExtractor
         // m_hController is NOT a clean indexer swap: the control flow returns -1 only on ABSENT and
         // lets a present-null fall through to TryUnboxHandle, a shape the indexer cannot reproduce
         // (it collapses absent and present-null). EntityState.TryGetValue keeps that distinction with
-        // Fields' exact resolution order, without materialising the whole per-entity dict projection —
+        // Fields' exact resolution order, without materialising the whole per-entity dict projection,
         // which this call site was doing per live molotov per frame.
         if (pawn is null || !pawn.TryGetValue("m_hController", out object? controllerHandle))
         {
@@ -267,4 +142,147 @@ internal static class EntityDigestExtractor
         int controllerIdx = PawnLookup.IndexOf(PawnLookup.TryUnboxHandle(controllerHandle));
         return controllerIdx <= 0 ? -1 : controllerIdx - 1;
     }
+
+    /// <summary>
+    ///     Reads every column for one pawn, records each against the stream's memory, and appends a
+    ///     row when anything changed. A column whose read went from a value to "no value" counts as
+    ///     changed (so the row is emitted) but is not present in it, which is the boxed digest's
+    ///     "null cell means no update" restated.
+    /// </summary>
+    private static void ReadPawn(PawnSweep sweep, int slot, EntityState pawn)
+    {
+        PerPawnDeltaState delta = sweep.Delta;
+        DigestColumnLayout layout = delta.Layout;
+        PawnReadContext context = delta.Context;
+        context.Bind(sweep.Tracker, pawn);
+
+        TypedSlotRow row = delta.RowFor(slot);
+        ulong[] present = delta.PresentScratch;
+        Array.Clear(present);
+
+        bool anyChanged = false;
+        PawnCellKind[] kinds = layout.Kinds;
+        for (int p = 0; p < kinds.Length; p++)
+        {
+            bool hasValue;
+            bool changed;
+            switch (kinds[p])
+            {
+                case PawnCellKind.Int:
+                case PawnCellKind.Bool:
+                    hasValue = ReadInt(layout, p, context, out int intValue);
+                    changed = delta.RecordInt(row, p, hasValue, intValue);
+                    break;
+                case PawnCellKind.Float:
+                    hasValue = ReadFloat(layout, p, context, out float floatValue);
+                    changed = delta.RecordFloat(row, p, hasValue, floatValue);
+                    break;
+                default:
+                    string? text = ReadString(layout, p, context);
+                    hasValue = text is not null;
+                    changed = delta.RecordString(row, p, text);
+                    break;
+            }
+
+            if (changed)
+            {
+                anyChanged = true;
+                if (hasValue)
+                {
+                    present[p >> 6] |= 1UL << (p & 63);
+                }
+            }
+        }
+
+        if (!anyChanged)
+        {
+            return;
+        }
+
+        EntityFrameDigest digest = sweep.Digest;
+        if (ReferenceEquals(digest.PerPawn, PerPawnColumns.Empty))
+        {
+            digest.PerPawn = new PerPawnColumns(layout, Math.Max(PerPawnColumns.InitialCapacity, delta.LastRowCount));
+        }
+
+        digest.PerPawn.AppendRow(slot, row, present);
+    }
+
+    private static bool ReadInt(DigestColumnLayout layout, int column, PawnReadContext context, out int value)
+    {
+        if (layout.IntReaders[column] is { } reader)
+        {
+            return reader.TryReadInt(context, out value);
+        }
+
+        IPerPlayerEntityValueProvider provider = layout.Providers[column];
+        object? boxed = ReadBoxed(provider, context);
+        switch (boxed)
+        {
+            case null:
+                value = 0;
+                return false;
+            case int i when layout.Kinds[column] == PawnCellKind.Int:
+                value = i;
+                return true;
+            case bool b when layout.Kinds[column] == PawnCellKind.Bool:
+                value = b ? 1 : 0;
+                return true;
+            default:
+                throw Mismatch(provider, boxed);
+        }
+    }
+
+    private static bool ReadFloat(DigestColumnLayout layout, int column, PawnReadContext context, out float value)
+    {
+        if (layout.FloatReaders[column] is { } reader)
+        {
+            return reader.TryReadFloat(context, out value);
+        }
+
+        IPerPlayerEntityValueProvider provider = layout.Providers[column];
+        object? boxed = ReadBoxed(provider, context);
+        switch (boxed)
+        {
+            case null:
+                value = 0f;
+                return false;
+            case float f:
+                value = f;
+                return true;
+            default:
+                throw Mismatch(provider, boxed);
+        }
+    }
+
+    private static string? ReadString(DigestColumnLayout layout, int column, PawnReadContext context)
+    {
+        if (layout.StringReaders[column] is { } reader)
+        {
+            return reader.TryReadString(context, out string? value) ? value : null;
+        }
+
+        IPerPlayerEntityValueProvider provider = layout.Providers[column];
+        object? boxed = ReadBoxed(provider, context);
+        return boxed switch
+        {
+            null => null,
+            string s => s,
+            _ => throw Mismatch(provider, boxed)
+        };
+    }
+
+    // The boxed contract, for a provider with no typed reader. A provider reading leaves the SDK
+    // wrapper cannot resolve (position's CBodyComponent pair) takes the raw state instead.
+    private static object? ReadBoxed(IPerPlayerEntityValueProvider provider, PawnReadContext context) =>
+        provider is IPawnStateReader stateReader
+            ? stateReader.ReadForPawnState(context.Tracker, context.Pawn)
+            : provider.ReadForPawn(context.Tracker, context.Wrapper);
+
+    private static InvalidOperationException Mismatch(IPerPlayerEntityValueProvider provider, object boxed) =>
+        new($"per-player provider '{provider.Name}' declares value type {provider.ValueType.Name} but read a "
+            + $"{boxed.GetType().Name}; the digest stores each column in its declared type");
+
+    /// <summary>What one frame's pawn sweep carries into the static callback.</summary>
+    private readonly record struct PawnSweep(EntityTracker Tracker, PerPawnDeltaState Delta, EntityFrameDigest Digest);
 }

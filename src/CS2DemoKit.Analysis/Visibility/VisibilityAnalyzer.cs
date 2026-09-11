@@ -339,21 +339,43 @@ public static class VisibilityAnalyzer
         into.Clear();
         foreach ((int _, EntityState ent) in tracker.CurrentEntities.AllIndexed())
         {
-            if (ent.ClassName != SmokeClass)
+            if (TryActiveSmoke(ent, out Vector4 sphere))
             {
-                continue;
-            }
-
-            if (CoerceInt(ent["m_nSmokeEffectTickBegin"], 0) <= 0)
-            {
-                continue; // still a flying projectile, not yet a billowing cloud
-            }
-
-            if (ent.TryGet<Vector3>("m_vSmokeDetonationPos") is { } pos && (pos.X != 0 || pos.Y != 0))
-            {
-                into.Add(new Vector4(pos.X, pos.Y, pos.Z, SmokeVolumes.DefaultRadius));
+                into.Add(sphere);
             }
         }
+    }
+
+    /// <summary>
+    ///     The per-entity half of <see cref="CollectActiveSmokes" />: whether <paramref name="entity" />
+    ///     is a billowing smoke cloud, and its sphere if so. Split out so a caller already walking the
+    ///     entity set for something else (the digest extractor's molotov walk) applies the identical
+    ///     gate without a second walk.
+    /// </summary>
+    /// <param name="entity">Any live entity.</param>
+    /// <param name="sphere">The cloud as <c>(centre.xyz, radius)</c>, or default.</param>
+    /// <returns><c>true</c> for an active cloud.</returns>
+    public static bool TryActiveSmoke(EntityState entity, out Vector4 sphere)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        sphere = default;
+        if (entity.ClassName != SmokeClass)
+        {
+            return false;
+        }
+
+        if (CoerceInt(entity["m_nSmokeEffectTickBegin"], 0) <= 0)
+        {
+            return false; // still a flying projectile, not yet a billowing cloud
+        }
+
+        if (entity.TryGet<Vector3>("m_vSmokeDetonationPos") is { } pos && (pos.X != 0 || pos.Y != 0))
+        {
+            sphere = new Vector4(pos.X, pos.Y, pos.Z, SmokeVolumes.DefaultRadius);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

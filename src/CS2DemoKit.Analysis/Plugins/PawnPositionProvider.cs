@@ -51,7 +51,8 @@ public enum PawnPositionAxis
 ///     </para>
 /// </summary>
 public sealed class PawnPositionProvider(PawnPositionAxis axis)
-    : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>, IPawnStateReader
+    : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>, IPawnStateReader,
+        IPawnFloatCellReader
 {
     /// <summary>The axis this instance reads.</summary>
     public PawnPositionAxis Axis => axis;
@@ -100,6 +101,21 @@ public sealed class PawnPositionProvider(PawnPositionAxis axis)
     // networked all six leaves. A resolved 0 is a real coordinate and emits.
     public object? ReadForPawnState(EntityTracker tracker, EntityState pawn) =>
         PositionUtil.CellToWorld(pawn) is { } origin ? Select(origin) : null;
+
+    /// <inheritdoc />
+    // ReadForPawnState's gate on the context's cached origin, so X, Y and Z share one reconstruction.
+    public bool TryReadFloat(PawnReadContext context, out float value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.Origin is { } origin)
+        {
+            value = Select(origin);
+            return true;
+        }
+
+        value = 0f;
+        return false;
+    }
 
     /// <inheritdoc />
     /// <exception cref="NotSupportedException">Always. Read through <see cref="IPawnStateReader" />.</exception>

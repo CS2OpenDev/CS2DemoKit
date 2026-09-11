@@ -34,10 +34,13 @@ namespace CS2DemoKit.Analysis.Tests;
 [Category("Unit")]
 public class HurtEnrichmentSameFrameBurstTests
 {
+    /// <summary>The one-column (health) layout every digest here is built on; index 0 in every row.</summary>
+    private static readonly DigestColumnLayout _layout = DigestColumnLayout.For([new PawnHealthProvider()]);
+
     private static EntityFrameDigest Digest(int slot, int hp)
     {
         EntityFrameDigest d = new();
-        d.PerPawn.Add((slot, new object?[] { hp }));
+        d.PerPawn = PerPawnColumns.FromBoxedRows(_layout, [(slot, new object?[] { hp })]);
         return d;
     }
 
@@ -190,8 +193,7 @@ public class HurtEnrichmentSameFrameBurstTests
             providers: [],
             perPlayerProviders: [health]);
         EntityFrameDigest d = new();
-        d.PerPawn.Add((9, new object?[] { 66 }));
-        d.PerPawn.Add((3, new object?[] { 80 }));
+        d.PerPawn = PerPawnColumns.FromBoxedRows(_layout, [(9, new object?[] { 66 }), (3, new object?[] { 80 })]);
         scanner.SetPrecomputedDigests([d, d, d]);
         scanner.AdvanceAndPollAt(0, 10);
         scanner.AdvanceAndPollAt(1, 20);

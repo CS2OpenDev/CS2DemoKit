@@ -58,7 +58,13 @@ public sealed class EntityChangeScanner
     // entity ground truth" because the current frame's PacketEntities update arrives
     // concurrently with the event we're handling.
     private readonly List<IPerPlayerEntityValueProvider> _perPlayerProviders;
-    private readonly Dictionary<(int ProviderIdx, int Slot), object?> _preFrameSnapshot = [];
+
+    // The column plan of every digest this scanner consumes, and the typed snapshot indexed by
+    // it. A digest from a parallel worker carries its own layout instance over provider clones;
+    // MergePreFrameSnapshot checks it is compatible (same kinds, same names) before folding.
+    private readonly DigestColumnLayout _layout;
+    private readonly PreFrameSnapshot _preFrameSnapshot;
+    private DigestColumnLayout? _lastCompatibleLayout;
 
     // This scanner's own cell memory, used only on the sequential fallback path. The parallel path
     // never reaches BuildDigest, so each chunk worker keeps its own instead.
@@ -179,7 +185,10 @@ public sealed class EntityChangeScanner
             _perPlayerProviderIndex[_perPlayerProviders[i]] = i;
         }
 
-        _delta = new PerPawnDeltaState(_perPlayerProviders.Count);
+        // In this order: the delta state and the snapshot are both indexed by the layout.
+        _layout = DigestColumnLayout.For(_perPlayerProviders);
+        _delta = new PerPawnDeltaState(_layout);
+        _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
 
     /// <summary>Test seam: the precomputed digests (ProviderDigestParityTests compares two scanners').</summary>
@@ -642,9 +651,10 @@ public sealed class EntityChangeScanner
             return;
         }
 
-        foreach ((int slot, object?[] values) in digest.PerPawn)
+        PerPawnColumns rows = digest.PerPawn;
+        for (int r = 0; r < rows.Count; r++)
         {
-            _vantageScanner.Observe(slot, values);
+            _vantageScanner.Observe(rows, r);
         }
 
         IReadOnlyList<AimVantage> vantages = _vantageScanner.Sample(tick);
@@ -653,8 +663,7 @@ public sealed class EntityChangeScanner
             return;
         }
 
-        IReadOnlyList<EnemySpottedEvent> spots = _transitionScanner.Sample(
-            tick, tick, vantages, CollectionsMarshal.AsSpan(digest.Smokes));
+        IReadOnlyList<EnemySpottedEvent> spots = _transitionScanner.Sample(tick, tick, vantages, digest.Smokes);
         for (int i = 0; i < spots.Count; i++)
         {
             _scratch.Add(GameEventMessage.ForSynthesizedEvent(spots[i]));
@@ -679,8 +688,7 @@ public sealed class EntityChangeScanner
         }
 
         EntityFrameDigest d = EntityDigestExtractor.Build(
-            Layer, _perPlayerProviders, _singletonProviders, _emitMolotovThrows, _delta,
-            _transitionScanner is not null);
+            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null);
         if (prof)
         {
             // Lumped under the historical "snapshot" sub-phase — it is the per-pawn sweep that dominated it;
@@ -719,16 +727,29 @@ public sealed class EntityChangeScanner
             return;
         }
 
-        foreach ((int slot, object?[] values) in prev.PerPawn)
+        PerPawnColumns rows = prev.PerPawn;
+        if (rows.Count == 0)
         {
-            for (int p = 0; p < values.Length; p++)
-            {
-                if (values[p] is not null)
-                {
-                    _preFrameSnapshot[(p, slot)] = values[p];
-                }
-            }
+            // Nothing to fold, and nothing to judge: an empty row set (the shared Empty instance
+            // included) carries no layout worth comparing, so a hand-built digest with no rows
+            // is accepted whatever providers the scanner holds.
+            return;
         }
+
+        if (!ReferenceEquals(rows.Layout, _lastCompatibleLayout))
+        {
+            if (!rows.Layout.IsCompatibleWith(_layout))
+            {
+                throw new InvalidOperationException(
+                    "digest column layout does not match this scanner's per-player provider set "
+                    + $"({rows.Layout.Count} columns in the digest, {_layout.Count} on the scanner); "
+                    + "digests must be produced over the same providers in the same order");
+            }
+
+            _lastCompatibleLayout = rows.Layout;
+        }
+
+        _preFrameSnapshot.Fold(rows);
     }
 
     /// <summary>
@@ -828,7 +849,8 @@ public sealed class EntityChangeScanner
                 + "it was reference-gated out at build time but something still reads it");
         }
 
-        return _preFrameSnapshot.GetValueOrDefault((idx, playerSlot));
+        // The one box on the per-pawn path: per event read, not per frame.
+        return _preFrameSnapshot.GetBoxed(idx, playerSlot);
     }
 
     private static EntityChangeMessage BuildSynthesizedMessage(IEntityValueProvider provider, int tick, object? oldValue, object? newValue)

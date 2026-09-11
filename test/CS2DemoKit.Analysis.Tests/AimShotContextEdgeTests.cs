@@ -509,6 +509,7 @@ public class AimShotContextEdgeTests
         private readonly EntityFrameDigest?[] _digests = new EntityFrameDigest?[FrameCapacity];
         private readonly AimShotContextEdge _fired;
         private readonly AimShotContextEdge _landed;
+        private readonly DigestColumnLayout _layout;
         private readonly EntityChangeScanner _scanner;
         private int _frame;
 
@@ -529,6 +530,7 @@ public class AimShotContextEdgeTests
                 new PawnPositionProvider(PawnPositionAxis.Z),
                 new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnDuckAmount)
             ];
+            _layout = DigestColumnLayout.For(providers);
 
             Vantage = new AimVantageScanner(
                 providers.Select(p => p.Name).ToList(), _ => 2, 64.0);
@@ -632,7 +634,7 @@ public class AimShotContextEdgeTests
         internal void Tick(int tick, object?[] values)
         {
             EntityFrameDigest digest = new();
-            digest.PerPawn.Add((Shooter, values));
+            digest.PerPawn = PerPawnColumns.FromBoxedRows(_layout, [(Shooter, values)]);
             _digests[_frame] = digest;
             _ = _scanner.AdvanceAndPollAt(_frame, tick);
             _frame++;

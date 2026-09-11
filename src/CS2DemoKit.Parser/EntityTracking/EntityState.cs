@@ -111,8 +111,14 @@ public sealed class EntityState
     /// <summary>Entity serial number from the network stream.</summary>
     public int Serial { get; internal set; }
 
-    /// <summary>The bound per-class shape, or <c>null</c> if no shape has been bound.</summary>
-    internal ClassShape? Shape { get; private set; }
+    /// <summary>
+    ///     The bound per-class shape, or <c>null</c> if no shape has been bound. Public so a caller
+    ///     that reads the same leaf on every entity of a class can resolve the path once per shape
+    ///     through <see cref="ClassShape.PathToSlot" /> and then read the lane by slot
+    ///     (<see cref="TryGetIntSlot" />, <see cref="TryGetFloatSlot" />, <see cref="TryGetObjectSlot" />)
+    ///     instead of paying a string-keyed probe and a box per read.
+    /// </summary>
+    public ClassShape? Shape { get; private set; }
 
     // ── Read API ──────────────────────────────────────────────────────────────
 
@@ -457,7 +463,7 @@ public sealed class EntityState
     ///     letting the caller distinguish "absent" from a received default <c>0</c>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryGetIntSlot(int slot, out int value)
+    public bool TryGetIntSlot(int slot, out int value)
     {
         if (IsSeen(_intSeen, slot))
         {
@@ -475,7 +481,7 @@ public sealed class EntityState
     ///     <paramref name="value" /> when the slot has never received a wire update.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryGetFloatSlot(int slot, out float value)
+    public bool TryGetFloatSlot(int slot, out float value)
     {
         if (IsSeen(_floatSeen, slot))
         {
@@ -494,7 +500,7 @@ public sealed class EntityState
     ///     distinguishing "absent" from a received <c>null</c> object.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryGetObjectSlot(int slot, out object? value)
+    public bool TryGetObjectSlot(int slot, out object? value)
     {
         if (IsSeen(_objectSeen, slot))
         {

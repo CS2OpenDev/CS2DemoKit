@@ -49,7 +49,7 @@ namespace CS2DemoKit.Analysis.Plugins;
 /// </summary>
 public sealed class PawnAimPunchProvider(PawnAngleAxis axis)
     : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>, IPawnStateReader,
-        IMultiSchemaFieldProvider
+        IMultiSchemaFieldProvider, IPawnFloatCellReader
 {
     // Latched on first successful probe. A worker owns one tracker for its whole chunk, so this
     // resolves once per worker rather than once per pawn-frame. Not shared across workers: each
@@ -104,6 +104,29 @@ public sealed class PawnAimPunchProvider(PawnAngleAxis axis)
         }
 
         return AimPunchSchema.Read(pawn, _layout) is { } state ? Select(state.BaseAngle) : null;
+    }
+
+    /// <inheritdoc />
+    // The same latch and gate as ReadForPawnState, reading only the base angle (the velocity,
+    // tick and fraction Read also fetches were discarded here) and sharing it with the other
+    // component through the context.
+    public bool TryReadFloat(PawnReadContext context, out float value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (!_resolved)
+        {
+            _layout = AimPunchSchema.Resolve(context.Tracker);
+            _resolved = true;
+        }
+
+        if (context.TryPunchBaseAngle(_layout, out Vector3 angle))
+        {
+            value = Select(angle);
+            return true;
+        }
+
+        value = 0f;
+        return false;
     }
 
     /// <inheritdoc />

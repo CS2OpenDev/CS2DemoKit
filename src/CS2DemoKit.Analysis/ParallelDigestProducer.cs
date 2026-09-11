@@ -123,8 +123,10 @@ internal static class ParallelDigestProducer
             IReadOnlyList<IEntityValueProvider> singletons = singletonFactory();
 
             // Per chunk, never shared. This worker has no history before its checkpoint, so its first
-            // frame re-emits every live cell; the consumer's fold makes that redundant, not wrong.
-            PerPawnDeltaState delta = new(perPlayer.Count);
+            // frame re-emits every live cell; the consumer's fold makes that redundant, not wrong. The
+            // layout is this worker's own too, over its own clones; the consumer judges it by kinds
+            // and names, not by reference.
+            PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer));
 
             if (chunk.CheckpointFrameIndex >= 0)
             {
@@ -135,8 +137,7 @@ internal static class ParallelDigestProducer
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 layer.SeekToTick(frames[n].ServerTick);
-                digests[n] = EntityDigestExtractor.Build(
-                    layer, perPlayer, singletons, emitMolotov, delta, captureSmokes);
+                digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, emitMolotov, captureSmokes);
             }
 
             if (prof)

@@ -157,20 +157,53 @@ public static class AimPunchSchema
             return null;
         }
 
+        return new AimPunchState(baseAngle, ReadVelocity(pawn, vel), ToInt32(pawn[tick]), ToSingle(pawn[frac]));
+    }
+
+    /// <summary>
+    ///     Reads only the base angle, for callers that need nothing else. Present or absent exactly
+    ///     as <see cref="Read" />'s result is, because the angle is the one field that decides that;
+    ///     it just does not read the velocity, tick and fraction the caller would discard, which on
+    ///     the digest path were three boxed reads per pawn-frame per punch column.
+    /// </summary>
+    /// <param name="pawn">The pawn entity state.</param>
+    /// <param name="layout">The layout from <see cref="Resolve" />.</param>
+    /// <param name="baseAngle">The spring position, degrees (pitch, yaw, roll), or default when absent.</param>
+    /// <returns><c>true</c> when the pawn carries a spring sample.</returns>
+    public static bool TryReadBaseAngle(EntityState pawn, AimPunchLayout layout, out Vector3 baseAngle)
+    {
+        ArgumentNullException.ThrowIfNull(pawn);
+
+        string angle = layout switch
+        {
+            AimPunchLayout.Services => ServicesAngle,
+            AimPunchLayout.Flat => FlatAngle,
+            _ => string.Empty
+        };
+
+        if (angle.Length == 0 || pawn.TryGet<Vector3>(angle) is not { } found)
+        {
+            baseAngle = default;
+            return false;
+        }
+
+        baseAngle = found;
+        return true;
+    }
+
+    private static Vector3 ReadVelocity(EntityState pawn, string vel)
+    {
+
         // Only the angle is required. The other three are what the integration will need; a demo
         // that networks the angle but not the velocity still yields a usable at-base-tick sample,
         // and defaulting them is honest because BaseTick 0 cannot be mistaken for a real sample.
         //
-        // Read through the indexer and convert rather than TryGet<T>, which casts strictly. The
-        // tick field's WIRE type reads int32 but the decoder lands it on a wider lane, so it comes
-        // back boxed as UInt64 on real demos and a strict TryGet<int> throws InvalidCastException
-        // deep inside the parallel digest producer. The declared wire type is not a promise about
-        // the CLR type of the boxed value.
-        Vector3 baseVel = pawn.TryGet<Vector3>(vel) ?? Vector3.Zero;
-        int baseTick = ToInt32(pawn[tick]);
-        float baseFrac = ToSingle(pawn[frac]);
-
-        return new AimPunchState(baseAngle, baseVel, baseTick, baseFrac);
+        // The tick and fraction are read through the indexer and converted rather than through
+        // TryGet<T>, which casts strictly. The tick field's WIRE type reads int32 but the decoder
+        // lands it on a wider lane, so it comes back boxed as UInt64 on real demos and a strict
+        // TryGet<int> throws InvalidCastException deep inside the parallel digest producer. The
+        // declared wire type is not a promise about the CLR type of the boxed value.
+        return pawn.TryGet<Vector3>(vel) ?? Vector3.Zero;
     }
 
     // Width-tolerant numeric reads. A missing field is 0, which the caller documents as

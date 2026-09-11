@@ -15,7 +15,7 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///     (e.g. rounds the player bought armor). <c>0</c> (no armor) is a real observation and is
 ///     emitted, not treated as absent.
 /// </summary>
-public sealed class PawnArmorProvider : IPerPlayerEntityValueProvider
+public sealed class PawnArmorProvider : IPerPlayerEntityValueProvider, IPawnIntCellReader
 {
     /// <inheritdoc />
     public void CaptureAllSlots(EntityStateLayer layer, Action<int, object> emit)
@@ -29,6 +29,15 @@ public sealed class PawnArmorProvider : IPerPlayerEntityValueProvider
     // Armor of 0 is a real observation (the round still counts), so this never returns null —
     // the emit gate is "always emit", unchanged from the old CaptureAllSlots body.
     public object? ReadForPawn(EntityTracker tracker, CSPlayerPawn pawn) => pawn.ArmorValue;
+
+    /// <inheritdoc />
+    // Always a value, like ReadForPawn: an unseen lane reads as the wrapper's 0.
+    public bool TryReadInt(PawnReadContext context, out int value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        value = context.Wrapper.ArmorValue;
+        return true;
+    }
 
     /// <inheritdoc />
     public string EntityClass => "CCSPlayerPawn";

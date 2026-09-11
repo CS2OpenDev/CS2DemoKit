@@ -1,6 +1,7 @@
 #region
 
 using System.Numerics;
+using CS2DemoKit.Analysis.Plugins;
 
 #endregion
 
@@ -40,7 +41,7 @@ public readonly record struct AimVantage(
 ///     replay purely to reconstruct vantage, and once vantage is available inside the existing digest
 ///     walk that second decode is redundant.
 ///     <para>
-///         <b>How it is fed.</b> <see cref="Observe" /> takes one row of an
+///         <b>How it is fed.</b> <see cref="Observe(int, IReadOnlyList{object?})" /> takes one row of an
 ///         <c>EntityFrameDigest.PerPawn</c> delta list. Those rows carry only the cells that CHANGED
 ///         this frame, with unchanged positions left null, so the scanner folds them into a running
 ///         per-slot record exactly the way the pre-frame snapshot does. That fold is the whole cost:
@@ -196,6 +197,33 @@ public sealed class AimVantageScanner
     }
 
     /// <summary>
+    ///     The unboxed form of <see cref="Observe(int, IReadOnlyList{object?})" />: folds row
+    ///     <paramref name="row" /> of a typed digest, reading the six columns straight out of
+    ///     their float storage. This is what the scanner's per-frame consume calls; the boxed form
+    ///     stays for callers that hand-build rows.
+    /// </summary>
+    /// <param name="rows">The frame's per-pawn rows.</param>
+    /// <param name="row">The row to fold.</param>
+    internal void Observe(PerPawnColumns rows, int row)
+    {
+        int slot = rows.SlotAt(row);
+        if (!_slots.TryGetValue(slot, out SlotState? state))
+        {
+            state = new SlotState(_speedHistoryTicks);
+            _slots[slot] = state;
+        }
+
+        Fold(rows, row, _posXColumn, ref state.X, ref state.HasX);
+        Fold(rows, row, _posYColumn, ref state.Y, ref state.HasY);
+        Fold(rows, row, _posZColumn, ref state.Z, ref state.HasZ);
+        Fold(rows, row, _eyePitchColumn, ref state.Pitch, ref state.HasPitch);
+        Fold(rows, row, _eyeYawColumn, ref state.Yaw, ref state.HasYaw);
+
+        bool duckSeen = false;
+        Fold(rows, row, _duckColumn, ref state.Duck, ref duckSeen);
+    }
+
+    /// <summary>
     ///     Builds this tick's vantage set from the folded columns and advances each slot's speed
     ///     derivation. The returned list is REUSED across calls (cleared at entry), so a caller that
     ///     needs it beyond the next <see cref="Sample" /> must copy it.
@@ -315,6 +343,28 @@ public sealed class AimVantageScanner
         }
 
         target = VisibilityAnalyzer.CoerceFloat(cell, target);
+        seen = true;
+    }
+
+    // The typed twin of the boxed Fold above, same acceptance: a float or int cell is the value,
+    // anything else leaves the target alone but still counts as seen.
+    private static void Fold(PerPawnColumns rows, int row, int column, ref float target, ref bool seen)
+    {
+        if (column >= rows.Layout.Count || !rows.IsPresent(row, column))
+        {
+            return;
+        }
+
+        switch (rows.Layout.Kinds[column])
+        {
+            case PawnCellKind.Float:
+                target = rows.GetFloat(row, column);
+                break;
+            case PawnCellKind.Int:
+                target = rows.GetInt(row, column);
+                break;
+        }
+
         seen = true;
     }
 

@@ -28,7 +28,7 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///         <see cref="EntityTracker.Get{T}" />.
 ///     </para>
 /// </summary>
-public sealed class PawnHealthProvider : IPerPlayerEntityValueProvider
+public sealed class PawnHealthProvider : IPerPlayerEntityValueProvider, IPawnIntCellReader
 {
     /// <inheritdoc />
     public void CaptureAllSlots(EntityStateLayer layer, Action<int, object> emit)
@@ -51,6 +51,15 @@ public sealed class PawnHealthProvider : IPerPlayerEntityValueProvider
         // (ReadHealthFromPawn already mapped hp == 0 → null), so the live emit set is hp > 0.
         int hp = pawn.Health;
         return hp > 0 ? hp : null;
+    }
+
+    /// <inheritdoc />
+    // The same gate as ReadForPawn, minus the box: hp > 0 is a value, anything else is none.
+    public bool TryReadInt(PawnReadContext context, out int value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        value = context.Wrapper.Health;
+        return value > 0;
     }
 
     /// <inheritdoc />

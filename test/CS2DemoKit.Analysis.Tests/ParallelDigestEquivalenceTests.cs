@@ -73,8 +73,8 @@ public class ParallelDigestEquivalenceTests
                           $"checkpoints={chunks.Count(c => c.CheckpointFrameIndex >= 0)}");
 
         // ── Sequential reference: one layer, SeekToTick + Build per frame, emitting the FULL per-frame
-        //    readout (no delta state). That is the ground truth the fold below is judged against. ──
-        EntityFrameDigest[] sequential = BuildSequential(frames);
+        //    readout (dedup off). That is the ground truth the fold below is judged against. ──
+        EntityFrameDigest[] sequential = BuildSequential(frames, dedup: false);
 
         // ── Parallel under test. ──
         EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
@@ -83,7 +83,7 @@ public class ParallelDigestEquivalenceTests
         // ── The scanner's own sequential arm: ONE delta stream over every frame, no chunk resets.
         //    That is what EntityChangeScanner.BuildDigest does on the fallback path, and it is a
         //    different shape from the parallel arm (which restarts its cell memory per chunk). ──
-        EntityFrameDigest[] sequentialDelta = BuildSequential(frames, new PerPawnDeltaState(NewPerPlayer().Count));
+        EntityFrameDigest[] sequentialDelta = BuildSequential(frames, dedup: true);
 
         await Assert.That(parallel.Length).IsEqualTo(sequential.Length);
 
@@ -114,7 +114,7 @@ public class ParallelDigestEquivalenceTests
                 framesWithPawns++;
             }
 
-            if (s.Molotovs.Count > 0)
+            if (s.Molotovs.Length > 0)
             {
                 framesWithMolotovs++;
             }
@@ -239,15 +239,15 @@ public class ParallelDigestEquivalenceTests
         string? firstMismatch = null;
         for (int n = 0; n < frames.Count; n++)
         {
-            List<Vector4> s = sequential[n].Smokes;
-            List<Vector4> p = parallel[n].Smokes;
-            if (s.Count > 0)
+            ReadOnlySpan<Vector4> s = sequential[n].Smokes;
+            ReadOnlySpan<Vector4> p = parallel[n].Smokes;
+            if (s.Length > 0)
             {
                 framesWithSmoke++;
             }
 
-            bool same = s.Count == p.Count;
-            for (int i = 0; same && i < s.Count; i++)
+            bool same = s.Length == p.Length;
+            for (int i = 0; same && i < s.Length; i++)
             {
                 same = s[i] == p[i];
             }
@@ -255,7 +255,7 @@ public class ParallelDigestEquivalenceTests
             if (!same)
             {
                 mismatchFrames++;
-                firstMismatch ??= $"frame {n}: sequential={s.Count} parallel={p.Count}";
+                firstMismatch ??= $"frame {n}: sequential={s.Length} parallel={p.Length}";
             }
         }
 
@@ -271,18 +271,18 @@ public class ParallelDigestEquivalenceTests
     ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
     /// </summary>
     private static EntityFrameDigest[] BuildSequential(
-        IReadOnlyList<DemoFrame> frames, PerPawnDeltaState? delta = null, bool captureSmokes = false)
+        IReadOnlyList<DemoFrame> frames, bool dedup = false, bool captureSmokes = false)
     {
         EntityStateLayer layer = new(frames);
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = NewPerPlayer();
         IReadOnlyList<IEntityValueProvider> singletons = NewSingletons();
+        PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer), dedup);
 
         EntityFrameDigest[] digests = new EntityFrameDigest[frames.Count];
         for (int n = 0; n < frames.Count; n++)
         {
             layer.SeekToTick(frames[n].ServerTick);
-            digests[n] = EntityDigestExtractor.Build(
-                layer, perPlayer, singletons, true, delta, captureSmokes);
+            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, true, captureSmokes);
         }
 
         return digests;
@@ -295,13 +295,15 @@ public class ParallelDigestEquivalenceTests
     /// </summary>
     private static void Fold(Dictionary<(int Provider, int Slot), object?> snapshot, EntityFrameDigest d)
     {
-        foreach ((int slot, object?[] values) in d.PerPawn)
+        PerPawnColumns rows = d.PerPawn;
+        for (int r = 0; r < rows.Count; r++)
         {
-            for (int p = 0; p < values.Length; p++)
+            int slot = rows.SlotAt(r);
+            for (int p = 0; p < rows.Layout.Count; p++)
             {
-                if (values[p] is not null)
+                if (rows.IsPresent(r, p))
                 {
-                    snapshot[(p, slot)] = values[p];
+                    snapshot[(p, slot)] = rows.GetBoxed(r, p);
                 }
             }
         }
@@ -377,12 +379,12 @@ public class ParallelDigestEquivalenceTests
     /// <summary>Returns null when the raw per-frame molotov lists are identical, else a short description.</summary>
     private static string? DiffMolotovsRaw(EntityFrameDigest a, EntityFrameDigest b)
     {
-        if (a.Molotovs.Count != b.Molotovs.Count)
+        if (a.Molotovs.Length != b.Molotovs.Length)
         {
-            return $"molotov-count {a.Molotovs.Count} vs {b.Molotovs.Count}";
+            return $"molotov-count {a.Molotovs.Length} vs {b.Molotovs.Length}";
         }
 
-        for (int i = 0; i < a.Molotovs.Count; i++)
+        for (int i = 0; i < a.Molotovs.Length; i++)
         {
             if (!a.Molotovs[i].Equals(b.Molotovs[i]))
             {

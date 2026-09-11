@@ -39,7 +39,19 @@ public static class PawnLookup
     ///     bound to a controller). One sweep of the entity set, so a caller wanting several
     ///     values per pawn should read them all inside the callback rather than sweep per value.
     /// </summary>
-    public static void ForEachLivePawn(EntityTracker tracker, Action<int, EntityState> onPawn)
+    public static void ForEachLivePawn(EntityTracker tracker, Action<int, EntityState> onPawn) =>
+        ForEachLivePawn(tracker, onPawn, static (callback, slot, pawn) => callback(slot, pawn));
+
+    /// <summary>
+    ///     The <see cref="ForEachLivePawn(EntityTracker, Action{int, EntityState})" /> sweep with a
+    ///     caller-supplied state argument, so a per-frame caller can pass a static callback and
+    ///     allocate no closure per sweep.
+    /// </summary>
+    /// <typeparam name="TState">The state handed back to every callback.</typeparam>
+    /// <param name="tracker">The tracker whose entity set to sweep.</param>
+    /// <param name="state">Passed through unchanged to every <paramref name="onPawn" /> call.</param>
+    /// <param name="onPawn">Invoked once per live pawn with the state, the player slot and the pawn.</param>
+    public static void ForEachLivePawn<TState>(EntityTracker tracker, TState state, Action<TState, int, EntityState> onPawn)
     {
         foreach ((int _, EntityState ent) in tracker.CurrentEntities.AllIndexed())
         {
@@ -76,7 +88,7 @@ public static class PawnLookup
                 continue;
             }
 
-            onPawn(slot, ent);
+            onPawn(state, slot, ent);
         }
     }
 

@@ -48,10 +48,26 @@ public enum PawnAngleAxis
 ///     </para>
 /// </summary>
 public sealed class PawnEyeAngleProvider(PawnAngleAxis axis)
-    : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>, IPawnStateReader
+    : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>, IPawnStateReader,
+        IPawnFloatCellReader
 {
     /// <summary>The angle component this instance reads.</summary>
     public PawnAngleAxis Axis => axis;
+
+    /// <inheritdoc />
+    // ReadForPawnState's gate on the context's cached angle, so pitch and yaw share one read.
+    public bool TryReadFloat(PawnReadContext context, out float value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.EyeAngles is { } angle)
+        {
+            value = Select(angle);
+            return true;
+        }
+
+        value = 0f;
+        return false;
+    }
 
     /// <inheritdoc />
     public string EntityClass => "CCSPlayerPawn";
