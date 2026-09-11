@@ -139,6 +139,10 @@ public sealed class EntityChangeScanner
     private readonly AimVantageScanner? _vantageScanner;
     private readonly VisibilityTransitionScanner? _transitionScanner;
 
+    // The projectile slots the per-frame digest reads instead of walking every live entity. Bound
+    // to the layer's tracker on first use and rebound if the layer is reset under it.
+    private readonly ProjectileSlotIndex _projectiles = new();
+
     /// <param name="layer">The entity-state layer the scanner reads from; advanced one frame at a time.</param>
     /// <param name="providers">Singleton-entity providers paired with their backing value nodes (push model).</param>
     /// <param name="perPlayerProviders">Per-player providers polled into the pre-frame snapshot (pull model).</param>
@@ -688,7 +692,7 @@ public sealed class EntityChangeScanner
         }
 
         EntityFrameDigest d = EntityDigestExtractor.Build(
-            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null);
+            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null, _projectiles);
         if (prof)
         {
             // Lumped under the historical "snapshot" sub-phase — it is the per-pawn sweep that dominated it;

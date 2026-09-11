@@ -128,6 +128,11 @@ internal static class ParallelDigestProducer
             // and names, not by reference.
             PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer));
 
+            // Per chunk like the delta state: it subscribes to this worker's tracker, and its
+            // first sync seeds from whatever the checkpoint primed, so a smoke already billowing
+            // when the chunk starts is read from frame one.
+            ProjectileSlotIndex projectiles = new();
+
             if (chunk.CheckpointFrameIndex >= 0)
             {
                 layer.PrimeFromCheckpoint(chunk.CheckpointFrameIndex, schemaPrefixEnd);
@@ -137,7 +142,8 @@ internal static class ParallelDigestProducer
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 layer.SeekToTick(frames[n].ServerTick);
-                digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, emitMolotov, captureSmokes);
+                digests[n] = EntityDigestExtractor.Build(
+                    layer, delta, singletons, emitMolotov, captureSmokes, projectiles);
             }
 
             if (prof)

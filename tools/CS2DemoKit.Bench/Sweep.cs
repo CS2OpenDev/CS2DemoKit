@@ -1,5 +1,9 @@
+#region
+
 using System.Diagnostics;
 using System.Reflection;
+
+#endregion
 
 namespace CS2DemoKit.Bench;
 
@@ -51,6 +55,7 @@ internal static class Sweep
         Console.Error.WriteLine(
             $"label={options.Label} rounds={options.Rounds} demos={demos.Length} "
             + $"cooldown={options.CooldownSeconds}s -> {options.Output}");
+        Console.Error.WriteLine(RayPathBanner.Line());
 
         for (int round = 1; round <= options.Rounds; round++)
         {
@@ -120,7 +125,15 @@ internal static class Sweep
         child.WaitForExit();
 
         string row = stdout.Trim();
-        return child.ExitCode != 0 || row.Length == 0 ? (null, stderr) : (row, null);
+        if (child.ExitCode != 0 || row.Length == 0)
+        {
+            return (null, stderr);
+        }
+
+        // The child is this same build, so a mismatch here means the environment changed under
+        // it; the check is the one compare makes, kept identical so the two cannot drift.
+        string? rejected = Measurement.Reject(row);
+        return rejected is null ? (row, null) : (null, rejected);
     }
 
     /// <summary>

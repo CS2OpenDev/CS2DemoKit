@@ -29,8 +29,18 @@ static int Measure(string[] args)
         return 2;
     }
 
-    Console.WriteLine(Measurement.Run(args[1], args[2], args[3]));
-    return 0;
+    try
+    {
+        Console.WriteLine(Measurement.Run(args[1], args[2], args[3]));
+        return 0;
+    }
+    catch (Exception ex) when (ex is FileNotFoundException or InvalidOperationException)
+    {
+        // A misconfigured ray path (bake directory set, bake missing; or a scan that never ran)
+        // is a refused row, not a crash: the orchestrator prints this and counts the run failed.
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 }
 
 static int StartSweep(string[] args)
@@ -81,6 +91,17 @@ static int Help()
 
         measure <demo.dem> <label> <round>
           one measured load, one CSV row on stdout
+
+        The ray path (the enemy_spotted transition scan) is measured only when
+        CS2DEMOKIT_COLLISION_DIR names a directory of per-map bakes (<dir>/<map>/collision.tris
+        or <dir>/<map>.tris; the app checkout's assets/ directory is one). measure, sweep and
+        compare all read it, and compare passes it to both arms unchanged so they load the same
+        bake. Unset, no rays are cast, every row carries vis=0 and the orchestrator says so up
+        front. Set but missing the demo's map, the measurement fails instead of emitting a row.
+        The legacy DEMOVIEWER_COLLISION_DIR the library still accepts is ignored here. compare and
+        sweep take a row only when it has this build's columns and its vis agrees with the banner,
+        so an arm published from a checkout older than the ray path fails its rows instead of
+        sitting in the CSV without rays under a label that promises them.
 
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the

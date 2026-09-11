@@ -45,14 +45,21 @@ internal static class EntityDigestExtractor
     /// <param name="captureSmokes">
     ///     When true, the digest carries this frame's active smoke clouds (see
     ///     <see cref="EntityFrameDigest.Smokes" />). Off by default because only the visibility
-    ///     transition scan has any use for them. Shares the molotov walk when both are on.
+    ///     transition scan has any use for them. Shares the molotov visit when both are on.
+    /// </param>
+    /// <param name="projectiles">
+    ///     The caller's slot index for the projectile classes, which turns the molotov and smoke
+    ///     visit from a walk over every live entity into a read of the few slots that hold one.
+    ///     Null falls back to the full walk; the two produce byte-identical digests (the parity
+    ///     tests pin it), so the walk stays as the oracle rather than as a path anything ships on.
     /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
         PerPawnDeltaState delta,
         IReadOnlyList<IEntityValueProvider> singletonProviders,
         bool emitMolotovThrows,
-        bool captureSmokes = false)
+        bool captureSmokes = false,
+        ProjectileSlotIndex? projectiles = null)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(delta);
@@ -83,27 +90,53 @@ internal static class EntityDigestExtractor
 
         if (emitMolotovThrows || captureSmokes)
         {
-            // One walk serves both: the two class names are disjoint, so this visits exactly the
-            // entities two separate walks would, in the same ascending index order.
-            foreach ((int idx, EntityState ent) in tracker.CurrentEntities.AllIndexed())
+            if (projectiles is null)
             {
-                if (emitMolotovThrows && ent.ClassName == "CMolotovProjectile")
+                // The reference walk: one pass serves both classes, in ascending index order.
+                foreach ((int idx, EntityState ent) in tracker.CurrentEntities.AllIndexed())
                 {
-                    d.AddMolotov(idx, ent.Serial, ResolveThrowerSlot(tracker, ent));
-                    continue;
+                    VisitProjectile(d, tracker, idx, ent, emitMolotovThrows, captureSmokes);
                 }
-
-                // The gate (m_nSmokeEffectTickBegin > 0 for a billowing cloud, a non-degenerate
-                // detonation position) is the analyzer's own, so the transition scan and the
-                // accumulating analyzer cannot disagree about which clouds are active.
-                if (captureSmokes && VisibilityAnalyzer.TryActiveSmoke(ent, out Vector4 sphere))
+            }
+            else
+            {
+                // Same visit over the same entities in the same order, read from the index
+                // instead of found by elimination among a few hundred live entities.
+                projectiles.Sync(tracker);
+                foreach (int idx in projectiles.Slots)
                 {
-                    d.AddSmoke(sphere);
+                    if (tracker.CurrentEntities[idx] is { } ent)
+                    {
+                        VisitProjectile(d, tracker, idx, ent, emitMolotovThrows, captureSmokes);
+                    }
                 }
             }
         }
 
         return d;
+    }
+
+    // The per-entity half of the projectile visit, shared by the walk and the indexed read so the
+    // two cannot drift: a molotov is recorded with its thrower, otherwise a billowing smoke is
+    // recorded as a sphere. Any other class is a no-op, which is what lets the walk pass every
+    // live entity through it.
+    private static void VisitProjectile(
+        EntityFrameDigest d, EntityTracker tracker, int idx, EntityState ent,
+        bool emitMolotovThrows, bool captureSmokes)
+    {
+        if (emitMolotovThrows && ent.ClassName == ProjectileSlotIndex.MolotovClass)
+        {
+            d.AddMolotov(idx, ent.Serial, ResolveThrowerSlot(tracker, ent));
+            return;
+        }
+
+        // The gate (m_nSmokeEffectTickBegin > 0 for a billowing cloud, a non-degenerate
+        // detonation position) is the analyzer's own, so the transition scan and the
+        // accumulating analyzer cannot disagree about which clouds are active.
+        if (captureSmokes && VisibilityAnalyzer.TryActiveSmoke(ent, out Vector4 sphere))
+        {
+            d.AddSmoke(sphere);
+        }
     }
 
     /// <summary>

@@ -158,6 +158,17 @@ was interleaved and hit the contention equally, but their absolute figures did n
 **Watch the `load1` column.** Rows are stamped with the 1-minute load average. Discard outliers
 rather than averaging them in.
 
+**Rows from before the ray path was measured do not compare with rows after it.** Every table
+above was taken in the 27-column row shape. The row now has 34 columns (`vis` through `rays_cast`
+were added), and every measurement, `vis=0` included, evaluates a fifth ruleset on top of the four
+shipped ones: the bench's own `enemy_spotted` subscriber, loaded in both modes so the graph is the
+same with and without a bake. `eval_ms` therefore moved for a reason that is not the library, and
+a new sweep must be re-baselined rather than read against these tables. With `vis=1` the process
+also holds the map's visibility engine through every timed phase; `retained_mb` and the
+allocation deltas exclude it, since the baseline memory is read after the engine is built and
+settled, but `eval_ms` includes the rays it answers. `compare` refuses a row whose columns or
+`vis` disagree with its own header, so a CSV cannot hold both shapes.
+
 **Medians, and the distribution.** A GC-bound pipeline is bimodal when a collection lands inside
 a timed window: modes hundreds of milliseconds apart with nothing between them. A mean over that
 is meaningless and a median over too few runs is unstable. Report the spread.
