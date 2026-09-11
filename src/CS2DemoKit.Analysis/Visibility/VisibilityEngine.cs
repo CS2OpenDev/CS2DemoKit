@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics;
 using System.Numerics;
 
 #endregion
@@ -31,8 +32,15 @@ public sealed class VisibilityEngine
     /// <summary>Loads a baked <c>collision.tris</c> and builds the BVH. Do this off the UI thread (BVH build is O(seconds)).</summary>
     public static VisibilityEngine Load(string trisPath)
     {
+        // Split rather than one span around the pair: reading 35 MB off disk and building a tree over
+        // it are different problems with different fixes (a cache for the first, a better builder for
+        // the second), and a single number cannot tell you which one you have.
+        long readStart = Stopwatch.GetTimestamp();
         CollisionTris.Data d = CollisionTris.Load(trisPath);
-        return FromTriangles(d.Vertices, d.TriangleCount);
+        long built = Stopwatch.GetTimestamp();
+        VisibilityEngine engine = FromTriangles(d.Vertices, d.TriangleCount);
+        VisibilityCounters.RecordBake(built - readStart, Stopwatch.GetTimestamp() - built, d.TriangleCount);
+        return engine;
     }
 
     /// <summary>Builds from an in-memory triangle soup (9 floats/triangle in <paramref name="vertices" />).</summary>

@@ -1,6 +1,7 @@
 #region
 
 using System.Diagnostics;
+using CS2DemoKit.Parser;
 
 #endregion
 
@@ -52,6 +53,10 @@ public static class VisibilityCounters
     private static long _raysShortCircuited;
     private static long _raysSkippedByEarlyExit;
     private static long _raysSkippedByGate;
+    private static long _bakeLoadTicks;
+    private static long _bakeTriangles;
+    private static long _bakesLoaded;
+    private static long _bvhBuildTicks;
     private static long _raysSkippedBySmoke;
     private static long _rayTicks;
     private static long _sampledTicks;
@@ -63,6 +68,35 @@ public static class VisibilityCounters
     ///     boundary and never inside one.
     /// </summary>
     public static bool Enabled { get; set; }
+
+    /// <summary>
+    ///     Records one collision bake being read and turned into a tree. Gated on
+    ///     <c>Profiling.Enabled</c>, NOT on <see cref="Enabled" />, and the difference is deliberate:
+    ///     the ray counters above run on every ray and cost 40 to 70 ns each, which is why they carry
+    ///     their own switch, while a bake is loaded once per map and timing it costs one Stopwatch
+    ///     pair. Putting it behind the house-wide flag means a plain profiled run sees it, and a
+    ///     profiled run that forgets the ray switch still accounts for the load.
+    ///     <para>
+    ///         This matters more than it used to. Reading and building de_ancient is around 0.9 s
+    ///         against an eval that is now 2.3 s, so a demo open that feels slow is as likely to be
+    ///         the bake as the analysis, and before this there was nothing in any report that said so.
+    ///     </para>
+    /// </summary>
+    /// <param name="loadTicks">Stopwatch ticks spent reading the bake off disk.</param>
+    /// <param name="buildTicks">Stopwatch ticks spent building the tree.</param>
+    /// <param name="triangleCount">Triangles in the bake, for a per-triangle rate.</param>
+    public static void RecordBake(long loadTicks, long buildTicks, int triangleCount)
+    {
+        if (!Profiling.Enabled)
+        {
+            return;
+        }
+
+        Interlocked.Add(ref _bakeLoadTicks, loadTicks);
+        Interlocked.Add(ref _bvhBuildTicks, buildTicks);
+        Interlocked.Add(ref _bakeTriangles, triangleCount);
+        Interlocked.Increment(ref _bakesLoaded);
+    }
 
     /// <summary>Zeroes every accumulator. Does not change <see cref="Enabled" />.</summary>
     public static void Reset()
@@ -84,6 +118,10 @@ public static class VisibilityCounters
         Interlocked.Exchange(ref _rayTicks, 0);
         Interlocked.Exchange(ref _sampledTicks, 0);
         Interlocked.Exchange(ref _sampleTicks, 0);
+        Interlocked.Exchange(ref _bakeLoadTicks, 0);
+        Interlocked.Exchange(ref _bvhBuildTicks, 0);
+        Interlocked.Exchange(ref _bakeTriangles, 0);
+        Interlocked.Exchange(ref _bakesLoaded, 0);
     }
 
     /// <summary>Reads every accumulator at once. All-zero when nothing ran with <see cref="Enabled" /> on.</summary>
@@ -104,7 +142,11 @@ public static class VisibilityCounters
         Interlocked.Read(ref _sampleTicks),
         Interlocked.Read(ref _raysSkippedByGate),
         Interlocked.Read(ref _raysSkippedBySmoke),
-        Interlocked.Read(ref _raysShortCircuited));
+        Interlocked.Read(ref _raysShortCircuited),
+        Interlocked.Read(ref _bakeLoadTicks),
+        Interlocked.Read(ref _bvhBuildTicks),
+        Interlocked.Read(ref _bakeTriangles),
+        Interlocked.Read(ref _bakesLoaded));
 
     /// <summary>
     ///     Publishes one directed pair's tallies. Called by the pair loop behind
@@ -232,6 +274,17 @@ public static class VisibilityCounters
 ///     <c>RaysShortCircuited / RaysCast</c> is the number that says whether consecutive samples of
 ///     a sightline share an occluder on real geometry.
 /// </param>
+/// <param name="BakeLoadTicks">
+///     Stopwatch ticks spent reading collision bakes off disk. Gated on the house-wide
+///     <c>Profiling.Enabled</c> rather than <c>VisibilityCounters.Enabled</c>: see
+///     <see cref="VisibilityCounters.RecordBake" />.
+/// </param>
+/// <param name="BvhBuildTicks">Stopwatch ticks spent building trees from those bakes.</param>
+/// <param name="BakeTriangles">Triangles across every bake loaded, for a per-triangle rate.</param>
+/// <param name="BakesLoaded">
+///     Bakes loaded over the run. More than one per map means a caller is rebuilding geometry it
+///     already had, which is what the app's engine cache exists to stop.
+/// </param>
 public readonly record struct VisibilityCountersSnapshot(
     long PairsEvaluated,
     long PairsNoAnchorInFrustum,
@@ -249,8 +302,18 @@ public readonly record struct VisibilityCountersSnapshot(
     long SampleTicks,
     long RaysSkippedByGate,
     long RaysSkippedBySmoke,
-    long RaysShortCircuited)
+    long RaysShortCircuited,
+    long BakeLoadTicks = 0,
+    long BvhBuildTicks = 0,
+    long BakeTriangles = 0,
+    long BakesLoaded = 0)
 {
+    /// <summary>Wall-clock reading collision bakes off disk, in milliseconds.</summary>
+    public double BakeLoadMs => BakeLoadTicks * 1000.0 / Stopwatch.Frequency;
+
+    /// <summary>Wall-clock building trees from those bakes, in milliseconds.</summary>
+    public double BvhBuildMs => BvhBuildTicks * 1000.0 / Stopwatch.Frequency;
+
     /// <summary>Wall-clock inside the raycaster, in milliseconds.</summary>
     public double RayMs => RayTicks * 1000.0 / Stopwatch.Frequency;
 

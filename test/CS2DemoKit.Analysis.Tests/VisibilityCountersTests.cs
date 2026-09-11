@@ -2,6 +2,8 @@
 
 using System.Numerics;
 using CS2DemoKit.Analysis.Visibility;
+using TUnit.Core.Exceptions;
+using CS2DemoKit.Parser;
 
 #endregion
 
@@ -365,6 +367,122 @@ public class VisibilityCountersTests
         finally
         {
             VisibilityCounters.Enabled = false;
+            VisibilityCounters.Reset();
+        }
+    }
+}
+
+/// <summary>
+///     Pins the bake-load seam, which is gated differently from every other counter in the file.
+///     <para>
+///         The ray counters carry their own switch for the cost reason
+///         <see cref="VisibilityCounters.RecordBake" /> states. A bake is loaded once per map, so its
+///         timing rides the house-wide <c>Profiling.Enabled</c> instead. That split is easy to undo
+///         by accident in either direction, and either way the damage is silent: tie it to the ray
+///         switch and a plain profiled run reports nothing for the single largest item in a demo
+///         open, or drop the gate and every unprofiled run pays for Stopwatch reads it never looks
+///         at.
+///     </para>
+/// </summary>
+[NotInParallel]
+public class VisibilityBakeCounterTests
+{
+    [Test]
+    public async Task RecordBake_IsInert_WhenProfilingIsOff()
+    {
+        bool wasProfiling = Profiling.Enabled;
+        bool wasCounters = VisibilityCounters.Enabled;
+        try
+        {
+            VisibilityCounters.Reset();
+            Profiling.Enabled = false;
+
+            // Counters ON, profiling OFF: the ray switch must not be what turns this seam on.
+            VisibilityCounters.Enabled = true;
+            VisibilityCounters.RecordBake(1000, 2000, 500);
+
+            VisibilityCountersSnapshot snap = VisibilityCounters.Snapshot();
+            await Assert.That(snap.BakesLoaded).IsEqualTo(0L);
+            await Assert.That(snap.BakeLoadTicks).IsEqualTo(0L);
+            await Assert.That(snap.BvhBuildTicks).IsEqualTo(0L);
+        }
+        finally
+        {
+            Profiling.Enabled = wasProfiling;
+            VisibilityCounters.Enabled = wasCounters;
+            VisibilityCounters.Reset();
+        }
+    }
+
+    [Test]
+    public async Task RecordBake_Accumulates_WhenProfilingIsOn()
+    {
+        bool wasProfiling = Profiling.Enabled;
+        bool wasCounters = VisibilityCounters.Enabled;
+        try
+        {
+            VisibilityCounters.Reset();
+            Profiling.Enabled = true;
+
+            // Counters OFF on purpose: a profiled run that forgot the ray switch must still account
+            // for the load, which is the whole reason the two gates differ.
+            VisibilityCounters.Enabled = false;
+            VisibilityCounters.RecordBake(1000, 2000, 500);
+            VisibilityCounters.RecordBake(3000, 4000, 700);
+
+            VisibilityCountersSnapshot snap = VisibilityCounters.Snapshot();
+            await Assert.That(snap.BakesLoaded).IsEqualTo(2L);
+            await Assert.That(snap.BakeLoadTicks).IsEqualTo(4000L);
+            await Assert.That(snap.BvhBuildTicks).IsEqualTo(6000L);
+            await Assert.That(snap.BakeTriangles).IsEqualTo(1200L);
+        }
+        finally
+        {
+            Profiling.Enabled = wasProfiling;
+            VisibilityCounters.Enabled = wasCounters;
+            VisibilityCounters.Reset();
+        }
+    }
+
+    /// <summary>
+    ///     The seam is on the real load path, not merely callable. Times a genuine bake so a
+    ///     refactor that stops calling <c>RecordBake</c> from <c>VisibilityEngine.Load</c> fails here
+    ///     rather than reporting zeros forever.
+    /// </summary>
+    [Test]
+    [Category("RealAsset")]
+    public async Task LoadingARealBake_RecordsBothHalves()
+    {
+        string? dir = Environment.GetEnvironmentVariable(CollisionAssetLocator.EnvVar);
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            throw new SkipTestException(
+                $"Set {CollisionAssetLocator.EnvVar} to a directory holding <map>/collision.tris.");
+        }
+
+        string path = Path.Combine(dir, "de_nuke", "collision.tris");
+        if (!File.Exists(path))
+        {
+            throw new SkipTestException($"No bake: looked for {path}");
+        }
+
+        bool wasProfiling = Profiling.Enabled;
+        try
+        {
+            VisibilityCounters.Reset();
+            Profiling.Enabled = true;
+
+            VisibilityEngine engine = VisibilityEngine.Load(path);
+
+            VisibilityCountersSnapshot snap = VisibilityCounters.Snapshot();
+            await Assert.That(snap.BakesLoaded).IsEqualTo(1L);
+            await Assert.That(snap.BakeTriangles).IsEqualTo((long)engine.TriangleCount);
+            await Assert.That(snap.BakeLoadMs).IsGreaterThan(0.0);
+            await Assert.That(snap.BvhBuildMs).IsGreaterThan(0.0);
+        }
+        finally
+        {
+            Profiling.Enabled = wasProfiling;
             VisibilityCounters.Reset();
         }
     }
