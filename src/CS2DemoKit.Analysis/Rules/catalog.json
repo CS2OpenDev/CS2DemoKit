@@ -2289,7 +2289,8 @@
     {
       "name": "enrich.kill.ticks_since_spot",
       "valueType": "int",
-      "scope": "kill"
+      "scope": "kill",
+      "sentinel": "1000000"
     },
     {
       "name": "enrich.kill.traded_player_slot",
@@ -2354,7 +2355,11 @@
     {
       "name": "enrich.shot.flick_error_deg",
       "valueType": "double",
-      "scope": "shot"
+      "scope": "shot",
+      "sentinel": "-1000",
+      "provenBy": [
+        "enrich.shot.travel_from_spot_deg"
+      ]
     },
     {
       "name": "enrich.shot.is_first_after_on_target",
@@ -2404,22 +2409,26 @@
     {
       "name": "enrich.shot.ticks_since_last_shot",
       "valueType": "int",
-      "scope": "shot"
+      "scope": "shot",
+      "sentinel": "1000000"
     },
     {
       "name": "enrich.shot.ticks_since_on_target",
       "valueType": "int",
-      "scope": "shot"
+      "scope": "shot",
+      "sentinel": "1000000"
     },
     {
       "name": "enrich.shot.ticks_since_spot",
       "valueType": "int",
-      "scope": "shot"
+      "scope": "shot",
+      "sentinel": "1000000"
     },
     {
       "name": "enrich.shot.travel_from_spot_deg",
       "valueType": "double",
-      "scope": "shot"
+      "scope": "shot",
+      "sentinel": "-1"
     },
     {
       "name": "enrich.shot.turn_degrees",
@@ -2439,7 +2448,8 @@
     {
       "name": "enrich.spotted.ticks_since_last_spot",
       "valueType": "int",
-      "scope": "spotted"
+      "scope": "spotted",
+      "sentinel": "1000000"
     },
     {
       "name": "enrich.weapon_fire.is_bullet",
@@ -5461,7 +5471,8 @@
             "enemy_spotted"
           ]
         }
-      ]
+      ],
+      "note": "Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or shot tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
     },
     {
       "name": "flash_grenade",
@@ -5714,7 +5725,8 @@
             "molotov_thrown"
           ]
         }
-      ]
+      ],
+      "note": "Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
     },
     {
       "name": "round_lost",

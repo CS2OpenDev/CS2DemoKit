@@ -86,7 +86,24 @@ public sealed record CatalogField(string Name, string Type, string? V2Name = nul
 /// <param name="Name">Full node name (e.g. <c>enrich.kill.was_enemy_kill</c>).</param>
 /// <param name="ValueType">Friendly value type (<c>bool</c>, <c>int</c>, …).</param>
 /// <param name="Scope">The enrichment family — the segment after <c>enrich.</c> (kill, hurt, blind, …).</param>
-public sealed record CatalogEnrichment(string Name, string ValueType, string Scope);
+/// <param name="Sentinel">
+///     The value the node carries when there was nothing to measure, as an invariant-culture
+///     literal (<c>1000000</c>, <c>-1</c>, <c>-1000</c>), or null for an enrichment whose every
+///     value is a measurement. A sentinel is both the node default and the explicit no-measurement
+///     write, so a rule that aggregates the node without gating on it sums the sentinel: the
+///     resolver refuses that (<c>resolve.ungated-sentinel-aggregate</c>).
+/// </param>
+/// <param name="ProvenBy">
+///     Other enrichments whose gate proves this one measured, because the edge writes them under
+///     the same condition (a travel gate proves the flick error). The node itself is always an
+///     acceptable gate and is not listed. Null when only the node's own gate counts.
+/// </param>
+public sealed record CatalogEnrichment(
+    string Name,
+    string ValueType,
+    string Scope,
+    string? Sentinel = null,
+    IReadOnlyList<string>? ProvenBy = null);
 
 /// <summary>One built-in context rule (round_number, gameplay_phase, bomb_status, …).</summary>
 /// <param name="ChainId">Declaring built-in chain id.</param>
@@ -170,6 +187,11 @@ public sealed record CatalogBinding(
 /// <param name="Facets">Typed match-able attributes (<c>enemy</c>, <c>weapon</c>, …).</param>
 /// <param name="Availability">Authored availability annotation (<c>all</c> or an explicit profile list).</param>
 /// <param name="Profiles">Per-demo-source resolution of <see cref="Event" /> to concrete wire events.</param>
+/// <param name="Note">
+///     An author-facing caveat about the view as a whole (the clock its <c>event.tick</c> runs on,
+///     for a synthesized view), surfaced in the schema hover for the view's <c>match:</c> block.
+///     Null for the ordinary case.
+/// </param>
 public sealed record CatalogView(
     string Name,
     string Event,
@@ -180,7 +202,8 @@ public sealed record CatalogView(
     IReadOnlyList<string> Baked,
     IReadOnlyList<CatalogFacet> Facets,
     string Availability,
-    IReadOnlyList<CatalogViewProfile> Profiles);
+    IReadOnlyList<CatalogViewProfile> Profiles,
+    string? Note = null);
 
 /// <summary>A view role bound to an event slot-field.</summary>
 /// <param name="Role">Role name (<c>killer</c>, <c>victim</c>, <c>planter</c>, …).</param>

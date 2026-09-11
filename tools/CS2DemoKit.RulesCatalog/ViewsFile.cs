@@ -64,6 +64,12 @@ internal static class ViewsFile
         public List<string> Baked { get; set; } = new();
         public Dictionary<string, FacetDto> Facets { get; set; } = new();
         public string? Availability { get; set; }
+
+        /// <summary>
+        ///     An author-facing caveat carried into the catalog and the schema hover for the view's
+        ///     <c>match:</c> block. A YAML comment in this file reaches nobody who writes a rule.
+        /// </summary>
+        public string? Note { get; set; }
     }
 
     internal sealed class FacetDto

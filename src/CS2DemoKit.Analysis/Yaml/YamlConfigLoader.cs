@@ -211,14 +211,37 @@ public static class YamlConfigLoader
             throw new RuleConfigException(shipped.Errors);
         }
 
-        RuleConfigLoadResult user = LoadDocuments(userDocuments);
+        return OverlayTiers(shipped, LoadDocuments(userDocuments));
+    }
 
-        return new RuleConfigLoadResult(
-            user.Errors,
-            [.. shipped.LoadedFiles, .. user.LoadedFiles],
-            user.FailedFiles)
+    /// <summary>
+    ///     Merges a clean shipped tier with a user tier: shipped order first, user overrides in
+    ///     place, new user rulesets appended in user order, disabled rulesets dropped. Each tier was
+    ///     label-checked on its own; the merge is a new load unit, so a user column colliding with a
+    ///     shipped one surfaces here, attributed to the user file (the shipped tier is known clean
+    ///     and the user file is the one that changed). A collision between two user rulesets was
+    ///     reported by the user tier's own pass and is not repeated.
+    /// </summary>
+    private static RuleConfigLoadResult OverlayTiers(RuleConfigLoadResult shipped, RuleConfigLoadResult user)
+    {
+        IReadOnlyList<RulesetDoc> merged = EnabledRulesets(MergeById(shipped.Rulesets, user.Rulesets, r => r.Id));
+        HashSet<string> userIds = new(user.Rulesets.Select(r => r.Id), StringComparer.Ordinal);
+
+        List<RuleConfigError> errors = [.. user.Errors];
+        List<string> loadedFiles = [.. shipped.LoadedFiles, .. user.LoadedFiles];
+        List<string> failedFiles = [.. user.FailedFiles];
+        foreach (RuleConfigError collision in FindScoreboardLabelCollisions(merged, userIds))
         {
-            Rulesets = EnabledRulesets(MergeById(shipped.Rulesets, user.Rulesets, r => r.Id))
+            errors.Add(collision);
+            if (collision.FilePath is { } file && loadedFiles.Remove(file))
+            {
+                failedFiles.Add(file);
+            }
+        }
+
+        return new RuleConfigLoadResult(errors, loadedFiles, failedFiles)
+        {
+            Rulesets = merged
         };
     }
 
@@ -370,10 +393,189 @@ public static class YamlConfigLoader
             (errors.Count == errorsBefore ? loadedFiles : failedFiles).Add(label);
         }
 
+        // Scoreboard labels are checked over the whole load unit, not per file: a label is the
+        // value-column key of the per-player table, matched across every ruleset built together.
+        foreach (RuleConfigError collision in FindScoreboardLabelCollisions(allRulesets))
+        {
+            errors.Add(collision);
+            if (collision.FilePath is { } file && loadedFiles.Remove(file))
+            {
+                failedFiles.Add(file);
+            }
+        }
+
         return new RuleConfigLoadResult(errors, loadedFiles, failedFiles)
         {
             Rulesets = allRulesets
         };
+    }
+
+    /// <summary>
+    ///     Finds every scoreboard entry whose column lands on a board where an earlier entry (in this
+    ///     or any other enabled ruleset) already put the same column. The column key is
+    ///     <c>label:</c>, falling back to the stat id, exactly as <c>ShowLowering</c> assigns it, and
+    ///     the board follows the same rules: <c>boards:</c> when written, else the match board for a
+    ///     highlight <c>.count</c>, else the stat's own <c>per:</c> (a tally target follows its
+    ///     owner). The round and match scoreboards are separate tables, so the same label on both is
+    ///     two columns, not a collision.
+    ///     <para>
+    ///         This is an ERROR, not a warning, deliberately. The projector writes cells into a
+    ///         dictionary keyed by column name, so the later ruleset's value silently replaces the
+    ///         earlier one and the losing stat reads as zero on every row; the <c>Flick</c> column
+    ///         read 0 for weeks that way and was found only by someone doubting the number. A load
+    ///         result carries no warnings channel, and one nobody reads is how this got here. The
+    ///         fix is a one-word rename, so the cost of failing loud is small. A ruleset with
+    ///         <c>enabled: false</c> contributes no columns and is skipped; two rulesets that are
+    ///         never loaded together are never checked together, because the check runs on the load
+    ///         unit (a directory, the embedded set, an overlay merge), which is the set that shares
+    ///         a table.
+    ///     </para>
+    /// </summary>
+    /// <param name="rulesets">The rulesets that will be built together, in load order.</param>
+    /// <param name="overlayTier">
+    ///     For a two-tier merge, the ids of the rulesets that came from the user tier. When given,
+    ///     only CROSS-tier collisions are reported (each tier already checked itself), and the error
+    ///     is attributed to the user-tier entry whichever side came first in merged order. Null for a
+    ///     single load unit, where the later entry is attributed.
+    /// </param>
+    /// <returns>One attributed error per colliding entry, with the file and line of the entry at fault.</returns>
+    internal static List<RuleConfigError> FindScoreboardLabelCollisions(
+        IReadOnlyList<RulesetDoc> rulesets, IReadOnlySet<string>? overlayTier = null)
+    {
+        List<RuleConfigError> errors = new();
+        Dictionary<(bool RoundBoard, string Column), ScoreboardColumnOwner> owners = new();
+
+        foreach (RulesetDoc doc in rulesets)
+        {
+            if (!doc.Enabled || doc.Show is not { Scoreboard.Count: > 0 } show)
+            {
+                continue;
+            }
+
+            Dictionary<string, PerScope> statScopes = new(StringComparer.Ordinal);
+            Dictionary<string, PerScope> tallyTargetScopes = new(StringComparer.Ordinal);
+            foreach (StatDef stat in doc.Stats)
+            {
+                statScopes[stat.Id] = stat.Per;
+                if (stat.Thresholds is { } thresholds)
+                {
+                    foreach (TallyThreshold threshold in thresholds)
+                    {
+                        tallyTargetScopes[threshold.Target] = stat.Per;
+                    }
+                }
+            }
+
+            HashSet<string> highlights = new(doc.Highlights.Select(h => h.Id), StringComparer.Ordinal);
+
+            foreach (ScoreboardEntry entry in show.Scoreboard)
+            {
+                if (!TryResolveScoreboardBoards(entry, statScopes, tallyTargetScopes, highlights, out List<bool> boards))
+                {
+                    continue; // an unknown ref or a bad boards: value; the resolver reports those
+                }
+
+                string column = entry.Label ?? entry.Stat;
+                ScoreboardColumnOwner current = new(doc.Id, doc.Position.File, entry.Stat, entry.Position.Line, entry.Position.Column);
+                foreach (bool roundBoard in boards)
+                {
+                    if (!owners.TryGetValue((roundBoard, column), out ScoreboardColumnOwner? first))
+                    {
+                        owners[(roundBoard, column)] = current;
+                        continue;
+                    }
+
+                    ScoreboardColumnOwner atFault = current;
+                    ScoreboardColumnOwner other = first;
+                    if (overlayTier is not null)
+                    {
+                        bool firstIsUser = overlayTier.Contains(first.RulesetId);
+                        bool currentIsUser = overlayTier.Contains(current.RulesetId);
+                        if (firstIsUser == currentIsUser)
+                        {
+                            continue; // same tier: that tier's own pass reported it (or threw)
+                        }
+
+                        if (firstIsUser)
+                        {
+                            atFault = first;
+                            other = current;
+                        }
+                    }
+
+                    string board = roundBoard ? "round" : "match";
+                    string otherFile = other.File is null ? "<inline yaml>" : Path.GetFileName(other.File);
+                    errors.Add(new RuleConfigError(
+                        atFault.File,
+                        $"scoreboard label '{column}' on the {board} board is also the column of ruleset "
+                        + $"'{other.RulesetId}' ({otherFile}); labels are the table's column keys across every "
+                        + "ruleset loaded together, so one value silently replaces the other and that stat "
+                        + "reads as zero. Rename one of them",
+                        atFault.RulesetId,
+                        atFault.Stat,
+                        atFault.Line > 0 ? atFault.Line : null,
+                        atFault.Column > 0 ? atFault.Column : null));
+                }
+            }
+        }
+
+        return errors;
+    }
+
+    /// <summary>The scoreboard entry that first claimed a column on a board, with what an error needs to point at it.</summary>
+    private sealed record ScoreboardColumnOwner(string RulesetId, string? File, string Stat, int Line, int Column);
+
+    /// <summary>
+    ///     The boards a scoreboard entry lands on, in <c>ShowLowering</c>'s order of precedence:
+    ///     an explicit <c>boards:</c> list, else a highlight ref (<c>id</c> or <c>id.count</c>) on the
+    ///     match board, else a stat ref on its <c>per:</c> board, else a tally target on its owner's.
+    /// </summary>
+    private static bool TryResolveScoreboardBoards(
+        ScoreboardEntry entry,
+        Dictionary<string, PerScope> statScopes,
+        Dictionary<string, PerScope> tallyTargetScopes,
+        HashSet<string> highlights,
+        out List<bool> boards)
+    {
+        boards = new List<bool>(2);
+        if (entry.Boards is { Count: > 0 } explicitBoards)
+        {
+            foreach (string board in explicitBoards)
+            {
+                switch (board)
+                {
+                    case "round":
+                        boards.Add(true);
+                        break;
+                    case "match":
+                        boards.Add(false);
+                        break;
+                    default:
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        const string countSuffix = ".count";
+        string highlightId = entry.Stat.EndsWith(countSuffix, StringComparison.Ordinal)
+            ? entry.Stat[..^countSuffix.Length]
+            : entry.Stat;
+        if (highlights.Contains(highlightId))
+        {
+            boards.Add(false);
+            return true;
+        }
+
+        if (statScopes.TryGetValue(entry.Stat, out PerScope per)
+            || tallyTargetScopes.TryGetValue(entry.Stat, out per))
+        {
+            boards.Add(per == PerScope.Round);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>True when <paramref name="path" /> names a (retired) rule-test fixture (<c>*.test.yaml</c> / <c>*.test.yml</c>).</summary>
@@ -479,18 +681,7 @@ public static class YamlConfigLoader
             };
         }
 
-        RuleConfigLoadResult user = TryLoadDirectory(userDirectory);
-
-        // Shipped order first; user overrides in place; new user rulesets appended in user order.
-        List<RulesetDoc> mergedRulesets = MergeById(shipped.Rulesets, user.Rulesets, r => r.Id);
-
-        return new RuleConfigLoadResult(
-            user.Errors,
-            [.. shipped.LoadedFiles, .. user.LoadedFiles],
-            user.FailedFiles)
-        {
-            Rulesets = EnabledRulesets(mergedRulesets)
-        };
+        return OverlayTiers(shipped, TryLoadDirectory(userDirectory));
     }
 
     /// <summary>Drops disabled v2 rulesets (<c>enabled: false</c>) after tier overlay.</summary>

@@ -793,6 +793,55 @@ public class EntityIntegrationTests
         await Assert.That(bySlot.Count).IsGreaterThanOrEqualTo(3);
     }
 
+    /// <summary>
+    ///     Pins the clock convention of the synthesized <c>molotov_thrown</c> event: all three tick
+    ///     slots carry the FRAME clock, the same as <c>enemy_spotted</c>, and NOT the absolute server
+    ///     tick a parsed event puts in <c>ServerTick</c>. The convention is documented on the record;
+    ///     this holds it, because the failure mode of drifting either way is a plausible number
+    ///     (a molotov tick differenced against a kill tick gains or loses <c>ServerStartTick</c>)
+    ///     rather than an error. The sample demo's <c>ServerStartTick</c> is asserted non-zero so
+    ///     the two clocks genuinely differ here and the pin means something.
+    /// </summary>
+    [Test]
+    public async Task MolotovThrownEvent_CarriesTheFrameClockInAllThreeSlots()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
+
+        EntityStateLayer layer = new(parsed.Frames);
+        EntityChangeScanner scanner = new(layer, [], null, true);
+
+        int seen = 0;
+        for (int frameIndex = 0; frameIndex < parsed.Frames.Count; frameIndex++)
+        {
+            // The eval loop's entry point (StateGraphEvaluator), not the bare AdvanceAndPoll, so a
+            // future change that derived the tick from the digest on the precomputed path would
+            // still have to get past this pin.
+            DemoFrame frame = parsed.Frames[frameIndex];
+            foreach (NetMessage msg in scanner.AdvanceAndPollAt(frameIndex, frame.ServerTick))
+            {
+                if (msg is not GameEventMessage { DecodedEvent: MolotovThrownEvent mt })
+                {
+                    continue;
+                }
+
+                seen++;
+                await Assert.That(mt.ServerTick).IsEqualTo(frame.ServerTick)
+                    .Because("ServerTick is the frame clock on a synthesized event (see the record doc)");
+                await Assert.That(mt.GameTick).IsEqualTo(frame.ServerTick);
+                await Assert.That(mt.FrameNumber).IsEqualTo(frame.ServerTick);
+            }
+        }
+
+        SkipIfEntityDecodeFailed(layer.Tracker);
+
+        Console.WriteLine($"molotov_thrown events pinned: {seen}; ServerStartTick = {parsed.ServerStartTick}");
+        await Assert.That(parsed.ServerStartTick).IsGreaterThan(0)
+            .Because("with a zero offset the two clocks coincide and this test would pin nothing");
+        await Assert.That(seen).IsGreaterThan(0)
+            .Because("a demo with no molotov throws exercises none of the assertions above");
+    }
+
     // ── Shared skip helper ────────────────────────────────────────────────────
     //
     // Entity-state decoding hits a known bit-misalignment bug on the bench /

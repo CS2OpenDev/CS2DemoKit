@@ -807,6 +807,10 @@ public sealed class EntityChangeScanner
                 continue;
             }
 
+            // Frame clock in all three slots, deliberately: the scanner's tick IS the frame clock
+            // and it holds no ServerStartTick to build the absolute one. Same convention as the
+            // EnemySpottedEvent emitted in ConsumeAimVantage above; the event's class doc carries
+            // the reasoning and the event.tick caveat that follows from it.
             _scratch.Add(GameEventMessage.ForSynthesizedEvent(
                 new MolotovThrownEvent(tick, tick, tick, slot)));
         }

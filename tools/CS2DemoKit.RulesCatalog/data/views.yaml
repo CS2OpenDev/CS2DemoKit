@@ -300,8 +300,14 @@ views:
     facets: { }
     availability: all
 
-  molotov: # synthesized molotov_thrown (m_hThrower attribution)
+  # Synthesized molotov_thrown (m_hThrower attribution). The note travels into catalog.json and the
+  # schema hover, because the clock caveat is for the rule author, not for this file's reader.
+  molotov:
     event: molotov_thrown
+    note: >-
+      Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick
+      a wire event carries: differencing it against a kill or bomb_planted tick adds the demo's
+      ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.
     binding: actor_slot
     actor: thrower
     roles:
@@ -372,6 +378,10 @@ views:
   # derive but a single event cannot carry.
   enemy_spotted:
     event: enemy_spotted
+    note: >-
+      Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server
+      tick a wire event carries: differencing it against a kill or shot tick adds the demo's
+      ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.
     binding: actor_slot
     actor: viewer
     roles:

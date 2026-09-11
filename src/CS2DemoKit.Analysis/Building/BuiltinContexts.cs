@@ -320,9 +320,36 @@ public static class BuiltinContexts
                 ["enrich.shot.ticks_since_on_target"] = shotTicksSinceOnTarget,
                 ["enrich.shot.is_first_after_on_target"] = shotIsFirstAfterOnTarget,
                 ["enrich.kill.ticks_since_spot"] = killTicksSinceSpot
-            }
-        );
+            },
+            // Sentinel-defaulted measurements, declared beside the nodes they describe so the
+            // catalogue can carry them and the resolver can refuse an ungated sum over one. Every
+            // entry here is a node whose default is ALSO its explicit "nothing to measure" write;
+            // a default that is a real value (victim_health_before's 100) does not belong here.
+            // The flick error is proven by the travel gate because AimShotContextEdge writes both
+            // under the same haveTravel condition.
+            new Dictionary<string, EnrichmentSentinel>(StringComparer.Ordinal)
+            {
+                ["enrich.shot.ticks_since_spot"] = new(AimShotContextEdge.NoSpotSentinel),
+                ["enrich.shot.ticks_since_on_target"] = new(AimShotContextEdge.NoSpotSentinel),
+                ["enrich.kill.ticks_since_spot"] = new(AimShotContextEdge.NoSpotSentinel),
+                ["enrich.shot.ticks_since_last_shot"] = new(ShotEnrichmentEdge.NoPreviousShotSentinel),
+                ["enrich.spotted.ticks_since_last_spot"] = new(SpottedEnrichmentEdge.NoPreviousSpotSentinel),
+                ["enrich.shot.travel_from_spot_deg"] = new(AimShotContextEdge.NoTravelSentinel),
+                ["enrich.shot.flick_error_deg"] = new(
+                    AimShotContextEdge.NoFlickSentinel, ["enrich.shot.travel_from_spot_deg"])
+            });
     }
+
+    /// <summary>
+    ///     The no-measurement value of a sentinel-defaulted enrichment node, and the other nodes
+    ///     whose gate proves this one measured. See <see cref="EnrichmentInfrastructure.Sentinels" />.
+    /// </summary>
+    /// <param name="Value">The sentinel, boxed as the node's own value type.</param>
+    /// <param name="ProvenBy">
+    ///     Enrichment names written under the same condition as this node, so a gate on any of them
+    ///     is as good as a gate on the node itself. Empty when only the node's own gate counts.
+    /// </param>
+    public sealed record EnrichmentSentinel(object Value, IReadOnlyList<string>? ProvenBy = null);
 
     /// <summary>
     ///     Returns the built-in context-rule chains (one game-scoped, one per-player) that wire
@@ -589,8 +616,15 @@ public static class BuiltinContexts
     /// <param name="Nodes">Transient enrichment nodes to register on the graph.</param>
     /// <param name="Edges">Enrichment edges (one per source event) wiring the transient nodes.</param>
     /// <param name="NodeLookup">Name lookup used by <c>ExpressionCompiler</c> to resolve <c>enrich.xxx</c> identifiers.</param>
+    /// <param name="Sentinels">
+    ///     The nodes in <paramref name="Nodes" /> whose default is a no-measurement sentinel rather
+    ///     than a value, keyed by node name. The catalogue generator publishes these so the ruleset
+    ///     resolver can refuse to aggregate one without a gate; a node missing from here is treated
+    ///     as measuring on every write.
+    /// </param>
     public sealed record EnrichmentInfrastructure(
         IReadOnlyList<StateNode> Nodes,
         IReadOnlyList<StateEdge> Edges,
-        Dictionary<string, StateNode> NodeLookup);
+        Dictionary<string, StateNode> NodeLookup,
+        IReadOnlyDictionary<string, EnrichmentSentinel> Sentinels);
 }

@@ -1,5 +1,6 @@
 #region
 
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using CS2DemoKit.Analysis;
@@ -148,11 +149,28 @@ public static class CatalogBuilder
             registry,
             new LogicalEventResolver(new Cs2GotvProfile()));
 
+        foreach (string sentinelName in infra.Sentinels.Keys)
+        {
+            if (!infra.NodeLookup.ContainsKey(sentinelName))
+            {
+                throw new InvalidOperationException(
+                    $"enrichment sentinel '{sentinelName}' names no enrichment node; the declaration in "
+                    + "BuiltinContexts.CreateEnrichment has drifted from the node set.");
+            }
+        }
+
         return infra.Nodes
-            .Select(node => new CatalogEnrichment(
-                node.Name,
-                NodeValueType(node),
-                node.Name.Split('.') is [_, var scope, ..] ? scope : ""))
+            .Select(node =>
+            {
+                BuiltinContexts.EnrichmentSentinel? sentinel =
+                    infra.Sentinels.TryGetValue(node.Name, out BuiltinContexts.EnrichmentSentinel? s) ? s : null;
+                return new CatalogEnrichment(
+                    node.Name,
+                    NodeValueType(node),
+                    node.Name.Split('.') is [_, var scope, ..] ? scope : "",
+                    sentinel is null ? null : Convert.ToString(sentinel.Value, CultureInfo.InvariantCulture),
+                    sentinel is { ProvenBy.Count: > 0 } ? sentinel.ProvenBy : null);
+            })
             .OrderBy(e => e.Name, StringComparer.Ordinal)
             .ToList();
     }
@@ -459,7 +477,8 @@ public static class CatalogBuilder
 
             views.Add(new CatalogView(
                 name, eventKey, binding, dto.Actor, dto.Result,
-                roles, dto.Baked, facets, dto.Availability ?? "all", perProfile));
+                roles, dto.Baked, facets, dto.Availability ?? "all", perProfile,
+                string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim()));
         }
 
         return views.OrderBy(v => v.Name, StringComparer.Ordinal).ToList();

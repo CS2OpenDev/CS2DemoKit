@@ -162,7 +162,7 @@ public static class RulesSchemaBuilder
         {
             ["expression"] = ExpressionDef(),
             ["triggerRef"] = TriggerRefDef(views),
-            ["match"] = MatchUnionDef(views),
+            ["match"] = MatchUnionDef(views, catalog.Enrichments),
             ["trigger"] = TriggerDef(),
             ["offTrigger"] = OffTriggerDef(),
             ["param"] = ParamDef(),
@@ -226,20 +226,28 @@ public static class RulesSchemaBuilder
         };
     }
 
-    private static JsonObject MatchUnionDef(List<CatalogView> views)
+    private static JsonObject MatchUnionDef(List<CatalogView> views, IReadOnlyList<CatalogEnrichment> enrichments)
     {
         // Union of every view's facets - the base match: shape (per-view precision is added by the
         // stat's per-view if/then). Each facet's markdownDescription names its type + the views that
-        // expose it + per-source availability.
-        SortedDictionary<string, (string Type, SortedSet<string> Views, string Availability)> facets =
+        // expose it + per-source availability, and the sentinel when the facet reads a
+        // sentinel-defaulted enrichment, because the gate is written right here.
+        Dictionary<string, string> sentinelByEnrichment = enrichments
+            .Where(e => e.Sentinel is not null)
+            .ToDictionary(e => e.Name, e => e.Sentinel!, StringComparer.Ordinal);
+        SortedDictionary<string, (string Type, SortedSet<string> Views, string Availability, string? Sentinel)> facets =
             new(StringComparer.Ordinal);
         foreach (CatalogView view in views)
         {
             foreach (CatalogFacet facet in view.Facets)
             {
-                if (!facets.TryGetValue(facet.Name, out (string Type, SortedSet<string> Views, string Availability) acc))
+                if (!facets.TryGetValue(facet.Name, out (string Type, SortedSet<string> Views, string Availability, string? Sentinel) acc))
                 {
-                    acc = (facet.Type, new SortedSet<string>(StringComparer.Ordinal), view.Availability);
+                    string? sentinel = facet.Enrichment is { } enrichment
+                                       && sentinelByEnrichment.TryGetValue(enrichment, out string? s)
+                        ? s
+                        : null;
+                    acc = (facet.Type, new SortedSet<string>(StringComparer.Ordinal), view.Availability, sentinel);
                     facets[facet.Name] = acc;
                 }
 
@@ -248,13 +256,17 @@ public static class RulesSchemaBuilder
         }
 
         JsonObject properties = new();
-        foreach ((string name, (string type, SortedSet<string> exposedBy, string availability)) in facets)
+        foreach ((string name, (string type, SortedSet<string> exposedBy, string availability, string? sentinel)) in facets)
         {
+            string sentinelNote = sentinel is null
+                ? ""
+                : $" Reads `{sentinel}` when there was nothing to measure: gate on it before a `sum:` over it.";
             properties[name] = new JsonObject
             {
                 ["markdownDescription"] =
                     $"Facet `{name}` (type `{type}`). Exposed by: {string.Join(", ", exposedBy)}. "
                     + $"Availability: {availability}. Value is a unary test (literal / `in list` / comparison / `[lo..hi]`)."
+                    + sentinelNote
             };
         }
 
@@ -314,7 +326,8 @@ public static class RulesSchemaBuilder
             ["additionalProperties"] = false,
             ["markdownDescription"] =
                 $"match: facets for view `{view.Name}` (event `{view.Event}`, binding `{view.Binding}`). "
-                + $"Available on: {(availableOn.Count > 0 ? string.Join(", ", availableOn) : "no profiles")}.",
+                + $"Available on: {(availableOn.Count > 0 ? string.Join(", ", availableOn) : "no profiles")}."
+                + (view.Note is null ? "" : " " + view.Note),
             ["properties"] = properties
         };
     }

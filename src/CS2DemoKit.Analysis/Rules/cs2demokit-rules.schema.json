@@ -167,7 +167,7 @@
           "markdownDescription": "Facet \u0060flash_assisted\u0060 (type \u0060bool\u0060). Exposed by: kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "flick_error_deg": {
-          "markdownDescription": "Facet \u0060flick_error_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060flick_error_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u0060-1000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "has_winner": {
           "markdownDescription": "Facet \u0060has_winner\u0060 (type \u0060bool\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -230,22 +230,22 @@
           "markdownDescription": "Facet \u0060through_smoke\u0060 (type \u0060bool\u0060). Exposed by: death, kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "ticks_since_last_shot": {
-          "markdownDescription": "Facet \u0060ticks_since_last_shot\u0060 (type \u0060int\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060ticks_since_last_shot\u0060 (type \u0060int\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u00601000000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "ticks_since_last_spot": {
-          "markdownDescription": "Facet \u0060ticks_since_last_spot\u0060 (type \u0060int\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060ticks_since_last_spot\u0060 (type \u0060int\u0060). Exposed by: enemy_spotted. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u00601000000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "ticks_since_on_target": {
-          "markdownDescription": "Facet \u0060ticks_since_on_target\u0060 (type \u0060int\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060ticks_since_on_target\u0060 (type \u0060int\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u00601000000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "ticks_since_spot": {
-          "markdownDescription": "Facet \u0060ticks_since_spot\u0060 (type \u0060int\u0060). Exposed by: kill, shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060ticks_since_spot\u0060 (type \u0060int\u0060). Exposed by: kill, shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u00601000000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "trade": {
           "markdownDescription": "Facet \u0060trade\u0060 (type \u0060bool\u0060). Exposed by: kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "travel_from_spot_deg": {
-          "markdownDescription": "Facet \u0060travel_from_spot_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060travel_from_spot_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u0060-1\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "turn_degrees": {
           "markdownDescription": "Facet \u0060turn_degrees\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -1779,7 +1779,7 @@
     "match_enemy_spotted": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060enemy_spotted\u0060 (event \u0060enemy_spotted\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060enemy_spotted\u0060 (event \u0060enemy_spotted\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or shot tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
         "angle_to_chest": {
           "markdownDescription": "\u0060angle_to_chest\u0060 (type \u0060float\u0060) on view \u0060enemy_spotted\u0060."
@@ -1870,7 +1870,7 @@
     "match_molotov": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
         "actor": {
           "enum": [

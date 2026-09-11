@@ -34,8 +34,26 @@ namespace CS2DemoKit.Analysis.Events;
 ///         silently fails every <c>LastSpotTick &gt;= 0</c> guard and empties the spot-to-shot
 ///         population instead of erroring.
 ///     </para>
+///     <para>
+///         The two clocks agree to the tick, not exactly. Measured on the same sample
+///         (<c>ServerStartTick</c> 20,457): of 3,006 parsed events, 2,194 have a <c>GameTick</c>
+///         equal to the header tick of the frame that delivered them and 812 sit one tick below it
+///         (<c>weapon_fire</c> 195 of 206, <c>player_death</c> 21 of 22, <c>player_hurt</c> 55 of
+///         76), because the server stamps an event during its simulation and the frame that carries
+///         it can be the next one. That is event timing, not an offset in <c>ServerStartTick</c>: a
+///         synthesized event has no such stamp and lands exactly on its frame. A rule comparing a
+///         spot tick against a shot tick therefore sees the shot's <c>GameTick</c> up to one tick
+///         early, which the <c>ticks_since_*</c> enrichments absorb (a difference of -1 rounds to
+///         "this tick", never to a sentinel).
+///     </para>
+///     <para>
+///         <c>FrameNumber</c> also carries the frame tick, not the frame INDEX the base
+///         <see cref="GameEvent" /> documents: the scanner has no index in hand where it emits, and
+///         nothing in the graph reads <c>FrameNumber</c> off an event (only a breakpoint transport
+///         read reaches it).
+///     </para>
 /// </summary>
-/// <param name="FrameNumber">The sampled frame-clock tick (see the clock note above).</param>
+/// <param name="FrameNumber">The sampled frame-clock tick (see the clock note above; not a frame index).</param>
 /// <param name="ServerTick">The same tick.</param>
 /// <param name="GameTick">
 ///     The same tick. Directly comparable with a parsed event's <c>GameTick</c>.

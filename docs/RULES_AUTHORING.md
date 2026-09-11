@@ -230,6 +230,42 @@ eco_kills:
 when: [enemy_kills > 0, player.survived]     # same as "enemy_kills > 0 and player.survived"
 ```
 
+**`event.tick` is not one clock across views.** On a wire event (`kill`, `shot`, `bomb_planted`,
+...) it is the absolute server tick. On the two views the engine synthesizes from entity state,
+`enemy_spotted` and `molotov`, there is no wire stamp and it is the frame clock instead, lower by
+the demo's `ServerStartTick` (about 20,000 ticks on a typical GOTV demo). A `where:` that
+differences a molotov or spot tick against a kill tick is off by that much and nothing reports it.
+For timing across views use the `ticks_since_*` facets, which the engine computes on one clock.
+
+### Facets that carry a sentinel
+
+A few timing and angle facets read a **sentinel** when there was nothing to measure, rather than
+zero: `ticks_since_spot`, `ticks_since_on_target`, `ticks_since_last_shot` and
+`ticks_since_last_spot` read `1000000` on an event with no contact behind it,
+`travel_from_spot_deg` reads `-1`, and `flick_error_deg` reads `-1000`. Zero would mean "spotted
+this very tick" or "a perfect correction", which is the opposite of the truth. The catalogue
+marks these (`sentinel:` on the enrichment; the schema hover on the facet says so too).
+
+The consequence: a `sum:`, a reducing `bucket: value:`, or a `capture: … keep: min | max` over
+one of them **must gate on it** in `match:` or `where:`, or the checker refuses the stat
+(`resolve.ungated-sentinel-aggregate`). Ungated, every unmeasured event would add a million to the
+total and the result would look plausible. A bound is the natural gate:
+
+```yaml
+reaction_ticks:
+  sum: enrich.shot.ticks_since_spot
+  on: shot
+  match: { is_first_after_spot: true, ticks_since_spot: "<= 320" }   # the gate
+  per: round
+flick_error_sum:
+  sum: enrich.shot.flick_error_deg
+  on: shot
+  match: { travel_from_spot_deg: ">= 0" }   # travel proves the flick error measured too
+  per: round
+```
+
+A `capture:` with `keep: first | last | list` and a `count:` are not aggregates and need no gate.
+
 ---
 
 ## 6. Highlights — per-round achievements and their totals
@@ -300,6 +336,13 @@ ruleset has no subject and cannot read `player.*` or the team aggregates.
   `m:ss`).
 
 `scoreboard:` is inherently per-player; in a `for: match` ruleset use `tables:` instead.
+
+**A scoreboard `label:` is the column key**, and it is matched across every ruleset loaded
+together, not just yours. Two entries landing the same label on the same board (round or match)
+would fight over one column and the loser would silently read as zero, so the loader rejects the
+directory with an attributed error naming both rulesets. The board follows the stat's `per:`
+(a highlight `.count` is always match-scoped; `boards:` overrides), and the round and match
+scoreboards are separate tables, so the same label on a per-round stat and a match total is fine.
 
 ---
 

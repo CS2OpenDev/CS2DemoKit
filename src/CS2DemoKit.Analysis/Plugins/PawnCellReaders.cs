@@ -252,7 +252,9 @@ internal enum LaneHit : byte
 /// <summary>
 ///     The wire-type coercions the generic provider applies, as typed functions. The boxed
 ///     <see cref="GenericPerPlayerFieldProvider" /> read and its typed cell readers both go through
-///     these, so the two cannot drift.
+///     these, so the COERCIONS cannot drift. The gates (PositiveOnly, UnseenAsDefault, and the
+///     hop-failed short circuit ahead of both) are restated per path, and only
+///     <c>PawnCellReaderParityTests</c> holds those together, arm by arm, on a real demo.
 /// </summary>
 internal static class PawnCellCoercion
 {
