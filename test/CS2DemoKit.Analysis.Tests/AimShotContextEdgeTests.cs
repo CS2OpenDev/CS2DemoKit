@@ -73,6 +73,15 @@ public class AimShotContextEdgeTests
     /// <summary>
     ///     The shape the metric is actually about: moving fast, then stopped by the shot. Admitted
     ///     because of the movement, good because of the stop.
+    ///     <para>
+    ///         The shot sits five ticks after the last moving one, well inside the window at any
+    ///         plausible value of it. That margin is deliberate: this test is about the admitted and
+    ///         good verdicts, and it used to park for twelve ticks against a thirteen-tick window,
+    ///         which quietly made it a boundary test that a change to
+    ///         <see cref="AimShotContextEdge.CounterStrafeSpeedFraction" /> would have flipped for a
+    ///         reason unrelated to its name. The boundary itself is
+    ///         <see cref="Admission_TurnsOffOneTickPastTheWindow" />'s job.
+    ///     </para>
     /// </summary>
     [Test]
     public async Task RunThenStop_IsAdmittedAndGood()
@@ -86,16 +95,86 @@ public class AimShotContextEdgeTests
             rig.Tick(100 + i, Row(x: x, y: 0f));
         }
 
-        for (int i = 8; i < 20; i++)
+        for (int i = 8; i < 13; i++)
         {
             rig.Tick(100 + i, Row(x: x, y: 0f));
         }
 
-        await Assert.That(rig.Fire(119)).IsTrue();
+        await Assert.That(rig.Fire(112)).IsTrue();
         await Assert.That(rig.Admitted.IsActive).IsTrue()
-            .Because("200 u/s inside the preceding half second clears the ~73 u/s threshold");
+            .Because("200 u/s five ticks earlier clears the ~73 u/s threshold and is inside the window");
         await Assert.That(rig.Good.IsActive).IsTrue()
             .Because("the shot tick itself differenced to zero travel");
+    }
+
+    /// <summary>
+    ///     What the lookback constant actually governs: the tolerated GAP between the last sample
+    ///     above the movement-inaccuracy line and the shot. Admission holds at a gap exactly equal to
+    ///     the window and turns off one tick later.
+    ///     <para>
+    ///         This is the assertion that would have caught the window being sized from the wrong
+    ///         interval. <c>CounterStrafeWindowDerivationTests</c> derives the number; this pins what
+    ///         the number means to the gate, so a derivation of some other quantity that happened to
+    ///         land near the same value could not pass unnoticed. Run at both tick rates because
+    ///         <c>_lookbackTicks</c> converts the seconds constant at the demo's own rate, and no demo
+    ///         in the corpus is 128.
+    ///     </para>
+    /// </summary>
+    [Test]
+    [Arguments(64.0)]
+    [Arguments(128.0)]
+    public async Task Admission_TurnsOffOneTickPastTheWindow(double tickRate)
+    {
+        int window = (int)Math.Round(AimShotContextEdge.CounterStrafeLookbackSeconds * tickRate);
+        Console.WriteLine($"   {tickRate:F0}-tick: window {window} ticks");
+
+        Rig atTheEdge = await FireAfterGap(window, tickRate);
+        Rig pastIt = await FireAfterGap(window + 1, tickRate);
+
+        await Assert.That(atTheEdge.Admitted.IsActive).IsTrue()
+            .Because($"a gap of exactly {window} ticks is the last one the window covers");
+        await Assert.That(pastIt.Admitted.IsActive).IsFalse()
+            .Because($"one tick past {window} the shot is no longer the end of that stop");
+    }
+
+    /// <summary>
+    ///     Widening the window can only ever add GOOD shots, so the moving-shot count the board shows
+    ///     as Linear% does not depend on the window at all. Pinned because the reasoning is short
+    ///     enough to look obvious and has one real precondition.
+    ///     <para>
+    ///         <b>The argument.</b> A shot that a narrower window would NOT admit had no sample above
+    ///         the line in that narrower range, and the shot's own tick is in every range, so its
+    ///         speed at the shot was at or below the line. On the fired arm that is exactly the
+    ///         condition <see cref="AimShotContext.CounterStrafeGood" /> tests, so every shot the
+    ///         wider window adds lands in the clean count and none in the moving count. The single
+    ///         exception is a speed exactly EQUAL to the line, which is not good and not admitted
+    ///         either, and which floating point makes measure-zero.
+    ///     </para>
+    ///     <para>
+    ///         <b>The precondition.</b> That holds only because the fired arm carries no server
+    ///         movement penalty, which is what sends <c>CounterStrafeGood</c> down its speed-fallback
+    ///         branch; in the penalty branch the verdict is the server's and is not tied to our peak
+    ///         at all. The counter-strafe counters all read the fired arm, so the invariant is
+    ///         structural today, but it is one rules change away from not being, which is why the
+    ///         null is asserted here rather than assumed.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task WideningTheWindow_AddsOnlyGoodShots()
+    {
+        int window = (int)Math.Round(AimShotContextEdge.CounterStrafeLookbackSeconds * 64.0);
+        for (int gap = window - 2; gap <= window + 2; gap++)
+        {
+            Rig rig = await FireAfterGap(gap, 64.0);
+            Console.WriteLine($"   gap {gap,3}: admitted={rig.Admitted.IsActive}, good={rig.Good.IsActive}");
+            await Assert.That(rig.Good.IsActive).IsTrue()
+                .Because($"the shot at a {gap}-tick gap was parked, so it is good whether or not this "
+                         + "window admits it, and widening the window therefore adds nothing to the "
+                         + "moving count");
+            await Assert.That(rig.Run.Last!.ServerMovementPenalty).IsNull()
+                .Because("the fired arm has no server penalty to prefer, which is what makes the "
+                         + "verdict the speed comparison the argument above depends on");
+        }
     }
 
     /// <summary>Still moving at the shot: admitted, and a failure.</summary>
@@ -366,6 +445,31 @@ public class AimShotContextEdgeTests
     ///     One full digest row. Defaults are a standing player with a fresh weapon at the origin, so
     ///     each test names only the columns it is about.
     /// </summary>
+    // Runs the shooter for eight sampled ticks at 200 u/s, parks them, and fires exactly gapTicks
+    // after the last moving tick. Returns the rig so a caller can read both verdicts off it.
+    private static async Task<Rig> FireAfterGap(int gapTicks, double tickRate)
+    {
+        Rig rig = new(tickRate: tickRate);
+        float perTick = (float)(200.0 / tickRate);
+        float x = 0f;
+        int tick = 100;
+        for (int i = 0; i < 8; i++)
+        {
+            x += perTick;
+            rig.Tick(tick++, Row(x: x, y: 0f));
+        }
+
+        int lastMovingTick = tick - 1;
+        int shotTick = lastMovingTick + gapTicks;
+        while (tick <= shotTick)
+        {
+            rig.Tick(tick++, Row(x: x, y: 0f));
+        }
+
+        await Assert.That(rig.Fire(shotTick)).IsTrue();
+        return rig;
+    }
+
     private static object?[] Row(
         float x = 0f, float y = 0f, float recoil = 0f,
         float eyePitch = 0f, float eyeYaw = 0f,
@@ -513,7 +617,7 @@ public class AimShotContextEdgeTests
         private readonly EntityChangeScanner _scanner;
         private int _frame;
 
-        internal Rig(VisibilityTransitionScanner? visibility = null)
+        internal Rig(VisibilityTransitionScanner? visibility = null, double tickRate = 64.0)
         {
             Players.Register(Shooter, new PlayerContextIndex.PlayerContext(Shooter, 2));
 
@@ -533,7 +637,7 @@ public class AimShotContextEdgeTests
             _layout = DigestColumnLayout.For(providers);
 
             Vantage = new AimVantageScanner(
-                providers.Select(p => p.Name).ToList(), _ => 2, 64.0);
+                providers.Select(p => p.Name).ToList(), _ => 2, tickRate);
             _scanner = new EntityChangeScanner(
                 new EntityStateLayer([]),
                 providers: [],
@@ -546,7 +650,7 @@ public class AimShotContextEdgeTests
                 _scanner, providers[ColMaxSpeed], providers[ColRecoil],
                 providers[ColEyePitch], providers[ColEyeYaw],
                 providers[ColPunchPitch], providers[ColPunchYaw],
-                Vantage, visibility, 64.0);
+                Vantage, visibility, tickRate);
 
             GenericBoolNode root = new("root");
             _fired = new AimShotContextEdge(

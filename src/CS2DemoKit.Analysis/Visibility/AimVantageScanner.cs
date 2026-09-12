@@ -94,6 +94,21 @@ public sealed class AimVantageScanner
     public const float TeleportSpeedThreshold = 500f;
 
     /// <summary>
+    ///     Default width, in ticks, of the per-slot speed ring <see cref="TryPeakSpeed" /> answers
+    ///     from, and the width every production build uses.
+    ///     <para>
+    ///         This is a HARD FLOOR, not a comfort margin: a caller asking for a window wider than the
+    ///         ring gets the peak over only the part that survived the wrap, with no error, so the
+    ///         counter-strafe gate would quietly under-admit. It therefore has to stay at least
+    ///         <c>AimShotContextEdge.CounterStrafeLookbackSeconds</c> converted at the demo's tick
+    ///         rate: 13 ticks at 64 and 26 at 128, which this clears with room for a 256-tick demo.
+    ///         <c>CounterStrafeWindowDerivationTests</c> asserts the relation rather than leaving it
+    ///         to this remark, which is what it was left to before.
+    ///     </para>
+    /// </summary>
+    public const int DefaultSpeedHistoryTicks = 64;
+
+    /// <summary>
     ///     The six per-player providers this scanner reads, by name. A caller wiring the scanner must
     ///     gate all six into the digest (they are reference-gated, so nothing forces them in on its
     ///     own) and pass the resulting provider order to the constructor.
@@ -140,16 +155,16 @@ public sealed class AimVantageScanner
     ///     the straight-line distance across that hole is not a speed.
     /// </param>
     /// <param name="speedHistoryTicks">
-    ///     Width, in ticks, of the per-slot speed ring <see cref="TryPeakSpeed" /> answers from. A
-    ///     window wider than this reads only the part that survived the wrap, so it is sized at twice
-    ///     the half second the counter-strafe admission gate asks for.
+    ///     Width, in ticks, of the per-slot speed ring <see cref="TryPeakSpeed" /> answers from.
+    ///     Defaults to <see cref="DefaultSpeedHistoryTicks" />; see the remark there for the floor it
+    ///     has to clear.
     /// </param>
     public AimVantageScanner(
         IReadOnlyList<string> digestProviderNames,
         Func<int, int> resolveTeam,
         double tickRate = 64.0,
         int maxSpeedSampleGapTicks = 8,
-        int speedHistoryTicks = 64)
+        int speedHistoryTicks = DefaultSpeedHistoryTicks)
     {
         ArgumentNullException.ThrowIfNull(digestProviderNames);
         ArgumentNullException.ThrowIfNull(resolveTeam);

@@ -98,6 +98,25 @@ In order, and any one of them fails the release rather than publishing something
 `ci.yml` runs 3 through 5 on every pull request with `-p:PublicRelease=true`, so a version bump gets
 its packaging exercised before the tag exists.
 
+## Compatibility notes worth carrying into a release
+
+These are the changes a consumer cannot see in a version number. Add to the list rather than
+rewriting it; each entry names the version the change first ships in.
+
+### `AimShotContextEdge.CounterStrafeLookbackSeconds` is no longer a `const` (0.11.0)
+
+It was `public const double CounterStrafeLookbackSeconds = 0.5`, and it is now a
+`public static readonly double` computed from CS2's ground-movement constants. Nothing in this
+repository read it in a constant context and the value it converts to at 64-tick changed from 32
+ticks to 13, which is the behavioural half of the change and belongs in the release description.
+The compatibility half is smaller and easier to miss:
+
+- An assembly compiled against the old package inlined `0.5` and keeps it until recompiled. A
+  consumer who upgrades the package without rebuilding gets the OLD window with the new engine.
+- `static readonly` cannot appear in a `const` expression, an attribute argument or a `case` label,
+  so a consumer doing any of those has a compile error rather than a silent difference. That is the
+  better failure and it is the reason the field is not going back.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

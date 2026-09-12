@@ -109,7 +109,7 @@ public class AimShotContextDemoTests
             .Because("players do move before shooting, so some shots must enter the population");
         await Assert.That(admittedTotal).IsLessThan(shotTotal)
             .Because("a held angle is not a counter-strafe attempt; admitting every shot means the "
-                     + "0.5 s movement lookback never actually gated anything");
+                     + "movement lookback never actually gated anything");
 
         // The verdict splits. A one-sided split would mean the threshold or the speed derivation is
         // degenerate (a column of zeros reads as a perfect counter-strafe on every shot).

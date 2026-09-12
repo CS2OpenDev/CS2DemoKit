@@ -394,6 +394,73 @@ public class VisibilityTransitionScannerTests
     }
 
     /// <summary>
+    ///     A viewer who FLICKS from one enemy straight onto another never leaves every enemy, so the
+    ///     re-arm sweep never clears their bit and the anchor still reads the arrival on the enemy
+    ///     they turned away from. Pinned as an ACCEPTED limit, not a defect.
+    ///     <para>
+    ///         <b>Measured before it was accepted.</b> Over the five benchmark demos, recording both
+    ///         this anchor and a per-pair one for every bullet shot taken with the crosshair on an
+    ///         enemy: 11 of 1596 shots carried a nonzero anchor error, and 3 of the 1030 that the
+    ///         aimed-reaction column actually counts (0.29%). Ten of the eleven were anchored on a
+    ///         DIFFERENT enemy from the one the crosshair was nearest; the eleventh, on dust2 and
+    ///         outside the counted population, was the same enemy re-acquired after a detour through
+    ///         another one, which the mechanism produces just as readily. The worst single error was
+    ///         31 ticks and the worst on a counted shot 17; the mean over the counted population is
+    ///         0.026 ticks, about 0.4 ms against a column that reads 70 to 82 ms (the per-demo means
+    ///         are 0 on four demos and 0.13 ticks on the fifth). Switching to a per-pair anchor moves
+    ///         that column by -2.1 to +0.8 ms per demo, which is inside the rounding the board
+    ///         displays.
+    ///     </para>
+    ///     <para>
+    ///         <b>What "different enemy" means in those numbers.</b> The probe recorded the enemy
+    ///         NEAREST the crosshair at the shot, not the one the bullet was aimed at, because the
+    ///         scanner has no notion of a target. The two differ when the crosshair sits between two
+    ///         enemies or the shot misses, so the 0.29% is a proxy. It is a generous one: the
+    ///         mechanism needs two enemies inside a cone a couple of degrees wide, crossed inside one
+    ///         15.6 ms sample, and four of the five demos produced no such shot at all.
+    ///     </para>
+    ///     <para>
+    ///         <b>The evidence outlives the instrumentation.</b> The probe, the per-pair anchor and
+    ///         the bench flag that drove them were all reverted once the measurement was taken, so
+    ///         nothing in the tree reproduces these figures today. Anyone reopening this should
+    ///         expect to rebuild the probe rather than re-run it.
+    ///     </para>
+    ///     <para>
+    ///         The per-viewer rule is also what
+    ///         <see cref="OnTarget_DoesNotRestamp_WhenASecondEnemyEntersTheSameCrosshair" /> depends
+    ///         on, so the two cases trade against each other and the rarer one is the one being
+    ///         given up.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task OnTarget_StampSurvivesAFlickOntoADifferentEnemy()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3), (2, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+
+        // Viewer at the origin looking down +X, enemy 1 down +X and enemy 2 down +Y, both level
+        // with the viewer's eye so a pure yaw change swaps which one the crosshair is on.
+        vantage.Observe(0, Row(0f, 0f, -16f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        vantage.Observe(2, Row(0f, 500f, 0f, 0f, 0f));
+        transitions.Sample(1000, 1000, vantage.Sample(1000));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+
+        // One second of holding enemy 1, then a flick onto enemy 2 inside a single tick.
+        for (int tick = 1001; tick <= 1063; tick++)
+        {
+            transitions.Sample(tick, tick, vantage.Sample(tick));
+        }
+
+        vantage.Observe(0, [null, null, null, 90f, null, null, null]);
+        transitions.Sample(1064, 1064, vantage.Sample(1064));
+
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000)
+            .Because("the per-viewer bit never cleared, so an aimed reaction measured here reads "
+                     + "64 ticks rather than 0: rare enough to accept, see the remark above");
+    }
+
+    /// <summary>
     ///     The tolerance is the angle a 16-unit half-width subtends AT THE POINT THE ANGLE WAS
     ///     MEASURED TO, which is the chest anchor. Taking the range to the target's feet instead
     ///     inflates it by the eye-to-chest height difference: nothing at 500 units, but a tenth of a

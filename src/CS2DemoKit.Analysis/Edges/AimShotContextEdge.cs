@@ -99,6 +99,14 @@ public sealed record AimShotContext(
     ///     falls back to comparing the derived speed against the threshold. False without a
     ///     measurement of either kind, which pairs with <see cref="AboveThresholdInLookback" /> also
     ///     being false so the shot leaves the population rather than entering it as a failure.
+    ///     <para>
+    ///         <b>Which branch runs where.</b> Only the LANDED arm has a penalty to prefer;
+    ///         <c>weapon_fire</c> carries no such column, so the fired arm passes null and always
+    ///         takes the speed comparison. Every counter-strafe counter in the shipped ruleset counts
+    ///         the fired arm, which is what makes the moving-shot count independent of the lookback
+    ///         window: see <c>AimShotContextEdgeTests.WideningTheWindow_AddsOnlyGoodShots</c> for the
+    ///         argument and the precondition it rests on.
+    ///     </para>
     /// </summary>
     public bool CounterStrafeGood =>
         ServerMovementPenalty is { } penalty
@@ -177,8 +185,8 @@ public sealed record AimShotContextSources(
 ///     </para>
 ///     <para>
 ///         <b>Known gap, measured.</b> On the reconstructed arm the punch terms come from
-///         <c>m_predictableBaseAngle</c>, which is a damped spring SAMPLED AT A BASE TICK and not a
-///         resolved punch (see <c>PawnAimPunchProvider</c>), and on the bundled GOTV sample it does
+///         <c>m_predictableBaseAngle</c>, a raw spring sample and not a resolved punch
+///         (<see cref="AimPunchState" /> has the why), and on the bundled GOTV sample it does
 ///         not currently decode to an aim punch at all: the components cluster near -94 and +89
 ///         degrees. <see cref="PlausiblePunch" /> rejects those, which leaves the residual
 ///         UNMEASURED rather than several hundred degrees wide, and
@@ -217,6 +225,32 @@ public sealed class AimShotContextEdge(
     public const float CounterStrafeSpeedFraction = 0.34f;
 
     /// <summary>
+    ///     <c>sv_friction</c>, CS2's shipped default, help string "World friction." A grounded player
+    ///     with no movement input loses this share of their speed per second, charged once per tick.
+    ///     Named here rather than inlined because <see cref="CounterStrafeLookbackSeconds" /> is
+    ///     derived from it, and a derivation whose inputs are literals buried in an expression is not
+    ///     one anyone can check.
+    /// </summary>
+    public const double GroundFrictionPerSecond = 5.2;
+
+    /// <summary>
+    ///     <c>sv_stopspeed</c>, CS2's shipped default, help string "Minimum stopping speed when on
+    ///     ground." Below this speed the friction drop is charged as though the player were travelling
+    ///     at it, which makes the last stretch of a stop linear instead of exponential and is the only
+    ///     reason a player reaches rest in finite time at all. The second input to
+    ///     <see cref="CounterStrafeLookbackSeconds" />.
+    /// </summary>
+    public const double GroundStopSpeed = 80.0;
+
+    /// <summary>
+    ///     The largest <c>m_flMaxspeed</c> a player carries on foot, which is the knife's. The
+    ///     movement-inaccuracy line is a fraction of the HELD weapon's cap, and the time to stop from
+    ///     that line grows with it, so the slowest stop in the game is the one that starts from the
+    ///     highest line and <see cref="CounterStrafeLookbackSeconds" /> is sized for that one.
+    /// </summary>
+    public const double FastestMovementCap = 250.0;
+
+    /// <summary>
     ///     <c>enrich.shot.ticks_since_spot</c> when this player has not spotted an enemy yet this
     ///     round. Deliberately a huge number rather than 0 or -1: a bound is written as
     ///     <c>ticks_since_spot &lt;= N</c>, so the sentinel has to FAIL that test. Zero would read as
@@ -247,18 +281,58 @@ public sealed class AimShotContextEdge(
     ///     counter-strafing population if the player exceeded the threshold inside this window, so
     ///     this value sets the denominator and therefore the metric.
     ///     <para>
-    ///         <b>UNFITTED. Revisit before this column is trusted.</b> No public tool documents its
-    ///         own admission rule and nothing in this repository derives 0.5 s from measurement: it
-    ///         is a plausible half-second, not a fit. The whole apparatus for fitting it exists
-    ///         (<c>CounterStrafeAdmissionFold</c> in the app's test suite records, per shot, the
-    ///         narrowest window that would admit it, so one pass yields the whole curve), but the
-    ///         objective it was fitted against has been removed and no replacement has been chosen.
-    ///         Pick an objective that stands on our own data (a rank-segmented admitted share, or a
-    ///         hand-labelled set of counter-strafes) and re-fit; do not adjust it to make a ratio
-    ///         look better.
+    ///         <b>What the window actually measures.</b> <see cref="ResolveMovement" /> admits a shot
+    ///         when the PEAK speed over <c>[tick - window, tick]</c> cleared the line, so the window
+    ///         is the largest tolerated gap between the last sample ABOVE the line and the shot. It is
+    ///         not the length of the deceleration that got the player there: that happened before the
+    ///         last above-line sample and so falls outside the window entirely, whatever its length.
+    ///         Sizing this from a run-down-to-the-line time would be a correct computation of a
+    ///         quantity this gate never sees.
+    ///     </para>
+    ///     <para>
+    ///         <b>Derived, not fitted.</b> What has to fit inside the window is the REST of the stop.
+    ///         A player who has just dropped below the line is still carrying velocity from that
+    ///         movement, and a shot can still be the end of it until the velocity is gone; after that
+    ///         the player was standing still, which is a different thing from counter-strafing and
+    ///         inflates the ratio without anyone doing it better. Ground friction with no movement
+    ///         input is the SLOWEST way that residual velocity can die (a real counter-strafe adds
+    ///         counter-input and gets there sooner), so the time friction alone needs to carry a
+    ///         player from the line to rest is the widest gap a genuine stop can produce, and that is
+    ///         this window. See <see cref="SecondsToStopFromTheInaccuracyLine" />.
+    ///     </para>
+    ///     <para>
+    ///         <b>Which weapon.</b> The line is a fraction of the held cap and the stop time rises
+    ///         with the line, so one window sized for <see cref="FastestMovementCap" /> covers every
+    ///         weapon: an AWP's 68 u/s line needs 10.5 ticks at 64-tick and a Negev's 51 needs 7.9,
+    ///         against the 13 this admits. It also covers the case a starting-speed argument would
+    ///         miss, a player who ran with a knife out and fires holding an AWP, because the interval
+    ///         depends only on the line at the SHOT tick, which is the same tick
+    ///         <see cref="ResolveMovement" /> reads <c>m_flMaxspeed</c> on.
+    ///     </para>
+    ///     <para>
+    ///         <b>The rounding.</b> This is seconds and the gate compares whole ticks, so the knife's
+    ///         13.054 ticks at 64-tick is admitted as 13 and the last 0.054 of a tick is lost. Half a
+    ///         tick either way is the most that conversion can ever cost, it is below the sampling
+    ///         resolution the speed column has in the first place, and rounding rather than taking the
+    ///         ceiling keeps the window from drifting wide at every tick rate.
+    ///     </para>
+    ///     <para>
+    ///         <b>Why not fitted to our own data.</b> Swept over the benchmark corpus the admitted
+    ///         share and CS% both rise monotonically with the window, with no knee and no stationary
+    ///         point anywhere, so every window read off that curve is a choice about how flattering
+    ///         the ratio should be rather than a measurement. The sweep lives in
+    ///         <c>CounterStrafeWindowDerivationTests</c>. The physics has an answer where the data
+    ///         has only a preference.
+    ///     </para>
+    ///     <para>
+    ///         <b>Not a <c>const</c>.</b> It is an expression over the movement constants, so it
+    ///         cannot be one; a downstream assembly that had inlined the old literal would keep it,
+    ///         and it cannot appear in a <c>const</c> expression, an attribute argument or a
+    ///         <c>case</c> label.
     ///     </para>
     /// </summary>
-    public const double CounterStrafeLookbackSeconds = 0.5;
+    public static readonly double CounterStrafeLookbackSeconds =
+        SecondsToStopFromTheInaccuracyLine(FastestMovementCap);
 
     /// <summary>Recoil index at or below which a shot counts as the first bullet out of the barrel.</summary>
     public const float FirstBulletRecoilEpsilon = 0.01f;
@@ -324,8 +398,8 @@ public sealed class AimShotContextEdge(
         "entity.pawn.punch_yaw"
     ];
 
-    // 0.5 s in ticks at this demo's rate. Held rather than recomputed because it is compared
-    // against a tick gap on every shot in the demo.
+    // The stopping window in ticks at this demo's rate: 13 at 64-tick, 26 at 128. Held rather than
+    // recomputed because it is compared against a tick gap on every shot in the demo.
     private readonly int _lookbackTicks = (int)Math.Round(
         CounterStrafeLookbackSeconds * (sources is { TickRate: > 0 } s ? s.TickRate : 64.0));
 
@@ -397,6 +471,47 @@ public sealed class AimShotContextEdge(
         }
 
         return wrapped;
+    }
+
+    /// <summary>
+    ///     How long CS2's ground friction needs to carry a player from the movement-inaccuracy line
+    ///     for <paramref name="movementCap" /> down to a standstill, with no movement input at all.
+    ///     This is the interval the admission gate tolerates between the last sample above the line
+    ///     and the shot, and therefore the derivation behind
+    ///     <see cref="CounterStrafeLookbackSeconds" />.
+    ///     <para>
+    ///         Two stretches, because CS2 charges the friction drop on
+    ///         <see cref="GroundStopSpeed" /> rather than the real speed once the player is slower
+    ///         than it. Above that speed the drop is a fixed share of the current speed, so speed
+    ///         decays as <c>exp(-friction * t)</c> and the stretch down to <c>sv_stopspeed</c> takes
+    ///         <c>ln(line / stopspeed) / friction</c>. At and below it the drop is the constant
+    ///         <c>stopspeed * friction</c> per second, so the remaining <c>min(line, stopspeed)</c>
+    ///         takes <c>min(line, stopspeed) / (stopspeed * friction)</c>. Without the floor the
+    ///         second stretch would never end and there would be no window to derive.
+    ///     </para>
+    ///     <para>
+    ///         Public so the derivation can be evaluated at an input other than the one that ships:
+    ///         a formula only its own author can run is an assertion, and
+    ///         <c>CounterStrafeWindowDerivationTests</c> checks this against a tick-by-tick
+    ///         simulation of the same movement model across the whole weapon range.
+    ///     </para>
+    /// </summary>
+    /// <param name="movementCap"><c>m_flMaxspeed</c> for the weapon held, in units per second.</param>
+    /// <returns>Seconds, or zero for a non-positive cap.</returns>
+    public static double SecondsToStopFromTheInaccuracyLine(double movementCap)
+    {
+        if (movementCap <= 0.0)
+        {
+            return 0.0;
+        }
+
+        double line = movementCap * CounterStrafeSpeedFraction;
+        double exponentialStretch = line > GroundStopSpeed
+            ? Math.Log(line / GroundStopSpeed) / GroundFrictionPerSecond
+            : 0.0;
+        double linearStretch = Math.Min(line, GroundStopSpeed)
+                               / (GroundStopSpeed * GroundFrictionPerSecond);
+        return exponentialStretch + linearStretch;
     }
 
     // The server's own account of a shot that landed. Refines the record the fired arm latched for
@@ -643,9 +758,8 @@ public sealed class AimShotContextEdge(
 
         // First shot of THIS acquisition, compared by the acquisition's own tick rather than a flag,
         // so a second burst after the crosshair left and returned counts again. Latched per ARM for
-        // the same reason the spot answer below is: weapon_fire always precedes the bullet_damage it
-        // produced, so one shared latch would be spent by the fired arm before the landed arm ever
-        // saw the shot, leaving the shot_landed view's copy false on every shot in the demo.
+        // the same reason the spot answer below is: one shared latch never survives to the landed
+        // arm. See PlayerContextIndex.PlayerContext.AnsweredOnTargetSinceLanded.
         int answeredOnTarget = _isLandedArm
             ? ctx.AnsweredOnTargetSinceLanded
             : ctx.AnsweredOnTargetSinceShot;
