@@ -63,6 +63,11 @@ public class TriangleBvhParallelBuildTests
     [Arguments("de_dust2", "17A84C526631ED31")]
     [Arguments("de_vertigo", "A95DB5FA0487B30A")]
     [Arguments("de_nuke", "54882E14EFAA64DF")]
+    [Arguments("de_mirage", "EF353601E7911349")]
+    [Arguments("de_inferno", "2E58EC353584BB60")]
+    [Arguments("de_anubis", "49D773EE4984FD86")]
+    [Arguments("de_cache", "26AC3861F3664F6A")]
+    [Arguments("de_train", "4AB268AA399704F1")]
     public async Task RealBake_EveryDegreeOfParallelism_GivesThePinnedTree(string map, string expectedDigest)
     {
         CollisionTris.Data bake = CollisionTris.Load(VisibilityReplay.RequireBakePath(map));

@@ -28,6 +28,20 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         and a chain that reaches the binary depth cap with more than a leaf's worth left, so
 ///         the cap's half-split fires; that pin was watched failing with the cap raised to 128.
 ///     </para>
+///     <para>
+///         de_mirage, de_inferno, de_anubis, de_cache and de_train joined the real bakes in 2026-09
+///         when the maps the app ships were finally given geometry across the board. They were not all
+///         missing for the same reason, which is worth recording because the obvious explanation is
+///         wrong: the 0.1 baker DID have a collision step and six of the nine bundles it wrote carry a
+///         collisionMesh. It was skipped on mirage, inferno and anubis specifically; de_cache kept a
+///         reference to a soup whose file was never committed, and the map has since changed under it
+///         (1,622,923 triangles recorded against 1,632,062 today); de_train had never been baked at all.
+///     </para>
+///     <para>
+///         de_inferno is the largest tree the suite builds by nearly a factor of three, at 2.73 million
+///         triangles and 394,733 nodes, which makes it the most demanding determinism case the parallel
+///         builder has.
+///     </para>
 /// </summary>
 [Category("Unit")]
 public class TriangleBvhBuildIdentityTests
@@ -41,6 +55,11 @@ public class TriangleBvhBuildIdentityTests
     [Arguments("de_dust2", "17A84C526631ED31")]
     [Arguments("de_vertigo", "A95DB5FA0487B30A")]
     [Arguments("de_nuke", "54882E14EFAA64DF")]
+    [Arguments("de_mirage", "EF353601E7911349")]
+    [Arguments("de_inferno", "2E58EC353584BB60")]
+    [Arguments("de_anubis", "49D773EE4984FD86")]
+    [Arguments("de_cache", "26AC3861F3664F6A")]
+    [Arguments("de_train", "4AB268AA399704F1")]
     public async Task RealBake_StructuralDigest_IsPinned(string map, string expectedDigest)
     {
         CollisionTris.Data bake = CollisionTris.Load(VisibilityReplay.RequireBakePath(map));
