@@ -86,9 +86,10 @@ public sealed record AnalysisOptions
     ///     <para>
     ///         The analysis layer does no file I/O and does not know where bakes live. Load one with
     ///         <c>VisibilityEngine.Load</c> against the path <c>CollisionAssetLocator</c> resolves for
-    ///         the demo's map, off the calling thread (the BVH build is seconds), and hand it in. The
-    ///         engine is immutable after construction and safe to share across runs of the same map,
-    ///         which is what makes reusing one across a batch worthwhile.
+    ///         the demo's map, off the calling thread (the BVH build is tenths of a second on the
+    ///         large bakes), and hand it in. The engine is immutable after construction and safe to
+    ///         share across runs of the same map, which is what makes reusing one across a batch
+    ///         worthwhile.
     ///     </para>
     /// </summary>
     public VisibilityEngine? VisibilityEngine { get; init; }

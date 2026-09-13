@@ -53,6 +53,37 @@ BuildResult build = DemoAnalysis.Build(demo, rules.Rulesets);   // CS2DemoKit.An
 AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
 ```
 
+### Line of sight — `enemy_spotted`
+
+A rule can trigger on `enemy_spotted`, the rising edge where one player first comes into view of
+another. Nothing on the wire says so; it is recomputed from baked map collision geometry. So unlike
+every other `AnalysisOptions` knob, leaving `VisibilityEngine` null does not mean "use the default",
+it means the capability is unavailable for that run and a rule subscribing to the event silently
+never fires:
+
+```csharp
+using CS2DemoKit.Analysis.Visibility;
+
+string? bake = CollisionAssetLocator.FindCollisionTris(demo.MapName);
+AnalysisOptions options = new()
+{
+    VisibilityEngine = bake is null ? null : VisibilityEngine.Load(bake)
+};
+
+AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets, options);
+```
+
+The bakes themselves are not in the packages — the geometry is Valve-derived and large, and ships
+out of band. What the package does carry is the convention for finding it: `CollisionAssetLocator`
+reads `CS2DEMOKIT_COLLISION_DIR` (`<dir>/<map>.tris` or `<dir>/<map>/collision.tris`), then walks up
+from the binary for `assets/<map>/collision.tris`, and returns null on a miss rather than throwing,
+so a host with no asset pack degrades instead of failing.
+
+`Load` builds a BVH over the mesh — tenths of a second on the large bakes — so keep the engine
+rather than rebuilding it per demo: it is immutable after construction and safe to share across
+every run on that map. The facets a rule reads off the event, and the sentinel rule that governs
+aggregating them, are in `docs/RULES_AUTHORING.md`.
+
 ## Tick clocks — read this before comparing ticks
 
 CS2 demos carry two clocks and mixing them produces results that look plausible and are wrong.
@@ -163,6 +194,11 @@ fixture under `tests/fixtures/rules-v2/`. Write your own as `<name>.rules.yaml` 
 `src/CS2DemoKit.Analysis/Rules/cs2demokit-rules.schema.json` for editor validation. A ruleset whose id
 matches a shipped one replaces it wholesale.
 
+`docs/RULES_AUTHORING.md` is the guide to the format itself — the stat kinds, gating, contexts and
+highlights, which events carry which clock, and the facets that read a sentinel rather than a zero
+when there was nothing to measure. The geometry-backed views (`enemy_spotted` and what hangs off it)
+need the engine wired in first; see the quick start above.
+
 ## Building
 
 ```sh
@@ -203,11 +239,19 @@ test that hardcodes a tick, a slot, or a count, name its demo the same way.
 it. Re-measure against it before claiming a change helped:
 
 ```sh
-dotnet run --project tools/CS2DemoKit.Bench -c Release -- sweep --rounds 10 --out mine.csv
+CS2DEMOKIT_COLLISION_DIR=/path/to/bakes dotnet run --project tools/CS2DemoKit.Bench -c Release -- sweep --rounds 10 --out mine.csv
 ```
 
 `--demos`, `--cooldown` and `--label` are the other knobs; `--help` lists them. The label
 defaults to the short SHA of the tree being measured, so a CSV stays traceable to a commit.
+
+`CS2DEMOKIT_COLLISION_DIR` is what decides whether the ray path — the `enemy_spotted` transition
+scan — gets measured at all. It names a directory of per-map bakes in either layout the locator
+accepts. Unset, no rays are cast, every row carries `vis=0` and the tool prints a banner saying so,
+so a run without rays cannot be read as one with them. Set but missing the demo's map, the
+measurement fails rather than quietly timing the no-ray pipeline under a label that promises rays.
+Those columns took the header from 27 fields to 34, which is also why `compare` refuses an arm
+published from a checkout older than the ray path instead of filing its shorter rows alongside.
 
 One process per measurement, a discarded warm-up per process, a forced collection before each
 timed phase, and the machine's load average stamped on every row. Workstation GC, which is what
@@ -230,6 +274,25 @@ because a collection landing inside a timed window makes the distribution bimoda
 hundreds of milliseconds apart, so three samples can land entirely in the wrong mode. Either take
 the best of N, since the noise only ever adds time, or run enough rounds to see both modes.
 
+Two verbs measure the line-of-sight engine on its own, against a bake rather than a demo:
+
+```sh
+dotnet run --project tools/CS2DemoKit.Bench -c Release -- rays  assets/de_nuke/collision.tris
+dotnet run --project tools/CS2DemoKit.Bench -c Release -- build assets/de_nuke/collision.tris
+```
+
+`rays` is per-ray occlusion throughput over one seeded ray corpus, run against the binary tree the
+engine used to ship and every tier of the eight-wide one, interleaved and reported as medians. It
+prints nodes, box tests and triangles per ray beside the timing, so a change in speed can be traced
+to a change in work rather than guessed at.
+
+`build` is the cost and shape of building the tree, plus a structural digest — two builders that
+produce the same digest produce the same tree, so a builder change that keeps the digest needs no
+differential ray run to prove it changed no answer. Its `--live` flag is the one place the
+collection discipline above is inverted: it forces a collection before every heap sample, inside
+the build, so the peak becomes a floor on the live set. That costs an order of magnitude, and the
+flag reports memory only and prints no wall-clock.
+
 ## Regenerating committed artifacts
 
 ```sh
@@ -251,16 +314,16 @@ All three packages publish together from a `v*` tag, to nuget.org and to GitHub 
 Prereleases use the same path with a label in both `version.json` and the tag:
 
 ```sh
-# version.json: "version": "0.9.2-beta0001"
-git commit -am "0.9.2-beta0001"
-git tag v0.9.2-beta0001
-git push origin main v0.9.2-beta0001
+# version.json: "version": "0.11.0-beta0001"
+git commit -am "0.11.0-beta0001"
+git tag v0.11.0-beta0001
+git push origin main v0.11.0-beta0001
 ```
 
 The tag has to land on the commit that carries the matching `version.json`; the tag build compares
 the two and refuses to publish if they disagree.
 
-Consumers take one by naming it, `Version="0.9.2-beta0001"`, and the exact intra-family pins carry
+Consumers take one by naming it, `Version="0.11.0-beta0001"`, and the exact intra-family pins carry
 the label so the set installs together. Label rules are in the doc; the short version is no dots
 and a zero-padded counter, because both are load-bearing.
 
