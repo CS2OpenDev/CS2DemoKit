@@ -1,5 +1,7 @@
 #region
 
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
@@ -33,15 +35,24 @@ internal static class ParallelDigestProducer
     // ── Parallel-decode alloc accounting (opt-in at RUNTIME via Profiling.Enabled) ─────────────────
     // The decode runs on Parallel.For worker threads, so a caller that brackets
     // GC.GetAllocatedBytesForCurrentThread() on its own (orchestrator) thread misses every worker
-    // but the one it happens to run. Each worker brackets its chunk's allocation and folds it in
-    // here. chunks.Count ≈ Environment.ProcessorCount (see ResolveTargetChunks), so this is
-    // ≈ core-count Interlocked.Add total — no contention. The scanner reads the sum via
-    // ReadWorkerAllocBytes() after Produce returns. The per-worker brackets are guarded at runtime so a
-    // default decode pays nothing. Mirrors ParseProfiler's static-accumulator pattern.
-    private static long _profWorkerAllocSum;
+    // but the one it happens to run. Each worker brackets its chunk's allocation and folds it
+    // into the box its own Produce call published. chunks.Count ≈ the chunk target (see
+    // ResolveTargetChunks), so this is ≈ core-count Interlocked.Add total — no contention. The scanner
+    // reads the sum via ReadWorkerAllocBytes() after Produce returns. The per-worker brackets are
+    // guarded at runtime so a default decode pays nothing.
+    // The box hangs off an AsyncLocal rather than a plain static because MaxDegreeOfParallelism exists
+    // precisely so several demos can decode at once in one process, and a static accumulator cannot
+    // survive that: the second Produce's zeroing discards the first's total, and from then on the two
+    // runs add into each other. The box is published before the fork and read after the join within one
+    // synchronous call, so every Produce reports its own decode and nobody else's.
+    private static readonly AsyncLocal<StrongBox<long>?> _profWorkerAlloc = new();
 
-    /// <summary>Total per-worker decode allocation (bytes) accumulated by the last <see cref="Produce" /> run.</summary>
-    internal static long ReadWorkerAllocBytes() => Interlocked.Read(ref _profWorkerAllocSum);
+    /// <summary>
+    ///     Total per-worker decode allocation (bytes) accumulated by the <c>Produce</c> call this
+    ///     execution context most recently made. Zero when that run had <see cref="Profiling.Enabled" /> off.
+    /// </summary>
+    internal static long ReadWorkerAllocBytes() =>
+        _profWorkerAlloc.Value is { } box ? Interlocked.Read(ref box.Value) : 0;
 
     /// <summary>
     ///     Decodes the whole demo's entity stream in parallel and returns <c>digest[N]</c> for every frame
@@ -74,11 +85,44 @@ internal static class ParallelDigestProducer
     ///     canceled produce throws <see cref="OperationCanceledException" /> — no partial digest array
     ///     is ever returned.
     /// </param>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> was observed.</exception>
     internal static EntityFrameDigest[] Produce(
         IReadOnlyList<DemoFrame> frames,
         Func<IReadOnlyList<IPerPlayerEntityValueProvider>> perPlayerFactory,
         Func<IReadOnlyList<IEntityValueProvider>> singletonFactory,
         bool emitMolotov,
+        bool captureSmokes = false,
+        int? maxDegreeOfParallelism = null,
+        Action<double>? onProgress = null,
+        CancellationToken cancellationToken = default) =>
+        Produce(frames, perPlayerFactory, singletonFactory, emitMolotov, null,
+            captureSmokes, maxDegreeOfParallelism, onProgress, cancellationToken);
+
+    /// <summary>
+    ///     <see cref="Produce(IReadOnlyList{DemoFrame}, Func{IReadOnlyList{IPerPlayerEntityValueProvider}}, Func{IReadOnlyList{IEntityValueProvider}}, bool, bool, int?, Action{double}?, CancellationToken)" />
+    ///     with the chunk plan's target made explicit. Only the gates pass it. Left to
+    ///     <see cref="ResolveTargetChunks" />'s default the boundaries are a function of the runner's core
+    ///     count, and a boundary is the one position a checkpoint reconstruction can diverge at — so
+    ///     without this seam which boundaries the suite exercises is whatever hardware it happens to run
+    ///     on, and a bug that only bites when a chunk starts on an entity's creation frame is reachable on
+    ///     one machine and unreachable on the next.
+    /// </summary>
+    /// <param name="frames">The demo's frame list.</param>
+    /// <param name="perPlayerFactory">Creates a fresh per-player provider list for one worker.</param>
+    /// <param name="singletonFactory">Creates a fresh singleton provider list for one worker.</param>
+    /// <param name="emitMolotov">When true, each digest includes live <c>CMolotovProjectile</c>s.</param>
+    /// <param name="targetChunks">Chunks to aim for, or null for <see cref="Environment.ProcessorCount" />.</param>
+    /// <param name="captureSmokes">When true, each digest carries the frame's active smoke clouds.</param>
+    /// <param name="maxDegreeOfParallelism">Optional cap on concurrent workers (default: unbounded).</param>
+    /// <param name="onProgress">Optional fraction-complete callback (0..1), invoked once per chunk.</param>
+    /// <param name="cancellationToken">Aborts the decode; no partial digest array is ever returned.</param>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> was observed.</exception>
+    internal static EntityFrameDigest[] Produce(
+        IReadOnlyList<DemoFrame> frames,
+        Func<IReadOnlyList<IPerPlayerEntityValueProvider>> perPlayerFactory,
+        Func<IReadOnlyList<IEntityValueProvider>> singletonFactory,
+        bool emitMolotov,
+        int? targetChunks,
         bool captureSmokes = false,
         int? maxDegreeOfParallelism = null,
         Action<double>? onProgress = null,
@@ -90,7 +134,7 @@ internal static class ParallelDigestProducer
             return digests;
         }
 
-        IReadOnlyList<Chunk> chunks = PlanChunks(frames, out int schemaPrefixEnd);
+        IReadOnlyList<Chunk> chunks = PlanChunks(frames, out int schemaPrefixEnd, targetChunks);
 
         // Bootstrap each worker's layer single-threaded before fan-out — the layer ctor runs BootstrapTracker
         // (lens registry + entity-factory registry). Priming and the per-frame decode then run in parallel.
@@ -102,62 +146,81 @@ internal static class ParallelDigestProducer
 
         ParallelOptions options = BuildParallelOptions(maxDegreeOfParallelism, cancellationToken);
 
-        // Snapshot the flag into a local before forking so every worker closes over one consistent value
-        // (the single-run contract on Profiling). The fork is a full memory barrier.
+        // Snapshot the flag into a local before forking so every worker closes over one consistent value.
+        // The workers add into the box directly rather than reading the AsyncLocal back, so a caller that
+        // starts another Produce while this one runs cannot redirect these workers' accounting.
+        // The fork is a full memory barrier.
         bool prof = Profiling.Enabled;
-        if (prof)
-        {
-            Interlocked.Exchange(ref _profWorkerAllocSum, 0);
-        }
+        StrongBox<long>? allocSum = prof ? new StrongBox<long>(0L) : null;
+        _profWorkerAlloc.Value = allocSum;
 
         int chunksDone = 0;
-        Parallel.For(0, chunks.Count, options, ci =>
+        try
         {
-            long workerAllocStart = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
-            Chunk chunk = chunks[ci];
-            EntityStateLayer layer = layers[ci];
-
-            // Each worker its OWN provider instances (FreezePeriodProvider caches a mutable entity index;
-            // sharing would race). The factory ordering contract keeps the digest indices aligned.
-            IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = perPlayerFactory();
-            IReadOnlyList<IEntityValueProvider> singletons = singletonFactory();
-
-            // Per chunk, never shared. This worker has no history before its checkpoint, so its first
-            // frame re-emits every live cell; the consumer's fold makes that redundant, not wrong. The
-            // layout is this worker's own too, over its own clones; the consumer judges it by kinds
-            // and names, not by reference.
-            PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer));
-
-            // Per chunk like the delta state: it subscribes to this worker's tracker, and its
-            // first sync seeds from whatever the checkpoint primed, so a smoke already billowing
-            // when the chunk starts is read from frame one.
-            ProjectileSlotIndex projectiles = new();
-
-            if (chunk.CheckpointFrameIndex >= 0)
+            Parallel.For(0, chunks.Count, options, ci =>
             {
-                layer.PrimeFromCheckpoint(chunk.CheckpointFrameIndex, schemaPrefixEnd);
+                long workerAllocStart = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
+                Chunk chunk = chunks[ci];
+                EntityStateLayer layer = layers[ci];
+
+                // Each worker its OWN provider instances (FreezePeriodProvider caches a mutable entity index;
+                // sharing would race). The factory ordering contract keeps the digest indices aligned.
+                IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = perPlayerFactory();
+                IReadOnlyList<IEntityValueProvider> singletons = singletonFactory();
+
+                // Per chunk, never shared. This worker has no history before its checkpoint, so its first
+                // frame re-emits every live cell; the consumer's fold makes that redundant, not wrong. The
+                // layout is this worker's own too, over its own clones; the consumer judges it by kinds
+                // and names, not by reference.
+                PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer));
+
+                // Per chunk like the delta state: it subscribes to this worker's tracker, and its
+                // first sync seeds from whatever the checkpoint primed, so a smoke already billowing
+                // when the chunk starts is read from frame one.
+                ProjectileSlotIndex projectiles = new();
+
+                if (chunk.CheckpointFrameIndex >= 0)
+                {
+                    layer.PrimeFromCheckpoint(chunk.CheckpointFrameIndex, schemaPrefixEnd);
+                }
+
+                for (int n = chunk.Start; n < chunk.End; n++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    layer.SeekToTick(frames[n].ServerTick);
+                    digests[n] = EntityDigestExtractor.Build(
+                        layer, delta, singletons, emitMolotov, captureSmokes, projectiles);
+                }
+
+                if (allocSum is not null)
+                {
+                    // This worker's decode allocation (provider clones + prime + seek loop + digest build).
+                    Interlocked.Add(ref allocSum.Value,
+                        GC.GetAllocatedBytesForCurrentThread() - workerAllocStart);
+                }
+
+                if (onProgress is not null)
+                {
+                    onProgress((double)Interlocked.Increment(ref chunksDone) / chunks.Count);
+                }
+            });
+        }
+        catch (AggregateException e)
+        {
+            // Same contract as TriangleBvh.Build, which forks the other half of this work: one worker's
+            // failure reaches the caller as the exception it threw rather than as the AggregateException
+            // Parallel.For delivers it in. It has to, because the failures worth catching here are typed —
+            // EntityDigestExtractor throws InvalidOperationException on provider schema drift, and drift is
+            // meant to be loud rather than something a caller has to unwrap to recognise. Only several
+            // distinct failures at once stay aggregated; a cancellation never arrives this way at all.
+            AggregateException flat = e.Flatten();
+            if (flat.InnerExceptions.Count == 1)
+            {
+                ExceptionDispatchInfo.Throw(flat.InnerExceptions[0]);
             }
 
-            for (int n = chunk.Start; n < chunk.End; n++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                layer.SeekToTick(frames[n].ServerTick);
-                digests[n] = EntityDigestExtractor.Build(
-                    layer, delta, singletons, emitMolotov, captureSmokes, projectiles);
-            }
-
-            if (prof)
-            {
-                // This worker's decode allocation (provider clones + prime + seek loop + digest build).
-                Interlocked.Add(ref _profWorkerAllocSum,
-                    GC.GetAllocatedBytesForCurrentThread() - workerAllocStart);
-            }
-
-            if (onProgress is not null)
-            {
-                onProgress((double)Interlocked.Increment(ref chunksDone) / chunks.Count);
-            }
-        });
+            throw flat;
+        }
 
         return digests;
     }
@@ -202,7 +265,14 @@ internal static class ParallelDigestProducer
     ///         coarsening the paragraph below already relies on.
     ///     </para>
     /// </summary>
-    internal static IReadOnlyList<Chunk> PlanChunks(IReadOnlyList<DemoFrame> frames, out int schemaPrefixEnd)
+    /// <param name="frames">The demo's frame list.</param>
+    /// <param name="schemaPrefixEnd">Index of the first <c>DEM_Packet</c>, which bounds the schema prefix a prime replays.</param>
+    /// <param name="targetChunks">
+    ///     How many chunks to aim for, or null for <see cref="Environment.ProcessorCount" />. Only tests pass
+    ///     it: see <see cref="ResolveTargetChunks" />.
+    /// </param>
+    internal static IReadOnlyList<Chunk> PlanChunks(
+        IReadOnlyList<DemoFrame> frames, out int schemaPrefixEnd, int? targetChunks = null)
     {
         schemaPrefixEnd = -1;
         List<int> fullIdx = [];
@@ -262,7 +332,7 @@ internal static class ParallelDigestProducer
             return chunks;
         }
 
-        int target = ResolveTargetChunks();
+        int target = ResolveTargetChunks(targetChunks);
         int wantCheckpoints = Math.Max(1, Math.Min(candidates.Count, target - 1));
         int stride = (candidates.Count + wantCheckpoints - 1) / wantCheckpoints; // ceil
 
@@ -286,7 +356,14 @@ internal static class ParallelDigestProducer
     // Target chunk count ≈ available cores. More chunks → finer load balance but more redundant per-worker
     // schema parses + worse oversubscription (the 39-on-N thread injection that serialized the producer);
     // fewer → coarser balance but cheaper. ~cores is the measured sweet spot.
-    private static int ResolveTargetChunks() => Environment.ProcessorCount;
+    // An explicit target exists for the gates only. A chunk boundary is where a worker primes from a
+    // checkpoint and re-emits every live cell, so it is the one position a reconstruction bug can hide at;
+    // left to the core count alone, which boundaries a suite exercises is a property of the runner, and a
+    // bug that only bites when a boundary lands on an entity's creation frame is reachable on one machine
+    // and unreachable on the next. Zero and negatives fall back rather than plan an empty demo, matching
+    // how BuildParallelOptions treats a nonsense degree.
+    private static int ResolveTargetChunks(int? targetChunks) =>
+        targetChunks is int t and > 0 ? t : Environment.ProcessorCount;
 
     /// <summary>
     ///     A contiguous frame range assigned to one worker. <see cref="CheckpointFrameIndex" /> is the
