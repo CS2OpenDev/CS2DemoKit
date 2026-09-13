@@ -1,6 +1,7 @@
 #region
 
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using CS2DemoKit.Analysis.Visibility;
 
 #endregion
@@ -40,10 +41,15 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         guard removed from the chunking (a one-thread build forked and reported more).
 ///     </para>
 /// </summary>
+// Serial against the rest of the suite. Nineteen parameterised cases, each ~24 builds at degrees up
+// to 64, is enough oversubscription on its own; sharing the pool with the other classes on top of
+// that both slows everything down and makes the fork below unobservable, because Parallel.For runs
+// its first range on the calling thread and only injects a worker when the pool has one to spare.
+[NotInParallel]
 [Category("Unit")]
 public class TriangleBvhParallelBuildTests
 {
-    private static readonly int[] Degrees = [1, 2, 3, 5, 8, 16, 32, 64];
+    private static readonly int[] Degrees = [1, 2, 3, 4, 5, 8, 16, 32, 64];
     private const int Repeats = 3;
 
     // Cores needed before the default build's fork is reliably OBSERVABLE. This soup is 200,000
@@ -53,6 +59,13 @@ public class TriangleBvhParallelBuildTests
     // two: the bench build verb on de_nuke gives 129.3 ms on one thread, 80.8 on two and 56.5 on
     // four, same digest throughout. Eight is where this stops being a race.
     private const int ForkIsObservableAt = 8;
+
+    // Builds the fork assertion may watch before it gives up. The peak is a property of the
+    // SCHEDULE as much as of the build: Parallel.For runs its first range inline on the calling
+    // thread and queues the rest, so a pass where the caller drains all six chunks before the pool
+    // dispatches one reports 1 from a build that forks on the very next pass. One such pass is not
+    // evidence of a build that never forks; five in a row, with the pool to this class alone, is.
+    private const int ForkAttempts = 5;
 
     /// <param name="map">Map whose <c>collision.tris</c> to load.</param>
     /// <param name="expectedDigest">The digest <see cref="TriangleBvhBuildIdentityTests" /> pins for the map.</param>
@@ -132,10 +145,18 @@ public class TriangleBvhParallelBuildTests
         int processors = Environment.ProcessorCount;
         if (processors >= ForkIsObservableAt)
         {
-            TriangleBvh full = TriangleBvh.Build(vertices, count);
-            Console.WriteLine($"[parallel-build] default degree {processors}: peak workers {full.PeakBuildWorkers}");
-            await Assert.That(full.PeakBuildWorkers).IsGreaterThan(1)
-                .Because("the default degree with cores to spare must fork, or the bound above proves nothing");
+            int peak = 1;
+            int attempts = 0;
+            while (peak <= 1 && attempts < ForkAttempts)
+            {
+                attempts++;
+                peak = Math.Max(peak, TriangleBvh.Build(vertices, count).PeakBuildWorkers);
+            }
+
+            Console.WriteLine($"[parallel-build] default degree {processors}: peak workers {peak} after {attempts} build(s)");
+            await Assert.That(peak).IsGreaterThan(1)
+                .Because($"the default degree with cores to spare must fork within {ForkAttempts} builds, "
+                         + "or the bound above proves nothing");
         }
     }
 
@@ -171,6 +192,13 @@ public class TriangleBvhParallelBuildTests
     ///     is deliberately not pinned is which of two NaNs survives: the runtime keeps the left
     ///     payload in unoptimised code and the right in optimised code, which is why the builder
     ///     canonicalises NaNs on entry and the next test holds it to that.
+    ///     <para>
+    ///         Read twice, in both JIT tiers. A test body is tier-0 code compiled once, while every
+    ///         fold this rule protects runs under <see cref="MethodImplOptions.AggressiveOptimization" />,
+    ///         and the tier is a known live variable here: the very defect the NaN canonicalisation
+    ///         removed was a digest that differed between the tiers. A pin that only ever observed the
+    ///         tier the folds do not run in would be the wrong half of the thing it certifies.
+    ///     </para>
     /// </summary>
     [Test]
     public async Task VectorMinMax_AreTheIeeeMinimumAndMaximum()
@@ -188,6 +216,15 @@ public class TriangleBvhParallelBuildTests
         await Assert.That(BitConverter.SingleToInt32Bits(Vector3.Min(new Vector3(-0f), new Vector3(0f)).X)).IsEqualTo(negativeZero);
         await Assert.That(BitConverter.SingleToInt32Bits(Vector3.Max(new Vector3(0f), new Vector3(-0f)).X)).IsEqualTo(positiveZero);
         await Assert.That(BitConverter.SingleToInt32Bits(Vector3.Max(new Vector3(-0f), new Vector3(0f)).X)).IsEqualTo(positiveZero);
+
+        // The same eight observations out of a method compiled the way the folds are. The operands go
+        // in as arguments across a non-inlined call so the JIT cannot fold the vectors at compile time
+        // and hand back its own constant instead of the instruction's answer, which is what a fold over
+        // a soup read from an array gets.
+        FoldRule expected = new(true, true, true, true, negativeZero, negativeZero, positiveZero, positiveZero);
+        await Assert.That(ObserveFoldRule(one, nan, new Vector3(0f), new Vector3(-0f))).IsEqualTo(expected)
+            .Because("the optimised tier must fold the way the unoptimised one just did, or the builder's "
+                     + "folds and this pin are reading different rules");
     }
 
     /// <summary>
@@ -318,4 +355,39 @@ public class TriangleBvhParallelBuildTests
                 throw new ArgumentOutOfRangeException(nameof(soup), soup, "no such soup");
         }
     }
+
+    /// <summary>
+    ///     The fold rule read in the tier the builder's folds run in. Compiled with the attribute they
+    ///     carry, and not inlined, so the operands arrive unknown and the vector folds happen at run
+    ///     time rather than in the JIT's constant folder.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.NoInlining)]
+    private static FoldRule ObserveFoldRule(Vector3 one, Vector3 nan, Vector3 zero, Vector3 negativeZero) =>
+        new(float.IsNaN(Vector3.Min(one, nan).X),
+            float.IsNaN(Vector3.Min(nan, one).X),
+            float.IsNaN(Vector3.Max(one, nan).X),
+            float.IsNaN(Vector3.Max(nan, one).X),
+            BitConverter.SingleToInt32Bits(Vector3.Min(zero, negativeZero).X),
+            BitConverter.SingleToInt32Bits(Vector3.Min(negativeZero, zero).X),
+            BitConverter.SingleToInt32Bits(Vector3.Max(zero, negativeZero).X),
+            BitConverter.SingleToInt32Bits(Vector3.Max(negativeZero, zero).X));
+
+    /// <summary>One reading of the eight observations that pin the fold rule.</summary>
+    /// <param name="MinPropagatesNaNOnTheRight">Min of a number and a NaN, NaN second.</param>
+    /// <param name="MinPropagatesNaNOnTheLeft">Min of a NaN and a number, NaN first.</param>
+    /// <param name="MaxPropagatesNaNOnTheRight">Max of a number and a NaN, NaN second.</param>
+    /// <param name="MaxPropagatesNaNOnTheLeft">Max of a NaN and a number, NaN first.</param>
+    /// <param name="MinOfZerosNegativeSecond">Bits of Min(+0, -0).</param>
+    /// <param name="MinOfZerosNegativeFirst">Bits of Min(-0, +0).</param>
+    /// <param name="MaxOfZerosNegativeSecond">Bits of Max(+0, -0).</param>
+    /// <param name="MaxOfZerosNegativeFirst">Bits of Max(-0, +0).</param>
+    private readonly record struct FoldRule(
+        bool MinPropagatesNaNOnTheRight,
+        bool MinPropagatesNaNOnTheLeft,
+        bool MaxPropagatesNaNOnTheRight,
+        bool MaxPropagatesNaNOnTheLeft,
+        int MinOfZerosNegativeSecond,
+        int MinOfZerosNegativeFirst,
+        int MaxOfZerosNegativeSecond,
+        int MaxOfZerosNegativeFirst);
 }
