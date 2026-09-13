@@ -179,9 +179,9 @@ views:
       ticks_since_spot: { type: int,   enrichment: enrich.shot.ticks_since_spot }
       travel_from_spot_deg: { type: float, enrichment: enrich.shot.travel_from_spot_deg }
       flick_error_deg: { type: float, enrichment: enrich.shot.flick_error_deg }
-      is_first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
+      first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
       ticks_since_on_target: { type: int,   enrichment: enrich.shot.ticks_since_on_target }
-      is_first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
+      first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
     availability: all
 
   # ── bullet_damage (actor_slot) ───────────────────────────────────────────────
@@ -198,8 +198,14 @@ views:
   # no entity-state derivation can better. They are here for two reasons: a stat that only wants
   # landed shots should read the authoritative half, and a stat that computes both is the oracle
   # for the reconstruction (on a demo carrying bullet_damage the two must agree per shot).
-  # Neither residual facet appears here: a spray is defined over shots FIRED, and anchoring one on
-  # the first shot that happened to land measures a survivorship-biased different thing.
+  # The spray_residual_* facets are here too, but they are not the ones the `shot` view emits: the
+  # landed arm keeps its own anchor, the first bullet that LANDED in the run, and measures drift of
+  # ShootAng* from it. A spray is defined over shots FIRED, so that anchor rides on a
+  # survivorship-biased population and the two arms answer slightly different questions; a metric
+  # must not pool them. They are emitted anyway because the fired arm's anchor needs the entity
+  # punch column, which does not decode to degrees on a GOTV demo, while ShootAng* is the server's
+  # own resolved firing direction: without the landed arm there is no spray-control measurement at
+  # all.
   shot_landed:
     event: bullet_damage
     binding: actor_slot
@@ -223,9 +229,9 @@ views:
       ticks_since_spot: { type: int,   enrichment: enrich.shot.ticks_since_spot }
       travel_from_spot_deg: { type: float, enrichment: enrich.shot.travel_from_spot_deg }
       flick_error_deg: { type: float, enrichment: enrich.shot.flick_error_deg }
-      is_first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
+      first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
       ticks_since_on_target: { type: int,   enrichment: enrich.shot.ticks_since_on_target }
-      is_first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
+      first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
       spray_residual_pitch: { type: float, enrichment: enrich.shot.spray_residual_pitch }
       spray_residual_yaw: { type: float, enrichment: enrich.shot.spray_residual_yaw }
       spray_residual_measured: { type: bool,  enrichment: enrich.shot.spray_residual_measured }

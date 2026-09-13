@@ -157,6 +157,9 @@ public static class AimPunchSchema
             return null;
         }
 
+        // Only the angle is required. The other three are what the integration will need; a demo
+        // that networks the angle but not the velocity still yields a usable at-base-tick sample,
+        // and defaulting them is honest because BaseTick 0 cannot be mistaken for a real sample.
         return new AimPunchState(baseAngle, ReadVelocity(pawn, vel), ToInt32(pawn[tick]), ToSingle(pawn[frac]));
     }
 
@@ -191,26 +194,18 @@ public static class AimPunchSchema
         return true;
     }
 
-    private static Vector3 ReadVelocity(EntityState pawn, string vel)
-    {
+    private static Vector3 ReadVelocity(EntityState pawn, string vel) => pawn.TryGet<Vector3>(vel) ?? Vector3.Zero;
 
-        // Only the angle is required. The other three are what the integration will need; a demo
-        // that networks the angle but not the velocity still yields a usable at-base-tick sample,
-        // and defaulting them is honest because BaseTick 0 cannot be mistaken for a real sample.
-        //
-        // The tick and fraction are read through the indexer and converted rather than through
-        // TryGet<T>, which casts strictly. The tick field's WIRE type reads int32 but the decoder
-        // lands it on a wider lane, so it comes back boxed as UInt64 on real demos and a strict
-        // TryGet<int> throws InvalidCastException deep inside the parallel digest producer. The
-        // declared wire type is not a promise about the CLR type of the boxed value.
-        return pawn.TryGet<Vector3>(vel) ?? Vector3.Zero;
-    }
-
-    // Width-tolerant numeric reads. A missing field is 0, which the caller documents as
-    // distinguishable from a real sample; a present field of any integer width converts. Anything
-    // genuinely non-numeric falls through to 0 rather than throwing, because by this point the
-    // angle has already resolved, so the pawn HAS aim punch and losing the base tick should
-    // degrade the future integration rather than abort the whole analysis.
+    // Width-tolerant numeric reads, which is why the tick and fraction come through the indexer
+    // rather than TryGet<T>: TryGet casts strictly, and the tick field's WIRE type reads int32
+    // while the decoder lands it on a wider lane, so it comes back boxed as UInt64 on real demos
+    // and a strict TryGet<int> throws InvalidCastException deep inside the parallel digest
+    // producer. The declared wire type is not a promise about the CLR type of the boxed value.
+    // A missing field is 0, which the caller documents as distinguishable from a real sample; a
+    // present field of any integer width converts. Anything genuinely non-numeric falls through to
+    // 0 rather than throwing, because by this point the angle has already resolved, so the pawn HAS
+    // aim punch and losing the base tick should degrade the future integration rather than abort
+    // the whole analysis.
     private static int ToInt32(object? raw) => raw switch
     {
         null => 0,

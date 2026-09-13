@@ -1,7 +1,11 @@
 #region
 
+using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Edges;
+using CS2DemoKit.Analysis.Profiles;
+using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
@@ -27,6 +31,22 @@ public class SentinelAggregateGuardTests
 
     private static readonly CatalogScopeAdapter _adapter = CatalogScopeAdapter.From(CatalogResource.Load());
 
+    // The declared "nothing to measure" constants, kept as sets rather than an or-pattern because
+    // the three int ones are the same 1,000,000 and a duplicate constant pattern is a build error
+    // here. Bool enrichments have no sentinel: false is a real answer.
+    private static readonly HashSet<int> _intSentinels =
+    [
+        AimShotContextEdge.NoSpotSentinel,
+        ShotEnrichmentEdge.NoPreviousShotSentinel,
+        SpottedEnrichmentEdge.NoPreviousSpotSentinel
+    ];
+
+    private static readonly HashSet<double> _doubleSentinels =
+    [
+        AimShotContextEdge.NoTravelSentinel,
+        AimShotContextEdge.NoFlickSentinel
+    ];
+
     private static string Ruleset(string statBody) => $"""
                                                        ruleset: t
                                                        for: each_player
@@ -39,6 +59,17 @@ public class SentinelAggregateGuardTests
         string.Join("\n", body.Split('\n').Select(line => "    " + line));
 
     // ── Rejected: an aggregate over a sentinel-bearing read with no gate on it ─────────
+    //
+    // Rejection is "this code and nothing else", for the mirror of the reason acceptance is "no
+    // diagnostic at all": these stats name facets (`enemy`, `event.Weapon`) that no accepting arm
+    // here validates, so if one were retired the gate set would fail to resolve, the guard would
+    // fire for the wrong reason, and an Any() assertion would keep passing while testing nothing.
+
+    private static async Task AssertRejectedByTheGuard(RulesetResolveResult resolved)
+    {
+        await Assert.That(resolved.Diagnostics.Select(d => d.Code)).IsEquivalentTo([Code])
+            .Because("a rejection riding on an unrelated resolve failure proves nothing about the guard");
+    }
 
     [Test]
     public async Task Sum_OverTicksSinceSpot_WithNoGate_IsRejected()
@@ -49,6 +80,7 @@ public class SentinelAggregateGuardTests
                                                               per: round
                                                               """));
 
+        await AssertRejectedByTheGuard(resolved);
         RulesetDiagnostic diagnostic = resolved.Diagnostics.Single(d => d.Code == Code);
         await Assert.That(diagnostic.Message).Contains("enrich.shot.ticks_since_spot");
         await Assert.That(diagnostic.Message).Contains(AimShotContextEdge.NoSpotSentinel.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -65,7 +97,7 @@ public class SentinelAggregateGuardTests
                                                               per: round
                                                               """));
 
-        await Assert.That(resolved.Diagnostics.Any(d => d.Code == Code)).IsTrue();
+        await AssertRejectedByTheGuard(resolved);
     }
 
     [Test]
@@ -80,12 +112,14 @@ public class SentinelAggregateGuardTests
                                                               per: round
                                                               """));
 
-        await Assert.That(resolved.Diagnostics.Any(d => d.Code == Code)).IsTrue();
+        await AssertRejectedByTheGuard(resolved);
     }
 
     [Test]
-    public async Task Sum_OverKillTicksSinceSpot_WithNoGate_IsRejected()
+    public async Task Sum_OverKillTicksSinceSpot_GatedOnlyOnEnmity_IsRejected()
     {
+        // `enemy: true` is a gate, but it is a gate on WHOSE kill it was, not on whether the killer
+        // had a contact behind the kill — which is the only thing that proves the read measured.
         RulesetResolveResult resolved = ResolveResult(Ruleset("""
                                                               sum: enrich.kill.ticks_since_spot
                                                               on: kill
@@ -93,7 +127,7 @@ public class SentinelAggregateGuardTests
                                                               per: round
                                                               """));
 
-        await Assert.That(resolved.Diagnostics.Any(d => d.Code == Code)).IsTrue();
+        await AssertRejectedByTheGuard(resolved);
     }
 
     [Test]
@@ -106,7 +140,7 @@ public class SentinelAggregateGuardTests
                                                               per: round
                                                               """));
 
-        await Assert.That(resolved.Diagnostics.Any(d => d.Code == Code)).IsTrue();
+        await AssertRejectedByTheGuard(resolved);
     }
 
     [Test]
@@ -120,7 +154,29 @@ public class SentinelAggregateGuardTests
                                                               per: round
                                                               """));
 
-        await Assert.That(resolved.Diagnostics.Any(d => d.Code == Code)).IsTrue();
+        await AssertRejectedByTheGuard(resolved);
+    }
+
+    // ── tally: is outside the guard, and outside the reach of the defect ──────────────
+
+    [Test]
+    public async Task Tally_CannotReadASentinelBearingEnrichmentAtAll()
+    {
+        // tally: counts threshold crossings, so an ungated sentinel source would be exactly as wrong
+        // as an ungated sum — but the guard has no Tally arm and needs none. A tally sources a
+        // SIBLING STAT at round end: it resolves on its own path (nothing reaches the guard) and its
+        // source is checked in the round-end state scope, which exposes no `enrich` root. The read is
+        // refused before any question of gating arises. If `enrich` is ever added to that scope this
+        // fails, and RejectUngatedSentinelAggregate has to grow the arm it does not need today.
+        RulesetResolveResult resolved = ResolveResult(Ruleset("""
+                                                              tally: enrich.shot.flick_error_deg
+                                                              thresholds:
+                                                                - { min: 5, target: sub_5_deg }
+                                                              per: match
+                                                              """));
+
+        await Assert.That(resolved.Diagnostics.Select(d => d.Code))
+            .IsEquivalentTo(["resolve.unknown-root"]);
     }
 
     // ── Accepted: the gate tests the read itself, or an enrichment that proves it ──────
@@ -142,7 +198,7 @@ public class SentinelAggregateGuardTests
         RulesetResolveResult resolved = ResolveResult(Ruleset("""
                                                               sum: enrich.shot.ticks_since_spot
                                                               on: shot
-                                                              match: { is_first_after_spot: true, ticks_since_spot: "<= 320" }
+                                                              match: { first_after_spot: true, ticks_since_spot: "<= 320" }
                                                               per: round
                                                               """));
 
@@ -250,10 +306,49 @@ public class SentinelAggregateGuardTests
         await Assert.That(byName["enrich.shot.turn_degrees"].Sentinel).IsNull();
         await Assert.That(byName["enrich.kill.was_enemy_kill"].Sentinel).IsNull();
 
-        int marked = catalog.Enrichments.Count(e => e.Sentinel is not null);
-        await Assert.That(marked).IsEqualTo(7)
-            .Because("a new sentinel-defaulted enrichment must be declared here, not left for a sum to find");
+        // The count this used to assert could not fire on the case it named: a newly added,
+        // UNDECLARED sentinel node leaves the count where it was and the test passes. Ask the node
+        // set instead — every enrichment whose reset default IS one of the no-measurement constants
+        // has to carry `sentinel:` in the catalogue, or the resolver will let a sum find it.
+        BuiltinContexts.EnrichmentInfrastructure infrastructure = BuiltinContexts.CreateEnrichment(
+            new StateGraph().Root,
+            new PlayerContextIndex(),
+            EventRegistry.Build(),
+            new LogicalEventResolver(new Cs2GotvProfile()));
+
+        // A transient's constructor default is the value Reset writes, not the value it holds before
+        // its first dispatch (which is the CLR default), so put each node in its reset state first.
+        foreach (StateNode node in infrastructure.Nodes)
+        {
+            if (node is ITransientNode transient)
+            {
+                transient.Reset();
+            }
+        }
+
+        string[] sentinelDefaulted = infrastructure.Nodes
+            .Where(CarriesANoMeasurementDefault)
+            .Select(node => node.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        await Assert.That(sentinelDefaulted).IsNotEmpty()
+            .Because("finding none would mean the defaults are not being read and the rest is vacuous");
+
+        foreach (string name in sentinelDefaulted)
+        {
+            await Assert.That(byName[name].Sentinel).IsNotNull()
+                .Because($"{name} defaults to a no-measurement sentinel, so a sum over it has to be "
+                         + "refused; an undeclared one is found by whoever aggregates it first");
+        }
     }
+
+    private static bool CarriesANoMeasurementDefault(StateNode node) => node switch
+    {
+        ValueNode<int> ints => _intSentinels.Contains(ints.Value),
+        ValueNode<double> doubles => _doubleSentinels.Contains(doubles.Value),
+        _ => false
+    };
 
     private static RulesetResolveResult ResolveResult(string yaml)
     {

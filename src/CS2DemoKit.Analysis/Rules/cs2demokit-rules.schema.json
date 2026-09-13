@@ -91,7 +91,104 @@
   "$defs": {
     "expression": {
       "type": "string",
-      "markdownDescription": "A v2 expression (docs/rules-v2/rules-v2-spec.md). Resolves against the slot\u0027s scope: \u0060event.*\u0060 fields, per-player providers \u0060player.*\u0060, B5 role handles \u0060victim.*\u0060 / \u0060killer.*\u0060 / \u0060assister.*\u0060 under event views, \u0060round.*\u0060 / \u0060match.*\u0060 contexts, sibling stats (bare), \u0060this\u0060, and cross-ruleset \u0060ruleset.stat\u0060. Duration literals \u006010s\u0060 / \u00600.5s\u0060 / \u0060500ms\u0060 are live. Closed function set: min, max, abs, contains, startswith. Map-valued \u0060define:\u0060 lookups \u0060ref[key]\u0060 (value | null) are live. B6 team aggregates are live: \u0060round.team.alive\u0060 / \u0060round.team.players\u0060 / \u0060round.enemies.alive\u0060 / \u0060round.enemies.players\u0060 (int, subject-relative alive/connected counts, disconnect-aware), \u0060round.team.equipment\u0060 / \u0060round.enemies.equipment\u0060 (int, freeze-end team economy sums) and \u0060round.alive.in_clutch\u0060 (bool); read them in \u0060when:\u0060 / \u0060while:\u0060 / \u0060compute:\u0060."
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/providerRead"
+        }
+      ],
+      "markdownDescription": "A v2 expression (docs/rules-v2/rules-v2-spec.md). Resolves against the slot\u0027s scope: \u0060event.*\u0060 fields, per-player providers \u0060player.*\u0060, B5 role handles \u0060victim.*\u0060 / \u0060killer.*\u0060 / \u0060assister.*\u0060 under event views, \u0060round.*\u0060 / \u0060match.*\u0060 contexts, sibling stats (bare), \u0060this\u0060, and cross-ruleset \u0060ruleset.stat\u0060. Duration literals \u006010s\u0060 / \u00600.5s\u0060 / \u0060500ms\u0060 are live. Closed function set: min, max, abs, contains, startswith. Map-valued \u0060define:\u0060 lookups \u0060ref[key]\u0060 (value | null) are live. B6 team aggregates are live: \u0060round.team.alive\u0060 / \u0060round.team.players\u0060 / \u0060round.enemies.alive\u0060 / \u0060round.enemies.players\u0060 (int, subject-relative alive/connected counts, disconnect-aware), \u0060round.team.equipment\u0060 / \u0060round.enemies.equipment\u0060 (int, freeze-end team economy sums) and \u0060round.alive.in_clutch\u0060 (bool); read them in \u0060when:\u0060 / \u0060while:\u0060 / \u0060compute:\u0060. The \u0060player.*\u0060 / \u0060match.*\u0060 entity reads are enumerated with their types, units and caveats in \u0060$defs/providerRead\u0060 - read the caveat before thresholding one: several are raw engine accumulators, not quantities."
+    },
+    "providerRead": {
+      "markdownDescription": "An entity-value provider read. GENERATED from the catalog\u0027s providers family: these are the \u0060player.*\u0060 and \u0060match.*\u0060 names a rule expression may read off the entity state, with the unit and the caveat each one carries.",
+      "oneOf": [
+        {
+          "const": "match.freeze_period",
+          "markdownDescription": "\u0060match.freeze_period\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.game.freeze_period\u0060."
+        },
+        {
+          "const": "player.active_weapon_class",
+          "markdownDescription": "\u0060player.active_weapon_class\u0060 (type \u0060string\u0060) - an entity read, from \u0060entity.pawn.active_weapon_class\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.active_weapon_clip",
+          "markdownDescription": "\u0060player.active_weapon_clip\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.active_weapon_clip\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.armor",
+          "markdownDescription": "\u0060player.armor\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.armor\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.duck_amount",
+          "markdownDescription": "\u0060player.duck_amount\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060entity.pawn.duck_amount\u0060. Read at a rule site from the frame BEFORE the triggering event. Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
+        },
+        {
+          "const": "player.equipment_value",
+          "markdownDescription": "\u0060player.equipment_value\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.equipment_value\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.eye_pitch",
+          "markdownDescription": "\u0060player.eye_pitch\u0060 (type \u0060float\u0060, in degrees) - an entity read, from \u0060entity.pawn.eye_pitch\u0060. Read at a rule site from the frame BEFORE the triggering event. CS2\u0027s convention: NEGATIVE is up. Wraps, so subtract two of these only after normalising the difference."
+        },
+        {
+          "const": "player.eye_yaw",
+          "markdownDescription": "\u0060player.eye_yaw\u0060 (type \u0060float\u0060, in degrees) - an entity read, from \u0060entity.pawn.eye_yaw\u0060. Read at a rule site from the frame BEFORE the triggering event. Counter-clockwise from world \u002BX, and it wraps at 360, so subtract two of these only after normalising the difference."
+        },
+        {
+          "const": "player.flash_duration",
+          "markdownDescription": "\u0060player.flash_duration\u0060 (type \u0060float\u0060, in seconds) - an entity read, from \u0060entity.pawn.flash_duration\u0060. Read at a rule site from the frame BEFORE the triggering event. The duration the server LATCHED for the flash, not a countdown: probed on the bundled GOTV sample it holds one value for the whole blind and then steps to 0, and the step is about 1.4x the latched value after the flash, so it never reads as \u0022time still blind\u0022. Use \u0060\u003E 0\u0060 for \u0022is blinded\u0022; a magnitude test on it measures the flash, not what is left of it."
+        },
+        {
+          "const": "player.health",
+          "markdownDescription": "\u0060player.health\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.health\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.is_scoped",
+          "markdownDescription": "\u0060player.is_scoped\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.pawn.is_scoped\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.max_speed",
+          "markdownDescription": "\u0060player.max_speed\u0060 (type \u0060float\u0060, in units/second) - an entity read, from \u0060entity.pawn.max_speed\u0060. Read at a rule site from the frame BEFORE the triggering event. Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
+        },
+        {
+          "const": "player.place",
+          "markdownDescription": "\u0060player.place\u0060 (type \u0060string\u0060) - an entity read, from \u0060entity.pawn.place\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.pos_x",
+          "markdownDescription": "\u0060player.pos_x\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.pawn.pos_x\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.pos_y",
+          "markdownDescription": "\u0060player.pos_y\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.pawn.pos_y\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.pos_z",
+          "markdownDescription": "\u0060player.pos_z\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.pawn.pos_z\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.punch_pitch",
+          "markdownDescription": "\u0060player.punch_pitch\u0060 (type \u0060float\u0060, in degrees) - an entity read, from \u0060entity.pawn.punch_pitch\u0060. Read at a rule site from the frame BEFORE the triggering event. NOT USABLE AS RECOIL TODAY. It is the raw aim-punch spring sample, correct only at its own base tick, and on the bundled GOTV sample it does not decode to degrees of punch at all: the two components cluster near -94 and \u002B89, which no weapon\u0027s kick reaches. The engine\u0027s own consumer rejects every value outside \u002B/-45 for that reason. A threshold on this column is true on nearly every tick and means nothing about recoil."
+        },
+        {
+          "const": "player.punch_yaw",
+          "markdownDescription": "\u0060player.punch_yaw\u0060 (type \u0060float\u0060, in degrees) - an entity read, from \u0060entity.pawn.punch_yaw\u0060. Read at a rule site from the frame BEFORE the triggering event. NOT USABLE AS RECOIL TODAY, for the reasons under \u0060player.punch_pitch\u0060: same raw spring sample, same undecoded cluster on the bundled sample, same rejection by the engine\u0027s own consumer."
+        },
+        {
+          "const": "player.shots_fired",
+          "markdownDescription": "\u0060player.shots_fired\u0060 (type \u0060int\u0060, in shots) - an entity read, from \u0060entity.pawn.shots_fired\u0060. Read at a rule site from the frame BEFORE the triggering event. Position within the CURRENT burst, not a round or match total: it resets on trigger release and on weapon change."
+        },
+        {
+          "const": "player.weapon_accuracy_penalty",
+          "markdownDescription": "\u0060player.weapon_accuracy_penalty\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.weapon.accuracy_penalty\u0060. Read at a rule site from the frame BEFORE the triggering event. A raw engine accumulator in no unit, scaled per weapon: the same number means a different spread on a Deagle and on a Negev, so compare it within one weapon and never across two. It also excludes the movement term, so a running player\u0027s shot is more inaccurate than this says. For the movement term itself, ask the \u0060shot_landed\u0060 view instead: its counter-strafe facets are lowered from \u0060bullet_damage.InaccuracyMove\u0060, which is the penalty the server actually charged the shot, and no entity read can better it. This column is the accumulator as it stood BEFORE the frame, which is the only answer available on a demo that emits no \u0060bullet_damage\u0060 and the only one available at all for a shot that missed."
+        },
+        {
+          "const": "player.weapon_recoil_index",
+          "markdownDescription": "\u0060player.weapon_recoil_index\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.weapon.recoil_index\u0060. Read at a rule site from the frame BEFORE the triggering event. A raw engine accumulator in no unit, scaled per weapon. Its useful property is that it rises within a spray and falls between sprays (a run over which it never drops is one spray), not its absolute magnitude, which is not comparable across weapons. Not the same number as the \u0060recoil_index\u0060 FACET on \u0060shot_landed\u0060: that one is \u0060bullet_damage.RecoilIndex\u0060, the index the server fired the shot at, and is authoritative for \u0022what did this shot fire at\u0022. This column is the entity read as it stood BEFORE the frame, so it answers \u0022where was the spray up to when the shot site fired\u0022 and is the only answer on a demo carrying no \u0060bullet_damage\u0060 or for a shot that missed. Do not pool the two in one stat."
+        }
+      ]
     },
     "triggerRef": {
       "type": "string",
@@ -154,6 +251,12 @@
         "enemy": {
           "markdownDescription": "Facet \u0060enemy\u0060 (type \u0060bool\u0060). Exposed by: assist, blinded, blinded_enemy, damage_dealt, damage_taken, death, kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "first_after_on_target": {
+          "markdownDescription": "Facet \u0060first_after_on_target\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "first_after_spot": {
+          "markdownDescription": "Facet \u0060first_after_spot\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "first_bullet": {
           "markdownDescription": "Facet \u0060first_bullet\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
@@ -180,12 +283,6 @@
         },
         "in_air": {
           "markdownDescription": "Facet \u0060in_air\u0060 (type \u0060bool\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
-        },
-        "is_first_after_on_target": {
-          "markdownDescription": "Facet \u0060is_first_after_on_target\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
-        },
-        "is_first_after_spot": {
-          "markdownDescription": "Facet \u0060is_first_after_spot\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "no_scope": {
           "markdownDescription": "Facet \u0060no_scope\u0060 (type \u0060bool\u0060). Exposed by: death, kill, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -1938,17 +2035,17 @@
         "counter_strafe_good": {
           "markdownDescription": "\u0060counter_strafe_good\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
         },
+        "first_after_on_target": {
+          "markdownDescription": "\u0060first_after_on_target\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
+        "first_after_spot": {
+          "markdownDescription": "\u0060first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
+        },
         "first_bullet": {
           "markdownDescription": "\u0060first_bullet\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
         },
         "flick_error_deg": {
           "markdownDescription": "\u0060flick_error_deg\u0060 (type \u0060float\u0060) on view \u0060shot\u0060."
-        },
-        "is_first_after_on_target": {
-          "markdownDescription": "\u0060is_first_after_on_target\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
-        },
-        "is_first_after_spot": {
-          "markdownDescription": "\u0060is_first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
         },
         "silenced": {
           "markdownDescription": "\u0060silenced\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
@@ -1999,6 +2096,12 @@
         "distance": {
           "markdownDescription": "\u0060distance\u0060 (type \u0060float\u0060) on view \u0060shot_landed\u0060."
         },
+        "first_after_on_target": {
+          "markdownDescription": "\u0060first_after_on_target\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
+        "first_after_spot": {
+          "markdownDescription": "\u0060first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
+        },
         "first_bullet": {
           "markdownDescription": "\u0060first_bullet\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
         },
@@ -2007,12 +2110,6 @@
         },
         "in_air": {
           "markdownDescription": "\u0060in_air\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
-        },
-        "is_first_after_on_target": {
-          "markdownDescription": "\u0060is_first_after_on_target\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
-        },
-        "is_first_after_spot": {
-          "markdownDescription": "\u0060is_first_after_spot\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
         },
         "no_scope": {
           "markdownDescription": "\u0060no_scope\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."

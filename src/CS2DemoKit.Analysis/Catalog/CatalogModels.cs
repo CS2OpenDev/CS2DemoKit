@@ -141,12 +141,25 @@ public sealed record CatalogContextRule(
 ///     so this is never null in a valid catalog.
 /// </param>
 /// <param name="V2Type">The v2 <c>RulesType</c> the friendly value type maps to.</param>
+/// <param name="Unit">
+///     What one of these is a unit of — <c>degrees</c>, <c>seconds</c>, <c>units/second</c>,
+///     <c>fraction</c>. Null where the type already says it: a count, a flag, a name, or a raw
+///     engine accumulator that is in no unit at all.
+/// </param>
+/// <param name="Note">
+///     An author-facing caveat neither the name nor the type carries — a value the engine latches
+///     rather than counts down, an accumulator whose scale is per-weapon, a column whose decode is
+///     not settled — surfaced in the schema hover the same way <see cref="CatalogView.Note" /> is.
+///     Null for a provider that means exactly what it is called.
+/// </param>
 public sealed record CatalogProvider(
     string Name,
     string Scope,
     string ClrType,
     string? V2Name = null,
-    string? V2Type = null);
+    string? V2Type = null,
+    string? Unit = null,
+    string? Note = null);
 
 /// <summary>One demo-source profile and its logical-event bindings (the per-source availability matrix).</summary>
 /// <param name="Id">Profile type name (e.g. <c>Cs2GotvProfile</c>).</param>

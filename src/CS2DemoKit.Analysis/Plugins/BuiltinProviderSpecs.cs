@@ -112,9 +112,33 @@ public static class BuiltinProviderSpecs
         SchemaNames.CCSPlayerPawn.IsScoped, typeof(bool));
 
     /// <summary>
-    ///     entity.pawn.flash_duration: remaining blind time in SECONDS; <c>0</c> means not
-    ///     flashed. Present so aim metrics can exclude blinded engagements, which otherwise
-    ///     enter the population as catastrophic crosshair placement that says nothing about aim.
+    ///     entity.pawn.flash_duration: the blind time the server LATCHED for the flash, in
+    ///     SECONDS; <c>0</c> means not flashed. Present so aim metrics can exclude blinded
+    ///     engagements, which otherwise enter the population as catastrophic crosshair placement
+    ///     that says nothing about aim.
+    ///     <para>
+    ///         <b>Latched, not counted down — measured, because the difference decides how a rule
+    ///         may test it.</b> Sampled across every pawn-frame of the bundled GOTV sample
+    ///         (230,856 of them), <c>m_flFlashDuration</c> is a step function: each flash writes
+    ///         ONE value that then holds unchanged for the whole blind and steps back to <c>0</c>.
+    ///         A server decrementing it per tick would network a fresh float on nearly every tick;
+    ///         instead the busiest slot on the sample carries eleven distinct values across four
+    ///         rounds. Two of the latches, with the pawn alive throughout: <c>0.6618</c> held for
+    ///         0.94 s before zeroing, <c>1.7494</c> held for 2.46 s. The clear lands at about
+    ///         1.4x the latched value after the latch, consistently across the sample, so the
+    ///         column does end with the blind — it just never reads as the time still left in it.
+    ///     </para>
+    ///     <para>
+    ///         So test it as <c>&gt; 0</c> for "was blinded at all". A magnitude test is a test on
+    ///         how strong the flash was, not on how much of it remains, and a rule written as if it
+    ///         were a countdown reads the full duration at every tick of the blind.
+    ///     </para>
+    ///     <para>
+    ///         <c>m_blindStartTime</c> / <c>m_blindUntilTime</c> would express "now vs until"
+    ///         directly, and the lens curates both on this class, but neither is networked on the
+    ///         bundled sample: zero non-null reads over the same 230,856 pawn-frames. There is
+    ///         nothing to switch to today.
+    ///     </para>
     /// </summary>
     public static ProviderSpec PawnFlashDuration { get; } = new(
         "entity.pawn.flash_duration", "CCSPlayerPawn",

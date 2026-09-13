@@ -217,10 +217,10 @@ public static class YamlConfigLoader
     /// <summary>
     ///     Merges a clean shipped tier with a user tier: shipped order first, user overrides in
     ///     place, new user rulesets appended in user order, disabled rulesets dropped. Each tier was
-    ///     label-checked on its own; the merge is a new load unit, so a user column colliding with a
-    ///     shipped one surfaces here, attributed to the user file (the shipped tier is known clean
-    ///     and the user file is the one that changed). A collision between two user rulesets was
-    ///     reported by the user tier's own pass and is not repeated.
+    ///     column-checked on its own; the merge is a new load unit, so a user column or table name
+    ///     colliding with a shipped one surfaces here, attributed to the user file (the shipped tier
+    ///     is known clean and the user file is the one that changed). A collision between two user
+    ///     rulesets was reported by the user tier's own pass and is not repeated.
     /// </summary>
     private static RuleConfigLoadResult OverlayTiers(RuleConfigLoadResult shipped, RuleConfigLoadResult user)
     {
@@ -230,7 +230,7 @@ public static class YamlConfigLoader
         List<RuleConfigError> errors = [.. user.Errors];
         List<string> loadedFiles = [.. shipped.LoadedFiles, .. user.LoadedFiles];
         List<string> failedFiles = [.. user.FailedFiles];
-        foreach (RuleConfigError collision in FindScoreboardLabelCollisions(merged, userIds))
+        foreach (RuleConfigError collision in FindShowColumnCollisions(merged, userIds))
         {
             errors.Add(collision);
             if (collision.FilePath is { } file && loadedFiles.Remove(file))
@@ -393,9 +393,9 @@ public static class YamlConfigLoader
             (errors.Count == errorsBefore ? loadedFiles : failedFiles).Add(label);
         }
 
-        // Scoreboard labels are checked over the whole load unit, not per file: a label is the
-        // value-column key of the per-player table, matched across every ruleset built together.
-        foreach (RuleConfigError collision in FindScoreboardLabelCollisions(allRulesets))
+        // Show columns are checked over the whole load unit, not per file: a label is the
+        // value-column key of the table it lands on, matched across every ruleset built together.
+        foreach (RuleConfigError collision in FindShowColumnCollisions(allRulesets))
         {
             errors.Add(collision);
             if (collision.FilePath is { } file && loadedFiles.Remove(file))
@@ -411,24 +411,38 @@ public static class YamlConfigLoader
     }
 
     /// <summary>
-    ///     Finds every scoreboard entry whose column lands on a board where an earlier entry (in this
-    ///     or any other enabled ruleset) already put the same column. The column key is
-    ///     <c>label:</c>, falling back to the stat id, exactly as <c>ShowLowering</c> assigns it, and
-    ///     the board follows the same rules: <c>boards:</c> when written, else the match board for a
+    ///     Finds every <c>show:</c> column that lands on a surface where an earlier entry (in this or
+    ///     any other enabled ruleset) already put the same column key. A surface is one scoreboard
+    ///     board or one named <c>tables:</c> entry; the column key is <c>label:</c>, falling back to
+    ///     the stat id, exactly as <c>ShowLowering</c> assigns it. A scoreboard entry's board follows
+    ///     the lowering's rules too: <c>boards:</c> when written, else the match board for a
     ///     highlight <c>.count</c>, else the stat's own <c>per:</c> (a tally target follows its
     ///     owner). The round and match scoreboards are separate tables, so the same label on both is
-    ///     two columns, not a collision.
+    ///     two columns, not a collision, and so is the same label in two differently named tables.
+    ///     Table NAMES are checked against each other in the same pass, because two tables under one
+    ///     name are two tables a consumer can only address as one.
     ///     <para>
     ///         This is an ERROR, not a warning, deliberately. The projector writes cells into a
     ///         dictionary keyed by column name, so the later ruleset's value silently replaces the
     ///         earlier one and the losing stat reads as zero on every row; the <c>Flick</c> column
-    ///         read 0 for weeks that way and was found only by someone doubting the number. A load
-    ///         result carries no warnings channel, and one nobody reads is how this got here. The
-    ///         fix is a one-word rename, so the cost of failing loud is small. A ruleset with
-    ///         <c>enabled: false</c> contributes no columns and is skipped; two rulesets that are
-    ///         never loaded together are never checked together, because the check runs on the load
-    ///         unit (a directory, the embedded set, an overlay merge), which is the set that shares
-    ///         a table.
+    ///         read 0 for weeks that way and was found only by someone doubting the number. A
+    ///         <c>tables:</c> column fails the same way (<c>ConfiguredOutputProjector</c> writes
+    ///         <c>values[MetricRef.Label]</c>) with the extra twist that the duplicate key is also
+    ///         emitted twice in the header, so the CSV carries two identically named columns both
+    ///         holding the later stat's value. A load result carries no warnings channel, and one
+    ///         nobody reads is how this got here. The fix is a one-word rename, so the cost of
+    ///         failing loud is small. A ruleset with <c>enabled: false</c> contributes no columns and
+    ///         is skipped; two rulesets that are never loaded together are never checked together,
+    ///         because the check runs on the load unit (a directory, the embedded set, an overlay
+    ///         merge), which is the set that shares a table.
+    ///     </para>
+    ///     <para>
+    ///         An entry whose ref or <c>boards:</c> value classifies to nothing is reported rather
+    ///         than skipped. Nothing else on the LOAD path looks at it: the existence check lives in
+    ///         <c>ShowReferenceValidator</c>, which needs a checked ruleset and therefore runs at
+    ///         resolve, and an unusable <c>boards:</c> value is not checked even there — it reaches
+    ///         <c>ShowLowering.MapBoards</c> and throws mid-build. Reported only for a single load
+    ///         unit: the overlay merge re-walks documents whose own tier pass already reported them.
     ///     </para>
     /// </summary>
     /// <param name="rulesets">The rulesets that will be built together, in load order.</param>
@@ -439,15 +453,20 @@ public static class YamlConfigLoader
     ///     single load unit, where the later entry is attributed.
     /// </param>
     /// <returns>One attributed error per colliding entry, with the file and line of the entry at fault.</returns>
-    internal static List<RuleConfigError> FindScoreboardLabelCollisions(
+    internal static List<RuleConfigError> FindShowColumnCollisions(
         IReadOnlyList<RulesetDoc> rulesets, IReadOnlySet<string>? overlayTier = null)
     {
+        const string columnConsequence =
+            "labels are the table's column keys across every ruleset loaded together, so one value "
+            + "silently replaces the other and that stat reads as zero. Rename one of them";
+
         List<RuleConfigError> errors = new();
-        Dictionary<(bool RoundBoard, string Column), ScoreboardColumnOwner> owners = new();
+        Dictionary<(string Surface, string Column), ShowColumnOwner> owners = new();
 
         foreach (RulesetDoc doc in rulesets)
         {
-            if (!doc.Enabled || doc.Show is not { Scoreboard.Count: > 0 } show)
+            if (!doc.Enabled || doc.Show is not { } show
+                || (show.Scoreboard.Count == 0 && show.Tables.Count == 0))
             {
                 continue;
             }
@@ -470,51 +489,52 @@ public static class YamlConfigLoader
 
             foreach (ScoreboardEntry entry in show.Scoreboard)
             {
-                if (!TryResolveScoreboardBoards(entry, statScopes, tallyTargetScopes, highlights, out List<bool> boards))
+                if (!TryResolveScoreboardBoards(entry, statScopes, tallyTargetScopes, highlights,
+                        out List<bool> boards, out string unclassifiable))
                 {
-                    continue; // an unknown ref or a bad boards: value; the resolver reports those
+                    if (overlayTier is null)
+                    {
+                        errors.Add(new RuleConfigError(doc.Position.File,
+                            $"show: scoreboard entry '{entry.Stat}' {unclassifiable}.",
+                            doc.Id, entry.Stat,
+                            entry.Position.Line > 0 ? entry.Position.Line : null,
+                            entry.Position.Column > 0 ? entry.Position.Column : null));
+                    }
+
+                    continue;
                 }
 
                 string column = entry.Label ?? entry.Stat;
-                ScoreboardColumnOwner current = new(doc.Id, doc.Position.File, entry.Stat, entry.Position.Line, entry.Position.Column);
+                ShowColumnOwner claimant = new(
+                    doc.Id, doc.Position.File, entry.Stat, entry.Position.Line, entry.Position.Column);
                 foreach (bool roundBoard in boards)
                 {
-                    if (!owners.TryGetValue((roundBoard, column), out ScoreboardColumnOwner? first))
-                    {
-                        owners[(roundBoard, column)] = current;
-                        continue;
-                    }
-
-                    ScoreboardColumnOwner atFault = current;
-                    ScoreboardColumnOwner other = first;
-                    if (overlayTier is not null)
-                    {
-                        bool firstIsUser = overlayTier.Contains(first.RulesetId);
-                        bool currentIsUser = overlayTier.Contains(current.RulesetId);
-                        if (firstIsUser == currentIsUser)
-                        {
-                            continue; // same tier: that tier's own pass reported it (or threw)
-                        }
-
-                        if (firstIsUser)
-                        {
-                            atFault = first;
-                            other = current;
-                        }
-                    }
-
                     string board = roundBoard ? "round" : "match";
-                    string otherFile = other.File is null ? "<inline yaml>" : Path.GetFileName(other.File);
-                    errors.Add(new RuleConfigError(
-                        atFault.File,
-                        $"scoreboard label '{column}' on the {board} board is also the column of ruleset "
-                        + $"'{other.RulesetId}' ({otherFile}); labels are the table's column keys across every "
-                        + "ruleset loaded together, so one value silently replaces the other and that stat "
-                        + "reads as zero. Rename one of them",
-                        atFault.RulesetId,
-                        atFault.Stat,
-                        atFault.Line > 0 ? atFault.Line : null,
-                        atFault.Column > 0 ? atFault.Column : null));
+                    Claim(errors, owners, overlayTier, ($"scoreboard:{board}", column), claimant,
+                        $"scoreboard label '{column}' on the {board} board", "the column", columnConsequence);
+                }
+            }
+
+            foreach (TableDef table in show.Tables)
+            {
+                ShowColumnOwner declaration = new(
+                    doc.Id, doc.Position.File, table.Name, table.Position.Line, table.Position.Column);
+                if (!Claim(errors, owners, overlayTier, (TableNameSurface, table.Name), declaration,
+                        $"show: table '{table.Name}'", "a table",
+                        "a table name is the emitted table's name, so the two are written under one "
+                        + "name and a consumer that addresses tables by name reads only one of them. "
+                        + "Rename one of them"))
+                {
+                    continue; // every column of it would re-report the same clash
+                }
+
+                foreach (TableColumn tableColumn in table.Columns)
+                {
+                    string column = tableColumn.Label ?? tableColumn.Stat;
+                    ShowColumnOwner claimant = new(doc.Id, doc.Position.File, tableColumn.Stat,
+                        tableColumn.Position.Line, tableColumn.Position.Column);
+                    Claim(errors, owners, overlayTier, ($"table:{table.Name}", column), claimant,
+                        $"show: table '{table.Name}' column '{column}'", "the column", columnConsequence);
                 }
             }
         }
@@ -522,22 +542,99 @@ public static class YamlConfigLoader
         return errors;
     }
 
-    /// <summary>The scoreboard entry that first claimed a column on a board, with what an error needs to point at it.</summary>
-    private sealed record ScoreboardColumnOwner(string RulesetId, string? File, string Stat, int Line, int Column);
+    /// <summary>
+    ///     The surface table NAMES are claimed under. Distinct from every <c>table:&lt;name&gt;</c>
+    ///     column surface and from the two <c>scoreboard:&lt;board&gt;</c> surfaces, so one dictionary
+    ///     carries all three kinds without a table called <c>round</c> shadowing the round board.
+    /// </summary>
+    private const string TableNameSurface = "table-name";
+
+    /// <summary>
+    ///     Claims one (surface, key) pair for <paramref name="claimant" />, or — when something
+    ///     already holds it — appends the attributed collision error and refuses the claim.
+    /// </summary>
+    /// <param name="errors">The error list to append to.</param>
+    /// <param name="owners">Who holds each (surface, key) pair so far, in load order.</param>
+    /// <param name="overlayTier">The user-tier ruleset ids, as on <see cref="FindShowColumnCollisions" />.</param>
+    /// <param name="key">The surface and key being claimed.</param>
+    /// <param name="claimant">The entry claiming it.</param>
+    /// <param name="subject">How the message names the claimant, e.g. <c>show: table 'x' column 'K'</c>.</param>
+    /// <param name="claimedBy">What the incumbent is to the surface — <c>the column</c> / <c>a table</c>.</param>
+    /// <param name="consequence">The sentence explaining what breaks, appended after the attribution.</param>
+    /// <returns><c>true</c> when the pair was free and is now claimed.</returns>
+    private static bool Claim(
+        List<RuleConfigError> errors,
+        Dictionary<(string Surface, string Column), ShowColumnOwner> owners,
+        IReadOnlySet<string>? overlayTier,
+        (string Surface, string Column) key,
+        ShowColumnOwner claimant,
+        string subject,
+        string claimedBy,
+        string consequence)
+    {
+        if (!owners.TryGetValue(key, out ShowColumnOwner? first))
+        {
+            owners[key] = claimant;
+            return true;
+        }
+
+        ShowColumnOwner atFault = claimant;
+        ShowColumnOwner other = first;
+        if (overlayTier is not null)
+        {
+            bool firstIsUser = overlayTier.Contains(first.RulesetId);
+            bool claimantIsUser = overlayTier.Contains(claimant.RulesetId);
+            if (firstIsUser == claimantIsUser)
+            {
+                return false; // same tier: that tier's own pass reported it (or threw)
+            }
+
+            if (firstIsUser)
+            {
+                atFault = first;
+                other = claimant;
+            }
+        }
+
+        string otherFile = other.File is null ? "<inline yaml>" : Path.GetFileName(other.File);
+        errors.Add(new RuleConfigError(
+            atFault.File,
+            $"{subject} is also {claimedBy} of ruleset '{other.RulesetId}' ({otherFile}); {consequence}",
+            atFault.RulesetId,
+            atFault.Stat,
+            atFault.Line > 0 ? atFault.Line : null,
+            atFault.Column > 0 ? atFault.Column : null));
+        return false;
+    }
+
+    /// <summary>The show entry that first claimed a surface, with what an error needs to point back at it.</summary>
+    private sealed record ShowColumnOwner(string RulesetId, string? File, string Stat, int Line, int Column);
 
     /// <summary>
     ///     The boards a scoreboard entry lands on, in <c>ShowLowering</c>'s order of precedence:
     ///     an explicit <c>boards:</c> list, else a highlight ref (<c>id</c> or <c>id.count</c>) on the
     ///     match board, else a stat ref on its <c>per:</c> board, else a tally target on its owner's.
     /// </summary>
+    /// <param name="entry">The scoreboard entry as written.</param>
+    /// <param name="statScopes">Stat id to its <c>per:</c>, over this ruleset's stats.</param>
+    /// <param name="tallyTargetScopes">Tally <c>target:</c> id to the owning tally's <c>per:</c>.</param>
+    /// <param name="highlights">This ruleset's highlight ids.</param>
+    /// <param name="boards">One flag per board the entry lands on, <c>true</c> for the round board.</param>
+    /// <param name="reason">
+    ///     When the entry classifies to no board, the clause naming why, for the load error. Empty on
+    ///     success.
+    /// </param>
+    /// <returns><c>true</c> when the entry resolves to at least one board.</returns>
     private static bool TryResolveScoreboardBoards(
         ScoreboardEntry entry,
         Dictionary<string, PerScope> statScopes,
         Dictionary<string, PerScope> tallyTargetScopes,
         HashSet<string> highlights,
-        out List<bool> boards)
+        out List<bool> boards,
+        out string reason)
     {
         boards = new List<bool>(2);
+        reason = string.Empty;
         if (entry.Boards is { Count: > 0 } explicitBoards)
         {
             foreach (string board in explicitBoards)
@@ -551,6 +648,7 @@ public static class YamlConfigLoader
                         boards.Add(false);
                         break;
                     default:
+                        reason = $"lists board '{board}', which is not a board (round | match)";
                         return false;
                 }
             }
@@ -575,6 +673,7 @@ public static class YamlConfigLoader
             return true;
         }
 
+        reason = "references neither a stat, a highlight, nor a tally target defined in the ruleset";
         return false;
     }
 

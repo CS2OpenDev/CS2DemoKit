@@ -55,6 +55,76 @@ public static class CatalogBuilder
         ["traded"] = "player.traded"
     };
 
+    /// <summary>
+    ///     Provider name → the unit and the caveat a rule author cannot get from the name and the
+    ///     type. The provider classes already carry this in their XML docs, which no rule author
+    ///     ever reads: these are the same facts on the author-facing surface, and they reach the
+    ///     schema hover through <see cref="CatalogProvider.Note" />.
+    ///     <para>
+    ///         Unannotated is the normal case and stays legal — <c>health</c>, <c>armor</c> and
+    ///         <c>equipment_value</c> are self-describing ints and a note on them would be noise.
+    ///         What is here is the set that is NOT self-describing: an angle in degrees, a ramp
+    ///         that reads like a flag, an engine accumulator whose scale is per-weapon, and the
+    ///         two punch columns whose decode is unsettled.
+    ///     </para>
+    /// </summary>
+    private static readonly Dictionary<string, (string? Unit, string? Note)> _providerAnnotations =
+        new(StringComparer.Ordinal)
+        {
+            ["entity.pawn.duck_amount"] = ("fraction",
+                "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
+                + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),
+            ["entity.pawn.eye_pitch"] = ("degrees",
+                "CS2's convention: NEGATIVE is up. Wraps, so subtract two of these only after "
+                + "normalising the difference."),
+            ["entity.pawn.eye_yaw"] = ("degrees",
+                "Counter-clockwise from world +X, and it wraps at 360, so subtract two of these "
+                + "only after normalising the difference."),
+            ["entity.pawn.flash_duration"] = ("seconds",
+                "The duration the server LATCHED for the flash, not a countdown: probed on the "
+                + "bundled GOTV sample it holds one value for the whole blind and then steps to 0, "
+                + "and the step is about 1.4x the latched value after the flash, so it never reads "
+                + "as \"time still blind\". Use `> 0` for \"is blinded\"; a magnitude test on it "
+                + "measures the flash, not what is left of it."),
+            ["entity.pawn.max_speed"] = ("units/second",
+                "Per-weapon (an AWP out caps far lower than a knife), which is what makes it the "
+                + "denominator of a counter-strafe test rather than a fixed speed."),
+            ["entity.pawn.punch_pitch"] = ("degrees",
+                "NOT USABLE AS RECOIL TODAY. It is the raw aim-punch spring sample, correct only "
+                + "at its own base tick, and on the bundled GOTV sample it does not decode to "
+                + "degrees of punch at all: the two components cluster near -94 and +89, which no "
+                + "weapon's kick reaches. The engine's own consumer rejects every value outside "
+                + "+/-45 for that reason. A threshold on this column is true on nearly every tick "
+                + "and means nothing about recoil."),
+            ["entity.pawn.punch_yaw"] = ("degrees",
+                "NOT USABLE AS RECOIL TODAY, for the reasons under `player.punch_pitch`: same raw "
+                + "spring sample, same undecoded cluster on the bundled sample, same rejection by "
+                + "the engine's own consumer."),
+            ["entity.pawn.shots_fired"] = ("shots",
+                "Position within the CURRENT burst, not a round or match total: it resets on "
+                + "trigger release and on weapon change."),
+            ["entity.weapon.accuracy_penalty"] = (null,
+                "A raw engine accumulator in no unit, scaled per weapon: the same number means a "
+                + "different spread on a Deagle and on a Negev, so compare it within one weapon "
+                + "and never across two. It also excludes the movement term, so a running player's "
+                + "shot is more inaccurate than this says. For the movement term itself, ask the "
+                + "`shot_landed` view instead: its counter-strafe facets are lowered from "
+                + "`bullet_damage.InaccuracyMove`, which is the penalty the server actually charged "
+                + "the shot, and no entity read can better it. This column is the accumulator as it "
+                + "stood BEFORE the frame, which is the only answer available on a demo that emits "
+                + "no `bullet_damage` and the only one available at all for a shot that missed."),
+            ["entity.weapon.recoil_index"] = (null,
+                "A raw engine accumulator in no unit, scaled per weapon. Its useful property is "
+                + "that it rises within a spray and falls between sprays (a run over which it never "
+                + "drops is one spray), not its absolute magnitude, which is not comparable across "
+                + "weapons. Not the same number as the `recoil_index` FACET on `shot_landed`: that "
+                + "one is `bullet_damage.RecoilIndex`, the index the server fired the shot at, and "
+                + "is authoritative for \"what did this shot fire at\". This column is the entity "
+                + "read as it stood BEFORE the frame, so it answers \"where was the spray up to "
+                + "when the shot site fired\" and is the only answer on a demo carrying no "
+                + "`bullet_damage` or for a shot that missed. Do not pool the two in one stat.")
+        };
+
     /// <summary>Builds the full catalog from the live registries.</summary>
     /// <param name="frequencies">
     ///     Measured trigger frequencies; null → every entry "unmeasured". Ordinary
@@ -215,17 +285,22 @@ public static class CatalogBuilder
         List<CatalogProvider> providers =
         [
             .. PerPlayerEntityValueProviderRegistry.CreateDefault().All
-                .Select(p => new CatalogProvider(
+                .Select(p => Annotate(new CatalogProvider(
                     p.Name, "perPlayer", FriendlyTypeName(p.ValueType),
-                    ProviderV2Name(p.Name), RulesType(FriendlyTypeName(p.ValueType)))),
+                    ProviderV2Name(p.Name), RulesType(FriendlyTypeName(p.ValueType))))),
             .. EntityValueProviderRegistry.CreateDefault().All
-                .Select(p => new CatalogProvider(
+                .Select(p => Annotate(new CatalogProvider(
                     p.ContextName, "singleton", FriendlyTypeName(p.ValueType),
-                    ProviderV2Name(p.ContextName), RulesType(FriendlyTypeName(p.ValueType))))
+                    ProviderV2Name(p.ContextName), RulesType(FriendlyTypeName(p.ValueType)))))
         ];
 
         return providers.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
     }
+
+    private static CatalogProvider Annotate(CatalogProvider provider) =>
+        _providerAnnotations.TryGetValue(provider.Name, out (string? Unit, string? Note) annotation)
+            ? provider with { Unit = annotation.Unit, Note = annotation.Note }
+            : provider;
 
     private static List<CatalogProfile> BuildProfiles()
     {

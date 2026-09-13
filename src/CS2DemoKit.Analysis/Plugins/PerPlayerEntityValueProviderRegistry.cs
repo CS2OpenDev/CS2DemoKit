@@ -5,14 +5,34 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///     <see cref="EntityValueProviderRegistry" /> (singleton/push model). Kept as a separate type
 ///     because the contract — providers are read on demand by edges, not polled into synthesized
 ///     events — differs.
+///     <para>
+///         <b>Registration order is the digest's column order, so it is part of the data
+///         format.</b> <c>DigestColumnLayout</c>, the pre-frame snapshot and
+///         <c>AimVantageScanner</c> all address columns by index, and the per-pawn fold goldens
+///         hash that index, so the sequence <see cref="All" /> hands back is an observable
+///         contract and not an implementation detail. It is therefore kept in an explicit list:
+///         enumerating a dictionary's values happens to give insertion order only while nothing is
+///         removed, which is not a guarantee the BCL makes and not one to build a column layout on.
+///     </para>
+///     <para>
+///         <b>A name is claimed once.</b> <see cref="Register" /> refuses a name already taken
+///         rather than replacing the provider under it. Silently replacing is the exact failure
+///         the scoreboard-label guard was added for one layer up: the column count does not
+///         change, so the layout still looks compatible, and every rule reading
+///         <c>player.health</c> quietly reads the newcomer's values instead. Names are compared
+///         case-insensitively — the same comparison <see cref="Get" /> resolves with, so a
+///         provider can never be registered under a spelling that a lookup would then find.
+///     </para>
 /// </summary>
 public sealed class PerPlayerEntityValueProviderRegistry
 {
     private readonly Dictionary<string, IPerPlayerEntityValueProvider> _byName =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>All registered per-player providers, in insertion order.</summary>
-    public IReadOnlyCollection<IPerPlayerEntityValueProvider> All => _byName.Values;
+    private readonly List<IPerPlayerEntityValueProvider> _inOrder = [];
+
+    /// <summary>All registered per-player providers, in registration order (the digest's column order).</summary>
+    public IReadOnlyCollection<IPerPlayerEntityValueProvider> All => _inOrder;
 
     /// <summary>Creates a registry pre-populated with the framework's built-in per-player providers.</summary>
     public static PerPlayerEntityValueProviderRegistry CreateDefault()
@@ -78,6 +98,25 @@ public sealed class PerPlayerEntityValueProviderRegistry
         _byName.GetValueOrDefault(name);
 
     /// <summary>Registers a provider under its <see cref="IPerPlayerEntityValueProvider.Name" />.</summary>
-    public void Register(IPerPlayerEntityValueProvider provider) =>
-        _byName[provider.Name] = provider;
+    /// <param name="provider">The provider to register.</param>
+    /// <exception cref="ArgumentException">
+    ///     The name is already registered, case-insensitively. Reported rather than overwritten:
+    ///     see the class summary on why a stolen column is invisible downstream.
+    /// </exception>
+    public void Register(IPerPlayerEntityValueProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        if (_byName.TryGetValue(provider.Name, out IPerPlayerEntityValueProvider? existing))
+        {
+            throw new ArgumentException(
+                $"a per-player provider is already registered as '{existing.Name}' "
+                + $"({existing.GetType().Name}); '{provider.Name}' ({provider.GetType().Name}) would replace it "
+                + "and every rule reading that name would silently read the replacement. Provider names are "
+                + "compared case-insensitively; pick a name of your own.",
+                nameof(provider));
+        }
+
+        _byName.Add(provider.Name, provider);
+        _inOrder.Add(provider);
+    }
 }

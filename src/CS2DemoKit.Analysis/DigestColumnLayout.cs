@@ -31,10 +31,20 @@ internal sealed class DigestColumnLayout
         StringReaders = count > 0 ? new IPawnStringCellReader?[count] : [];
         Words = (count + 63) >> 6;
 
+        HashSet<string> claimed = new(count, StringComparer.OrdinalIgnoreCase);
         for (int p = 0; p < count; p++)
         {
             IPerPlayerEntityValueProvider provider = providers[p];
             PawnCellKind kind = KindOf(provider);
+            if (!claimed.Add(provider.Name))
+            {
+                throw new ArgumentException(
+                    $"two providers in this layout are both named '{provider.Name}' (column {p}). A consumer "
+                    + "resolves a column by name, so the second would be unreachable and every read of that "
+                    + "name would land on the first. Provider names are compared case-insensitively.",
+                    nameof(providers));
+            }
+
             Kinds[p] = kind;
             Names[p] = provider.Name;
             switch (kind)
@@ -97,6 +107,11 @@ internal sealed class DigestColumnLayout
 
     /// <summary>The layout for <paramref name="providers" /> in list order; <see cref="Empty" /> for none.</summary>
     /// <exception cref="NotSupportedException">A provider's value type is outside the four digest kinds.</exception>
+    /// <exception cref="ArgumentException">
+    ///     Two providers claim the same name. A column's identity to a consumer IS its name, so a
+    ///     duplicate makes one of the two columns unaddressable while leaving the column count — and
+    ///     therefore <see cref="IsCompatibleWith" /> — looking perfectly healthy.
+    /// </exception>
     public static DigestColumnLayout For(IReadOnlyList<IPerPlayerEntityValueProvider> providers)
     {
         ArgumentNullException.ThrowIfNull(providers);
@@ -128,12 +143,27 @@ internal sealed class DigestColumnLayout
             return PawnCellKind.String;
         }
 
+        // A third-party provider that declared double, long, uint or an enum compiled and ran
+        // against the object?[] digest of 0.10.0 and reaches this throw from the scanner's
+        // constructor, so the message has to say what the four kinds are AND how to get back into
+        // them — not just that the type is out.
         throw new NotSupportedException(
             $"per-player provider '{provider.Name}' declares value type {type.Name}; the per-pawn digest stores "
-            + "int, bool, float and string columns only");
+            + "int, bool, float and string columns only. Through 0.10.0 the digest held object?[] and accepted any "
+            + "value type. Narrow the declaration at the provider: float for a double, int for a long, uint, short "
+            + "or an enum's underlying value, bool for a flag, string for anything with no numeric meaning. "
+            + "Widening the digest is not the fix — the closed set is what makes the columns unboxed.");
     }
 
     /// <summary>Whether a digest built on <paramref name="other" /> can be folded by a consumer built on this layout.</summary>
+    /// <remarks>
+    ///     Names are compared case-insensitively, which is the canonical comparison for a provider
+    ///     name across this codebase: <c>PerPlayerEntityValueProviderRegistry</c> claims and
+    ///     resolves names that way, and <c>AimVantageScanner.ColumnOf</c> matches them that way. An
+    ///     ordinal comparison here would call two layouts incompatible over a difference that no
+    ///     lookup can see, and a registry cannot produce that difference anyway because it refuses
+    ///     the second spelling.
+    /// </remarks>
     public bool IsCompatibleWith(DigestColumnLayout other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -149,7 +179,8 @@ internal sealed class DigestColumnLayout
 
         for (int p = 0; p < Count; p++)
         {
-            if (Kinds[p] != other.Kinds[p] || !string.Equals(Names[p], other.Names[p], StringComparison.Ordinal))
+            if (Kinds[p] != other.Kinds[p]
+                || !string.Equals(Names[p], other.Names[p], StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }

@@ -51,11 +51,17 @@ public sealed class PawnAimPunchProvider(PawnAngleAxis axis)
     : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>, IPawnStateReader,
         IMultiSchemaFieldProvider, IPawnFloatCellReader
 {
-    // Latched on first successful probe. A worker owns one tracker for its whole chunk, so this
-    // resolves once per worker rather than once per pawn-frame. Not shared across workers: each
-    // gets its own instance through CloneForWorker.
-    private AimPunchLayout _layout = AimPunchLayout.None;
-    private bool _resolved;
+    // Latched per TRACKER, and only once the probe actually found a family. A worker owns one
+    // tracker for its whole chunk, so this still resolves once per worker rather than once per
+    // pawn-frame, and each worker gets its own instance through CloneForWorker. Keying on the
+    // tracker is what the public contract needs: Read takes whatever EntityStateLayer it is handed,
+    // so one registry can be pointed at a second demo, and a layout latched from the first is a
+    // wrong answer about the second rather than a stale one — a provider holding Services against a
+    // demo that networks only the flat family reads null for every slot of it. A None result is
+    // never latched because AimPunchSchema.Resolve asks the tracker for descriptors, and a tracker
+    // that has not decoded a pawn yet has none: early in a parse None means "not yet", not "not
+    // this demo". PawnReadContext.TryPunchBaseAngle keys its own cache the same way.
+    private LatchedLayout? _latched;
 
     /// <summary>The angle component this instance reads.</summary>
     public PawnAngleAxis Axis => axis;
@@ -97,29 +103,18 @@ public sealed class PawnAimPunchProvider(PawnAngleAxis axis)
     {
         ArgumentNullException.ThrowIfNull(tracker);
 
-        if (!_resolved)
-        {
-            _layout = AimPunchSchema.Resolve(tracker);
-            _resolved = true;
-        }
-
-        return AimPunchSchema.Read(pawn, _layout) is { } state ? Select(state.BaseAngle) : null;
+        return AimPunchSchema.Read(pawn, LayoutFor(tracker)) is { } state ? Select(state.BaseAngle) : null;
     }
 
     /// <inheritdoc />
     // The same latch and gate as ReadForPawnState, reading only the base angle (the velocity,
     // tick and fraction Read also fetches were discarded here) and sharing it with the other
-    // component through the context.
+    // component through the context, which re-reads when the layout it is handed changes.
     public bool TryReadFloat(PawnReadContext context, out float value)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (!_resolved)
-        {
-            _layout = AimPunchSchema.Resolve(context.Tracker);
-            _resolved = true;
-        }
 
-        if (context.TryPunchBaseAngle(_layout, out Vector3 angle))
+        if (context.TryPunchBaseAngle(LayoutFor(context.Tracker), out Vector3 angle))
         {
             value = Select(angle);
             return true;
@@ -151,4 +146,26 @@ public sealed class PawnAimPunchProvider(PawnAngleAxis axis)
     public IPerPlayerEntityValueProvider CloneForWorker() => new PawnAimPunchProvider(axis);
 
     private float Select(Vector3 angle) => axis == PawnAngleAxis.Pitch ? angle.X : angle.Y;
+
+    // Re-probes whenever the latch does not answer for THIS tracker. The pair is stored as one
+    // immutable object so a reader can never observe a tracker paired with another tracker's
+    // layout, the same discipline LaneCursor uses for its (shape, slot) pair.
+    private AimPunchLayout LayoutFor(EntityTracker tracker)
+    {
+        if (_latched is { } latched && ReferenceEquals(latched.Tracker, tracker))
+        {
+            return latched.Layout;
+        }
+
+        AimPunchLayout layout = AimPunchSchema.Resolve(tracker);
+        if (layout is not AimPunchLayout.None)
+        {
+            _latched = new LatchedLayout(tracker, layout);
+        }
+
+        return layout;
+    }
+
+    /// <summary>The tracker a layout was resolved against, paired with it so neither can go stale alone.</summary>
+    private sealed record LatchedLayout(EntityTracker Tracker, AimPunchLayout Layout);
 }
