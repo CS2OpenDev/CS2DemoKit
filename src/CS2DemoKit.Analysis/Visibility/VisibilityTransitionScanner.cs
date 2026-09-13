@@ -36,6 +36,13 @@ namespace CS2DemoKit.Analysis.Visibility;
 ///         suppressed one.
 ///     </para>
 ///     <para>
+///         <b>What survives a sample is the caller's to end.</b> Everything carried BETWEEN samples
+///         — the visible set, the on-target record and its arrival stamps, the stride anchor — is
+///         state about a stretch of play the scanner assumes is continuous, and it has no way to
+///         tell that a round ended or that the vantage feed stopped. <see cref="Reset" /> is how a
+///         caller says so; see its remarks for the two places that have to.
+///     </para>
+///     <para>
 ///         <b>Pair state is a bit per (viewer, target).</b> Slots are player slots, which a
 ///         well-formed demo keeps in 0..63 (controller entity index minus one, and controllers
 ///         occupy indices 1..64), so the visible set is one <c>ulong</c> row per viewer and the
@@ -59,6 +66,34 @@ public sealed class VisibilityTransitionScanner
     ///     Half-width of a player used to decide whether the crosshair is ON them, in world units.
     ///     Matches the lateral offset <c>PlayerVantage.BuildAnchors</c> puts its shoulder anchors at,
     ///     so "on target" means the same body this scanner already tests visibility against.
+    ///     <para>
+    ///         <b>Known limit: the acceptance region is a disc, and a player is not.</b> The test is
+    ///         <c>angleToChest &lt;= atan(16 / rangeToChest)</c>, which accepts a cone 16 units wide
+    ///         centred on the CHEST anchor — isotropic, while a player is 32 wide and 72 tall with
+    ///         the head at 64 and the chest at 48. It is therefore tight vertically by construction,
+    ///         and tightest in the most ordinary geometry in the game. Two standing players on the
+    ///         same floor, crosshair level: the eye (feet + 64) sits 16 above the chest (feet + 48),
+    ///         so at horizontal distance D the measured angle is <c>atan(16 / D)</c> while the
+    ///         tolerance is <c>atan(16 / sqrt(D² + 256))</c> — strictly the smaller of the two at
+    ///         every D, because the range to the chest is the hypotenuse of the same triangle the
+    ///         angle was taken from. A level crosshair on a same-elevation standing enemy therefore
+    ///         fails the test at every range, by a hair: 9.0903 degrees against an 8.9780 tolerance
+    ///         at D = 100, and 1.8328 against 1.8319 at D = 500. Against a crouched target it is not
+    ///         a hair — <c>HeightScale</c> pulls the chest to 34.5 while the tolerance stays 16 wide,
+    ///         so at D = 100 the level crosshair measures 16.44 against an 8.72 tolerance.
+    ///     </para>
+    ///     <para>
+    ///         The verdict in that geometry is thus decided by sub-tenth-degree differences, exactly
+    ///         where players hold their crosshair, and a player aiming a little low (chest rather
+    ///         than head) is admitted where one holding head level is not. Correcting it means an
+    ///         ANISOTROPIC acceptance — the chest point's perpendicular offset from the eye ray
+    ///         against a half-width laterally and a half-HEIGHT vertically, or the nearest point on a
+    ///         capsule rather than one anchor — which moves <c>enemy_spotted</c> and
+    ///         <c>ticks_since_on_target</c> and so moves both the committed visibility golden and the
+    ///         frozen reference scanner the parity suite measures against.
+    ///         <c>OnTarget_IsRefusedForALevelCrosshairOnASameFloorEnemy</c> pins the behaviour as it
+    ///         stands so that change is a deliberate one.
+    ///     </para>
     /// </summary>
     public const float OnTargetHalfWidthUnits = 16f;
 
@@ -128,6 +163,41 @@ public sealed class VisibilityTransitionScanner
         (uint)viewerSlot < MaxSlots && (_onTargetViewers & (1UL << viewerSlot)) != 0
             ? _onTargetSince[viewerSlot]
             : -1;
+
+    /// <summary>
+    ///     Drops everything the scanner carries between samples: the visible set, the on-target
+    ///     record and its arrival stamps, and the stride anchor (so the next <c>Sample</c> always
+    ///     judges). Reported values fall back to their no-data answers — nothing visible to anyone,
+    ///     no acquisition — and the next contact of every pair is a fresh rising edge.
+    ///     <para>
+    ///         <b>Call it at a round boundary.</b> Every other per-round anchor these metrics read
+    ///         lives on <c>PlayerContextIndex.PlayerContext</c> and is cleared by
+    ///         <c>ResetRoundState</c>; the visible set and the acquisition stamp are the two that do
+    ///         not, so without this they are the only state in the feature that spans rounds. A pair
+    ///         left visible from the previous round's end suppresses its own first contact of the new
+    ///         one, which is the event this whole path exists to produce, and it does so silently:
+    ///         <c>SpottedEnrichmentEdge</c> then hands <c>spot_index</c> 1 (and
+    ///         <c>is_first_contact</c>) to whichever contact came second.
+    ///     </para>
+    ///     <para>
+    ///         <b>Call it when the vantage feed stops.</b> The re-arm sweep that expires an
+    ///         acquisition runs inside <c>Sample</c>, so a caller that stops sampling freezes the
+    ///         stamps rather than clearing them, and a frozen stamp does not read as missing data:
+    ///         it reads as an acquisition that is still live, and every aimed reaction measured
+    ///         against it comes back as however long the feed has been down. That is not a large
+    ///         number a gate would reject — it is a plausible-looking one, under the sentinel, in a
+    ///         column of milliseconds.
+    ///     </para>
+    /// </summary>
+    public void Reset()
+    {
+        Array.Clear(_visible);
+        Array.Clear(_current);
+        Array.Clear(_onTargetSince);
+        _onTargetViewers = 0;
+        _lastSampledTick = int.MinValue;
+        _spots.Clear();
+    }
 
     /// <summary>Overload without dynamic smoke occluders (equivalent to no active smokes).</summary>
     /// <param name="tick">The absolute server tick being sampled.</param>

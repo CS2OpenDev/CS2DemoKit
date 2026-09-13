@@ -7,6 +7,7 @@ using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Edges;
 using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Nodes;
+using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Visibility;
@@ -41,6 +42,24 @@ public class VisibilityTransitionScannerTests
         AimVantageScanner.PosZProvider
     ];
 
+    /// <summary>
+    ///     The six aim columns as PROVIDERS, in the digest order the scanner-through-the-scanner
+    ///     fixtures below hand to both halves. Separate from <see cref="_columns" /> because those
+    ///     feed <see cref="AimVantageScanner" /> directly by name, while these have to build a real
+    ///     <see cref="DigestColumnLayout" /> for <see cref="EntityChangeScanner" /> to consume.
+    /// </summary>
+    private static readonly IPerPlayerEntityValueProvider[] _aimProviders =
+    [
+        new PawnPositionProvider(PawnPositionAxis.X),
+        new PawnPositionProvider(PawnPositionAxis.Y),
+        new PawnPositionProvider(PawnPositionAxis.Z),
+        new PawnEyeAngleProvider(PawnAngleAxis.Pitch),
+        new PawnEyeAngleProvider(PawnAngleAxis.Yaw),
+        new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnDuckAmount)
+    ];
+
+    private static readonly DigestColumnLayout _aimLayout = DigestColumnLayout.For(_aimProviders);
+
     private static AimVantageScanner Scanner(params (int Slot, int Team)[] teams)
     {
         Dictionary<int, int> byslot = teams.ToDictionary(t => t.Slot, t => t.Team);
@@ -53,6 +72,18 @@ public class VisibilityTransitionScannerTests
 
     /// <summary>A delta row that carries only the X and Y columns, as a walking pawn's later frames do.</summary>
     private static object?[] MoveRow(float x, float y) => [null, null, null, null, x, y, null];
+
+    /// <summary>One full per-pawn row in <see cref="_aimProviders" /> order.</summary>
+    private static object?[] AimRow(float x, float y, float z, float pitch, float yaw, float duck = 0f) =>
+        [x, y, z, pitch, yaw, duck];
+
+    /// <summary>One hand-built digest over the six aim columns, optionally decode-compromised.</summary>
+    private static EntityFrameDigest AimDigest(bool compromised, params (int Slot, object?[] Row)[] rows) =>
+        new()
+        {
+            DecodeCompromised = compromised,
+            PerPawn = PerPawnColumns.FromBoxedRows(_aimLayout, rows)
+        };
 
     // ── AimVantageScanner ────────────────────────────────────────────────────
 
@@ -521,6 +552,181 @@ public class VisibilityTransitionScannerTests
         await Assert.That(transitions.IsAnyEnemyVisibleTo(VisibilityTransitionScanner.MaxSlots)).IsFalse()
             .Because("a slot outside the rows is not visible to anyone, not an exception on a read");
         await Assert.That(transitions.OnTargetSince(-1)).IsEqualTo(-1);
+    }
+
+    /// <summary>
+    ///     Two standing players on the same floor, crosshair dead level: the acquisition test says
+    ///     NO, at every range. This is the geometry named in
+    ///     <see cref="VisibilityTransitionScanner.OnTargetHalfWidthUnits" />'s remarks, and it is
+    ///     pinned here rather than fixed. The cone is centred on the chest and sized to the body's
+    ///     HALF-WIDTH, so with the eye 16 units above the chest the measured angle atan(16 / D) is
+    ///     always a shade larger than the tolerance atan(16 / sqrt(D^2 + 256)) taken at the chest's
+    ///     range.
+    ///     <para>
+    ///         Every other on-target case in this file puts the viewer's feet at z = -16, which
+    ///         parks the eye exactly level with the chest anchor; that is how the limit stayed
+    ///         invisible. The two halves below bracket it: level on a same-floor enemy is refused,
+    ///         and dropping the crosshair one degree onto the chest is accepted. So the verdict in
+    ///         the commonest geometry in the game turns on a tenth of a degree, and a player holding
+    ///         head level reads as not-aimed while one aiming at the chest reads as aimed.
+    ///     </para>
+    ///     <para>
+    ///         Correcting it means an anisotropic acceptance (a half-width laterally, a half-HEIGHT
+    ///         vertically, or a capsule), which moves <c>enemy_spotted</c> and
+    ///         <c>ticks_since_on_target</c> — and so moves both
+    ///         <c>tests/fixtures/sample-de_nuke/visibility-trace.golden.txt</c> and the frozen
+    ///         <c>ReferenceVisibility.ReferenceScanner</c> the parity suite measures the live
+    ///         scanner against. This test is what makes that a deliberate change rather than a
+    ///         golden regenerated to make a suite go green.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task OnTarget_IsRefusedForALevelCrosshairOnASameFloorEnemy()
+    {
+        AimVantageScanner level = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner refused = new(VisibilityEngine.FromTriangles([], 0));
+
+        // Both standing on z = 0, 500 apart, viewer looking straight down +X with no pitch: the
+        // crosshair is level with the target's HEAD, which is where players hold it.
+        level.Observe(0, Row(0f, 0f, 0f, 0f, 0f));
+        level.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        IReadOnlyList<EnemySpottedEvent> spots = refused.Sample(1000, 1000, level.Sample(1000));
+
+        await Assert.That(spots.Count).IsEqualTo(1)
+            .Because("it is still a spot — only the acquisition verdict is at issue");
+        await Assert.That(spots[0].AngleToChestDeg).IsEqualTo(1.8328f).Within(0.001f);
+        await Assert.That(refused.OnTargetSince(0)).IsEqualTo(-1)
+            .Because("the tolerance at the chest's range is 1.8319 degrees, a hair under the 1.8328 "
+                     + "a level crosshair measures — see OnTargetHalfWidthUnits");
+
+        // The same crosshair pitched one degree down, onto the chest rather than the head.
+        AimVantageScanner onChest = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner accepted = new(VisibilityEngine.FromTriangles([], 0));
+        onChest.Observe(0, Row(0f, 0f, 0f, 1f, 0f));
+        onChest.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        accepted.Sample(1000, 1000, onChest.Sample(1000));
+
+        await Assert.That(accepted.OnTargetSince(0)).IsEqualTo(1000)
+            .Because("one degree of pitch is the whole difference between the two verdicts");
+    }
+
+    // ── Round boundaries and feed interruptions ──────────────────────────────
+
+    /// <summary>
+    ///     A pair still in each other's view when a round ends would otherwise carry that visibility
+    ///     into the next round and suppress its own first contact — the one event this whole path
+    ///     exists to produce, dropped silently, with <c>SpottedEnrichmentEdge</c> then numbering
+    ///     whichever contact came second as the round's first.
+    /// </summary>
+    [Test]
+    public async Task Reset_ReArmsTheFirstContactOfTheNextRound()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+
+        vantage.Observe(0, Row(0f, 0f, 0f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        await Assert.That(transitions.Sample(1000, 1000, vantage.Sample(1000)).Count).IsEqualTo(1);
+        await Assert.That(transitions.Sample(1001, 1001, vantage.Sample(1001)).Count).IsEqualTo(0)
+            .Because("the pair is still visible, and a hold is not an edge");
+
+        transitions.Reset();
+
+        await Assert.That(transitions.Sample(1002, 1002, vantage.Sample(1002)).Count).IsEqualTo(1)
+            .Because("first contact of a round is a first contact even for a pair that was still "
+                     + "looking at each other when the last one ended");
+    }
+
+    /// <summary>
+    ///     The acquisition stamp outlives everything else, because the re-arm sweep that expires it
+    ///     runs inside <c>Sample</c>: stop sampling and it freezes rather than clearing, and a
+    ///     frozen stamp does not read as missing data. It reads as an acquisition still in progress,
+    ///     so an aimed reaction measured against it comes back as however long the feed has been
+    ///     down — a plausible-looking number, under the sentinel, in a column of milliseconds.
+    /// </summary>
+    [Test]
+    public async Task Reset_DropsTheAcquisitionAnchorAndTheVisibleLevel()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+
+        vantage.Observe(0, Row(0f, 0f, -16f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        transitions.Sample(1000, 1000, vantage.Sample(1000));
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+        await Assert.That(transitions.IsAnyEnemyVisibleTo(0)).IsTrue();
+
+        transitions.Reset();
+
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(-1);
+        await Assert.That(transitions.IsAnyEnemyVisibleTo(0)).IsFalse();
+    }
+
+    /// <summary>
+    ///     Attached to the index, the scanner ends its round on the same edge every latched
+    ///     per-player anchor does, so "first contact of the round" means one thing to the scanner
+    ///     that emits the contact and to the enrichment that numbers it.
+    /// </summary>
+    [Test]
+    public async Task RoundStateReset_EndsTheScannersRound_WhenItIsAttachedToTheIndex()
+    {
+        AimVantageScanner vantage = Scanner((0, 2), (1, 3));
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+        PlayerContextIndex index = new() { VisibilityTransitions = transitions };
+        index.Register(0, new PlayerContextIndex.PlayerContext(0, 2));
+
+        vantage.Observe(0, Row(0f, 0f, -16f, 0f, 0f));
+        vantage.Observe(1, Row(500f, 0f, 0f, 0f, 0f));
+        await Assert.That(transitions.Sample(1000, 1000, vantage.Sample(1000)).Count).IsEqualTo(1);
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+
+        index.ResetRoundState();
+
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(-1);
+        await Assert.That(transitions.Sample(1001, 1001, vantage.Sample(1001)).Count).IsEqualTo(1);
+    }
+
+    /// <summary>
+    ///     End to end through <see cref="EntityChangeScanner" />: a compromised digest closes the
+    ///     vantage feed, and the transition scanner is RESET rather than merely skipped.
+    ///     <para>
+    ///         Skipping alone is what made this worth a test. The freeze is sticky, so from the
+    ///         first bad digest the scanner is never sampled again and its state — the visible set,
+    ///         the acquisition stamps — stands frozen for the rest of the demo. A shot ten thousand
+    ///         ticks later then reads the stamp as live and reports a 156-second aimed reaction as a
+    ///         measurement, comfortably under every sentinel a gate could catch it with.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task CompromisedDecode_ResetsTheTransitionScanner_RatherThanFreezingIt()
+    {
+        VisibilityTransitionScanner transitions = new(VisibilityEngine.FromTriangles([], 0));
+        AimVantageScanner vantage = new(
+            _aimProviders.Select(provider => provider.Name).ToList(), slot => slot == 0 ? 2 : 3);
+        EntityChangeScanner entities = new(
+            new EntityStateLayer([]),
+            providers: [],
+            perPlayerProviders: _aimProviders,
+            emitMolotovThrows: false,
+            vantageScanner: vantage,
+            transitionScanner: transitions);
+
+        // Frame 0 puts slot 0's crosshair on slot 1's chest; frame 1's decode is compromised.
+        entities.SetPrecomputedDigests(
+        [
+            AimDigest(false, (0, AimRow(0f, 0f, -16f, 0f, 0f)), (1, AimRow(500f, 0f, 0f, 0f, 0f))),
+            AimDigest(true)
+        ]);
+
+        entities.AdvanceAndPollAt(0, 1000);
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(1000);
+        await Assert.That(transitions.IsAnyEnemyVisibleTo(0)).IsTrue();
+
+        entities.AdvanceAndPollAt(1, 1001);
+
+        await Assert.That(transitions.OnTargetSince(0)).IsEqualTo(-1)
+            .Because("a hole in the feed is missing data, not a held crosshair");
+        await Assert.That(transitions.IsAnyEnemyVisibleTo(0)).IsFalse();
     }
 
     // ── Catalog surface ──────────────────────────────────────────────────────

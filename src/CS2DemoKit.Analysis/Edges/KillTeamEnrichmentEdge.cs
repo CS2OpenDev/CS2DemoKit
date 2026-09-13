@@ -87,17 +87,29 @@ public sealed class KillTeamEnrichmentEdge(
 
         // Ticks from the killer's last enemy contact to this kill, for time-to-kill.
         //
-        // currentTick, the same instant the trade window and RecordDeath below use. There is no
-        // clock to convert: a parsed event's GameTick IS the frame clock (ServerTick minus the
-        // demo's ServerStartTick), which is the clock LastSpotTick is latched in. The absolute
-        // GameEvent.ServerTick is the one that would be wrong here, and wrong silently: it counts
-        // from the server's boot, so the subtraction returns the start-tick offset as though it
-        // were an interval.
+        // The FRAME HEADER tick, not this event's own GameTick. Both are the frame clock, but they
+        // are not the same INSTANT: the server stamps an event during its simulation and the frame
+        // carrying it can be the next one (measured on the bundled sample, EnemySpottedEvent's clock
+        // note: 812 of 3,006 parsed events sit one tick below their frame's header, player_death 21
+        // of 22). LastSpotTick is latched from a SYNTHESIZED enemy_spotted, which has no simulation
+        // stamp and lands exactly on its frame, so the frame header is the instant it is comparable
+        // against. Differencing the event tick instead reads every interval one tick (15.6 ms at
+        // 64-tick) short, and a killer who spots and kills inside the same frame lands at -1, fails
+        // the guard and is dropped to the sentinel — the fastest time-to-kill in the demo, removed
+        // from the population rather than recorded as 0. AimShotContextEdge.EmitSpotPairing measures
+        // enrich.shot.ticks_since_spot off the same anchor on the same clock, so the shot-anchored
+        // and kill-anchored intervals stay comparable.
+        //
+        // The trade window, the flash window and RecordDeath keep currentTick: their anchors
+        // (LastDeathTick, written here; BlindedAtTick, written by BlindEnrichmentEdge from the
+        // blind event's own GameTick) are parsed-event stamps, so those three are already
+        // self-consistent and moving them would introduce the mismatch this line removes.
+        int frameTick = context.Frame.ServerTick;
         killTicksSinceSpot.SetValue(
             playerContext.TryGet(death.Attacker, out PlayerContextIndex.PlayerContext? killer)
             && killer!.LastSpotTick >= 0
-            && currentTick >= killer.LastSpotTick
-                ? currentTick - killer.LastSpotTick
+            && frameTick >= killer.LastSpotTick
+                ? frameTick - killer.LastSpotTick
                 : AimShotContextEdge.NoSpotSentinel);
 
         // Record death and mark dead

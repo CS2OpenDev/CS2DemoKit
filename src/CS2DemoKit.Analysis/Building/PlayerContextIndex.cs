@@ -1,6 +1,7 @@
 #region
 
 using CS2DemoKit.Analysis.Edges;
+using CS2DemoKit.Analysis.Visibility;
 
 #endregion
 
@@ -37,6 +38,23 @@ public sealed class PlayerContextIndex
 
     /// <summary>Current round number (1-based), set by HealthResetEdge on round_freeze_end.</summary>
     public int RoundNumber { get; set; }
+
+    /// <summary>
+    ///     The one per-round anchor the aim metrics read that does NOT live on a
+    ///     <see cref="PlayerContext" />: <see cref="VisibilityTransitionScanner" />'s pair state and
+    ///     crosshair-arrival stamps. Everything else these metrics latch — <c>LastSpotTick</c>,
+    ///     <c>SpotCount</c>, the on-target answer latches — is cleared by
+    ///     <see cref="ResetRoundState" />; the scanner sits outside the index, so without somewhere
+    ///     to attach it, it is the only state in the feature that spans rounds. A pair still visible
+    ///     when the round ends suppresses its own first contact of the next one, and
+    ///     <see cref="Edges.SpottedEnrichmentEdge" /> then numbers whichever contact came second as
+    ///     the round's first.
+    ///     <para>
+    ///         Optional: null leaves the scanner spanning rounds, which is what it did before there
+    ///         was anywhere to attach it, and every other consumer of the index is unaffected.
+    ///     </para>
+    /// </summary>
+    public VisibilityTransitionScanner? VisibilityTransitions { get; set; }
 
     /// <summary>Clears any recorded flash-blind state for the given player slot.</summary>
     public void ClearBlind(int slot)
@@ -267,6 +285,7 @@ public sealed class PlayerContextIndex
         BombPlanted = false;
         BombExploded = false;
         BombDefused = false;
+        VisibilityTransitions?.Reset();
 
         foreach (PlayerContext ctx in _slots.Values)
         {
@@ -490,7 +509,7 @@ public sealed class PlayerContextIndex
         ///     <see cref="SpotAnsweredByShot" />: <c>weapon_fire</c> always precedes the
         ///     <c>bullet_damage</c> it produced, so one shared latch is consumed by the fired arm
         ///     before the landed arm sees the shot at all, and the landed arm's copy of
-        ///     <c>is_first_after_on_target</c> is then false on every shot in the demo.
+        ///     <c>first_after_on_target</c> is then false on every shot in the demo.
         /// </summary>
         public int AnsweredOnTargetSinceLanded { get; set; } = -1;
 
