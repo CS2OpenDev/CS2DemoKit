@@ -6,7 +6,7 @@ using CS2DemoKit.Bench;
 //   compare   interleaved A/B between two published builds, both arms into one CSV
 //   measure   one measured load, one CSV row on stdout (what the other two spawn)
 //   rays      per-ray occlusion throughput and work on one bake, old tree and new side by side
-//   build     build cost, memory and a structural digest of the eight-wide tree per bake
+//   build     build cost and memory for both trees per bake, with the eight-wide tree's digest
 //
 // measure is separate because a fresh process per measurement is the property the numbers rest on.
 
@@ -107,16 +107,25 @@ static int Help()
           per-ray occlusion throughput on one bake, the binary tree and every tier of the
           eight-wide tree on the same seeded corpus, interleaved for R rounds and reported as
           medians, with nodes, box tests and triangles per ray so a change in speed can be
-          traced to a change in work (default: 1M rays, one thread, 3 rounds)
+          traced to a change in work (default: 1M rays, one thread, 3 rounds). Build cost is
+          reported first, on the same interleave: the binary builder is serial, so the
+          eight-wide builder is always measured at one thread (that pair, and only that pair,
+          is the topology) and again on T threads when T > 1 (that pair is the parallel build)
 
         build <collision.tris> [...] [--rounds R] [--threads T] [--live]
-          builds the eight-wide tree R times per bake (default 5; round 0 is the cold build) on
-          T threads (default: one per processor; 1 is the serial build) and
-          prints per round the wall-clock, bytes allocated, the tree's retained size and the
-          heap's sampled high-water mark (garbage included), plus a digest of the tree's
+          builds both trees R times per bake (default 5; round 0 is the cold build), the arms
+          alternating within each round, the eight-wide one on T threads (default: one per
+          processor; 1 is the serial build, and the only setting at which the two wall-clocks
+          compare like for like, the binary builder being serial by construction). Prints per
+          arm and round the wall-clock, bytes allocated, the tree's retained size and the heap's
+          sampled high-water mark (garbage included), plus a digest of the eight-wide tree's
           structure: two builders with the same digest produce the same tree, so every ray
-          answers identically. --live forces a collection before every sample so the peak is
-          the builder's live set instead; it is slow, so no wall-clock is printed
+          answers identically. --live forces a compacting collection before every sample so the
+          peak is the builder's live set instead; it is slow, so no wall-clock is printed, and
+          it perturbs a parallel build, so take it at --threads 1. Every live-set figure, the
+          baseline and retained size included, is read after a compacting collection: the
+          builders work in large objects, a gen2 leaves the large object heap uncompacted by
+          default, and the two builders leave different slack behind
 
         Rows are written as they complete, so a long run can be read while it runs.
         Progress goes to stderr.

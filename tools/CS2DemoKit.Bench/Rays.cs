@@ -42,6 +42,14 @@ namespace CS2DemoKit.Bench;
 ///         per-ray work counts, which do not drift.
 ///     </para>
 ///     <para>
+///         The build table above the ray table is measured the same way, and <c>--threads</c>
+///         reaches it: the eight-wide builder is always measured at one thread, because the binary
+///         builder is serial by construction and only that pair is a topology comparison, and again
+///         at <c>--threads</c> when the flag asks for more. The ratio of the serial binary row to a
+///         parallel wide row is the topology change and the parallel build multiplied together, so
+///         it is printed with that said and never quoted as either one.
+///     </para>
+///     <para>
 ///         The verdict lines at the end are a smoke check, not the identity proof: the scalar arm
 ///         is compared to the binary tree (their differences are adjudicated per ray by the test
 ///         suite's differential harness) and each vector tier to the scalar arm on the occlusion
@@ -108,23 +116,8 @@ internal static class Rays
         CollisionTris.Data bake = CollisionTris.Load(path);
         Console.WriteLine($"bake: {path} ({bake.TriangleCount} triangles)");
 
-        // Each tree is built twice: the first build is what an engine load pays (it includes the
-        // builder's own JIT tier-up), the second is the builder's steady-state cost.
-        Stopwatch sw = Stopwatch.StartNew();
-        BinaryTriangleBvh binary = BinaryTriangleBvh.Build(bake.Vertices, bake.TriangleCount);
-        double binaryColdMs = sw.Elapsed.TotalMilliseconds;
-        sw.Restart();
-        TriangleBvh wide = TriangleBvh.Build(bake.Vertices, bake.TriangleCount);
-        double wideColdMs = sw.Elapsed.TotalMilliseconds;
-        sw.Restart();
-        _ = BinaryTriangleBvh.Build(bake.Vertices, bake.TriangleCount);
-        double binaryWarmMs = sw.Elapsed.TotalMilliseconds;
-        sw.Restart();
-        _ = TriangleBvh.Build(bake.Vertices, bake.TriangleCount);
-        double wideWarmMs = sw.Elapsed.TotalMilliseconds;
-        Console.WriteLine($"build: binary {binaryColdMs:F0} ms cold, {binaryWarmMs:F0} ms warm; "
-                          + $"wide {wideColdMs:F0} ms cold, {wideWarmMs:F0} ms warm "
-                          + $"({wide.NodeCount} nodes, depth {wide.Depth}, stack {wide.StackCapacity})");
+        MeasureBuilds(bake, threads, rounds, out BinaryTriangleBvh binary, out TriangleBvh wide);
+        Console.WriteLine($"tree: {wide.NodeCount} nodes, depth {wide.Depth}, stack {wide.StackCapacity}; binary {binary.NodeCount} nodes");
 
         Corpus corpus = Corpus.Generate(rays, seed, wide.Min, wide.Max, minLen, maxLen);
         Console.WriteLine($"corpus: {rays} rays, seed {seed}, length {minLen:F0}..{maxLen:F0}, {rounds} rounds, default tier {TriangleBvh.DefaultTier}");
@@ -217,6 +210,105 @@ internal static class Rays
 
     private delegate void CountPass(int lo, int hi, out long nodes, out long triangles, out long shortCircuits);
 
+    /// <summary>
+    ///     Build cost for both topologies, measured the way the ray arms are: every arm built once
+    ///     cold, then all arms run interleaved for <paramref name="rounds" /> rounds with the order
+    ///     flipped each round, and reported as the median of the warm rounds. A build that allocates
+    ///     hundreds of megabytes is not measured by one wall-clock sample, and a ratio of two such
+    ///     samples is worth less still.
+    ///     <para>
+    ///         The binary builder is serial by construction and takes no thread count, so the
+    ///         eight-wide builder is measured at one thread as well: that pair is the topology
+    ///         change at equal parallelism, and it is the only pair whose ratio is a topology
+    ///         figure. When <c>--threads</c> asks for more, the eight-wide builder is measured again
+    ///         at that degree, and the ratio between the two eight-wide rows is the parallel build
+    ///         on top of the topology. Quoting the serial binary row against the parallel wide row
+    ///         charges one change with the other's win.
+    ///     </para>
+    /// </summary>
+    private static void MeasureBuilds(CollisionTris.Data bake, int threads, int rounds, out BinaryTriangleBvh binary, out TriangleBvh wide)
+    {
+        // Slot 0 holds the binary tree, slot 1 the eight-wide one. Only the newest of each is kept
+        // alive, so a round never holds two trees of the same topology at once, and the ray arms
+        // below get the last one built.
+        object?[] kept = new object?[2];
+        List<BuildArm> arms =
+        [
+            new BuildArm("binary", 1, 0, () => BinaryTriangleBvh.Build(bake.Vertices, bake.TriangleCount)),
+            new BuildArm("wide", 1, 1, () => TriangleBvh.Build(bake.Vertices, bake.TriangleCount, 1))
+        ];
+        if (threads > 1)
+        {
+            arms.Add(new BuildArm("wide", threads, 1, () => TriangleBvh.Build(bake.Vertices, bake.TriangleCount, threads)));
+        }
+
+        double Time(BuildArm arm)
+        {
+            // Release this arm's previous tree and settle the heap before the clock starts: the
+            // sample is otherwise taken on a heap still holding hundreds of megabytes from the
+            // last arm, and a collection owed to that can land inside the timed window.
+            kept[arm.Slot] = null;
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Stopwatch sw = Stopwatch.StartNew();
+            object tree = arm.Build();
+            double ms = sw.Elapsed.TotalMilliseconds;
+            kept[arm.Slot] = tree;
+            return ms;
+        }
+
+        // The first build of an arm is the cold one an engine load pays, the builder's own JIT
+        // tier-up included. It is reported and then left out of the median, which is steady state.
+        foreach (BuildArm arm in arms)
+        {
+            arm.Warm = new double[rounds];
+            arm.ColdMs = Time(arm);
+        }
+
+        for (int round = 0; round < rounds; round++)
+        {
+            for (int step = 0; step < arms.Count; step++)
+            {
+                int k = round % 2 == 0 ? step : arms.Count - 1 - step;
+                arms[k].Warm[round] = Time(arms[k]);
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"{"build",-14} {"threads",7} {"cold ms",9} {"warm ms",9}  rounds (ms)");
+        foreach (BuildArm arm in arms)
+        {
+            Console.WriteLine($"{arm.Label,-14} {arm.Threads,7} {arm.ColdMs,9:F1} {Median(arm.Warm),9:F1}  "
+                              + string.Join(" ", arm.Warm.Select(m => $"{m:F1}")));
+        }
+
+        double binaryMs = Median(arms[0].Warm);
+        double wideSerialMs = Median(arms[1].Warm);
+        Console.WriteLine($"build: topology, both serial: binary {binaryMs:F1} ms -> wide {wideSerialMs:F1} ms ({binaryMs / wideSerialMs:F2}x)");
+        if (arms.Count > 2)
+        {
+            double wideParallelMs = Median(arms[2].Warm);
+            Console.WriteLine($"build: parallelism, wide only: 1 thread {wideSerialMs:F1} ms -> {arms[2].Threads} threads {wideParallelMs:F1} ms "
+                              + $"({wideSerialMs / wideParallelMs:F2}x)");
+            Console.WriteLine($"build: the two together, which is not a topology figure: binary serial {binaryMs:F1} ms -> "
+                              + $"wide on {arms[2].Threads} threads {wideParallelMs:F1} ms ({binaryMs / wideParallelMs:F2}x)");
+        }
+
+        Console.WriteLine();
+        binary = (BinaryTriangleBvh)kept[0]!;
+        wide = (TriangleBvh)kept[1]!;
+    }
+
+    private static double Median(double[] values)
+    {
+        double[] sorted = (double[])values.Clone();
+        Array.Sort(sorted);
+        return sorted.Length % 2 == 1
+            ? sorted[sorted.Length / 2]
+            : 0.5 * (sorted[(sorted.Length / 2) - 1] + sorted[sorted.Length / 2]);
+    }
+
     private static int Disagreements(int[] reference, int[] other)
     {
         int disagree = 0;
@@ -254,9 +346,7 @@ internal static class Rays
         {
             Arm arm = arms[k];
             int rays = arm.Count;
-            double[] sorted = (double[])seconds[k].Clone();
-            Array.Sort(sorted);
-            double median = sorted.Length % 2 == 1 ? sorted[sorted.Length / 2] : 0.5 * (sorted[(sorted.Length / 2) - 1] + sorted[sorted.Length / 2]);
+            double median = Median(seconds[k]);
             string perRound = string.Join(" ", seconds[k].Select(s => $"{s * 1e9 / rays:F0}"));
             string hintedShare = k == 0 ? "-" : $"{arm.ShortCircuits / (double)rays:P1}";
             Console.WriteLine(
@@ -401,6 +491,20 @@ internal static class Rays
 
         nodes = counters.Nodes;
         triangles = counters.Triangles;
+    }
+
+    /// <summary>
+    ///     One build arm: a label, the parallelism it was given, the slot its tree is kept in, and
+    ///     the build itself.
+    /// </summary>
+    private sealed class BuildArm(string label, int threads, int slot, Func<object> build)
+    {
+        public string Label { get; } = label;
+        public int Threads { get; } = threads;
+        public int Slot { get; } = slot;
+        public Func<object> Build { get; } = build;
+        public double ColdMs { get; set; }
+        public double[] Warm { get; set; } = [];
     }
 
     /// <summary>One arm: a label, its box tests per node, its ray count, the timed pass and the untimed counting pass.</summary>

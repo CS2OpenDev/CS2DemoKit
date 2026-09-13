@@ -8,10 +8,30 @@ namespace CS2DemoKit.Bench;
 
 /// <summary>
 ///     The binary median-split tree CS2DemoKit.Analysis shipped before the eight-wide rebuild,
-///     copied here so the rays verb can report the old tree and the eight-wide one side by side on
-///     the same corpus. The traversal is that tree's (NaN-ignoring slab window, leaf gather through
-///     an order array) with one addition: <see cref="AnyHitCounted" /> tallies nodes popped and
-///     triangles tested.
+///     copied here so the rays verb can report the old topology and the eight-wide one side by side
+///     on the same corpus. The topology, the median split and the leaf gather through an order array
+///     are that tree's. Three things are not, and all three arrived with the rebuild:
+///     <list type="bullet">
+///         <item><see cref="AnyHitCounted" />, which tallies nodes popped and triangles tested.</item>
+///         <item>
+///             <c>_leafOf</c> and the hinted
+///             <see cref="AnyHit(Vector3, Vector3, float, float, ref int)" /> overload, which tests
+///             the last occluder's leaf before entering the tree and short-circuits on a hit.
+///         </item>
+///         <item>
+///             <c>MaxNoNaN</c>/<c>MinNoNaN</c> in the slab window. The old tree used
+///             <c>Math.Max</c>/<c>Math.Min</c>, which propagate the NaN an on-plane ray produces and
+///             report clear through solid geometry.
+///         </item>
+///     </list>
+///     So a rays row is old topology against new topology with the hint and the NaN fix held
+///     constant on both sides. That isolates the topology change, which is what the row is for, and
+///     it is not an end-to-end before-and-after of the shipped engine: the old engine had neither
+///     addition, so its real cost per ray was higher than this arm's.
+///     Nothing pins this copy against <c>TriangleBvh</c>, so a later change to the shipped
+///     traversal will not fail a test here and the two can drift apart unnoticed. That is the point
+///     of a frozen arm rather than a defect in it, but it does mean a row describes this file and
+///     not whatever the library shipped last.
 ///     Not shipped; a measurement arm only.
 /// </summary>
 internal sealed class BinaryTriangleBvh
@@ -34,6 +54,10 @@ internal sealed class BinaryTriangleBvh
     }
 
     public int TriangleCount { get; }
+
+    /// <summary>Nodes in the tree, so the two topologies' sizes can be read off one build row.</summary>
+    public int NodeCount => _nodes.Length;
+
     public Vector3 Min => _nodes.Length > 0 ? _nodes[0].Min : Vector3.Zero;
     public Vector3 Max => _nodes.Length > 0 ? _nodes[0].Max : Vector3.Zero;
 

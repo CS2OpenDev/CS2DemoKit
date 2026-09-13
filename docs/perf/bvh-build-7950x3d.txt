@@ -1,0 +1,307 @@
+BVH build and memory, de_nuke / de_dust2 / de_overpass / de_ancient
+Raw console output behind the "Eight-wide BVH build" section of baseline.md.
+
+machine   AMD Ryzen 9 7950X3D, 16 cores / 32 logical, 31 GB, Windows 11
+runtime   .NET 10, Release, workstation GC, Environment.ProcessorCount = 32
+tree      CS2DemoKit working tree at 936b83e (branch feature/aim-rating-providers)
+bakes     $ASSETS = C:/dev/DemoViewer.NET/assets
+prefix    $BENCH = dotnet run --project tools/CS2DemoKit.Bench -c Release --
+
+================================================================
+$ $BENCH rays $ASSETS/de_nuke/collision.tris --rays 100000 --rounds 9 --threads 32
+================================================================
+bake: C:/dev/DemoViewer.NET/assets/de_nuke/collision.tris (191628 triangles)
+
+build          threads   cold ms   warm ms  rounds (ms)
+binary               1     238.6     143.5  143.5 143.7 144.6 147.3 142.1 142.4 143.0 146.1 142.8
+wide                 1     139.4     121.9  121.9 121.9 125.1 125.1 120.5 122.4 121.6 121.8 147.5
+wide                32      32.9      27.0  27.0 25.5 27.4 28.6 27.1 26.7 25.5 25.7 29.5
+build: topology, both serial: binary 143.5 ms -> wide 121.9 ms (1.18x)
+build: parallelism, wide only: 1 thread 121.9 ms -> 32 threads 27.0 ms (4.52x)
+build: the two together, which is not a topology figure: binary serial 143.5 ms -> wide on 32 threads 27.0 ms (5.32x)
+
+tree: 23803 nodes, depth 11, stack 76; binary 131071 nodes
+corpus: 100000 rays, seed 20260910, length 64..2048, 9 rounds, default tier Vector256
+hinted arms: 26848 occluded rays, each hinted with the triangle the scalar tier found
+
+tree                   threads       rays/s   ns/ray  occluded  nodes/ray  boxes/ray  tris/ray  hinted  rounds (ns/ray)
+binary                       1       914724     1093     26.8%      44.24      44.24      2.50       -  1093 1036 1097 1223 1121 1144 1012 1034 1045
+wide/Scalar                  1      2204124      454     26.8%       2.92      23.34      0.66    0.0%  472 494 454 436 477 437 463 448 431
+wide/Vector128               1      6636537      151     26.8%       2.92      23.34      0.66    0.0%  178 179 154 152 151 131 133 126 135
+wide/Vector256               1      7737423      129     26.8%       2.92      23.34      0.66    0.0%  166 163 129 138 140 117 107 104 110
+wide/Scalar/hint             1      9695219      103    100.0%       0.00       0.00      0.00  100.0%  183 164 105 79 103 93 88 65 109
+wide/Vector128/hint          1     12685093       79    100.0%       0.00       0.00      0.00  100.0%  156 146 77 72 81 79 66 54 88
+wide/Vector256/hint          1     12387192       81    100.0%       0.00       0.00      0.00  100.0%  150 146 81 77 75 85 58 57 81
+binary                      32     15149449       66     26.8%      44.24      44.24      2.50       -  74 66 64 66 65 66 68 67 65
+wide/Scalar                 32     33227007       30     26.8%       2.92      23.34      0.66    0.0%  30 30 30 29 31 28 29 30 30
+wide/Vector128              32     93283582       11     26.8%       2.92      23.34      0.66    0.0%  11 11 12 10 11 11 10 10 11
+wide/Vector256              32     89621796       11     26.8%       2.92      23.34      0.66    0.0%  11 9 12 10 12 10 12 10 15
+wide/Scalar/hint            32     73819082       14    100.0%       0.00       0.00      0.00  100.0%  26 14 17 14 13 20 13 11 13
+wide/Vector128/hint         32     76686661       13    100.0%       0.00       0.00      0.00  100.0%  21 13 15 12 12 14 13 11 11
+wide/Vector256/hint         32     81431604       12    100.0%       0.00       0.00      0.00  100.0%  17 15 13 12 13 12 12 11 10
+
+verdicts: wide/Scalar differs from binary on 0 of 100000 rays (adjudicated per ray by the test suite's differential harness, not here)
+verdicts: wide/Vector128 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+verdicts: wide/Vector256 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+hinted: wide/Scalar/hint short-circuited 26848 of 26848 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector128/hint short-circuited 26848 of 26848 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector256/hint short-circuited 26848 of 26848 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+
+================================================================
+$ $BENCH rays $ASSETS/de_dust2/collision.tris --rays 100000 --rounds 9 --threads 32
+================================================================
+bake: C:/dev/DemoViewer.NET/assets/de_dust2/collision.tris (435649 triangles)
+
+build          threads   cold ms   warm ms  rounds (ms)
+binary               1     515.2     391.9  377.3 376.9 378.1 391.9 388.0 394.9 416.9 470.0 453.1
+wide                 1     325.0     337.2  308.5 304.3 320.2 337.2 309.5 352.9 419.6 456.5 385.3
+wide                32      56.1      50.7  50.0 45.5 48.3 50.7 48.9 60.2 57.5 60.7 52.2
+build: topology, both serial: binary 391.9 ms -> wide 337.2 ms (1.16x)
+build: parallelism, wide only: 1 thread 337.2 ms -> 32 threads 50.7 ms (6.64x)
+build: the two together, which is not a topology figure: binary serial 391.9 ms -> wide on 32 threads 50.7 ms (7.72x)
+
+tree: 60052 nodes, depth 13, stack 89; binary 262143 nodes
+corpus: 100000 rays, seed 20260910, length 64..2048, 9 rounds, default tier Vector256
+hinted arms: 50681 occluded rays, each hinted with the triangle the scalar tier found
+
+tree                   threads       rays/s   ns/ray  occluded  nodes/ray  boxes/ray  tris/ray  hinted  rounds (ns/ray)
+binary                       1       498586     2006     50.7%      77.23      77.23      7.75       -  2041 1911 1939 2035 2006 2554 2829 1874 1943
+wide/Scalar                  1      1282936      779     50.7%       4.63      37.02      1.01    0.0%  852 736 732 727 792 779 1004 800 779
+wide/Vector128               1      4113297      243     50.7%       4.63      37.02      1.01    0.0%  332 246 223 221 230 246 455 243 189
+wide/Vector256               1      4526566      221     50.7%       4.63      37.02      1.01    0.0%  312 262 174 212 220 221 294 246 188
+wide/Scalar/hint             1      9093535      110    100.0%       0.00       0.00      0.00  100.0%  188 187 90 106 110 85 129 119 108
+wide/Vector128/hint          1     10754817       93    100.0%       0.00       0.00      0.00  100.0%  177 175 74 76 90 88 115 110 93
+wide/Vector256/hint          1      9889362      101    100.0%       0.00       0.00      0.00  100.0%  162 182 75 75 100 97 120 122 101
+binary                      32      8531404      117     50.7%      77.23      77.23      7.75       -  117 115 115 118 97 117 120 118 117
+wide/Scalar                 32     19949329       50     50.7%       4.63      37.02      1.01    0.0%  49 48 51 47 50 51 52 49 53
+wide/Vector128              32     62554735       16     50.7%       4.63      37.02      1.01    0.0%  16 15 17 15 16 16 18 16 18
+wide/Vector256              32     67037608       15     50.7%       4.63      37.02      1.01    0.0%  15 16 15 15 15 14 14 15 16
+wide/Scalar/hint            32     90404923       11    100.0%       0.00       0.00      0.00  100.0%  16 11 14 10 24 8 12 9 11
+wide/Vector128/hint         32     93163603       11    100.0%       0.00       0.00      0.00  100.0%  14 11 13 11 10 11 9 9 12
+wide/Vector256/hint         32     96664124       10    100.0%       0.00       0.00      0.00  100.0%  12 10 9 9 12 10 11 9 13
+
+verdicts: wide/Scalar differs from binary on 0 of 100000 rays (adjudicated per ray by the test suite's differential harness, not here)
+verdicts: wide/Vector128 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+verdicts: wide/Vector256 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+hinted: wide/Scalar/hint short-circuited 50681 of 50681 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector128/hint short-circuited 50681 of 50681 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector256/hint short-circuited 50681 of 50681 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+
+================================================================
+$ $BENCH rays $ASSETS/de_overpass/collision.tris --rays 100000 --rounds 9 --threads 32
+================================================================
+bake: C:/dev/DemoViewer.NET/assets/de_overpass/collision.tris (713341 triangles)
+
+build          threads   cold ms   warm ms  rounds (ms)
+binary               1     865.1     784.4  669.7 771.2 784.4 712.6 800.5 792.7 797.2 704.6 795.6
+wide                 1     541.7     708.2  519.1 702.9 726.2 693.8 762.7 718.2 717.3 708.2 675.6
+wide                32      87.6      88.9  76.6 78.4 88.9 102.3 88.9 89.0 91.6 91.2 81.9
+build: topology, both serial: binary 784.4 ms -> wide 708.2 ms (1.11x)
+build: parallelism, wide only: 1 thread 708.2 ms -> 32 threads 88.9 ms (7.97x)
+build: the two together, which is not a topology figure: binary serial 784.4 ms -> wide on 32 threads 88.9 ms (8.82x)
+
+tree: 98086 nodes, depth 16, stack 108; binary 524287 nodes
+corpus: 100000 rays, seed 20260910, length 64..2048, 9 rounds, default tier Vector256
+hinted arms: 44050 occluded rays, each hinted with the triangle the scalar tier found
+
+tree                   threads       rays/s   ns/ray  occluded  nodes/ray  boxes/ray  tris/ray  hinted  rounds (ns/ray)
+binary                       1       648140     1543     44.1%      72.91      72.91      6.47       -  1384 1596 1555 1543 1480 1500 1532 1567 1572
+wide/Scalar                  1      1827018      547     44.1%       3.44      27.56      1.57    0.0%  613 560 563 545 547 511 557 536 529
+wide/Vector128               1      4900015      204     44.1%       3.44      27.56      1.57    0.0%  256 254 207 199 207 201 201 184 204
+wide/Vector256               1      5399043      185     44.1%       3.44      27.56      1.57    0.0%  257 295 186 182 143 186 167 185 183
+wide/Scalar/hint             1     11039824       91    100.0%       0.00       0.00      0.00  100.0%  174 170 99 89 84 88 99 91 78
+wide/Vector128/hint          1     12563459       80    100.0%       0.00       0.00      0.00  100.0%  161 158 82 80 77 80 81 78 74
+wide/Vector256/hint          1     12058252       83    100.0%       0.00       0.00      0.00  100.0%  159 147 83 81 84 83 81 83 83
+binary                      32      9995302      100     44.1%      72.91      72.91      6.47       -  102 91 99 116 109 102 98 99 100
+wide/Scalar                 32     26748696       37     44.1%       3.44      27.56      1.57    0.0%  37 33 36 36 38 43 38 35 37
+wide/Vector128              32     66983723       15     44.1%       3.44      27.56      1.57    0.0%  18 14 14 14 15 18 15 18 16
+wide/Vector256              32     72337963       14     44.1%       3.44      27.56      1.57    0.0%  15 13 14 15 15 14 12 12 14
+wide/Scalar/hint            32     88489353       11    100.0%       0.00       0.00      0.00  100.0%  18 11 12 11 11 11 15 10 10
+wide/Vector128/hint         32     95948595       10    100.0%       0.00       0.00      0.00  100.0%  14 11 10 10 14 11 10 10 10
+wide/Vector256/hint         32     98833296       10    100.0%       0.00       0.00      0.00  100.0%  16 11 10 10 11 11 9 10 10
+
+verdicts: wide/Scalar differs from binary on 0 of 100000 rays (adjudicated per ray by the test suite's differential harness, not here)
+verdicts: wide/Vector128 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+verdicts: wide/Vector256 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+hinted: wide/Scalar/hint short-circuited 44050 of 44050 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector128/hint short-circuited 44050 of 44050 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector256/hint short-circuited 44050 of 44050 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+
+================================================================
+$ $BENCH rays $ASSETS/de_ancient/collision.tris --rays 100000 --rounds 9 --threads 32
+================================================================
+bake: C:/dev/DemoViewer.NET/assets/de_ancient/collision.tris (967742 triangles)
+
+build          threads   cold ms   warm ms  rounds (ms)
+binary               1    1105.6    1137.8  947.0 1137.8 1116.6 1144.1 1412.4 1081.6 1132.2 1232.7 1153.6
+wide                 1     792.7    1072.9  1031.3 1003.4 1116.1 1032.3 1072.9 1081.1 1078.7 1269.8 1068.8
+wide                32     117.0     126.6  140.8 122.7 117.3 140.8 126.6 123.7 182.8 152.6 125.7
+build: topology, both serial: binary 1137.8 ms -> wide 1072.9 ms (1.06x)
+build: parallelism, wide only: 1 thread 1072.9 ms -> 32 threads 126.6 ms (8.47x)
+build: the two together, which is not a topology figure: binary serial 1137.8 ms -> wide on 32 threads 126.6 ms (8.99x)
+
+tree: 145388 nodes, depth 13, stack 86; binary 524287 nodes
+corpus: 100000 rays, seed 20260910, length 64..2048, 9 rounds, default tier Vector256
+hinted arms: 30068 occluded rays, each hinted with the triangle the scalar tier found
+
+tree                   threads       rays/s   ns/ray  occluded  nodes/ray  boxes/ray  tris/ray  hinted  rounds (ns/ray)
+binary                       1       690105     1449     30.1%      54.55      54.55      3.54       -  1448 1432 1436 1449 1456 1437 1456 1909 1604
+wide/Scalar                  1      1455056      687     30.1%       3.99      31.91      0.74    0.0%  729 666 682 664 716 663 928 1410 687
+wide/Vector128               1      4135512      242     30.1%       3.99      31.91      0.74    0.0%  286 283 210 207 232 191 268 403 242
+wide/Vector256               1      5070171      197     30.1%       3.99      31.91      0.74    0.0%  271 273 192 193 197 197 433 737 196
+wide/Scalar/hint             1      6924441      144    100.0%       0.00       0.00      0.00  100.0%  226 220 138 113 144 128 202 503 125
+wide/Vector128/hint          1      8882718      113    100.0%       0.00       0.00      0.00  100.0%  198 195 103 99 109 113 151 224 100
+wide/Vector256/hint          1      7210552      139    100.0%       0.00       0.00      0.00  100.0%  197 197 99 105 139 136 242 469 85
+binary                      32     11687568       86     30.1%      54.55      54.55      3.54       -  88 85 86 86 85 81 86 88 83
+wide/Scalar                 32     23146541       43     30.1%       3.99      31.91      0.74    0.0%  43 41 46 41 45 41 44 42 43
+wide/Vector128              32     68236097       15     30.1%       3.99      31.91      0.74    0.0%  15 14 14 15 15 14 15 14 16
+wide/Vector256              32     76318400       13     30.1%       3.99      31.91      0.74    0.0%  12 13 13 14 13 13 15 13 13
+wide/Scalar/hint            32     67583727       15    100.0%       0.00       0.00      0.00  100.0%  26 16 15 13 16 12 14 12 15
+wide/Vector128/hint         32     72909796       14    100.0%       0.00       0.00      0.00  100.0%  17 16 14 12 13 14 11 12 17
+wide/Vector256/hint         32     71556402       14    100.0%       0.00       0.00      0.00  100.0%  19 16 15 14 12 14 12 12 12
+
+verdicts: wide/Scalar differs from binary on 0 of 100000 rays (adjudicated per ray by the test suite's differential harness, not here)
+verdicts: wide/Vector128 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+verdicts: wide/Vector256 differs from wide/Scalar on 0 of 100000 rays (must be 0: the tiers are one traversal; TraversalTierTests holds them to bit identity on hint and distance as well)
+hinted: wide/Scalar/hint short-circuited 30068 of 30068 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector128/hint short-circuited 30068 of 30068 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+hinted: wide/Vector256/hint short-circuited 30068 of 30068 rays on their own triangle, 0 came back clear (both must be exact: a traversal true is a hinted true)
+
+================================================================
+$ $BENCH build $ASSETS/{de_nuke,de_dust2,de_overpass,de_ancient}/collision.tris --rounds 5 --threads 1
+================================================================
+de_nuke: 191628 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   245.9 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB nodes 131071
+  round 0 wide  :   149.0 ms, alloc   27.3 MB, retained   13.9 MB, peak over baseline   27.3 MB digest 54882E14EFAA64DF nodes 23803 depth 11 stack 76 workers 1
+  round 1 wide  :   145.0 ms, alloc   27.3 MB, retained   13.9 MB, peak over baseline   27.3 MB
+  round 1 binary:   154.6 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 2 binary:   157.7 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 2 wide  :   143.6 ms, alloc   27.3 MB, retained   13.9 MB, peak over baseline   27.3 MB
+  round 3 wide  :   141.9 ms, alloc   27.3 MB, retained   13.9 MB, peak over baseline   27.3 MB
+  round 3 binary:   160.3 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 4 binary:   157.6 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 4 wide  :   150.5 ms, alloc   27.3 MB, retained   13.9 MB, peak over baseline   27.3 MB
+de_dust2: 435649 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   458.2 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB nodes 262143
+  round 0 wide  :   564.4 ms, alloc   63.2 MB, retained   32.8 MB, peak over baseline   63.2 MB digest 17A84C526631ED31 nodes 60052 depth 13 stack 89 workers 1
+  round 1 wide  :   498.5 ms, alloc   63.2 MB, retained   32.8 MB, peak over baseline   63.2 MB
+  round 1 binary:   516.0 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 2 binary:   501.8 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 2 wide  :   443.2 ms, alloc   63.2 MB, retained   32.8 MB, peak over baseline   63.2 MB
+  round 3 wide  :   437.0 ms, alloc   63.2 MB, retained   32.8 MB, peak over baseline   63.2 MB
+  round 3 binary:   927.2 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   52.3 MB
+  round 4 binary:   836.2 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 4 wide  :   442.0 ms, alloc   63.2 MB, retained   32.8 MB, peak over baseline   63.2 MB
+de_overpass: 713341 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   786.2 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB nodes 524287
+  round 0 wide  :   710.1 ms, alloc  103.5 MB, retained   53.6 MB, peak over baseline  103.5 MB digest 652353CE415B180B nodes 98086 depth 16 stack 108 workers 1
+  round 1 wide  :   783.7 ms, alloc  103.5 MB, retained   53.6 MB, peak over baseline  103.5 MB
+  round 1 binary:   938.3 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 2 binary:   817.2 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 2 wide  :   714.3 ms, alloc  103.5 MB, retained   53.6 MB, peak over baseline  103.5 MB
+  round 3 wide  :   662.9 ms, alloc  103.5 MB, retained   53.6 MB, peak over baseline  103.5 MB
+  round 3 binary:   770.1 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 4 binary:   770.8 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 4 wide  :   718.4 ms, alloc  103.5 MB, retained   53.6 MB, peak over baseline  103.5 MB
+de_ancient: 967742 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:  1075.9 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB nodes 524287
+  round 0 wide  :  1110.3 ms, alloc  143.0 MB, retained   75.4 MB, peak over baseline  143.0 MB digest 43AF9BBF399B09F9 nodes 145388 depth 13 stack 86 workers 1
+  round 1 wide  :  1038.7 ms, alloc  143.0 MB, retained   75.4 MB, peak over baseline  143.0 MB
+  round 1 binary:  1077.5 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 2 binary:  1140.8 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 2 wide  :  1060.2 ms, alloc  143.0 MB, retained   75.4 MB, peak over baseline  143.0 MB
+  round 3 wide  :  1443.6 ms, alloc  143.0 MB, retained   75.4 MB, peak over baseline  143.0 MB
+  round 3 binary:  1365.8 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 4 binary:  1098.1 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 4 wide  :   984.9 ms, alloc  143.0 MB, retained   75.4 MB, peak over baseline  143.0 MB
+
+================================================================
+$ $BENCH build $ASSETS/{de_nuke,de_dust2,de_overpass,de_ancient}/collision.tris --rounds 5
+================================================================
+de_nuke: 191628 triangles, wide build on 32 threads, binary build serial by construction (not equal parallelism, so the wide arm carries the topology and the parallel build together)
+  round 0 binary:   318.0 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB nodes 131071
+  round 0 wide  :    61.7 ms, alloc   27.8 MB, retained   13.9 MB, peak over baseline   28.0 MB digest 54882E14EFAA64DF nodes 23803 depth 11 stack 76 workers 32
+  round 1 wide  :    31.3 ms, alloc   27.8 MB, retained   13.9 MB, peak over baseline   27.9 MB
+  round 1 binary:   152.9 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 2 binary:   208.0 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 2 wide  :    65.5 ms, alloc   27.8 MB, retained   13.9 MB, peak over baseline   27.9 MB
+  round 3 wide  :   173.3 ms, alloc   27.7 MB, retained   13.9 MB, peak over baseline   27.8 MB
+  round 3 binary:   233.2 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 4 binary:   182.3 ms, alloc   36.5 MB, retained    6.5 MB, peak over baseline   36.6 MB
+  round 4 wide  :    38.6 ms, alloc   27.8 MB, retained   13.9 MB, peak over baseline   27.9 MB
+de_dust2: 435649 triangles, wide build on 32 threads, binary build serial by construction (not equal parallelism, so the wide arm carries the topology and the parallel build together)
+  round 0 binary:   422.8 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB nodes 262143
+  round 0 wide  :    48.9 ms, alloc   64.4 MB, retained   32.8 MB, peak over baseline   64.5 MB digest 17A84C526631ED31 nodes 60052 depth 13 stack 89 workers 30
+  round 1 wide  :    50.2 ms, alloc   64.4 MB, retained   32.8 MB, peak over baseline   64.4 MB
+  round 1 binary:   404.6 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 2 binary:   420.5 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 2 wide  :    56.6 ms, alloc   64.4 MB, retained   32.8 MB, peak over baseline   64.5 MB
+  round 3 wide  :    55.1 ms, alloc   64.4 MB, retained   32.8 MB, peak over baseline   64.5 MB
+  round 3 binary:   447.0 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 4 binary:   484.0 ms, alloc   78.2 MB, retained   13.3 MB, peak over baseline   62.3 MB
+  round 4 wide  :    61.9 ms, alloc   64.4 MB, retained   32.8 MB, peak over baseline   64.4 MB
+de_overpass: 713341 triangles, wide build on 32 threads, binary build serial by construction (not equal parallelism, so the wide arm carries the topology and the parallel build together)
+  round 0 binary:   753.3 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB nodes 524287
+  round 0 wide  :    88.5 ms, alloc  105.4 MB, retained   53.6 MB, peak over baseline  105.4 MB digest 652353CE415B180B nodes 98086 depth 16 stack 108 workers 32
+  round 1 wide  :    87.6 ms, alloc  105.4 MB, retained   53.6 MB, peak over baseline  105.4 MB
+  round 1 binary:   789.0 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 2 binary:   713.7 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 2 wide  :    84.0 ms, alloc  105.4 MB, retained   53.6 MB, peak over baseline  105.4 MB
+  round 3 wide  :    80.4 ms, alloc  105.4 MB, retained   53.6 MB, peak over baseline  105.4 MB
+  round 3 binary:   722.7 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 4 binary:   790.3 ms, alloc  140.8 MB, retained   25.4 MB, peak over baseline  124.9 MB
+  round 4 wide  :    80.6 ms, alloc  105.4 MB, retained   53.6 MB, peak over baseline  105.4 MB
+de_ancient: 967742 triangles, wide build on 32 threads, binary build serial by construction (not equal parallelism, so the wide arm carries the topology and the parallel build together)
+  round 0 binary:  1067.1 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB nodes 524287
+  round 0 wide  :   129.7 ms, alloc  145.2 MB, retained   75.4 MB, peak over baseline  145.1 MB digest 43AF9BBF399B09F9 nodes 145388 depth 13 stack 86 workers 31
+  round 1 wide  :   133.3 ms, alloc  145.2 MB, retained   75.4 MB, peak over baseline  145.1 MB
+  round 1 binary:  1096.5 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 2 binary:  1044.4 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 2 wide  :   121.6 ms, alloc  145.2 MB, retained   75.4 MB, peak over baseline  145.1 MB
+  round 3 wide  :   131.5 ms, alloc  145.2 MB, retained   75.4 MB, peak over baseline  145.1 MB
+  round 3 binary:  1087.9 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 4 binary:  1073.1 ms, alloc  166.0 MB, retained   27.4 MB, peak over baseline  150.1 MB
+  round 4 wide  :   120.3 ms, alloc  145.2 MB, retained   75.4 MB, peak over baseline  145.1 MB
+
+================================================================
+$ $BENCH build $ASSETS/{de_ancient,de_overpass,de_dust2,de_nuke}/collision.tris --rounds 3 --threads 1 --live
+================================================================
+de_ancient: 967742 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   (live, no clock) alloc  169.1 MB, retained   27.4 MB, live peak over baseline   96.0 MB nodes 524287
+  round 0 wide  :   (live, no clock) alloc  146.3 MB, retained   75.4 MB, live peak over baseline   75.4 MB digest 43AF9BBF399B09F9 nodes 145388 depth 13 stack 86 workers 1
+  round 1 wide  :   (live, no clock) alloc  146.5 MB, retained   75.4 MB, live peak over baseline   75.4 MB
+  round 1 binary:   (live, no clock) alloc  169.3 MB, retained   27.4 MB, live peak over baseline   96.0 MB
+  round 2 binary:   (live, no clock) alloc  169.2 MB, retained   27.4 MB, live peak over baseline   96.0 MB
+  round 2 wide  :   (live, no clock) alloc  146.3 MB, retained   75.4 MB, live peak over baseline   75.4 MB
+de_overpass: 713341 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   (live, no clock) alloc  143.2 MB, retained   25.4 MB, live peak over baseline   70.8 MB nodes 524287
+  round 0 wide  :   (live, no clock) alloc  105.9 MB, retained   53.6 MB, live peak over baseline   55.3 MB digest 652353CE415B180B nodes 98086 depth 16 stack 108 workers 1
+  round 1 wide  :   (live, no clock) alloc  105.7 MB, retained   53.6 MB, live peak over baseline   55.3 MB
+  round 1 binary:   (live, no clock) alloc  143.1 MB, retained   25.4 MB, live peak over baseline   70.8 MB
+  round 2 binary:   (live, no clock) alloc  143.1 MB, retained   25.4 MB, live peak over baseline   70.8 MB
+  round 2 wide  :   (live, no clock) alloc  105.8 MB, retained   53.6 MB, live peak over baseline   55.3 MB
+de_dust2: 435649 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   (live, no clock) alloc   79.6 MB, retained   13.3 MB, live peak over baseline   43.2 MB nodes 262143
+  round 0 wide  :   (live, no clock) alloc   64.7 MB, retained   32.8 MB, live peak over baseline   33.8 MB digest 17A84C526631ED31 nodes 60052 depth 13 stack 89 workers 1
+  round 1 wide  :   (live, no clock) alloc   64.7 MB, retained   32.8 MB, live peak over baseline   33.8 MB
+  round 1 binary:   (live, no clock) alloc   79.6 MB, retained   13.3 MB, live peak over baseline   43.2 MB
+  round 2 binary:   (live, no clock) alloc   79.6 MB, retained   13.3 MB, live peak over baseline   43.2 MB
+  round 2 wide  :   (live, no clock) alloc   64.6 MB, retained   32.8 MB, live peak over baseline   33.8 MB
+de_nuke: 191628 triangles, wide build on 1 thread, binary build serial by construction (equal parallelism, so the difference between the arms is the topology alone)
+  round 0 binary:   (live, no clock) alloc   37.0 MB, retained    6.5 MB, live peak over baseline   19.0 MB nodes 131071
+  round 0 wide  :   (live, no clock) alloc   27.8 MB, retained   13.9 MB, live peak over baseline   14.9 MB digest 54882E14EFAA64DF nodes 23803 depth 11 stack 76 workers 1
+  round 1 wide  :   (live, no clock) alloc   27.9 MB, retained   13.9 MB, live peak over baseline   14.9 MB
+  round 1 binary:   (live, no clock) alloc   37.1 MB, retained    6.5 MB, live peak over baseline   19.0 MB
+  round 2 binary:   (live, no clock) alloc   37.1 MB, retained    6.5 MB, live peak over baseline   19.0 MB
+  round 2 wide  :   (live, no clock) alloc   27.9 MB, retained   13.9 MB, live peak over baseline   14.9 MB
+
+================================================================
+$ $BENCH build $ASSETS/de_ancient/collision.tris --rounds 3 --live
+================================================================
+de_ancient: 967742 triangles, wide build on 32 threads, binary build serial by construction (not equal parallelism, so the wide arm carries the topology and the parallel build together)
+  round 0 binary:   (live, no clock) alloc  169.6 MB, retained   27.4 MB, live peak over baseline   96.0 MB nodes 524287
+  round 0 wide  :   (live, no clock) alloc  145.7 MB, retained   75.4 MB, live peak over baseline   77.0 MB digest 43AF9BBF399B09F9 nodes 145388 depth 13 stack 86 workers 32
+  round 1 wide  :   (live, no clock) alloc  145.7 MB, retained   75.4 MB, live peak over baseline   76.9 MB
+  round 1 binary:   (live, no clock) alloc  172.3 MB, retained   27.4 MB, live peak over baseline   96.0 MB
+  round 2 binary:   (live, no clock) alloc  172.7 MB, retained   27.4 MB, live peak over baseline   96.0 MB
+  round 2 wide  :   (live, no clock) alloc  145.5 MB, retained   75.4 MB, live peak over baseline   77.0 MB
