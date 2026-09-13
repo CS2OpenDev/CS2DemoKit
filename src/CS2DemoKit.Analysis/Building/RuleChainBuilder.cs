@@ -42,20 +42,6 @@ public sealed partial class RuleChainBuilder
     private readonly PerPlayerEntityValueProviderRegistry? _perPlayerEntityProviders;
     private readonly EventRegistry _registry;
 
-    // Output names of the shot-anchored aim enrichments. A rule reads one of THESE; the six entity
-    // columns AimShotContextEdge assembles them from appear nowhere in any ruleset, so the gate has
-    // to be spelled at the output end. Listed rather than derived from the node set because the gate
-    // runs before CreateEnrichment builds it.
-    private static readonly string[] _aimShotEnrichments =
-    [
-        "enrich.shot.counter_strafe_good",
-        "enrich.shot.counter_strafe_admitted",
-        "enrich.shot.is_first_bullet",
-        "enrich.shot.spray_residual_pitch",
-        "enrich.shot.spray_residual_yaw",
-        "enrich.shot.spray_residual_measured"
-    ];
-
     // The per-player equipment provider, set (and snapshotted by the scanner) only when a v2 ruleset
     // reads round.team.equipment / round.enemies.equipment — the B6 freeze-end economy maintenance
     // edge sums it. Null otherwise, so no economy nodes/edges are built (and GetPreFrameValue, which
@@ -230,28 +216,25 @@ public sealed partial class RuleChainBuilder
             }
         }
 
-        // Per-player providers are reference-gated like singletons (catalog width
-        // multiplies per-frame capture work, so only referenced providers activate). A YAML
-        // reference always CONTAINS the provider name (`player.entity.pawn.health` ⊃
-        // `entity.pawn.health`; same for subject reads), so the substring scan covers the
-        // config side. The two providers consumed by C# enrichment (HurtTeamEnrichmentEdge)
-        // gate on their enrichment OUTPUT names instead — the C# read exists to feed those
-        // transient nodes, so a config that reads neither needs neither provider.
         // The synthesized `enemy_spotted` event needs both halves: a rule that subscribes to it AND
         // baked map geometry to recompute visibility against. Computed here rather than beside the
         // molotov gate below because it also forces its six vantage providers into the digest, and
         // that has to happen before the provider loop closes.
-        bool emitSpotted = _visibilityEngine is not null
-                           && (IsReferencedByBuiltins("enemy_spotted", builtinContexts)
-                               || RulesetsSubscribeToEvent("enemy_spotted", rulesets));
+        bool spottedSubscribed = IsReferencedByBuiltins("enemy_spotted", builtinContexts)
+                                 || RulesetsSubscribeToEvent("enemy_spotted", rulesets);
+        bool emitSpotted = _visibilityEngine is not null && spottedSubscribed;
 
         // The shot-anchored aim enrichments gate on their OUTPUT names, like the hurt enrichment
         // providers above: a rule reads `counter_strafe_good` off the shot view, never the six
         // entity columns AimShotContextEdge assembles it from. Unlike enemy_spotted this needs no
         // map bake (counter-strafing is a movement fact, not a visibility one), so the vantage
         // sampler it shares with the spot scan gets built for either reason.
+        //
+        // The names come from BuiltinContexts, which is where the nodes are built: a name the gate
+        // does not know about leaves the edge inert while its node stays registered, so the stat
+        // reading it reports the node's default on every event and nothing reports the miss.
         bool emitAimShotContext = false;
-        foreach (string aimEnrichment in _aimShotEnrichments)
+        foreach (string aimEnrichment in BuiltinContexts.AimShotEnrichments)
         {
             if (IsReferencedByBuiltins(aimEnrichment, builtinContexts)
                 || IsReferencedByV2Reads(aimEnrichment, rulesets))
@@ -263,6 +246,32 @@ public sealed partial class RuleChainBuilder
 
         bool needVantage = emitSpotted || emitAimShotContext;
 
+        // Per-player providers are reference-gated by name (catalog width multiplies per-frame
+        // capture work, so only referenced providers activate), and the gate has three tiers —
+        // none of them the built-in context chains. Those are a fixed set (match_live,
+        // round_active, alive, survived, traded) whose only entity reference is the SINGLETON
+        // `entity.game.freeze_period`, so no per-player provider name can occur in them and a
+        // builtin scan over one is dead weight rather than a safety net. Were such a read ever
+        // added, the scanner's un-snapshotted-provider arm throws on the first read of it — the
+        // gate omission surfaces loudly instead of quietly zeroing a column.
+        //
+        // A DIRECT read does not pass through the switch at all: a v2 `player.health` resolves to
+        // its provider through the catalog's v2Name, and UnionV2EntityReads (below, before the
+        // scanner is built) folds every such provider in. `entity.pawn.*` is not a spelling any
+        // ruleset can write — there is no `entity` root — so a v2 read is always in v2 spelling.
+        //
+        // The switch covers the INDIRECT need: a provider no rule names, read by C# on the rule's
+        // behalf. A rule reads `enrich.hurt.capped_damage`; HurtTeamEnrichmentEdge computes it from
+        // the health column. The hurt enrichments carry no v2Name in the catalog, so TryEntityRead
+        // rejects them and UnionV2EntityReads never sees the provider — without these arms the edge
+        // falls back to the event-cache HP and diverges from the entity-snapshot HP, silently.
+        // player_stats.rules.yaml's TotalEnemyDmg is the live case.
+        //
+        // The two `if`s below the switch are that argument one step further removed again: the rule
+        // names an aim enrichment, the enrichment is assembled from six columns, and none of the six
+        // appears anywhere in the ruleset text. Which is why a name missing from a gate list here
+        // costs nothing at build time and everything at read time — the node stays registered and
+        // reports its default.
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
         bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false;
         if (_perPlayerEntityProviders is { All.Count: > 0 })
@@ -271,21 +280,9 @@ public sealed partial class RuleChainBuilder
             // per-player equipment provider snapshotted so the freeze-end maintenance edge can sum it.
             b6EquipmentNeeded = IsReferencedByV2Reads("round.team.equipment", rulesets)
                                 || IsReferencedByV2Reads("round.enemies.equipment", rulesets);
-            // The enrichment-provider gate spans BOTH rule surfaces: a builtin-context read
-            // (substring scan) AND a v2 ruleset read (exact DeclaredReads path). A summing bucket like
-            // weapon-stats' damage_by_weapon reads enrich.hurt.capped_damage only from the v2 side, so
-            // without the v2 union its health provider would gate out and capped-damage would fall back
-            // to the event-cache HP — diverging from the entity-snapshot HP (silent mismatch).
-            healthNeeded = IsReferencedByBuiltins("entity.pawn.health", builtinContexts)
-                           || IsReferencedByBuiltins("enrich.hurt.victim_health_before", builtinContexts)
-                           || IsReferencedByBuiltins("enrich.hurt.capped_damage", builtinContexts)
-                           || IsReferencedByV2Reads("entity.pawn.health", rulesets)
-                           || IsReferencedByV2Reads("enrich.hurt.victim_health_before", rulesets)
+            healthNeeded = IsReferencedByV2Reads("enrich.hurt.victim_health_before", rulesets)
                            || IsReferencedByV2Reads("enrich.hurt.capped_damage", rulesets);
-            weaponNeeded = IsReferencedByBuiltins("entity.pawn.active_weapon_class", builtinContexts)
-                           || IsReferencedByBuiltins("enrich.hurt.attacker_active_weapon", builtinContexts)
-                           || IsReferencedByV2Reads("entity.pawn.active_weapon_class", rulesets)
-                           || IsReferencedByV2Reads("enrich.hurt.attacker_active_weapon", rulesets);
+            weaponNeeded = IsReferencedByV2Reads("enrich.hurt.attacker_active_weapon", rulesets);
 
             foreach (IPerPlayerEntityValueProvider provider in _perPlayerEntityProviders.All)
             {
@@ -293,9 +290,8 @@ public sealed partial class RuleChainBuilder
                 {
                     "entity.pawn.health" => healthNeeded,
                     "entity.pawn.active_weapon_class" => weaponNeeded,
-                    "entity.pawn.equipment_value" => b6EquipmentNeeded
-                                                     || IsReferencedByBuiltins(provider.Name, builtinContexts),
-                    _ => IsReferencedByBuiltins(provider.Name, builtinContexts)
+                    "entity.pawn.equipment_value" => b6EquipmentNeeded,
+                    _ => false
                 };
 
                 // The vantage columns are gated in by the event that consumes them, not by a rule
@@ -363,6 +359,13 @@ public sealed partial class RuleChainBuilder
             if (emitSpotted)
             {
                 transitionScanner = new VisibilityTransitionScanner(_visibilityEngine!);
+
+                // The scanner's `visible` / on-target sets are match-lived, but a contact is a
+                // per-round fact: at round end every pawn is alive and mostly in mutual sight, and a
+                // pair already marked visible is skipped, so the next round's first real contact
+                // would emit nothing. The index owns the round boundary, so it owns the reset —
+                // this is the only place the two meet.
+                playerContextIndex.VisibilityTransitions = transitionScanner;
             }
         }
 
@@ -393,6 +396,9 @@ public sealed partial class RuleChainBuilder
         // (see CreateGameEventEdge). Stays null when no entity providers are registered, in which
         // case any such reference is a clean compile-time error.
         _entityScanner = entityScanner;
+
+        ReportUnproducibleSpotReads(rulesets, v2Coverage, spottedSubscribed,
+            entityScanner is not null && transitionScanner is not null);
 
         // The equipment provider was gated into perPlayerList (hence snapshotted) exactly when a v2
         // round.*.equipment read requires it; capture it for the B6 freeze-end economy edge. Null (no
@@ -438,7 +444,8 @@ public sealed partial class RuleChainBuilder
 
         BuiltinContexts.EnrichmentInfrastructure enrichment = BuiltinContexts.CreateEnrichment(
             graph.Root, playerContextIndex, _registry, _logicalResolver,
-            entityScanner, pawnHealthProvider, activeWeaponProvider, aimShotSources);
+            entityScanner, pawnHealthProvider, activeWeaponProvider, aimShotSources,
+            _demo?.TickRate ?? 64.0);
         foreach ((string key, StateNode node) in enrichment.NodeLookup)
         {
             nodeLookup[key] = node;
@@ -1250,9 +1257,10 @@ public sealed partial class RuleChainBuilder
     ///     v2 counterpart to <see cref="IsReferencedByBuiltins" />: does any checked v2 stat/highlight
     ///     declare a read of <paramref name="path" />? A v2 <see cref="CheckedStat.DeclaredReads" /> is
     ///     an exact resolved path (e.g. <c>enrich.hurt.capped_damage</c>), so this uses ordinal
-    ///     equality rather than the v1 substring scan. Feeds the enrichment-provider gate so a
-    ///     health/weapon-dependent enrichment referenced only from the v2 side still activates its
-    ///     per-player provider (the same union the enrichment edge relies on).
+    ///     equality rather than the built-in chains' substring scan. Feeds the enrichment-provider
+    ///     gate: an enrichment is the one kind of read that <c>UnionV2EntityReads</c> cannot see
+    ///     through (it carries no catalog <c>v2Name</c>, so it resolves to no provider), so this is
+    ///     what activates the health/weapon provider the enrichment edge computes it from.
     /// </summary>
     private static bool IsReferencedByV2Reads(string path, IReadOnlyList<CheckedRuleset> rulesets)
     {
@@ -1331,6 +1339,118 @@ public sealed partial class RuleChainBuilder
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Records one coverage diagnostic per v2 node that depends on the synthesized
+    ///     <c>enemy_spotted</c> contacts on a run that does not produce them — a node reading one of
+    ///     <see cref="BuiltinContexts.SpotDerivedEnrichments" />, or a stat triggering on the event
+    ///     itself. Left alone the node is not an error and not a miss: the facets read their
+    ///     no-measurement sentinel and the subscriber never fires, so the stat reports a number that
+    ///     looks exactly like a player who never spotted anyone.
+    ///     <para>
+    ///         This is a <b>graph-build</b> check, not a resolve-time one, because resolution cannot
+    ///         see the answer: <c>ResolveContext</c> carries the tick rate, the source profile, and
+    ///         the install's params, and the geometry arrives separately through
+    ///         <c>AnalysisOptions.VisibilityEngine</c> at the builder's constructor. The other half of
+    ///         the condition is directory-wide (any ruleset subscribing to the event turns the scan on
+    ///         for all of them), which a per-document resolve pass would have to guess at — and a
+    ///         guess here costs a false positive on a ruleset that is correct.
+    ///     </para>
+    ///     <para>
+    ///         It rides <see cref="RulesetCoverageDiagnostic" /> for the same reason a view that does
+    ///         not bind on the active profile does: the node is legitimately unproducible on THIS run
+    ///         rather than wrong, so the build stays clean and the consumer surfaces a row. The
+    ///         builder's own constructor doc calls a missing engine "the same shape as a profile that
+    ///         does not bind an event"; this is that shape, reported.
+    ///     </para>
+    /// </summary>
+    /// <param name="rulesets">The checked rulesets being built.</param>
+    /// <param name="coverage">The build's coverage list, appended to in place.</param>
+    /// <param name="spottedSubscribed">Whether any rule subscribes to <c>enemy_spotted</c>.</param>
+    /// <param name="contactsProduced">Whether the contact scan was actually built and wired into the entity scanner.</param>
+    private void ReportUnproducibleSpotReads(
+        IReadOnlyList<CheckedRuleset> rulesets,
+        List<RulesetCoverageDiagnostic> coverage,
+        bool spottedSubscribed,
+        bool contactsProduced)
+    {
+        if (contactsProduced || rulesets.Count == 0)
+        {
+            return;
+        }
+
+        // Which half is missing decides what the author has to do about it, so the message says
+        // which rather than naming both and leaving them to find out.
+        string cause = _visibilityEngine is null
+            ? "this run was given no baked map geometry (AnalysisOptions.VisibilityEngine), and "
+              + "visibility is recomputed from geometry rather than read off the wire"
+            : spottedSubscribed
+                ? "the contact scan could not be built on this run (no demo frames, or the per-player "
+                  + "vantage columns it samples are unavailable)"
+                : "no stat subscribes to the 'enemy_spotted' view, and the contact scan runs only for "
+                  + "a rule that does";
+
+        string profileId = Profile.GetType().Name;
+        foreach (CheckedRuleset ruleset in rulesets)
+        {
+            foreach (CheckedStat stat in ruleset.Stats)
+            {
+                if (FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
+                {
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
+                        stat.ResolvedView ?? "", profileId,
+                        $"stat '{stat.StatId}' reads {facet}, which is measured from the synthesized "
+                        + $"'enemy_spotted' contacts — {cause}, so it reads its no-measurement value on "
+                        + "every event rather than a number",
+                        stat.Position));
+                    continue;
+                }
+
+                if (stat.ConcreteEvents.Contains("enemy_spotted", StringComparer.Ordinal))
+                {
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
+                        stat.ResolvedView ?? "enemy_spotted", profileId,
+                        $"stat '{stat.StatId}' triggers on the synthesized 'enemy_spotted' view — "
+                        + $"{cause}, so the event is never produced and the stat never fires",
+                        stat.Position));
+                }
+            }
+
+            foreach (CheckedHighlight highlight in ruleset.Highlights)
+            {
+                if (FirstSpotDerivedRead(highlight.DeclaredReads) is { } facet)
+                {
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, highlight.HighlightId,
+                        "", profileId,
+                        $"highlight '{highlight.HighlightId}' reads {facet}, which is measured from the "
+                        + $"synthesized 'enemy_spotted' contacts — {cause}, so it reads its "
+                        + "no-measurement value on every event rather than a number",
+                        highlight.Position));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     The first spot-derived enrichment in <paramref name="declaredReads" />, or null when the
+    ///     node reads none. One name is enough to report against — the prerequisite is the same for
+    ///     all seven, so listing the rest would repeat one fact per facet.
+    /// </summary>
+    private static string? FirstSpotDerivedRead(IReadOnlyList<string> declaredReads)
+    {
+        foreach (string read in declaredReads)
+        {
+            foreach (string spotDerived in BuiltinContexts.SpotDerivedEnrichments)
+            {
+                if (string.Equals(read, spotDerived, StringComparison.Ordinal))
+                {
+                    return spotDerived;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static bool IsReferencedByBuiltins(

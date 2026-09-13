@@ -21,6 +21,66 @@ namespace CS2DemoKit.Analysis.Building;
 public static class BuiltinContexts
 {
     /// <summary>
+    ///     Every shot-anchored aim enrichment <see cref="AimShotContextEdge" /> writes, by output
+    ///     name. <c>RuleChainBuilder</c> gates the edge — and the six per-player columns it reads —
+    ///     on these: a ruleset names one of THESE, never the columns, so the gate has to be spelled
+    ///     at the output end, and it has to be decided before <see cref="CreateEnrichment" /> runs
+    ///     and builds the nodes.
+    ///     <para>
+    ///         Published from here because here is where the nodes are constructed, and because a name
+    ///         missing from this list fails silently: the node is registered either way, so the edge
+    ///         simply never writes it and every stat reading it reports the node's declared default —
+    ///         a sentinel, or a <c>false</c> — on every event, with no diagnostic anywhere.
+    ///         <c>AimShotEnrichmentGateTests</c> holds the list to the set the constructed edges
+    ///         actually declare as written.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyList<string> AimShotEnrichments { get; } =
+    [
+        "enrich.shot.counter_strafe_good",
+        "enrich.shot.counter_strafe_admitted",
+        "enrich.shot.is_first_bullet",
+        "enrich.shot.spray_residual_pitch",
+        "enrich.shot.spray_residual_yaw",
+        "enrich.shot.spray_residual_measured",
+        "enrich.shot.ticks_since_spot",
+        "enrich.shot.travel_from_spot_deg",
+        "enrich.shot.flick_error_deg",
+        "enrich.shot.is_first_after_spot",
+        "enrich.shot.spray_residual_deg",
+        "enrich.shot.ticks_since_on_target",
+        "enrich.shot.is_first_after_on_target"
+    ];
+
+    /// <summary>
+    ///     The enrichments that only carry a measurement while the synthesized <c>enemy_spotted</c>
+    ///     contact stream is running: the four spot-anchored shot facets, the two on-target ones,
+    ///     and the kill view's <c>ticks_since_spot</c>. Each is latched from a contact — through
+    ///     <c>PlayerContext.LastSpotTick</c>, which only <see cref="SpottedEnrichmentEdge" /> writes,
+    ///     or straight off <c>VisibilityTransitionScanner</c> — and that scan runs only when
+    ///     the caller supplied baked map geometry <b>and</b> some rule subscribes to the event.
+    ///     <para>
+    ///         Published separately from <see cref="AimShotEnrichments" /> because the two halves fail
+    ///         differently. The other six are movement and recoil facts computed from the digest
+    ///         columns alone, so they measure on any run; these seven, with the scan off, report their
+    ///         no-measurement sentinel (or <c>false</c>) on every single event — a number
+    ///         indistinguishable from a player who never spotted anyone. <c>RuleChainBuilder</c> reads
+    ///         this list to say so out loud instead, and <c>SpotDerivedCoverageTests</c> holds it to
+    ///         the facets the catalogue actually maps onto those views.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyList<string> SpotDerivedEnrichments { get; } =
+    [
+        "enrich.shot.ticks_since_spot",
+        "enrich.shot.travel_from_spot_deg",
+        "enrich.shot.flick_error_deg",
+        "enrich.shot.is_first_after_spot",
+        "enrich.shot.ticks_since_on_target",
+        "enrich.shot.is_first_after_on_target",
+        "enrich.kill.ticks_since_spot"
+    ];
+
+    /// <summary>
     ///     Creates the shared enrichment infrastructure (transient nodes + enrichment edges)
     ///     for team-based event classification. These are game-scoped and shared across all
     ///     players. <paramref name="resolver" /> is used to resolve <c>$round_end</c>; each
@@ -40,13 +100,22 @@ public static class BuiltinContexts
     ///     is what keeps the six aim providers reference-gated; they are the expensive columns, for
     ///     the reason <see cref="PerPlayerEntityValueProviderRegistry" /> gives.
     /// </param>
+    /// <param name="tickRate">
+    ///     The demo's ticks per second (<c>ParsedDemo.TickRate</c>). The spray enrichments bound a
+    ///     weapon's refire cycle, which is a DURATION, so the two edges that read it convert their
+    ///     seconds constants at this rate; the wrong rate here segments the same spray differently
+    ///     on a 128-tick demo than on a 64-tick one and reports nothing. Defaults to 64 for the
+    ///     callers that build the infrastructure without a demo — the catalogue generator and the
+    ///     node-set tests — where no gap is ever evaluated.
+    /// </param>
     public static EnrichmentInfrastructure CreateEnrichment(
         StateNode graphRoot, PlayerContextIndex playerContext,
         EventRegistry registry, LogicalEventResolver resolver,
         EntityChangeScanner? entityScanner = null,
         IPerPlayerEntityValueProvider? pawnHealthProvider = null,
         IPerPlayerEntityValueProvider? activeWeaponProvider = null,
-        AimShotContextSources? aimShotSources = null)
+        AimShotContextSources? aimShotSources = null,
+        double tickRate = 64.0)
     {
         // Kill enrichment bools
         TransientBoolNode killEnemyKill = new("enrich.kill.was_enemy_kill");
@@ -124,9 +193,9 @@ public static class BuiltinContexts
         TransientValueNode<int> killSprayShotsAtKill = new("enrich.kill.spray_shots_at_kill");
         ShotEnrichmentEdge shotEnrichEdge = new(
             graphRoot, playerContext, shotTurnDegrees, shotTicksSinceLast,
-            shotSprayShots, shotSprayVictims);
+            shotSprayShots, shotSprayVictims, tickRate);
         SprayKillEnrichmentEdge sprayKillEnrichEdge = new(
-            graphRoot, playerContext, killSprayKills, killSprayShotsAtKill);
+            graphRoot, playerContext, killSprayKills, killSprayShotsAtKill, tickRate);
 
         // Spot enrichment: per-viewer contact history over the synthesized enemy_spotted event.
         // The contact ANGLE is not here, it rides on the event (see SpottedEnrichmentEdge); these
