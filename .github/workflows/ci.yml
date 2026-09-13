@@ -8,6 +8,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual only, and only for the real-assets job below: see its comment for why it cannot run on
+  # a pull request.
+  workflow_dispatch:
+    inputs:
+      collision_assets_url:
+        description: >-
+          Archive (.zip or .tar.gz) whose top level is <map>/collision.tris, one directory per map.
+          Defaults to the COLLISION_ASSETS_URL repository variable.
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -31,8 +41,10 @@ jobs:
         run: dotnet build CS2DemoKit.slnx -c Release
 
       # Both suites are TUnit executables, so they run via `dotnet run`, not `dotnet test`.
-      # Demo-dependent tests resolve the committed sample (parser) or skip (analysis, whose
-      # fixtures are pinned to a full match) — neither can fail for want of a demo file.
+      # Demo-dependent tests resolve the committed sample or skip — neither can fail for want of a
+      # demo file. The parser suite opts the whole assembly in to the sample; the analysis suite does
+      # not, because several of its fixtures are pinned to a full match, so a test there that only
+      # needs *a* demo has to name the sample itself.
       - name: Parser tests
         run: dotnet run --project test/CS2DemoKit.Parser.Tests -c Release --no-build
 
@@ -76,6 +88,91 @@ jobs:
           version=${version#CS2DemoKit.Parser.}
           echo "smoke-testing CS2DemoKit $version"
           dotnet run -c Release -p:CS2DemoKitVersion="$version" -- ../../tests/assets/sample-de_nuke.dem
+
+  # The real-bake evidence, on demand.
+  #
+  # Every test that adjudicates the visibility work against real map geometry resolves
+  # <map>/collision.tris and SKIPS when it cannot: the wide-vs-legacy ray differential, the
+  # visibility trace golden, the structural-digest and every-degree-of-parallelism build pins, the
+  # traversal-tier and occluder-hint parity, and the slab-degeneracy corpus with its own observation
+  # gate. The bakes are Valve-derived and far too large to commit, so the `build` leg above runs
+  # none of them and their result would otherwise exist only on whichever machine last had the
+  # assets mounted.
+  #
+  # This leg does not run on a pull request and that is the point, not a gap: a fork has no access
+  # to the repository's variables or secrets, so a PR-triggered version would skip everything and
+  # report green. What it converts is "reproducible on the author's machine" into "reproducible on
+  # demand by anyone with repo access". Run it from the Actions tab.
+  #
+  # Configure once, then dispatch:
+  #   - repository variable COLLISION_ASSETS_URL — an archive (.zip or .tar.gz) whose top level is
+  #     <map>/collision.tris, one directory per map. The dispatch input overrides it, so a
+  #     contributor can point the run at their own pack without repo-admin rights.
+  #   - repository secret COLLISION_ASSETS_TOKEN — optional; sent as an Authorization bearer when
+  #     the archive is not publicly readable.
+  #
+  # To run it on a cadence as well, add a `schedule:` trigger above and drop the `if:` below.
+  real-assets:
+    name: Analysis tests (real collision bakes)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # Nerdbank.GitVersioning needs full history
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore tools (nbgv)
+        run: dotnet tool restore
+
+      # The token goes in a curl config file rather than on the command line so it never appears in
+      # the runner's process table.
+      - name: Fetch the collision bakes
+        env:
+          ASSETS_URL: ${{ inputs.collision_assets_url || vars.COLLISION_ASSETS_URL }}
+          ASSETS_TOKEN: ${{ secrets.COLLISION_ASSETS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ASSETS_URL" ]; then
+            echo "::error::No collision-asset archive. Set the COLLISION_ASSETS_URL repository variable, or pass collision_assets_url when dispatching." >&2
+            exit 1
+          fi
+          umask 077
+          : > "$RUNNER_TEMP/curl.cfg"
+          if [ -n "$ASSETS_TOKEN" ]; then
+            printf 'header = "Authorization: Bearer %s"\n' "$ASSETS_TOKEN" > "$RUNNER_TEMP/curl.cfg"
+          fi
+          curl -fsSL -K "$RUNNER_TEMP/curl.cfg" -o "$RUNNER_TEMP/assets.bin" "$ASSETS_URL"
+          mkdir -p "$RUNNER_TEMP/collision"
+          case "$ASSETS_URL" in
+            *.zip|*.zip\?*) unzip -q "$RUNNER_TEMP/assets.bin" -d "$RUNNER_TEMP/collision" ;;
+            *)              tar -xzf "$RUNNER_TEMP/assets.bin" -C "$RUNNER_TEMP/collision" ;;
+          esac
+          echo "CS2DEMOKIT_COLLISION_DIR=$RUNNER_TEMP/collision" >> "$GITHUB_ENV"
+
+      # The gate on the gate. Every real-asset test reports SKIPPED, not failed, when the bake is
+      # missing, so a leg whose archive unpacked into the wrong shape would go green having proven
+      # exactly nothing — which is the situation this job exists to end.
+      - name: Check the bakes resolved
+        run: |
+          set -euo pipefail
+          found=$(find "$CS2DEMOKIT_COLLISION_DIR" -name collision.tris | sort)
+          echo "$found"
+          count=$(printf '%s\n' "$found" | grep -c . || true)
+          echo "resolved $count bake(s) under $CS2DEMOKIT_COLLISION_DIR"
+          if [ "$count" -lt 1 ]; then
+            echo "::error::no <map>/collision.tris under CS2DEMOKIT_COLLISION_DIR; the archive's top level must be one directory per map" >&2
+            exit 1
+          fi
+
+      - name: Build (Release)
+        run: dotnet build CS2DemoKit.slnx -c Release
+
+      - name: Analysis tests
+        run: dotnet run --project test/CS2DemoKit.Analysis.Tests -c Release --no-build
 
   # Build and test only. The pack/scan/smoke steps above are shell and python and prove packaging,
   # which is platform-independent; what this leg exists for is the class of failure the Linux-only

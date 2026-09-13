@@ -44,7 +44,11 @@ internal static class RayDifferentialHarness
     /// <param name="OracleOccluded">What the brute-force oracle said.</param>
     /// <param name="OracleTriangle">Nearest triangle the oracle hit, or -1.</param>
     /// <param name="OracleDistance">The oracle's nearest hit <c>t</c>, or <see cref="float.MaxValue" />.</param>
-    /// <param name="Loss">Why the live traversal missed the oracle's triangle; default when it did not.</param>
+    /// <param name="Loss">
+    ///     Why the live traversal missed the oracle's triangle, or the unexplained sentinel
+    ///     (<c>FailingLane</c> -1) when there is no lane to blame: an agreeing ray, or a live
+    ///     OCCLUDED against an oracle CLEAR, which no box rejection explains.
+    /// </param>
     internal readonly record struct Divergence(
         Vector3 Origin,
         Vector3 Direction,
@@ -105,7 +109,11 @@ internal static class RayDifferentialHarness
     }
 
     /// <summary>The outcome of running one corpus.</summary>
-    /// <param name="RayCount">Rays evaluated.</param>
+    /// <param name="RayCount">
+    ///     Rays actually cast. Segments at or under twice the endpoint exclusion are skipped, the way
+    ///     <c>VisibilityEngine</c> skips them, so this is not the corpus size: a caller that gates on
+    ///     "did this run test anything" has to be told what ran, not what was handed in.
+    /// </param>
     /// <param name="Divergences">Every ray on which the two traversals disagreed.</param>
     internal readonly record struct Result(int RayCount, IReadOnlyList<Divergence> Divergences)
     {
@@ -309,6 +317,7 @@ internal static class RayDifferentialHarness
         TriangleBvh current = TriangleBvh.Build(vertices, triangleCount);
         List<Divergence> divergences = [];
         int[]? parents = null;
+        int rays = 0;
 
         for (int i = 0; i < segments.Count; i++)
         {
@@ -320,6 +329,7 @@ internal static class RayDifferentialHarness
                 continue; // VisibilityEngine calls these trivially visible without casting.
             }
 
+            rays++;
             Vector3 dir = delta / len;
             bool legacyHit = legacy.AnyHit(a, dir, len, eps);
             bool currentHit = current.AnyHit(a, dir, len, eps);
@@ -331,7 +341,14 @@ internal static class RayDifferentialHarness
             // The oracle's window is the same open interval (eps, len - eps) AnyHit uses.
             bool oracleHit = BruteForceOracle.NearestHit(
                 vertices, triangleCount, a, dir, len - eps, eps, out float oracleT, out int oracleTriangle);
-            LossClassification loss = default;
+
+            // Unexplained until a lane says otherwise. A live verdict of OCCLUDED where the oracle
+            // says CLEAR has no lane to blame — no box rejected anything, the traversal reached a
+            // triangle and called it a hit that the same body over the whole soup does not — so
+            // there is nothing to classify and nothing rounding can plead. Leaving it at `default`
+            // would give it lane 0 and a zero margin, which IsRounding reads as the boundary class,
+            // and a phantom wall would be counted as a hair.
+            LossClassification loss = new(-1, double.NaN, 0);
             if (currentHit != oracleHit && oracleHit)
             {
                 parents ??= ParentLanes(current);
@@ -342,7 +359,7 @@ internal static class RayDifferentialHarness
                 a, dir, len, legacyHit, currentHit, oracleHit, oracleTriangle, oracleT, loss));
         }
 
-        return new Result(segments.Count, divergences);
+        return new Result(rays, divergences);
     }
 
     /// <summary>For every node, the lane index in its parent that references it; -1 for the root.</summary>

@@ -251,18 +251,16 @@ public class SlabDegeneracyTests
 
     private static (float[] Vertices, int TriangleCount) LoadBake(string map)
     {
-        string? dir = Environment.GetEnvironmentVariable(CollisionAssetLocator.EnvVar);
-        if (string.IsNullOrWhiteSpace(dir))
+        // Through the production locator, so the legacy env var and the walk-up assets/ layouts
+        // resolve here exactly as they do at runtime. Reading EnvVar directly skipped the whole
+        // real-geometry corpus on a machine configured the legacy way, for a reason that was untrue.
+        string? path = CollisionAssetLocator.FindCollisionTris(map);
+        if (string.IsNullOrEmpty(path))
         {
             throw new SkipTestException(
-                $"Set {CollisionAssetLocator.EnvVar} to a directory holding <map>/collision.tris "
-                + "(the app checkout's assets/ directory is one) to run the real-geometry corpus.");
-        }
-
-        string path = Path.Combine(dir, map, "collision.tris");
-        if (!File.Exists(path))
-        {
-            throw new SkipTestException($"No bake for {map}: looked for {path}");
+                $"No collision bake for {map}. Set {CollisionAssetLocator.EnvVar} to a directory "
+                + "holding <map>/collision.tris (the app checkout's assets/ directory is one), or "
+                + "unpack one into assets/ or cs2-assets/baked/ beside the build output.");
         }
 
         CollisionTris.Data data = CollisionTris.Load(path);

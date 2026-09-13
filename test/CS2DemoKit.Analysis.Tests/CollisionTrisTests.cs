@@ -173,6 +173,11 @@ public class CollisionTrisTests
             {
                 // best effort
             }
+            catch (UnauthorizedAccessException)
+            {
+                // Windows reports a file still held open, or one left read-only, here rather than as
+                // an IOException; a leaked temp file is not a test failure either way.
+            }
         }
     }
 }

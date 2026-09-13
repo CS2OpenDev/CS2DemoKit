@@ -15,13 +15,21 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         A different tree has different node boxes, so it loses a different set of rays to the
 ///         float boundary class: a triangle hit landing within an ulp or two of a box edge, or of
 ///         the segment window, so that the slab crossing and the triangle test disagree about which
-///         side it is on. Those are expected in both directions and they are legitimate, but each
-///         one is named, traced to the lane box that rejected it, re-tested there in double
-///         precision and reported; none is waved through. The frozen tree's own losses (the NaN
-///         class the slab fix addressed, and its own boundary rays) show up as rays where the live
-///         tree is the one the oracle backs. A live-wrong ray whose path no float-rejected box
-///         explains, or whose rejected box the ray truly misses by more than rounding, is a defect
-///         and fails the test.
+///         side it is on. Each one is named, traced to the lane box that rejected it, re-tested
+///         there in double precision and reported; none is waved through. The frozen tree's own
+///         losses (the NaN class the slab fix addressed, and its own boundary rays) show up as rays
+///         where the live tree is the one the oracle backs.
+///     </para>
+///     <para>
+///         Being explicable is not the same as being free, so neither arm passes on the strength of
+///         the classifier alone. <c>AnyHit</c> holds the whole segment window and loses nothing at
+///         all on the three shipped bakes — 0 of 78,000 on each — so it is held to zero live-wrong
+///         rays outright, the same bar <c>SlabDegeneracyTests</c> uses: the first boundary ray the
+///         wide tree ever loses on this corpus is a person's decision, not a counter's.
+///         <c>NearestHit</c> shrinks its window as it goes and does lose a handful (2 of 31,000 on
+///         de_nuke, 7 on de_dust2), so there it is a rate that is bounded rather than a count of
+///         zero. Either way a live-wrong ray whose path no float-rejected box explains, or whose
+///         rejected box the ray truly misses by more than rounding, is a defect and fails the test.
 ///     </para>
 ///     <para>
 ///         Counts are printed per bake. Corpora: random segments across the map, walked sightlines,
@@ -55,6 +63,10 @@ public class WideBvhDifferentialTests
         await Assert.That(result.RayCount).IsGreaterThan(70_000);
         await Assert.That(result.CurrentWrongOutsideBoundary.Count).IsEqualTo(0)
             .Because("a live verdict the oracle rejects and no box edge explains is a defect. " + result.Describe(10));
+        await Assert.That(result.CurrentWrong.Count).IsEqualTo(0)
+            .Because("the boundary class is a class of ray that gets explained, not a budget that gets "
+                     + "spent: the wide tree loses none of these on any shipped bake, so a new one is a "
+                     + "behaviour change to read rather than a count to tolerate. " + result.Describe(10));
     }
 
     /// <summary>
@@ -153,6 +165,14 @@ public class WideBvhDifferentialTests
         }
 
         await Assert.That(hits).IsGreaterThan(rays / 2);
+        // Bounded, not merely classified. The shrinking window means this arm does lose a few rays at
+        // box edges where AnyHit loses none (2 in 31,000 on de_nuke, 7 on de_dust2), so zero is not
+        // the right bar here; a tenth of a percent is more than an order of magnitude above what
+        // either bake produces and still small enough that a traversal quietly going wrong on
+        // thousands of rays cannot hide inside it.
+        await Assert.That(boundary * 1000).IsLessThan(rays)
+            .Because("rays explained by a box edge must stay a handful in tens of thousands: "
+                     + string.Join(Environment.NewLine, boundaryRays.Take(10)));
         await Assert.That(unexplained).IsEqualTo(0)
             .Because("a nearest distance the oracle rejects and no box edge explains is a defect: "
                      + string.Join(Environment.NewLine, unexplainedRays.Take(10)));

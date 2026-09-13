@@ -79,29 +79,46 @@ internal struct TraversalCounters : ITraversalStats
     public void TestSlot(int slot) => Triangles++;
 }
 
-/// <summary>Records the order in which nodes were visited and triangles tested, for tests that pin traversal order.</summary>
+/// <summary>
+///     Records the order in which nodes were visited and triangles tested, for tests that pin traversal order.
+///     <para>
+///         It is a struct only because the traversal takes its policy as a struct type parameter, and
+///         the lists are therefore held by a value that <c>default</c> can produce without them. Such
+///         a value records nothing, so every member on it says that instead of dereferencing null:
+///         <see cref="Create" /> is the only way to get a usable trace.
+///     </para>
+/// </summary>
 [SuppressMessage("Performance", "CA1815:Override equals and operator equals on value types",
     Justification = "A recording policy passed by reference; equality is meaningless.")]
 internal struct TraversalTrace : ITraversalStats
 {
+    private List<int>? _slots;
+    private List<int>? _nodes;
+    private List<int>? _lanes;
+
     /// <summary>Leaf slots in the order they were tested; <see cref="TriangleBvh.TriangleOfSlot" /> names the triangles.</summary>
-    public List<int> Slots;
+    public readonly List<int> Slots => Recording(_slots);
 
     /// <summary>Node indices in the order they were popped.</summary>
-    public List<int> Nodes;
+    public readonly List<int> Nodes => Recording(_nodes);
 
     /// <summary>Lane indices (<c>node * 8 + lane</c>) in the order their references were pushed.</summary>
-    public List<int> Lanes;
+    public readonly List<int> Lanes => Recording(_lanes);
 
     /// <summary>A trace with empty lists.</summary>
-    public static TraversalTrace Create() => new() { Slots = [], Nodes = [], Lanes = [] };
+    public static TraversalTrace Create() => new() { _slots = [], _nodes = [], _lanes = [] };
 
     /// <inheritdoc />
-    public void VisitNode(int node) => Nodes.Add(node);
+    public readonly void VisitNode(int node) => Recording(_nodes).Add(node);
 
     /// <inheritdoc />
-    public void EnterLane(int lane) => Lanes.Add(lane);
+    public readonly void EnterLane(int lane) => Recording(_lanes).Add(lane);
 
     /// <inheritdoc />
-    public void TestSlot(int slot) => Slots.Add(slot);
+    public readonly void TestSlot(int slot) => Recording(_slots).Add(slot);
+
+    private static List<int> Recording(List<int>? list) =>
+        list ?? throw new InvalidOperationException(
+            $"a default {nameof(TraversalTrace)} has no lists to record into; take one from "
+            + $"{nameof(TraversalTrace)}.{nameof(Create)}()");
 }

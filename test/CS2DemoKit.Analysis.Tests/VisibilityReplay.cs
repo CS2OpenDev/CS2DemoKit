@@ -18,8 +18,8 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     same (vantage, smoke) stream.
 ///     <para>
 ///         The sample demo is resolved by exact filename and the bake by
-///         <see cref="CollisionAssetLocator.EnvVar" />; either being absent is a loud skip naming
-///         what was looked for, never a silent pass.
+///         <see cref="CollisionAssetLocator" />, the same lookup production uses; either being
+///         absent is a loud skip naming what was looked for, never a silent pass.
 ///     </para>
 /// </summary>
 internal static class VisibilityReplay
@@ -44,22 +44,27 @@ internal static class VisibilityReplay
     /// <param name="map">Map whose bake to load.</param>
     public static VisibilityEngine RequireBake(string map) => VisibilityEngine.Load(RequireBakePath(map));
 
-    /// <summary>Resolves <c>&lt;map&gt;/collision.tris</c> under the collision directory, or skips naming the path.</summary>
+    /// <summary>
+    ///     Resolves the map's bake through <see cref="CollisionAssetLocator" />, or skips naming what
+    ///     was looked for.
+    ///     <para>
+    ///         Through the locator rather than the env var directly, deliberately. Production reads
+    ///         <see cref="CollisionAssetLocator.EnvVar" /> <b>or</b> the legacy name the override
+    ///         shipped under before the library moved repos, and also finds a bake unpacked beside
+    ///         the binary; a test that read only the new name would report "no geometry" on a machine
+    ///         that is configured, and every real-asset test would skip for a reason that is not true.
+    ///     </para>
+    /// </summary>
     /// <param name="map">Map whose bake to resolve.</param>
     public static string RequireBakePath(string map)
     {
-        string? dir = Environment.GetEnvironmentVariable(CollisionAssetLocator.EnvVar);
-        if (string.IsNullOrWhiteSpace(dir))
+        string? path = CollisionAssetLocator.FindCollisionTris(map);
+        if (string.IsNullOrEmpty(path))
         {
             throw new SkipTestException(
-                $"Set {CollisionAssetLocator.EnvVar} to a directory holding <map>/collision.tris "
-                + "(the app checkout's assets/ directory is one) to run against real geometry.");
-        }
-
-        string path = Path.Combine(dir, map, "collision.tris");
-        if (!File.Exists(path))
-        {
-            throw new SkipTestException($"No bake for {map}: looked for {path}");
+                $"No collision bake for {map}. Set {CollisionAssetLocator.EnvVar} to a directory "
+                + "holding <map>/collision.tris (the app checkout's assets/ directory is one), or "
+                + "unpack one into assets/ or cs2-assets/baked/ beside the build output.");
         }
 
         return path;

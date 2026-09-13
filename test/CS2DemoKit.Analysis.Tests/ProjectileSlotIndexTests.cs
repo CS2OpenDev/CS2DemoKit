@@ -23,6 +23,7 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     </para>
 /// </summary>
 [Category("Integration")]
+[NotInParallel] // parses whole demos through the shared parse cache, whose capacity is one
 public class ProjectileSlotIndexTests
 {
     private static ParsedDemo RequireSample() =>
@@ -161,13 +162,18 @@ public class ProjectileSlotIndexTests
         // would have missed and the digest comparison below cannot pass on two empty lists (a
         // smoke still in flight is a slot in the index but not an entry in the digest).
         layer.Reset();
+        // One probe for the whole scan, not one per frame: each new index subscribes to the live
+        // tracker's creation event and unsubscribes only its own previous tracker, so a per-frame
+        // probe would leave a handler per frame on the tracker this loop is walking. A single probe
+        // seeds on its first frame and is kept current by the same event and prune the index under
+        // test uses, which is the arrangement the parity tests pin against the full walk.
+        ProjectileSlotIndex probe = new();
         int later = -1;
         EntityFrameDigest? walkLater = null;
         for (int n = at + 1; n < frames.Count; n++)
         {
             layer.SeekToTick(frames[n].ServerTick);
             EntityFrameDigest w = EntityDigestExtractor.Build(layer, delta, [], true, true);
-            ProjectileSlotIndex probe = new();
             EntityDigestExtractor.Build(layer, delta, [], true, true, probe);
             if (w.Molotovs.Length + w.Smokes.Length > 0 && !probe.Slots.SequenceEqual(slotsAt))
             {

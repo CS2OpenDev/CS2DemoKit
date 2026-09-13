@@ -75,9 +75,14 @@ public class VisibilityTraceGoldenTests
             return;
         }
 
+        // Regenerate mode returned above, so this is a verify run and the fixture IS the gate on
+        // every verdict below: a missing one fails rather than skips, or deleting the file would
+        // stand in for passing it.
         if (!File.Exists(goldenPath))
         {
-            throw new SkipTestException($"no fixture at {goldenPath}; regenerate with {UpdateVariable}=1");
+            Assert.Fail($"no fixture at {goldenPath}, and it is the only gate on the ray path. Restore the "
+                        + $"committed file, or regenerate it with {UpdateVariable}=1 and commit the result with "
+                        + "the differential log.");
         }
 
         // A trace that judged nothing would pin nothing, so the run has to have done real work

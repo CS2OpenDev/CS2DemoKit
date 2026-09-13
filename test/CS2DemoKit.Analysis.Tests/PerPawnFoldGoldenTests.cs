@@ -100,7 +100,7 @@ public class PerPawnFoldGoldenTests
             }
         }
 
-        await Compare(fixtureName, hasher.Render(demo.Frames.Count));
+        await Compare(fixtureName, hasher, demo.Frames.Count);
     }
 
     private static async Task RunSectionB(string fixtureName, Func<List<IPerPlayerEntityValueProvider>> factory)
@@ -136,7 +136,7 @@ public class PerPawnFoldGoldenTests
             }
         }
 
-        await Compare(fixtureName, hasher.Render(digests.Length));
+        await Compare(fixtureName, hasher, digests.Length);
     }
 
     private static ParsedDemo RequireSample()
@@ -153,11 +153,14 @@ public class PerPawnFoldGoldenTests
         return demo;
     }
 
-    private static async Task Compare(string fixtureName, string rendered)
+    private static async Task Compare(string fixtureName, Hasher hasher, int frames)
     {
         string root = RepoRoot() ?? throw new SkipTestException("repo root not found");
         string goldenPath = Path.Combine(root, "tests", "fixtures", "sample-de_nuke", fixtureName);
+        string rendered = hasher.Render(frames);
 
+        // Regenerate mode writes the fixture first, so the existence check below is reached with a
+        // file present and only ever judges a verify run.
         if (Environment.GetEnvironmentVariable(UpdateVariable) == "1")
         {
             Directory.CreateDirectory(Path.GetDirectoryName(goldenPath)!);
@@ -165,9 +168,12 @@ public class PerPawnFoldGoldenTests
             Console.WriteLine($"wrote {goldenPath}");
         }
 
+        // The fixture IS the assertion on this stream, so a missing one fails rather than skips:
+        // a skip would let deleting the file stand in for passing it.
         if (!File.Exists(goldenPath))
         {
-            throw new SkipTestException($"no fixture at {goldenPath}; regenerate with {UpdateVariable}=1");
+            Assert.Fail($"no fixture at {goldenPath}, and it is the only gate on this stream. Restore the "
+                        + $"committed file, or regenerate it with {UpdateVariable}=1 and commit the result.");
         }
 
         string expected = await File.ReadAllTextAsync(goldenPath);
@@ -176,7 +182,11 @@ public class PerPawnFoldGoldenTests
             Assert.Fail($"per-pawn fold diverged from {fixtureName}:{Environment.NewLine}{FirstDifference(expected, rendered)}");
         }
 
-        await Assert.That(rendered).Contains("cells ");
+        // A run that hashed no cells renders a short, stable text that a fixture re-pinned from the
+        // same nothing would match, so the total is asserted on its own rather than left to the
+        // comparison above.
+        await Assert.That(hasher.Cells).IsGreaterThan(0L)
+            .Because("every round of the sample changes per-pawn state, so the stream cannot be empty");
     }
 
     private static string FirstDifference(string expected, string actual)
@@ -238,6 +248,9 @@ public class PerPawnFoldGoldenTests
         private ulong _hash = FnvOffset;
         private long _cells;
         private long _rows;
+
+        /// <summary>Cells mixed into the hash; zero means the stream carried nothing to pin.</summary>
+        public long Cells => _cells;
 
         public void BeginFrame(int frame)
         {
