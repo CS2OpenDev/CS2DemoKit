@@ -79,16 +79,48 @@ public class CounterStrafeWindowDerivationTests
     private static readonly double[] _movementCaps = [150.0, 200.0, 215.0, 225.0, 230.0, 240.0, 250.0];
 
     /// <summary>
+    ///     Caps the sweep does NOT contain, so the agreement between the closed form and the
+    ///     simulation cannot be an accident of the seven points the array happens to hold. 236 sits
+    ///     just above the <c>sv_stopspeed</c> knee (the line crosses 80 u/s at a cap of 235.3) and
+    ///     172 well below it, which is where a formula that got the split between the exponential and
+    ///     the linear stretch wrong would come apart; 120 and 300 are outside the range a player can
+    ///     actually carry and are here because the closed form must not be fitted to that range.
+    /// </summary>
+    private static readonly double[] _offSweepCaps = [120.0, 172.0, 236.0, 300.0];
+
+    /// <summary>
+    ///     How much wider, in ticks, the shipped window is than the stop a player capped at
+    ///     <see cref="OverAdmissionCap" /> actually produces. One window for every weapon necessarily
+    ///     over-admits every weapon but the fastest, and this is the size of that over-admission for
+    ///     a mid-range cap. Pinned as a number because it is the PRICE of a single constant, and a
+    ///     change to the sizing policy should have to come and edit it.
+    /// </summary>
+    private const double OverAdmissionTicksAt200Cap = 2.5385;
+
+    /// <summary>The cap <see cref="OverAdmissionTicksAt200Cap" /> is measured at, an SMG's.</summary>
+    private const double OverAdmissionCap = 200.0;
+
+    /// <summary>
     ///     The window has to be exactly wide enough for the SLOWEST stop any weapon produces, and no
     ///     wider: too narrow drops shots that really were the end of a stop, too wide admits shots
     ///     taken long after the player had already come to rest, which are not attempts at all and
     ///     which move CS% without anyone counter-strafing better.
     ///     <para>
-    ///         Asserted two ways for each cap. The closed form the engine ships
+    ///         The closed form the engine ships
     ///         (<see cref="AimShotContextEdge.SecondsToStopFromTheInaccuracyLine" />) has to agree
-    ///         with a tick-by-tick simulation of CS2's friction update, which is the part that makes
-    ///         it a derivation; and the shipped window, which is that closed form at the fastest cap,
-    ///         has to cover every cap without exceeding the largest.
+    ///         with a tick-by-tick simulation of CS2's friction update, at the caps a player can
+    ///         carry and at four the sweep does not hold, which is the part that makes it a
+    ///         derivation rather than a curve through seven points.
+    ///     </para>
+    ///     <para>
+    ///         <b>What is NOT asserted, and why.</b> That the shipped window covers each cap's own
+    ///         stop, and that it equals the slowest of them, both used to be checked here and neither
+    ///         could fail: the window IS this function evaluated at the top of the sweep, so the
+    ///         first comparison holds by monotonicity and the second is the same expression on both
+    ///         sides. What carries their intent instead is the monotonicity itself — falsifiable, and
+    ///         the property that makes one window sized at the fastest cap cover the slower ones —
+    ///         and <see cref="OverAdmissionTicksAt200Cap" />, which pins what the single constant
+    ///         costs a weapon it is not sized for.
     ///     </para>
     ///     <para>
     ///         The answer is NOT weapon-independent here, unlike the run-down-to-the-line time: the
@@ -106,12 +138,11 @@ public class CounterStrafeWindowDerivationTests
         int shippedWholeTicks = (int)Math.Round(shippedTicks);
 
         List<string> drift = [];
-        double slowest = 0.0;
+        double previous = 0.0;
         foreach (double cap in _movementCaps)
         {
             double simulated = TicksToStopFromTheLine(cap);
             double closedForm = AimShotContextEdge.SecondsToStopFromTheInaccuracyLine(cap) * TickRate;
-            slowest = Math.Max(slowest, closedForm);
             Console.WriteLine(
                 $"   m_flMaxspeed {cap,6:F0} -> line {cap * AimShotContextEdge.CounterStrafeSpeedFraction,6:F1} u/s"
                 + $" stops in {simulated,6:F3} ticks simulated, {closedForm,6:F3} closed form;"
@@ -127,20 +158,53 @@ public class CounterStrafeWindowDerivationTests
                     + $"shipped closed form says {closedForm:F3}: the formula is not this model");
             }
 
-            if (closedForm > shippedTicks)
+            // Monotonicity, which is the property that makes "one window sized at the fastest cap
+            // covers every weapon" a theorem instead of a coincidence. Asserting the window covers
+            // each cap directly would prove nothing: the window IS this function at the top of the
+            // sweep, so the comparison could not fail whatever the function did in between.
+            if (closedForm <= previous)
             {
                 drift.Add(
-                    $"a player whose line is {cap * AimShotContextEdge.CounterStrafeSpeedFraction:F1} u/s "
-                    + $"is still stopping {closedForm:F3} ticks later, past the {shippedTicks:F3}-tick "
-                    + "window, so the end of their stop is dropped from the population");
+                    $"the stop from a {cap:F0} cap takes {closedForm:F3} ticks, no more than the "
+                    + $"{previous:F3} the cap below it takes: the stop time no longer rises with the "
+                    + "cap, so sizing one window at the fastest cap stops covering the slower ones");
+            }
+
+            previous = closedForm;
+        }
+
+        // The same agreement at caps the sweep does not hold, so the closed form cannot be a curve
+        // fitted through the seven points above.
+        foreach (double cap in _offSweepCaps)
+        {
+            double simulated = TicksToStopFromTheLine(cap);
+            double closedForm = AimShotContextEdge.SecondsToStopFromTheInaccuracyLine(cap) * TickRate;
+            Console.WriteLine(
+                $"   off-sweep {cap,6:F0} -> {simulated,6:F3} ticks simulated, {closedForm,6:F3} closed form");
+            if (Math.Abs(simulated - closedForm) > 0.25)
+            {
+                drift.Add(
+                    $"off the sweep, at a {cap:F0} cap, the friction model stops in {simulated:F3} "
+                    + $"ticks and the closed form says {closedForm:F3}: the formula matches the "
+                    + "sweep's points and not the model they came from");
             }
         }
 
-        if (Math.Abs(shippedTicks - slowest) > 1e-9)
+        // What the single constant costs the weapons it is not sized for. The gate compares whole
+        // ticks, so this is measured against the rounded window rather than the seconds behind it.
+        double stopAtCap = AimShotContextEdge.SecondsToStopFromTheInaccuracyLine(OverAdmissionCap)
+                           * TickRate;
+        double overAdmitted = shippedWholeTicks - stopAtCap;
+        Console.WriteLine(
+            $"   over-admission at a {OverAdmissionCap:F0} cap: {shippedWholeTicks} - {stopAtCap:F3} "
+            + $"= {overAdmitted:F4} ticks");
+        if (Math.Abs(overAdmitted - OverAdmissionTicksAt200Cap) > 1e-3)
         {
             drift.Add(
-                $"the slowest stop is {slowest:F3} ticks and the window is {shippedTicks:F3}: the "
-                + "difference admits shots taken after the player had already come to rest");
+                $"a player capped at {OverAdmissionCap:F0} has come fully to rest {stopAtCap:F3} ticks "
+                + $"after dropping below their line, and the {shippedWholeTicks}-tick window keeps "
+                + $"admitting them for {overAdmitted:F4} ticks after that, not "
+                + $"{OverAdmissionTicksAt200Cap:F4}: the sizing policy moved");
         }
 
         // The two numbers a reader is likely to quote, pinned so a change to the inputs cannot move

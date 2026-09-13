@@ -70,7 +70,7 @@ public class AimShotContextDemoTests
     [Test]
     public async Task AimEnrichments_AreProducedFromEntityState_OnARealDemo()
     {
-        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
 
         BuildResult build = V2KindGoldenSupport.CompileV2(demo, Yaml);
         AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
@@ -90,14 +90,12 @@ public class AimShotContextDemoTests
         int firstBulletTotal = firstBullets.Values.Sum();
         int measuredTotal = residualMeasured.Values.Sum();
         double residualTotal = residualSq.Values.Sum();
-        double residualRms = measuredTotal > 0 ? Math.Sqrt(residualTotal / measuredTotal) : 0.0;
 
         Console.WriteLine($"[aim-shot] bullet shots      : {shotTotal}");
         Console.WriteLine($"[aim-shot] counter-strafe    : {admittedTotal} admitted "
                           + $"({goodTotal} good / {badTotal} bad)");
         Console.WriteLine($"[aim-shot] first bullets     : {firstBulletTotal}");
         Console.WriteLine($"[aim-shot] residual measured : {measuredTotal}");
-        Console.WriteLine($"[aim-shot] residual pitch RMS: {residualRms:F3} deg");
 
         await Assert.That(shotTotal).IsGreaterThan(0)
             .Because("the demo has bullet shots; zero here means the shot view never fired at all");
@@ -129,15 +127,33 @@ public class AimShotContextDemoTests
 
         // Spray control. The residual is only meaningful over the shots the measured gate admits, and
         // the RMS over them has to land in a range a human wrist can produce: single-digit degrees.
-        // The upper bound is the assertion that matters, and it is not theoretical: before the
-        // aim-punch plausibility guard this demo produced an RMS of 262 degrees from a column that
-        // decodes to roughly -94, and every one of those shots would have entered a spray-control
-        // metric as data. Nothing else in the suite would have noticed.
-        await Assert.That(measuredTotal).IsGreaterThanOrEqualTo(0);
+        // The upper bound is not theoretical: before the aim-punch plausibility guard this demo
+        // produced an RMS of 262 degrees from a column that decodes to roughly -94, and every one of
+        // those shots would have entered a spray-control metric as data.
+        //
+        // On THIS demo the population is empty, because the guard rejects the punch column outright
+        // and no bullet_damage stream exists for the landed arm to anchor on. That is stated here
+        // rather than hidden behind a ternary that turns an empty population into an RMS of 0 and
+        // then passes the bound: an assertion over nothing is not the assertion it reads as.
         await Assert.That(measuredTotal).IsLessThanOrEqualTo(shotTotal);
-        await Assert.That(residualRms).IsLessThan(MaxPlausibleSprayRmsDegrees)
-            .Because("a spray residual is the recoil a player failed to pull down, which is degrees, "
-                     + "not hundreds of degrees; a larger RMS means the effective aim is not an aim");
+        if (measuredTotal > 0)
+        {
+            double residualRms = Math.Sqrt(residualTotal / measuredTotal);
+            Console.WriteLine($"[aim-shot] residual pitch RMS: {residualRms:F3} deg");
+            await Assert.That(residualRms).IsLessThan(MaxPlausibleSprayRmsDegrees)
+                .Because("a spray residual is the recoil a player failed to pull down, which is "
+                         + "degrees, not hundreds of degrees; a larger RMS means the effective aim "
+                         + "is not an aim");
+        }
+        else
+        {
+            Console.WriteLine("[aim-shot] residual pitch RMS: no population (punch column rejected)");
+            await Assert.That(residualTotal).IsEqualTo(0.0)
+                .Because("an empty measured population must contribute nothing to the sum; a "
+                         + "non-zero sum against a zero count means residuals are reaching the "
+                         + "aggregate without passing spray_residual_measured, which is the gate "
+                         + "every spray-control metric relies on");
+        }
     }
 
     /// <summary>

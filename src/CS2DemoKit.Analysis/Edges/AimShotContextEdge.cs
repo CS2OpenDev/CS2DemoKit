@@ -171,9 +171,19 @@ public sealed record AimShotContextSources(
 ///     <para>
 ///         <b>Only the fired arm owns the spray run.</b> A landed shot is one of the fired shots, so
 ///         advancing the run on both would count every landing bullet twice and shorten every
-///         measured spray. The landed arm reads the run and never writes it, and it does not emit
-///         residuals at all: a spray is defined over the shots FIRED, and anchoring a residual on
-///         the first shot that happened to land measures a different, survivorship-biased thing.
+///         measured spray. The landed arm reads the segmentation and never writes it.
+///     </para>
+///     <para>
+///         <b>But both arms emit residuals, from separate anchors.</b> The landed arm anchors on the
+///         first BULLET THAT LANDED in the run rather than the first shot fired, and measures the
+///         drift of <c>ShootAng*</c> from it. That is a survivorship-biased population and it is
+///         emitted anyway, because the alternative is no spray-control measurement at all: the fired
+///         arm's anchor is built from the entity punch column, which does not decode to degrees on a
+///         GOTV demo (see the known gap below), while <c>ShootAng*</c> is the server's own resolved
+///         firing direction. The fired arm still owns the run boundaries, so a new run clears the
+///         landed anchor too and the two arms segment the same sprays. Which arm a number came from
+///         is the view it was read through: <c>shot</c> is the fired arm, <c>shot_landed</c> the
+///         landed one, and a metric must not pool the two.
 ///     </para>
 ///     <para>
 ///         <b>The 2.0 is not optional.</b> Effective aim is the view angle plus
@@ -361,12 +371,32 @@ public sealed class AimShotContextEdge(
     public const double SprayCycleTolerance = 1.10;
 
     /// <summary>
-    ///     Widest gap, in ticks, that may OPEN a spray run, used only until the run's own second
-    ///     shot measures its weapon's cycle time. 16 ticks is 250 ms at 64-tick, which covers the
-    ///     slowest repeat-fire cycle in CS2 (the revolver's), so no weapon's genuine second shot is
-    ///     rejected for being slow. After that the measured cycle time is a far tighter bound.
+    ///     Widest gap, in SECONDS, that may OPEN a spray run, used only until the run's own second
+    ///     shot measures its weapon's cycle time. 250 ms covers the slowest repeat-fire cycle in CS2
+    ///     (the revolver's), so no weapon's genuine second shot is rejected for being slow. After
+    ///     that the measured cycle time is a far tighter bound.
+    ///     <para>
+    ///         <b>Seconds, not ticks.</b> What it bounds is a weapon's cycle time, which is a
+    ///         duration the server owns and not a count the demo's rate can change. Held as 16 ticks
+    ///         it was 250 ms on a 64-tick demo and 125 ms on a 128-tick one, and the shot this gate
+    ///         decides is the run's SECOND — the one that has not yet measured
+    ///         <see cref="AimShotState.RunGapBoundTicks" /> and therefore has nothing tighter to fall
+    ///         back on. Every weapon slower than 125 ms per shot (the pistols, the Deagle, the
+    ///         autosnipers) would open a fresh run on every trigger pull at 128-tick, which reports
+    ///         <c>is_first_bullet</c> on all of them and <c>spray_residual_measured</c> on none.
+    ///         <see cref="_lookbackTicks" /> already converts at the demo's own rate; this now does
+    ///         the same.
+    ///     </para>
     /// </summary>
-    public const int SprayOpenGapTicks = 16;
+    public const double SprayOpenGapSeconds = 0.25;
+
+    /// <summary>
+    ///     <see cref="SprayOpenGapSeconds" /> rendered at 64 ticks per second, which is what the gate
+    ///     comes to on every demo in the benchmark corpus. Kept because this assembly ships as a
+    ///     package and a <c>const</c> cannot be removed without breaking a consumer that inlined it;
+    ///     the edge itself converts the seconds at the demo's own rate rather than reading this.
+    /// </summary>
+    public const int SprayOpenGapTicks = (int)(SprayOpenGapSeconds * 64.0);
 
     /// <summary>
     ///     Float-noise tolerance on the recoil-monotonicity test that decides whether a shot
@@ -402,6 +432,13 @@ public sealed class AimShotContextEdge(
     // recomputed because it is compared against a tick gap on every shot in the demo.
     private readonly int _lookbackTicks = (int)Math.Round(
         CounterStrafeLookbackSeconds * (sources is { TickRate: > 0 } s ? s.TickRate : 64.0));
+
+    // The run-opening gap in ticks at this demo's rate: 16 at 64-tick, 32 at 128. Same conversion as
+    // _lookbackTicks above, because it is the same kind of quantity — a duration the server owns,
+    // not a count the demo's rate is free to reinterpret. Floored at one tick so a pathologically
+    // low rate cannot produce a bound no gap can satisfy.
+    private readonly int _openGapTicks = Math.Max(1, (int)Math.Round(
+        SprayOpenGapSeconds * (sources is { TickRate: > 0 } g ? g.TickRate : 64.0)));
 
     // Which of the two arms this instance is. Cached rather than compared per access because the
     // per-arm answer latches below are read on every shot in the demo.
@@ -519,12 +556,13 @@ public sealed class AimShotContextEdge(
     // needed no reconstruction: InaccuracyMove is the movement penalty the engine actually charged,
     // and RecoilIndex is the index it actually fired at.
     //
-    // The effective aim here applies the same viewangle-plus-scaled-punch formula to ShootAng* and
-    // AimPunch*, and that is an assumption worth naming: it holds only if ShootAng is the aim BEFORE
-    // punch rather than the resolved firing direction. Nothing in this repo pins that down, and the
-    // only demos that carry bullet_damage at all are matchmaking ones (the bundled pro GOTV sample
-    // emits none), so it stays unverified. It costs nothing today because these fields feed only the
-    // record, never a shipped enrichment: the landed arm emits no residual.
+    // The effective aim here is ShootAng* as it arrives, with no punch folded in, which is an
+    // assumption worth naming: it holds only if ShootAng is the RESOLVED firing direction rather than
+    // the aim before punch. Nothing in this repo pins that down, and the only demos that carry
+    // bullet_damage at all are matchmaking ones (the bundled pro GOTV sample emits none), so it stays
+    // unverified. It is load-bearing, because the residuals this arm emits are differences of
+    // ShootAng*: were ShootAng the pre-punch aim, they would be a view-angle residual under another
+    // name and would score a player higher the less they pulled down.
     private bool ApplyLanded(BulletDamageEvent landed, EvaluationContext context)
     {
         int slot = landed.Attacker;
@@ -646,13 +684,19 @@ public sealed class AimShotContextEdge(
         float? eyeYaw = ReadFloat(src.EyeYaw, slot);
         double? punchPitch = PlausiblePunch(ReadFloat(src.PunchPitch, slot));
         double? punchYaw = PlausiblePunch(ReadFloat(src.PunchYaw, slot));
-        bool haveAim = eyePitch.HasValue && eyeYaw.HasValue
-                                        && punchPitch.HasValue && punchYaw.HasValue;
+        // Two gates, not one. The residual needs an effective aim and therefore a readable punch;
+        // the spot pairing needs only where the player POINTED. Folding them together made a
+        // crosshair-placement measurement that never touches the punch column unreachable whenever
+        // that column failed to decode, which is its state on the bundled GOTV sample and is a fact
+        // about the punch decode rather than about crosshair placement.
+        bool haveView = eyePitch.HasValue && eyeYaw.HasValue;
+        bool haveAim = haveView && punchPitch.HasValue && punchYaw.HasValue;
 
         double effectivePitch = haveAim ? eyePitch!.Value + (WeaponRecoilScale * punchPitch!.Value) : 0.0;
         double effectiveYaw = haveAim ? eyeYaw!.Value + (WeaponRecoilScale * punchYaw!.Value) : 0.0;
 
-        bool opensRun = AdvanceSprayRun(state, tick, recoil, effectivePitch, effectiveYaw, haveAim);
+        bool opensRun = AdvanceSprayRun(
+            state, tick, recoil, effectivePitch, effectiveYaw, haveAim, _openGapTicks);
 
         AimShotContext shot = new(
             slot, tick, movement.Speed, movement.Threshold, movement.HasSample, movement.Admitted,
@@ -691,8 +735,11 @@ public sealed class AimShotContextEdge(
         // two belong to different duels measures the angle between unrelated instants: the defect
         // that put 142 degrees in a crosshair-placement column whose real ceiling is about 20.
         //
-        EmitSpotPairing(ctx, tick, haveAim ? (float)eyePitch!.Value : null,
-            haveAim ? (float)eyeYaw!.Value : null);
+        // haveView, not haveAim: EmitSpotPairing measures the raw view angle and deliberately leaves
+        // recoil out of it, so requiring a readable aim punch would gate it on a column it never
+        // reads. EmitSpotPairing applies the view gate itself, which is why the nullables go through
+        // unwrapped.
+        EmitSpotPairing(ctx, tick, haveView ? eyePitch : null, haveView ? eyeYaw : null);
         return true;
     }
 
@@ -841,10 +888,11 @@ public sealed class AimShotContextEdge(
     ///     </para>
     /// </summary>
     private static bool AdvanceSprayRun(
-        AimShotState state, int tick, float? recoil, double effectivePitch, double effectiveYaw, bool haveAim)
+        AimShotState state, int tick, float? recoil, double effectivePitch, double effectiveYaw,
+        bool haveAim, int openGapTicks)
     {
         int gap = tick - state.LastShotTick;
-        int gapBound = state.RunGapBoundTicks > 0 ? state.RunGapBoundTicks : SprayOpenGapTicks;
+        int gapBound = state.RunGapBoundTicks > 0 ? state.RunGapBoundTicks : openGapTicks;
 
         // No recoil column is not evidence of a new run, so the gap decides alone. Reading a
         // missing column as "recoil dropped" would split every spray into single-shot runs and make
@@ -903,6 +951,18 @@ public sealed class AimShotContextEdge(
     ///     lookback window, the shot's own tick included). Every unmeasured case returns
     ///     <c>HasSample</c> and <c>Admitted</c> false, which drops the shot from the denominator
     ///     rather than admitting it on zeros that read as a perfectly still player.
+    ///     <para>
+    ///         <b>Admission is conditioned on the shot's own sample.</b> The two questions are
+    ///         answered from the same speed ring but over different windows, and the wide one can
+    ///         hold a sample while the shot's own tick holds none — the frame the shot landed on was
+    ///         skipped by the vantage sampler (a compromised decode, or the frozen pre-frame
+    ///         snapshot), while the ticks before it were not. Answering them independently admits
+    ///         that shot with <c>HasSample</c> false, and
+    ///         <see cref="AimShotContext.CounterStrafeGood" /> reads a missing sample as not-good, so
+    ///         the shot enters the denominator AND the moving count on the strength of a measurement
+    ///         that was never taken. There is no verdict without a sample at the shot, so there is no
+    ///         admission either.
+    ///     </para>
     /// </summary>
     private Movement ResolveMovement(int slot, int tick)
     {
@@ -912,11 +972,15 @@ public sealed class AimShotContextEdge(
             return default;
         }
 
+        if (!src.Vantage.TryPeakSpeed(slot, tick, tick, out float speedAtShot))
+        {
+            return default;
+        }
+
         float threshold = maxSpeed * CounterStrafeSpeedFraction;
-        bool hasSample = src.Vantage.TryPeakSpeed(slot, tick, tick, out float speedAtShot);
         bool admitted = src.Vantage.TryPeakSpeed(slot, tick - _lookbackTicks, tick, out float peak)
                         && peak > threshold;
-        return new Movement(speedAtShot, threshold, hasSample, admitted);
+        return new Movement(speedAtShot, threshold, true, admitted);
     }
 
     /// <summary>The movement half of one shot, resolved once per shot by <see cref="ResolveMovement" />.</summary>
@@ -982,12 +1046,26 @@ public sealed class AimShotState
     /// <summary>Shots in the current uninterrupted run; 0 before the player's first shot of the round.</summary>
     public int ShotsInRun { get; set; }
 
-    /// <summary>Clears every field back to its start-of-round value.</summary>
+    /// <summary>
+    ///     Clears every field back to its start-of-round value, the landed arm's anchor included.
+    ///     <para>
+    ///         The landed anchor is cleared HERE and not only where the fired arm clears it, because
+    ///         the fired arm cannot be relied on to run. It rejects every weapon
+    ///         <see cref="WeaponClassification.IsBulletWeapon" /> excludes, shotguns among them, while
+    ///         the landed arm has no such gate; and a demo with no <c>weapon_fire</c> stream at all
+    ///         never enters that arm. Left out, the anchor from one round's rifle spray is what the
+    ///         next round's bullets measure their residual against, which is a spray-control number
+    ///         computed across a round boundary and a different engagement.
+    ///     </para>
+    /// </summary>
     public void Reset()
     {
         AnchorPitch = 0.0;
         AnchorYaw = 0.0;
         HasAnchor = false;
+        HasLandedAnchor = false;
+        LandedAnchorPitch = 0.0;
+        LandedAnchorYaw = 0.0;
         Last = null;
         LastRecoil = 0f;
         LastShotTick = -1;

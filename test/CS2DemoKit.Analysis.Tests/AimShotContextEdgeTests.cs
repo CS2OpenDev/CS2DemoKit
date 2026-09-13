@@ -195,6 +195,47 @@ public class AimShotContextEdgeTests
     }
 
     /// <summary>
+    ///     A shot whose own tick carries no speed sample is not admitted, even when the lookback
+    ///     window behind it is full of movement.
+    ///     <para>
+    ///         Admission and the verdict are read off the same ring over different windows, and the
+    ///         wide one outlives the narrow one: the vantage sampler skips a frame whose decode was
+    ///         compromised or whose pre-frame snapshot is frozen, while the ticks before it keep
+    ///         their samples. Answered independently that shot is ADMITTED with no measurement, and
+    ///         <see cref="AimShotContext.CounterStrafeGood" /> reads a missing sample as not-good, so
+    ///         it lands in the denominator and in the moving count at once — a counter-strafe
+    ///         failure recorded for a player whose speed was never sampled.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task ShotWithNoSampleOfItsOwn_LeavesTheCounterStrafePopulation()
+    {
+        int window = (int)Math.Round(AimShotContextEdge.CounterStrafeLookbackSeconds * 64.0);
+        Rig rig = new();
+        float x = 0f;
+        for (int i = 0; i < 8; i++)
+        {
+            x += 200f / 64f;
+            rig.Tick(100 + i, Row(x: x, y: 0f));
+        }
+
+        // Three ticks past the last sampled frame: inside the window, outside the samples.
+        const int shotTick = 110;
+        await Assert.That(rig.Vantage.TryPeakSpeed(Shooter, shotTick, shotTick, out float _)).IsFalse()
+            .Because("no frame was fed at the shot tick, which is what a skipped vantage sample is");
+        await Assert.That(rig.Vantage.TryPeakSpeed(Shooter, shotTick - window, shotTick, out float peak))
+            .IsTrue();
+        await Assert.That(peak).IsGreaterThan(AkMaxSpeed * AimShotContextEdge.CounterStrafeSpeedFraction);
+
+        await Assert.That(rig.Fire(shotTick)).IsTrue();
+        await Assert.That(rig.Run.Last!.HasMovementSample).IsFalse();
+        await Assert.That(rig.Admitted.IsActive).IsFalse()
+            .Because("there is no verdict without a sample at the shot, so there is no admission "
+                     + "either; admitting it counts an unmeasured shot as a counter-strafe failure");
+        await Assert.That(rig.Good.IsActive).IsFalse();
+    }
+
+    /// <summary>
     ///     The engine's segmentation rule, not the "three or more shots" convention: a run is a
     ///     maximal stretch over which the recoil index never decays. Only the shot that opens one is
     ///     a first bullet.
@@ -240,6 +281,46 @@ public class AimShotContextEdgeTests
         await Assert.That(rig.Fire(112)).IsTrue();
         await Assert.That(rig.FirstBullet.IsActive).IsTrue();
         await Assert.That(rig.Run.ShotsInRun).IsEqualTo(1);
+    }
+
+    /// <summary>
+    ///     The gap that may OPEN a run is a DURATION, so the same real interval between two shots
+    ///     continues the run at every tick rate.
+    ///     <para>
+    ///         The 64-tick case is the control and passed before
+    ///         <see cref="AimShotContextEdge.SprayOpenGapSeconds" /> existed; the 128-tick case is
+    ///         the one a hardcoded 16-tick bound got wrong, because 16 ticks there is 125 ms and
+    ///         every weapon slower than that per shot — the pistols, the Deagle, the autosnipers —
+    ///         opened a fresh run on every trigger pull. This is the run's SECOND shot specifically,
+    ///         which is the only shot the open-gap bound ever decides: from the third on, the run has
+    ///         measured its own <see cref="AimShotState.RunGapBoundTicks" /> from the first gap.
+    ///     </para>
+    /// </summary>
+    /// <param name="tickRate">The demo's tick rate.</param>
+    /// <returns>A task.</returns>
+    [Test]
+    [Arguments(64.0)]
+    [Arguments(128.0)]
+    public async Task SprayOpenGap_IsADuration_NotATickCount(double tickRate)
+    {
+        // A Deagle's repeat-fire cycle, comfortably inside the 250 ms bound and comfortably outside
+        // a 16-tick one at 128: 14 ticks at 64-tick, 28 at 128.
+        const double deagleCycleSeconds = 0.22;
+        int gap = (int)Math.Round(deagleCycleSeconds * tickRate);
+        Console.WriteLine($"   {tickRate:F0}-tick: {deagleCycleSeconds * 1000:F0} ms is {gap} ticks");
+
+        Rig rig = new(tickRate: tickRate);
+        rig.Tick(94, Row(recoil: 0f));
+        rig.Tick(100, Row(recoil: 1f));
+        await Assert.That(rig.Fire(100)).IsTrue();
+        await Assert.That(rig.FirstBullet.IsActive).IsTrue();
+
+        rig.Tick(100 + gap, Row(recoil: 2f));
+        await Assert.That(rig.Fire(100 + gap)).IsTrue();
+        await Assert.That(rig.FirstBullet.IsActive).IsFalse()
+            .Because($"{deagleCycleSeconds * 1000:F0} ms is one weapon cycle at any tick rate, so the "
+                     + "second shot continues the run rather than opening one");
+        await Assert.That(rig.Run.ShotsInRun).IsEqualTo(2);
     }
 
     /// <summary>
@@ -329,6 +410,52 @@ public class AimShotContextEdgeTests
     }
 
     /// <summary>
+    ///     The spot pairing survives an unreadable aim punch, because it never reads one.
+    ///     <para>
+    ///         <c>travel_from_spot_deg</c> and <c>flick_error_deg</c> are measured on the RAW view
+    ///         angle on purpose — folding recoil in would charge a player for their weapon's kick —
+    ///         so gating them on the punch column made a crosshair-placement measurement unreachable
+    ///         for a reason that has nothing to do with crosshair placement. On the bundled GOTV
+    ///         sample the punch column does not decode (see
+    ///         <see cref="ImplausiblePunch_LeavesTheResidualUnmeasured" />), which left both columns
+    ///         on their sentinels for every shot in the demo and both populations permanently empty.
+    ///         Every other unit test here passes a punch of 0, which is always plausible, so nothing
+    ///         exercised the failing branch.
+    ///     </para>
+    /// </summary>
+    [Test]
+    public async Task ImplausiblePunch_StillMeasuresTheTravelFromTheContact()
+    {
+        Rig rig = new();
+        rig.Tick(94, Row(recoil: 0f, eyeYaw: 0f, punchPitch: 265.99f, punchYaw: 89f));
+        rig.Tick(100, Row(recoil: 1f, eyeYaw: 0f, punchPitch: 265.99f, punchYaw: 89f));
+        rig.Fire(100);
+
+        // The contact this shot answers: 30 degrees of yaw off the crosshair, the enemy's chest
+        // 25 degrees away, so a clean travel is 30 and the flick overshot by 5.
+        bool found = rig.Players.TryGet(Shooter, out PlayerContextIndex.PlayerContext? ctx);
+        await Assert.That(found).IsTrue();
+        ctx!.LastSpotTick = 100;
+        ctx.LastSpotPitch = 0f;
+        ctx.LastSpotYaw = 30f;
+        ctx.LastSpotChestAngle = 25f;
+
+        rig.Tick(106, Row(recoil: 2f, eyeYaw: 0f, punchPitch: 266.14f, punchYaw: 89f));
+        await Assert.That(rig.Fire(106)).IsTrue();
+
+        await Assert.That(rig.Run.ShotsInRun).IsEqualTo(2);
+        await Assert.That(rig.ResidualMeasured.IsActive).IsFalse()
+            .Because("the punch column did not decode, so there is no effective aim to anchor on "
+                     + "and the residual is correctly unmeasured");
+
+        await Assert.That(rig.TicksSinceSpot.Value).IsEqualTo(6);
+        await Assert.That(rig.TravelFromSpot.Value).IsEqualTo(30.0).Within(1e-4)
+            .Because("the travel is a view-angle distance and the view angles read fine");
+        await Assert.That(rig.FlickError.Value).IsEqualTo(5.0).Within(1e-4)
+            .Because("travel minus the contact's own 25-degree chest angle");
+    }
+
+    /// <summary>
     ///     A grenade or knife also fires <c>weapon_fire</c>. Letting one through would split every
     ///     spray it landed inside and make the shot after it look like a first bullet.
     /// </summary>
@@ -401,6 +528,14 @@ public class AimShotContextEdgeTests
     ///     A round boundary is a hard reset of everyone's engagement: a run that survived one would
     ///     weld the last shot of one round to the first of the next and report a residual measured
     ///     against an anchor from a different fight.
+    ///     <para>
+    ///         The LANDED arm's anchor is asserted separately because it is cleared by a different
+    ///         mechanism. Inside a round the fired arm clears it when it opens a run, but the fired
+    ///         arm rejects every weapon <c>IsBulletWeapon</c> excludes (the four shotguns) and never
+    ///         runs at all on a demo with no <c>weapon_fire</c> stream, so the round reset is the only
+    ///         clear those cases get. Without it a Nova in the next round measures its
+    ///         <c>spray_residual_deg</c> against a rifle bullet from this one.
+    ///     </para>
     /// </summary>
     [Test]
     public async Task RoundReset_ClearsTheSprayRun()
@@ -409,14 +544,27 @@ public class AimShotContextEdgeTests
         rig.Tick(94, Row(recoil: 0f));
         rig.Tick(100, Row(recoil: 1f));
         rig.Fire(100);
+        rig.Land(100, inaccuracyMove: 0f, recoilIndex: 0f);
         rig.Tick(106, Row(recoil: 2f));
         rig.Fire(106);
+        rig.Land(106, inaccuracyMove: 0f, recoilIndex: 1f);
         await Assert.That(rig.Run.ShotsInRun).IsEqualTo(2);
+        await Assert.That(rig.Run.HasLandedAnchor).IsTrue()
+            .Because("the first bullet that landed in the run anchored the landed arm's residual");
 
         rig.Players.ResetRoundState();
         await Assert.That(rig.Run.ShotsInRun).IsEqualTo(0);
         await Assert.That(rig.Run.LastShotTick).IsEqualTo(-1);
         await Assert.That(rig.Run.Last).IsNull();
+        await Assert.That(rig.Run.HasLandedAnchor).IsFalse();
+        await Assert.That(rig.Run.LandedAnchorPitch).IsEqualTo(0.0);
+        await Assert.That(rig.Run.LandedAnchorYaw).IsEqualTo(0.0);
+
+        // The behaviour the three fields are there for: the next round's first landed bullet is an
+        // anchor, not a measurement against the previous round's.
+        await Assert.That(rig.Land(112, inaccuracyMove: 0f, recoilIndex: 0f)).IsTrue();
+        await Assert.That(rig.ResidualMeasured.IsActive).IsFalse()
+            .Because("the first landed bullet after a reset anchors the new round's run");
 
         rig.Tick(112, Row(recoil: 3f));
         await Assert.That(rig.Fire(112)).IsTrue();
@@ -528,7 +676,7 @@ public class AimShotContextEdgeTests
 
     /// <summary>
     ///     Whether a shot is the first to answer an acquisition is decided per ARM, exactly as
-    ///     <c>is_first_after_spot</c> is.
+    ///     <c>first_after_spot</c> is.
     ///     <para>
     ///         One shared latch never survives to the landed arm; see
     ///         <see cref="PlayerContextIndex.PlayerContext.AnsweredOnTargetSinceLanded" />. What the
