@@ -28,8 +28,8 @@ namespace CS2DemoKit.Analysis.Edges;
 ///         </item>
 ///         <item>
 ///             <c>enrich.shot.spray_shots</c> / <c>enrich.shot.spray_victims</c> — the current
-///             "spray run": consecutive damaging shots whose tick gap is at most
-///             <see cref="SprayContinuationMaxGapTicks" /> and whose <c>RecoilIndex</c> never
+///             "spray run": consecutive damaging shots whose gap is at most
+///             <see cref="SprayContinuationMaxGapSeconds" /> and whose <c>RecoilIndex</c> never
 ///             drops (within <see cref="SprayRecoilEpsilon" /> — RecoilIndex rises per shot while
 ///             firing continuously and decays once fire stops). A drop or a long gap starts a new
 ///             run. spray_victims counts DISTINCT victim slots damaged during the run.
@@ -46,7 +46,8 @@ public sealed class ShotEnrichmentEdge(
     TransientValueNode<double> turnDegrees,
     TransientValueNode<int> ticksSinceLastShot,
     TransientValueNode<int> sprayShots,
-    TransientValueNode<int> sprayVictims) : StateEdge(source)
+    TransientValueNode<int> sprayVictims,
+    double tickRate = 64.0) : StateEdge(source)
 {
     /// <summary>
     ///     Value of <c>enrich.shot.ticks_since_last_shot</c> when the attacker has no previous
@@ -55,13 +56,38 @@ public sealed class ShotEnrichmentEdge(
     public const int NoPreviousShotSentinel = 1_000_000;
 
     /// <summary>
-    ///     Maximum frame-clock tick gap between consecutive damaging shots for a spray run to
-    ///     continue (24 ticks = 375 ms @ 64/s — covers every automatic's refire with margin).
+    ///     Widest gap, in SECONDS, between consecutive damaging shots for a spray run to continue.
+    ///     375 ms covers every automatic's refire cycle with margin, while staying short enough that
+    ///     two deliberate taps do not weld into one spray.
+    ///     <para>
+    ///         <b>Seconds, not ticks.</b> What this bounds is a weapon's refire cycle, a duration
+    ///         the server owns and not a count the demo's rate is free to reinterpret. Held as 24
+    ///         ticks it was 375 ms on a 64-tick demo and 188 ms on a 128-tick one, so the same spray
+    ///         segmented differently on a FACEIT or ESEA demo than on a Valve one and
+    ///         <c>spray_shots</c> / <c>spray_victims</c> counted different things per demo with
+    ///         nothing in the output saying so. <see cref="AimShotContextEdge.SprayOpenGapSeconds" />
+    ///         is the same quantity on the every-shot stream and converts the same way.
+    ///     </para>
     /// </summary>
-    public const int SprayContinuationMaxGapTicks = 24;
+    public const double SprayContinuationMaxGapSeconds = 0.375;
+
+    /// <summary>
+    ///     <see cref="SprayContinuationMaxGapSeconds" /> rendered at 64 ticks per second, which is
+    ///     what the bound comes to on every demo in the benchmark corpus. Kept because this assembly
+    ///     ships as a package and a <c>const</c> cannot be removed without breaking a consumer that
+    ///     inlined it; the edge itself converts the seconds at the demo's own rate rather than
+    ///     reading this.
+    /// </summary>
+    public const int SprayContinuationMaxGapTicks = (int)(SprayContinuationMaxGapSeconds * 64.0);
 
     /// <summary>Float-noise tolerance on the RecoilIndex monotonicity check.</summary>
     public const float SprayRecoilEpsilon = 0.25f;
+
+    // The continuation bound in ticks at this demo's rate: 24 at 64-tick, 48 at 128. Held rather
+    // than recomputed because it is compared against a tick gap on every damaging shot in the demo.
+    // Floored at one tick so a pathologically low rate cannot produce a bound no gap can satisfy.
+    private readonly int _continuationGapTicks = Math.Max(1, (int)Math.Round(
+        SprayContinuationMaxGapSeconds * (tickRate > 0 ? tickRate : 64.0)));
 
     /// <inheritdoc />
     public override IReadOnlyList<StateNode>? AdditionalWrittenNodes =>
@@ -114,7 +140,7 @@ public sealed class ShotEnrichmentEdge(
         // (multi-victim penetration, shotgun pellets) continue the run with gap 0.
         bool continues = ctx.SprayShotCount > 0
                          && hasPrev
-                         && gap <= SprayContinuationMaxGapTicks
+                         && gap <= _continuationGapTicks
                          && shot.RecoilIndex >= ctx.SprayLastRecoil - SprayRecoilEpsilon;
         if (continues)
         {

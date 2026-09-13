@@ -13,7 +13,7 @@ namespace CS2DemoKit.Analysis.Edges;
 ///     Fires on <see cref="PlayerDeathEvent" /> and correlates the kill with the killer's
 ///     CURRENT spray run (maintained by <see cref="ShotEnrichmentEdge" /> on
 ///     <c>bullet_damage</c>): when the killer's last damaging shot is at most
-///     <see cref="KillAttachMaxGapTicks" /> frame-clock ticks before the death, the kill is
+///     <see cref="KillAttachMaxGapSeconds" /> before the death, the kill is
 ///     attributed to the run and the run's kill counter increments.
 ///     <list type="bullet">
 ///         <item>
@@ -32,21 +32,38 @@ namespace CS2DemoKit.Analysis.Edges;
 ///     killing bullet's own <c>bullet_damage</c> lands at the same tick as the death, so the
 ///     gap is 0 or the run's normal shot spacing). The wire carries no bullet↔death identity,
 ///     so a kill by a DIFFERENT weapon landing within the window of an ongoing spray would be
-///     mis-attributed; with the window at 24 ticks this requires near-simultaneous fire from
+///     mis-attributed; with the window at 375 ms this requires near-simultaneous fire from
 ///     the same player and is not observable in practice.
 /// </summary>
 public sealed class SprayKillEnrichmentEdge(
     StateNode source,
     PlayerContextIndex playerContext,
     TransientValueNode<int> sprayKills,
-    TransientValueNode<int> sprayShotsAtKill) : StateEdge(source)
+    TransientValueNode<int> sprayShotsAtKill,
+    double tickRate = 64.0) : StateEdge(source)
 {
     /// <summary>
-    ///     Maximum frame-clock gap between the killer's last damaging shot and the death event
-    ///     for the kill to attach to the run. Matches
-    ///     <see cref="ShotEnrichmentEdge.SprayContinuationMaxGapTicks" />.
+    ///     Widest gap, in SECONDS, between the killer's last damaging shot and the death event for
+    ///     the kill to attach to the run. Defined AS
+    ///     <see cref="ShotEnrichmentEdge.SprayContinuationMaxGapSeconds" /> rather than merely
+    ///     matching it: a kill attaches to a run exactly when another damaging shot at that instant
+    ///     would have continued the run, so the two are one decision, and a drift between them
+    ///     would credit a kill to a run the shot stream had already closed.
+    /// </summary>
+    public const double KillAttachMaxGapSeconds = ShotEnrichmentEdge.SprayContinuationMaxGapSeconds;
+
+    /// <summary>
+    ///     <see cref="KillAttachMaxGapSeconds" /> rendered at 64 ticks per second, kept for the same
+    ///     reason <see cref="ShotEnrichmentEdge.SprayContinuationMaxGapTicks" /> is: this assembly
+    ///     ships as a package and a <c>const</c> a consumer may have inlined cannot be removed. The
+    ///     edge converts the seconds at the demo's own rate rather than reading this.
     /// </summary>
     public const int KillAttachMaxGapTicks = ShotEnrichmentEdge.SprayContinuationMaxGapTicks;
+
+    // The attach bound in ticks at this demo's rate: 24 at 64-tick, 48 at 128. Same conversion as
+    // ShotEnrichmentEdge's, because it is the same duration measured on the same frame clock.
+    private readonly int _attachGapTicks = Math.Max(1, (int)Math.Round(
+        KillAttachMaxGapSeconds * (tickRate > 0 ? tickRate : 64.0)));
 
     /// <inheritdoc />
     public override IReadOnlyList<StateNode>? AdditionalWrittenNodes => [sprayShotsAtKill];
@@ -87,7 +104,7 @@ public sealed class SprayKillEnrichmentEdge(
         }
 
         int gap = context.Fire!.GameTick - ctx.LastShotGameTick;
-        if (gap < 0 || gap > KillAttachMaxGapTicks)
+        if (gap < 0 || gap > _attachGapTicks)
         {
             return false; // the run is stale (or the anchor is from the future) — not this spray
         }
