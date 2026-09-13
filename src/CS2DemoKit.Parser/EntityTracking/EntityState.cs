@@ -461,13 +461,27 @@ public sealed class EntityState
     ///     (the <c>_seen</c> bit is set). Returns <c>false</c> and a default
     ///     <paramref name="value" /> when the slot has never received a wire update —
     ///     letting the caller distinguish "absent" from a received default <c>0</c>.
+    ///     <para>
+    ///         A slot outside the bound <see cref="Shape" />'s int lane reads as absent too:
+    ///         negative, past the lane's end, or any slot at all on an entity running in
+    ///         all-fallback mode. <see cref="ClassShape.PathToSlot" /> is the only supported source
+    ///         of a slot, but this is public API, and a caller holding a slot resolved against a
+    ///         DIFFERENT class's shape has made a plausible mistake rather than a corrupting one —
+    ///         answering it with an <see cref="IndexOutOfRangeException" /> would break the contract
+    ///         the <c>Try</c> prefix advertises. The range test is also what lets the JIT drop the
+    ///         lane's own bounds check, so a valid slot pays nothing for it.
+    ///     </para>
     /// </summary>
+    /// <param name="slot">An int-lane slot from <see cref="ClassShape.PathToSlot" />.</param>
+    /// <param name="value">The lane value, or <c>0</c> when this returns <c>false</c>.</param>
+    /// <returns><c>true</c> when the slot is in range AND has received a wire update.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetIntSlot(int slot, out int value)
     {
-        if (IsSeen(_intSeen, slot))
+        int[]? lane = _intLane;
+        if (lane is not null && (uint)slot < (uint)lane.Length && IsSeen(_intSeen, slot))
         {
-            value = _intLane![slot];
+            value = lane[slot];
             return true;
         }
 
@@ -478,14 +492,20 @@ public sealed class EntityState
     /// <summary>
     ///     Reads the float lane at <paramref name="slot" /> only if it has been written
     ///     (the <c>_seen</c> bit is set). Returns <c>false</c> and a default
-    ///     <paramref name="value" /> when the slot has never received a wire update.
+    ///     <paramref name="value" /> when the slot has never received a wire update, or when it
+    ///     falls outside the bound <see cref="Shape" />'s float lane — see
+    ///     <see cref="TryGetIntSlot" /> for why an out-of-range slot answers rather than throws.
     /// </summary>
+    /// <param name="slot">A float-lane slot from <see cref="ClassShape.PathToSlot" />.</param>
+    /// <param name="value">The lane value, or <c>0f</c> when this returns <c>false</c>.</param>
+    /// <returns><c>true</c> when the slot is in range AND has received a wire update.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetFloatSlot(int slot, out float value)
     {
-        if (IsSeen(_floatSeen, slot))
+        float[]? lane = _floatLane;
+        if (lane is not null && (uint)slot < (uint)lane.Length && IsSeen(_floatSeen, slot))
         {
-            value = _floatLane![slot];
+            value = lane[slot];
             return true;
         }
 
@@ -497,14 +517,20 @@ public sealed class EntityState
     ///     Reads the object lane at <paramref name="slot" /> only if it has been written
     ///     (the <c>_seen</c> bit is set). Returns <c>false</c> and a <c>null</c>
     ///     <paramref name="value" /> when the slot has never received a wire update —
-    ///     distinguishing "absent" from a received <c>null</c> object.
+    ///     distinguishing "absent" from a received <c>null</c> object — or when it falls outside the
+    ///     bound <see cref="Shape" />'s object lane; see <see cref="TryGetIntSlot" /> for why an
+    ///     out-of-range slot answers rather than throws.
     /// </summary>
+    /// <param name="slot">An object-lane slot from <see cref="ClassShape.PathToSlot" />.</param>
+    /// <param name="value">The lane value, or <c>null</c> when this returns <c>false</c>.</param>
+    /// <returns><c>true</c> when the slot is in range AND has received a wire update.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetObjectSlot(int slot, out object? value)
     {
-        if (IsSeen(_objectSeen, slot))
+        object?[]? lane = _objectLane;
+        if (lane is not null && (uint)slot < (uint)lane.Length && IsSeen(_objectSeen, slot))
         {
-            value = _objectLane![slot];
+            value = lane[slot];
             return true;
         }
 

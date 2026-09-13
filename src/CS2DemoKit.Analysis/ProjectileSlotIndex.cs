@@ -1,6 +1,7 @@
 #region
 
 using System.Runtime.InteropServices;
+using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
@@ -36,9 +37,6 @@ namespace CS2DemoKit.Analysis;
 /// </summary>
 internal sealed class ProjectileSlotIndex
 {
-    /// <summary>The smoke projectile class; the digest's smoke gate reads this class only.</summary>
-    internal const string SmokeClass = "CSmokeGrenadeProjectile";
-
     /// <summary>The molotov projectile class; the synthesized throw event is one per creation of it.</summary>
     internal const string MolotovClass = "CMolotovProjectile";
 
@@ -69,9 +67,15 @@ internal sealed class ProjectileSlotIndex
         Prune(tracker);
     }
 
-    /// <summary>Whether <paramref name="className" /> is one of the two projectile classes the digest reads.</summary>
+    /// <summary>
+    ///     Whether <paramref name="className" /> is one of the two projectile classes the digest
+    ///     reads. The smoke half defers to <see cref="VisibilityAnalyzer.SmokeClass" /> rather than
+    ///     naming the class again: the gate that decides whether a cloud reaches the digest is
+    ///     <see cref="VisibilityAnalyzer.TryActiveSmoke" />, and an index that admitted a narrower
+    ///     set than that gate accepts would drop clouds the walk oracle keeps.
+    /// </summary>
     internal static bool IsProjectile(string className) =>
-        className == SmokeClass || className == MolotovClass;
+        className == VisibilityAnalyzer.SmokeClass || className == MolotovClass;
 
     private void Bind(EntityTracker tracker)
     {

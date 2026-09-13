@@ -40,8 +40,17 @@ namespace CS2DemoKit.Analysis.Visibility;
 /// </summary>
 public static class VisibilityAnalyzer
 {
-    /// <summary>The smoke-projectile entity class whose active clouds occlude vision.</summary>
-    private const string SmokeClass = "CSmokeGrenadeProjectile";
+    /// <summary>
+    ///     The smoke-projectile entity class whose active clouds occlude vision, and the only
+    ///     declaration of it. <see cref="TryActiveSmoke" /> is the gate that decides which entities
+    ///     are clouds; <c>ProjectileSlotIndex.IsProjectile</c>, which decides whether the indexed
+    ///     digest walk ever offers an entity to that gate, reads this same constant rather than a
+    ///     copy of the string. Two copies would let the index admit a narrower set than the gate
+    ///     accepts the moment either side changed — the clouds the index missed would be absent from
+    ///     the digest while the walk oracle still found them, and a sightline through a cloud that
+    ///     was never recorded reads as a spot.
+    /// </summary>
+    internal const string SmokeClass = "CSmokeGrenadeProjectile";
 
     /// <summary>Extracts a live pawn's vantage. Null when position can't be reconstructed (dormant/pre-spawn).</summary>
     public static Vantage? TryVantage(int slot, EntityState pawn, Func<EntityState, Vector3?> resolvePosition)

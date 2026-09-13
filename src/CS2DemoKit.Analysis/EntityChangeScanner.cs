@@ -647,11 +647,28 @@ public sealed class EntityChangeScanner
     ///         frozen positions do not read as missing data, they read as ten players standing
     ///         perfectly still with a plausible set of sightlines between them.
     ///     </para>
+    ///     <para>
+    ///         Gating it is not enough on its own, because the transition scanner carries state
+    ///         BETWEEN samples and expires it only while samples keep arriving: stop feeding it and
+    ///         the visible set and the crosshair-arrival stamps freeze at their last values for the
+    ///         rest of the run, which a reader cannot tell from live ones. So the gate RESETS it
+    ///         rather than merely skipping it — the same "an absent pair reads as not-visible"
+    ///         posture the scanner already takes for a player who drops out of the vantage set,
+    ///         extended to the whole set dropping out at once. The cost is that the first contact
+    ///         after decode recovers is re-reported, which is the honest reading of a hole in the
+    ///         feed.
+    ///     </para>
     /// </summary>
     private void ConsumeAimVantage(EntityFrameDigest digest, int tick)
     {
-        if (_vantageScanner is null || _preFrameSnapshotFrozen || digest.DecodeCompromised)
+        if (_vantageScanner is null)
         {
+            return;
+        }
+
+        if (_preFrameSnapshotFrozen || digest.DecodeCompromised)
+        {
+            _transitionScanner?.Reset();
             return;
         }
 
@@ -792,21 +809,26 @@ public sealed class EntityChangeScanner
     }
 
     /// <summary>
-    ///     Synthesizes one <c>molotov_thrown</c> event per newly-seen <c>CMolotovProjectile</c> in the
-    ///     digest, deduped by (index, serial) across the run. Identical to the pre-digest
-    ///     <c>DetectMolotovThrows</c>: every live molotov is recorded as seen, but only those with a
-    ///     resolvable thrower slot emit.
+    ///     Synthesizes one <c>molotov_thrown</c> event per <c>CMolotovProjectile</c> in the digest,
+    ///     deduped by (index, serial) across the run so a projectile still alive on the next frame
+    ///     does not throw again; the serial in the key is what keeps a later projectile reusing the
+    ///     same entity index a separate throw.
+    ///     <para>
+    ///         The dedup is keyed on EMISSION, not on first sighting: a projectile whose thrower has
+    ///         not resolved yet (<c>slot &lt; 0</c>) is left out of the set, so a later frame that
+    ///         does resolve it still emits. <c>m_hThrower</c> is not reliably networked on the frame
+    ///         the entity is created — a pawn killed on that same frame reports the 24-bit invalid
+    ///         handle, which <c>EntityDigestExtractor.ResolveThrowerSlot</c> folds to -1 — and
+    ///         recording the projectile as seen on that first sighting would drop the throw for the
+    ///         rest of the run with no diagnostic, silently undercounting the shipped
+    ///         <c>molotov_used</c> stat.
+    ///     </para>
     /// </summary>
     private void ConsumeMolotovs(EntityFrameDigest digest, int tick)
     {
         foreach ((int idx, int serial, int slot) in digest.Molotovs)
         {
-            if (!_seenMolotovs.Add((idx, serial)))
-            {
-                continue;
-            }
-
-            if (slot < 0)
+            if (slot < 0 || !_seenMolotovs.Add((idx, serial)))
             {
                 continue;
             }
