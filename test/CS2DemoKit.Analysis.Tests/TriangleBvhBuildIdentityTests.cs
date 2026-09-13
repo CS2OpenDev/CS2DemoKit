@@ -14,12 +14,21 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     owed. A change that moves one is a tree change, and owes the differential harness against
 ///     the frozen binary tree with the oracle adjudicating, plus the real-demo counters.
 ///     <para>
-///         The digests were taken from the two-pass builder (binary SAH tree, then a separate
-///         collapse into eight-wide nodes) before the one-pass builder replaced it, and the one-pass
-///         builder reproduces every one of them. The pins were watched failing under a deliberate
-///         mutation of the one-pass collapse (largest-box tie broken toward the later child instead
-///         of the earlier) on every soup here that reaches a tie, and under a changed lane-array
-///         initial capacity on none, which is the point: capacity is not structure.
+///         What these digests are, and what they are not. This file was added by the one-pass
+///         builder's own commit, so nothing in the repository distinguishes the numbers in it from
+///         goldens regenerated against the code they check. The two-pass builder they are said to
+///         come from (binary SAH tree, then a separate collapse into eight-wide nodes) ran in a
+///         worktree that was never committed, and that run's log is not here either. So read them as
+///         change detection, which they do give: a builder change that keeps every digest has changed
+///         nothing a ray can observe, and the pins were watched failing under a deliberate mutation
+///         of the one-pass collapse (largest-box tie broken toward the later child instead of the
+///         earlier) on every soup here that reaches a tie, and under a changed lane-array initial
+///         capacity on none, which is the point: capacity is not structure. Do not read them as
+///         in-tree evidence that the one-pass builder reproduces the two-pass builder's tree; that
+///         equivalence rests on the argument in <c>TriangleBvh.Builder</c>'s doc and on a review of
+///         it, not on anything this file can run. Closing the gap means freezing the two-pass builder
+///         into this assembly the way <c>LegacyTriangleBvh</c> freezes the pre-fix traversal and
+///         asserting digest equality across these soups. It has not been done.
 ///     </para>
 ///     <para>
 ///         The soups cover what the real bakes do not: a root that is itself a leaf, fewer children

@@ -16,6 +16,15 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         the parts whose agreement we actually want.
 ///     </para>
 ///     <para>
+///         What the shared body costs, said out loud: Moller-Trumbore is not watertight, and
+///         <see cref="RayTriangle" /> is a verbatim copy of the traversal's, so a ray crossing
+///         exactly at an edge two triangles share can be rejected on both sides by both of them and
+///         this oracle agrees that the closed surface is clear. Holding a traversal to this oracle
+///         therefore cannot observe that class at all: the two agree on the crack. Only a census
+///         that counts crossings instead of comparing verdicts reaches it. See the note at
+///         <c>TriangleBvh.RayTriangle</c>.
+///     </para>
+///     <para>
 ///         O(n) per ray against up to a million triangles, so it is for corpora of thousands of rays,
 ///         never for a demo.
 ///     </para>
@@ -128,6 +137,44 @@ internal static class BruteForceOracle
         }
 
         return triangle >= 0;
+    }
+
+    /// <summary>
+    ///     How many triangles are hit for <c>t</c> in <c>(eps, tMax)</c>, with the same body and
+    ///     predicate every other method here uses. A count rather than a verdict is what a
+    ///     watertightness census needs: on a closed convex surface a ray fired from inside crosses
+    ///     exactly one triangle, so a zero is a leak through a seam and a two is the same seam
+    ///     accepted by both of its triangles. The nearest and farthest hit are handed back so a
+    ///     caller can tell those apart from two genuinely separate crossings — on a seam they are
+    ///     the same point to within an ulp. See <c>TriangleWatertightnessTests</c>.
+    /// </summary>
+    /// <param name="vertices">Triangle soup, 9 floats per triangle.</param>
+    /// <param name="triangleCount">Number of triangles packed in <paramref name="vertices" />.</param>
+    /// <param name="origin">Ray origin.</param>
+    /// <param name="dir">Unit ray direction.</param>
+    /// <param name="tMax">Far limit, in world units.</param>
+    /// <param name="eps">Near exclusion, matching the caller's.</param>
+    /// <param name="nearest">Smallest hit <c>t</c>, or <see cref="float.MaxValue" /> when none.</param>
+    /// <param name="farthest">Largest hit <c>t</c>, or <see cref="float.MinValue" /> when none.</param>
+    public static int CountHits(
+        float[] vertices, int triangleCount, Vector3 origin, Vector3 dir, float tMax, float eps,
+        out float nearest, out float farthest)
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        int hits = 0;
+        nearest = float.MaxValue;
+        farthest = float.MinValue;
+        for (int tri = 0; tri < triangleCount; tri++)
+        {
+            if (RayTriangle(vertices, origin, dir, tri, out float t) && t > eps && t < tMax)
+            {
+                hits++;
+                nearest = Math.Min(nearest, t);
+                farthest = Math.Max(farthest, t);
+            }
+        }
+
+        return hits;
     }
 
     // Moller-Trumbore, copied from TriangleBvh.RayTriangle so the two cannot disagree about what a

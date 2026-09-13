@@ -40,8 +40,8 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     <para>
 ///         The corpus skips segments shorter than the endpoint exclusion, as the engine does, and
 ///         holds no NaN or infinite input; it is evidence for real inputs. The degenerate classes
-///         (NaN, negative zero, an origin on a face, empty lanes) are run through every tier by
-///         <see cref="DegenerateRays_EveryTierMatchesScalar" /> with constructed rays.
+///         (NaN, a non-finite ray, negative zero, an origin on a face, empty lanes) are run through
+///         every tier by <see cref="DegenerateRays_EveryTierMatchesScalar" /> with constructed rays.
 ///     </para>
 ///     <para>
 ///         Every ray is then run a second time with a hint in: the triangle the scalar traversal
@@ -152,8 +152,9 @@ public class TraversalTierTests
     ///     through the origin along the 26 lattice directions on a mesh with empty lanes (an
     ///     infinite inverse component against an inverted box), a direction of negative zero with
     ///     the origin on the minimum face, an origin exactly on a face of a zero-direction axis, NaN
-    ///     origins and directions, and a random soup for the general case. Each tier must answer
-    ///     as scalar does on the verdict, the short-circuit flag, the hint and the nearest distance.
+    ///     origins and directions, origins and directions that are infinite rather than NaN, and a
+    ///     random soup for the general case. Each tier must answer as scalar does on the verdict,
+    ///     the short-circuit flag, the hint and the nearest distance.
     /// </summary>
     [Test]
     [Category("Unit")]
@@ -249,14 +250,27 @@ public class TraversalTierTests
                 }
             }
 
-            // NaN input on every tier: a miss that leaves the hint alone.
+            // Non-finite input on every tier: a miss that leaves the hint alone. The guard sits in
+            // the traversal body every tier is specialised on rather than in an entry point, and
+            // this is what says so: a guard on the default tier alone would leave the other tiers
+            // pushing eight references per node onto a stack sized for the real lanes.
             foreach (TraversalTier tier in TriangleBvh.AvailableTiers.ToArray())
             {
                 int hint = 0;
                 await Assert.That(bvh.AnyHit(new Vector3(float.NaN, 40f, 33f), Vector3.UnitX, 100f, Eps, ref hint, out _, tier)).IsFalse();
                 await Assert.That(bvh.AnyHit(new Vector3(0f, 40f, 33f), new Vector3(float.NaN, 0f, 0f), 100f, Eps, ref hint, out _, tier)).IsFalse();
+
+                // Infinite on every axis, both signs and mixed, plus the all-infinite direction
+                // Vector3.Normalize returns when the length-squared underflows, and an infinite origin.
+                await Assert.That(bvh.AnyHit(new Vector3(0f, 40f, 33f), new Vector3(float.PositiveInfinity), 100f, Eps, ref hint, out _, tier)).IsFalse();
+                await Assert.That(bvh.AnyHit(new Vector3(0f, 40f, 33f), new Vector3(float.NegativeInfinity), 100f, Eps, ref hint, out _, tier)).IsFalse();
+                await Assert.That(bvh.AnyHit(new Vector3(0f, 40f, 33f), new Vector3(float.PositiveInfinity, float.NegativeInfinity, float.PositiveInfinity), 100f, Eps, ref hint, out _, tier)).IsFalse();
+                await Assert.That(bvh.AnyHit(new Vector3(0f, 40f, 33f), Vector3.Normalize(new Vector3(1e-23f)), 100f, Eps, ref hint, out _, tier)).IsFalse();
+                await Assert.That(bvh.AnyHit(new Vector3(float.PositiveInfinity, 40f, 33f), Vector3.UnitX, 100f, Eps, ref hint, out _, tier)).IsFalse();
                 await Assert.That(hint).IsEqualTo(0);
                 await Assert.That(bvh.NearestHit(new Vector3(0f, 40f, 33f), Vector3.Normalize(Vector3.Zero), 100f, NearEps, out float t, tier)).IsFalse();
+                await Assert.That(t).IsEqualTo(float.MaxValue);
+                await Assert.That(bvh.NearestHit(new Vector3(0f, 40f, 33f), new Vector3(float.PositiveInfinity), 100f, NearEps, out t, tier)).IsFalse();
                 await Assert.That(t).IsEqualTo(float.MaxValue);
             }
         }

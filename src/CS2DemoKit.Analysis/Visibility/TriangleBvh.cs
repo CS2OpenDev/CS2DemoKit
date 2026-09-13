@@ -45,8 +45,10 @@ namespace CS2DemoKit.Analysis.Visibility;
 ///         can (<c>-0.0f - +0.0f</c> is negative zero), so it is pinned rather than assumed away. The
 ///         swap form would also accept the inverted box for every ray and dereference the empty
 ///         lane's reference; <c>TriangleBvh8Tests</c> mutates both ways and watches the traversal
-///         fail. A NaN origin or direction component makes every comparison false and would admit
-///         every lane, empty ones included, so both traversals reject such a ray up front; the
+///         fail. What the inverted box does not survive is a ray that is not finite: a NaN
+///         component makes every comparison false, and a direction infinite on all three axes makes
+///         every product NaN, so in either case no axis constrains the window and every lane is
+///         admitted, empty ones included. Both traversals reject a non-finite ray up front; the
 ///         binary tree answered false on the same input after walking its whole tree.
 ///     </para>
 ///     <para>
@@ -608,7 +610,7 @@ public sealed class TriangleBvh
         }
 
         float lo = eps, hi = tMax - eps;
-        if (hi <= lo || HasNaN(origin, dir))
+        if (hi <= lo || NotFinite(origin, dir))
         {
             return false;
         }
@@ -685,7 +687,7 @@ public sealed class TriangleBvh
         where TSlab : struct, ISlab
     {
         distance = float.MaxValue;
-        if (NodeCount == 0 || HasNaN(origin, dir))
+        if (NodeCount == 0 || NotFinite(origin, dir))
         {
             return false;
         }
@@ -760,15 +762,30 @@ public sealed class TriangleBvh
         return hit;
     }
 
+    // The ray has to be finite, on every component of both vectors, or the empty lanes stop
+    // rejecting and the traversal pushes eight references onto a stack sized for the real lanes.
+    //
     // A NaN component makes every slab comparison false, which the compare-select reads as "this
-    // axis constrains nothing": every lane passes, the empty ones included, and eight references go
-    // on a stack sized for the real lanes. No triangle test can succeed on such a ray (its t is NaN
-    // or its barycentrics are), so a miss is the only verdict it could have had, and the binary tree
-    // gave that verdict. Infinite components need no guard: the slab products are then infinite or
-    // NaN in the combinations that reject, never in one that admits an empty lane.
-    private static bool HasNaN(Vector3 origin, Vector3 dir) =>
-        float.IsNaN(origin.X) || float.IsNaN(origin.Y) || float.IsNaN(origin.Z)
-        || float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z);
+    // axis constrains nothing", so every lane passes. An infinite direction does the same thing one
+    // axis at a time: inv is zero there, and the inverted box's two products are (+inf - o) * 0 and
+    // (-inf - o) * 0, both NaN, so that axis constrains nothing either. One or two infinite
+    // components still leave a finite axis to reject on, which is why this guard was once written
+    // for NaN alone; a direction infinite on all three leaves none, and an all-infinite direction
+    // is what Vector3.Normalize returns for any direction whose length-squared underflows to zero,
+    // so VisibilityEngine.Raycast reaches it from an ordinary caller (TriangleBvh8Tests).
+    //
+    // Miss is the verdict such a ray would have had anyway, which is what makes rejecting it up
+    // front a fix rather than a policy: a real lane's finite box is crossed at t = 0 on an infinite
+    // axis, below the near exclusion, and RayTriangle yields NaN barycentrics and a NaN t for any
+    // non-finite ray. The binary tree answered false on the same input after walking its whole tree.
+    //
+    // A non-finite origin never reached the overrun on its own: an infinite origin coordinate
+    // against a finite face gives an infinite crossing, which closes the window rather than leaving
+    // it open. It is rejected here with the rest because the verdict is the same miss and "the ray
+    // must be finite" is one rule instead of a case analysis over which mixtures happen to survive.
+    private static bool NotFinite(Vector3 origin, Vector3 dir) =>
+        !float.IsFinite(origin.X) || !float.IsFinite(origin.Y) || !float.IsFinite(origin.Z)
+        || !float.IsFinite(dir.X) || !float.IsFinite(dir.Y) || !float.IsFinite(dir.Z);
 
     // Ray/box slab test for one lane over the parameter window [lo, hi]. inv = 1/dir per component,
     // so a zero direction component gives an infinite inv. The near face on each axis is the minimum
@@ -1038,6 +1055,14 @@ public sealed class TriangleBvh
     // Moller-Trumbore, general direction (need not be unit, but callers pass unit, so t is in world
     // units). The edges were formed at build time with the same subtraction the soup-order test used,
     // so the arithmetic from here on is unchanged.
+    //
+    // Known limitation, not watertight. Two triangles sharing an edge compute u and v from their own
+    // e1 and e2 and their own f = 1/det, so the barycentric test on the shared edge is a different
+    // float expression on each side. A ray crossing exactly at a seam can therefore be rejected by
+    // both, and AnyHit then reports clear through a closed surface. The error is ulp-scale and the
+    // fix is a different formulation (a watertight Woop-style test with a canonical edge ordering),
+    // not a tolerance on this one. A differential run cannot observe it: BruteForceOracle.RayTriangle
+    // is a verbatim copy of this body, so the oracle agrees on the crack and reports the same clear.
     private bool RayTriangle(Vector3 o, Vector3 d, int slot, out float t)
     {
         t = 0;
@@ -1665,12 +1690,17 @@ public sealed class TriangleBvh
             public int[] Child { get; private set; }
 
             // Chunks a sweep of this segment's nodes may split into; one means serial sweeps.
+            //
+            // A share of one allocates nothing: Decide clamps its chunk count to this share, so a
+            // one-chunk segment always takes the serial branch and never reads the chunk bins. That
+            // is every subtree segment, of which a real bake has hundreds, and a BinSet is five
+            // arrays over all three axes' bins.
             private int SweepChunks
             {
                 set
                 {
                     _sweepChunks = Math.Max(1, value);
-                    if (_chunkBins.Length < _sweepChunks)
+                    if (_sweepChunks > 1 && _chunkBins.Length < _sweepChunks)
                     {
                         _chunkBins = new BinSet[_sweepChunks];
                         for (int c = 0; c < _chunkBins.Length; c++)

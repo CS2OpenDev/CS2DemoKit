@@ -544,6 +544,82 @@ public class TriangleBvh8Tests
         await Assert.That(distance).IsEqualTo(float.MaxValue);
     }
 
+    /// <summary>
+    ///     The same defect one step wider: a direction that is infinite on every axis. Then <c>inv</c>
+    ///     is zero on every axis, an empty lane's inverted box gives <c>(+inf - o) * 0</c> and
+    ///     <c>(-inf - o) * 0</c> — both NaN — on all three, and the compare-select ignores them, so
+    ///     no axis constrains the window and the empty lane passes exactly as a NaN ray's does:
+    ///     eight references onto a stack sized for the real lanes. One or two infinite components
+    ///     leave a finite axis whose inverted box still rejects, which is why the narrower guard
+    ///     read as sufficient; those cases answered correctly before the guard was widened and are
+    ///     here so they keep doing so. Miss is the only verdict such a ray could have had: an
+    ///     infinite axis crosses a real lane's finite box at <c>t = 0</c>, below the near exclusion,
+    ///     and <c>RayTriangle</c> yields NaN barycentrics.
+    ///     <para>
+    ///         Reachable from <see cref="VisibilityEngine.Raycast" /> without anyone naming an
+    ///         infinity: it normalises, and a direction whose length-squared underflows to zero
+    ///         normalises to all-infinite rather than to NaN. Any component around 1e-23 does it.
+    ///     </para>
+    ///     <para>
+    ///         A non-finite origin never reached the overrun — an infinite origin coordinate against
+    ///         a finite box gives an infinite crossing on that axis, which closes the window rather
+    ///         than leaving it open — but it is rejected up front with the rest, because the verdict
+    ///         is the same miss and a guard that is "the ray must be finite" is one rule instead of
+    ///         a case analysis. It is pinned here so the simpler rule is not quietly narrowed back.
+    ///     </para>
+    /// </summary>
+    /// <param name="triangles">Soup size: three separated triangles (a three-lane root) or a random soup with depth.</param>
+    [Test]
+    [Arguments(3)]
+    [Arguments(5000)]
+    public async Task NonFiniteOriginOrDirection_IsAMiss_AndDoesNotOverflowTheStack(int triangles)
+    {
+        const float inf = float.PositiveInfinity;
+        Random rng = new(20260922);
+        float[] vertices = triangles == 3 ? SeparatedTriangles(3) : RandomSoup(rng, triangles, 2000f);
+        TriangleBvh bvh = TriangleBvh.Build(vertices, triangles);
+        Vector3 origin = new(10f, 20f, 30f);
+        Vector3 dir = Vector3.Normalize(new Vector3(1f, 2f, 3f));
+
+        // The premise of the Raycast case: a direction this small has a length-squared of zero in
+        // single precision, so the normalisation divides by zero on every component at once.
+        Vector3 underflowed = Vector3.Normalize(new Vector3(1e-23f));
+        await Assert.That(underflowed).IsEqualTo(new Vector3(inf))
+            .Because("an all-infinite direction is what an ordinary caller of Raycast can produce");
+
+        Vector3[] origins =
+        [
+            origin, origin, origin, origin, origin,
+            origin, origin, origin, origin, origin,
+            new(inf, 20f, 30f), new(10f, -inf, 30f), new(inf, inf, inf), new(-inf, -inf, -inf),
+            new(inf, inf, inf)
+        ];
+        Vector3[] dirs =
+        [
+            // Infinite on every axis, in each sign combination that matters, and the one Normalize produces.
+            new(inf), new(-inf), new(inf, -inf, inf), new(-inf, inf, -inf), underflowed,
+            // One and two infinite components: these never overran the stack and must not start.
+            new(inf, 1f, 1f), new(1f, -inf, 1f), new(1f, 1f, inf), new(inf, inf, 1f), new(-inf, 1f, inf),
+            // A non-finite origin with an ordinary direction, and then both at once.
+            dir, dir, dir, dir, new(inf)
+        ];
+
+        for (int i = 0; i < origins.Length; i++)
+        {
+            Vector3 o = origins[i], d = dirs[i];
+            await Assert.That(bvh.AnyHit(o, d, 3000f, Eps)).IsFalse().Because($"case {i}: a non-finite ray hits nothing");
+            int hint = 7;
+            await Assert.That(bvh.AnyHit(o, d, 3000f, Eps, ref hint)).IsFalse().Because($"case {i}: hinted");
+            await Assert.That(hint).IsEqualTo(7).Because($"case {i}: a miss leaves the hint alone");
+            await Assert.That(bvh.NearestHit(o, d, 3000f, 1e-3f, out float t)).IsFalse().Because($"case {i}: nearest");
+            await Assert.That(t).IsEqualTo(float.MaxValue);
+        }
+
+        VisibilityEngine engine = VisibilityEngine.FromTriangles(vertices, triangles);
+        await Assert.That(engine.Raycast(origin, new Vector3(1e-23f), 3000f, out float distance)).IsFalse()
+            .Because("a direction whose length-squared underflows normalises to all-infinite, and must read as a miss, not a crash");
+        await Assert.That(distance).IsEqualTo(float.MaxValue);
+    }
     [Test]
     public async Task Build_RejectsASoupShorterThanItsCount()
     {
