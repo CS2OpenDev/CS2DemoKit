@@ -200,21 +200,5 @@ public sealed class ParsedDemo
     ///     <see cref="ParseHealth.Degraded" /> while being a perfectly good demo. Gating a "this
     ///     demo may be damaged" banner on the count alone would fire on every such demo.
     /// </remarks>
-    public ParseHealth Health
-    {
-        get
-        {
-            ParseHealth worst = ParseHealth.Clean;
-            foreach (ParseWarning w in Warnings)
-            {
-                ParseHealth s = ParseWarningCodes.SeverityOf(w.Code);
-                if (s > worst)
-                {
-                    worst = s;
-                }
-            }
-
-            return worst;
-        }
-    }
+    public ParseHealth Health => ParseWarningCodes.WorstOf(Warnings);
 }

@@ -76,6 +76,22 @@ public static class ParseWarningCodes
     ///     which is this library being behind rather than the demo being damaged. Grading it with
     ///     structural decode failures would make every demo from a new build look broken.
     /// </remarks>
+    /// <summary>The worst severity across <paramref name="warnings" />, <see cref="ParseHealth.Clean" /> when empty.</summary>
+    public static ParseHealth WorstOf(IEnumerable<ParseWarning> warnings)
+    {
+        ParseHealth worst = ParseHealth.Clean;
+        foreach (ParseWarning w in warnings)
+        {
+            ParseHealth s = SeverityOf(w.Code);
+            if (s > worst)
+            {
+                worst = s;
+            }
+        }
+
+        return worst;
+    }
+
     public static ParseHealth SeverityOf(string code) => code switch
     {
         StringTableCreateFailed => ParseHealth.Damaged,

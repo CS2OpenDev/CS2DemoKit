@@ -258,6 +258,20 @@ internal sealed class DemoEnrichmentCursor
         _eventDecoder.ServerStartTick = hdr.ServerStartTick;
     }
 
+    /// <summary>True when a full packet's string-table snapshot carries the <c>instancebaseline</c> table.</summary>
+    internal static bool CarriesInstanceBaseline(DemoFrame frame)
+    {
+        foreach (NetMessage msg in frame.MessageList)
+        {
+            if (msg.Payload is CDemoStringTables snapshot && CarriesInstanceBaseline(snapshot))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool CarriesInstanceBaseline(CDemoStringTables snapshot)
     {
         foreach (CDemoStringTables.Types.table_t table in snapshot.Tables)

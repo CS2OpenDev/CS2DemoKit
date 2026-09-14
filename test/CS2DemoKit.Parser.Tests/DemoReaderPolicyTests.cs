@@ -1,0 +1,176 @@
+#region
+
+using CS2DemoKit.TestSupport;
+using CS2OpenSchema.Protos;
+
+#endregion
+
+namespace CS2DemoKit.Parser.Tests;
+
+/// <summary>
+///     The reader follows the parser's malformed-demo policy: only a non-demo throws, at open;
+///     damage inside a real demo ends the stream with a warning and a reason, and what was read
+///     stays usable. Plus the lifecycle rules: cancellation, disposal, and the before-first-read
+///     operations.
+/// </summary>
+[Category("Unit")]
+public class DemoReaderPolicyTests
+{
+    /// <summary>A 16-byte header good enough to pass the magic check, then <paramref name="body" />.</summary>
+    private static byte[] DemoWith(params byte[] body)
+    {
+        byte[] file = new byte[16 + body.Length];
+        "PBDEMS2\0"u8.CopyTo(file);
+        body.CopyTo(file, 16);
+        return file;
+    }
+
+    private static (List<DemoFrame> Frames, ReadEndReason? End, IReadOnlyList<ParseWarning> Warnings, ParseHealth Health) Drain(byte[] file)
+    {
+        using DemoReader reader = DemoReader.Open(file.AsMemory());
+        List<DemoFrame> frames = [.. reader.ReadFrames()];
+        return (frames, reader.EndReason, reader.Enrichment.Warnings, reader.Enrichment.Health);
+    }
+
+    [Test]
+    public async Task Open_NotADemo_Throws()
+    {
+        byte[] notADemo = new byte[64];
+        "NOTADEMO"u8.CopyTo(notADemo);
+        Assert.Throws<InvalidDataException>(() => DemoReader.Open(notADemo.AsMemory()));
+        Assert.Throws<InvalidDataException>(() => DemoReader.Open(new byte[8].AsMemory()));
+    }
+
+    [Test]
+    public async Task Stop_EndsTheStream_AndIsNotYielded()
+    {
+        // One DEM_SyncTick (cmd 3, tick 0, size 0), then DEM_Stop, then a frame nobody should see.
+        (List<DemoFrame> frames, ReadEndReason? end, IReadOnlyList<ParseWarning> warnings, ParseHealth health) =
+            Drain(DemoWith(0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00));
+
+        await Assert.That(frames.Count).IsEqualTo(1);
+        await Assert.That(frames[0].CommandKind).IsEqualTo(EDemoCommands.DemSyncTick);
+        await Assert.That(end).IsEqualTo(ReadEndReason.Stop);
+        await Assert.That(warnings.Count).IsEqualTo(0);
+        await Assert.That(health).IsEqualTo(ParseHealth.Clean);
+    }
+
+    [Test]
+    public async Task EndOfData_OnAFrameBoundary_IsClean()
+    {
+        (List<DemoFrame> frames, ReadEndReason? end, IReadOnlyList<ParseWarning> warnings, _) =
+            Drain(DemoWith(0x03, 0x00, 0x00));
+
+        await Assert.That(frames.Count).IsEqualTo(1);
+        await Assert.That(end).IsEqualTo(ReadEndReason.EndOfData);
+        await Assert.That(warnings.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TruncatedHeader_WarnsAndEnds()
+    {
+        (List<DemoFrame> frames, ReadEndReason? end, IReadOnlyList<ParseWarning> warnings, ParseHealth health) =
+            Drain(DemoWith(0x03, 0x00, 0x00, 0x03, 0x00));
+
+        await Assert.That(frames.Count).IsEqualTo(1);
+        await Assert.That(end).IsEqualTo(ReadEndReason.Truncated);
+        await Assert.That(warnings.Any(w => w.Code == ParseWarningCodes.DemoTruncated)).IsTrue();
+        await Assert.That(health).IsEqualTo(ParseHealth.Damaged);
+    }
+
+    [Test]
+    public async Task TruncatedPayload_WarnsAndEnds()
+    {
+        (List<DemoFrame> frames, ReadEndReason? end, IReadOnlyList<ParseWarning> warnings, _) =
+            Drain(DemoWith(0x03, 0x00, 0x00, 0x03, 0x00, 0x05, 0x01));
+
+        await Assert.That(frames.Count).IsEqualTo(1);
+        await Assert.That(end).IsEqualTo(ReadEndReason.Truncated);
+        await Assert.That(warnings.Any(w => w.Code == ParseWarningCodes.DemoTruncated)).IsTrue();
+    }
+
+    [Test]
+    public async Task ImpossibleSize_WarnsAndEnds()
+    {
+        // cmd=1, tick=0, size = 0x80000000 as a 5-byte varint: negative once cast to int.
+        (List<DemoFrame> frames, ReadEndReason? end, IReadOnlyList<ParseWarning> warnings, ParseHealth health) =
+            Drain(DemoWith(0x03, 0x00, 0x00, 0x01, 0x00, 0x80, 0x80, 0x80, 0x80, 0x08));
+
+        await Assert.That(frames.Count).IsEqualTo(1);
+        await Assert.That(end).IsEqualTo(ReadEndReason.Corrupt);
+        await Assert.That(warnings.Any(w => w.Code == ParseWarningCodes.FrameStreamCorrupt)).IsTrue();
+        await Assert.That(health).IsEqualTo(ParseHealth.Damaged);
+    }
+
+    [Test]
+    public async Task Cancellation_ThrowsFromTheRead_AndLosesNoFrame()
+    {
+        using CancellationTokenSource cts = new();
+        using DemoReader reader = DemoReader.Open(DemoWith(0x03, 0x00, 0x00, 0x03, 0x01, 0x00).AsMemory(),
+            new ParseOptions { CancellationToken = cts.Token });
+
+        await Assert.That(reader.TryReadNext(out DemoFrame? first)).IsTrue();
+        await Assert.That(first!.ServerTick).IsEqualTo(0);
+        cts.Cancel();
+        Assert.Throws<OperationCanceledException>(() => reader.TryReadNext(out _));
+        await Assert.That(reader.EndReason).IsNull();
+    }
+
+    [Test]
+    public async Task Dispose_EndsTheReader_ButNotItsFrames()
+    {
+        DemoReader reader = DemoReader.Open(DemoWith(0x03, 0x00, 0x00, 0x03, 0x01, 0x00).AsMemory());
+        await Assert.That(reader.TryReadNext(out DemoFrame? first)).IsTrue();
+        reader.Dispose();
+        reader.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => reader.TryReadNext(out _));
+        Assert.Throws<ObjectDisposedException>(() => reader.TryPeekNext(out _));
+        Assert.Throws<ObjectDisposedException>(() => reader.Configure(DecodePlan.Everything));
+        await Assert.That(first!.Command).IsEqualTo("DEM_SyncTick");
+    }
+
+    [Test]
+    public async Task BeforeTheFirstRead_ConfigureAndProbeAreAllowed()
+    {
+        using DemoReader reader = DemoReader.Open(DemoWith(0x03, 0x00, 0x00, 0x00, 0x00, 0x00).AsMemory());
+        await Assert.That(reader.Plan).IsSameReferenceAs(DecodePlan.Everything);
+        reader.Configure(DecodePlan.StructureOnly);
+        await Assert.That(reader.Plan).IsSameReferenceAs(DecodePlan.StructureOnly);
+        IReadOnlySet<string> names = reader.ProbeGameEventNames();
+        await Assert.That(names.Count).IsEqualTo(0);
+        await Assert.That(reader.Position).IsEqualTo(16L);
+        await Assert.That(reader.ReadFrames().Count()).IsEqualTo(1);
+        await Assert.That(reader.Provenance.FramesRead).IsEqualTo(1L);
+        await Assert.That(reader.EndReason).IsEqualTo(ReadEndReason.Stop);
+    }
+
+    [Test]
+    [Category("Integration")]
+    public async Task OpenFile_OwnsTheMapping_AndReleasesItOnDispose()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        long finalizersBefore = MemoryMappedDemoSource.FinalizerReleaseCount;
+        DemoFrame? kept;
+        using (DemoReader reader = DemoReader.OpenFile(path, new ParseOptions { Plan = DecodePlan.GameEventsOnly }))
+        {
+            await Assert.That(reader.Length).IsEqualTo(new FileInfo(path).Length);
+            await Assert.That(reader.TryReadNext(out kept)).IsTrue();
+            int count = 1;
+            while (reader.TryReadNext(out _))
+            {
+                count++;
+            }
+
+            await Assert.That(count).IsGreaterThan(1);
+            await Assert.That(reader.EndReason).IsEqualTo(ReadEndReason.Stop);
+        }
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        await Assert.That(MemoryMappedDemoSource.FinalizerReleaseCount).IsEqualTo(finalizersBefore)
+            .Because("Dispose released the mapping, so the finalizer had nothing to do");
+        await Assert.That(kept!.DecodedMessages.Count).IsGreaterThanOrEqualTo(0);
+        await Assert.That(kept.Command).IsNotEmpty();
+    }
+}

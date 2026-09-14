@@ -390,6 +390,30 @@ public static class DemoParser
             .ToList();
 
     /// <summary>
+    ///     Emits the drop-site tallies as warnings: the top eight types by count plus one remainder
+    ///     summary. Must run last, after every structural warning, so those claim the budget first.
+    /// </summary>
+    internal static void EmitDropWarnings(ParseDiagnostics diagnostics, IReadOnlyDictionary<string, int>? dropTotals)
+    {
+        if (dropTotals is not { Count: > 0 })
+        {
+            return;
+        }
+
+        List<KeyValuePair<string, int>> ordered = RankDropTypes(dropTotals);
+        foreach ((string type, int n) in ordered.Take(8))
+        {
+            diagnostics.Warn(ParseWarningCodes.NetMessageDropped, $"{type} dropped", count: n);
+        }
+
+        if (ordered.Count > 8)
+        {
+            diagnostics.Warn(ParseWarningCodes.NetMessageDropped,
+                $"{ordered.Count - 8} more distinct type(s) dropped", count: ordered.Skip(8).Sum(kv => kv.Value));
+        }
+    }
+
+    /// <summary>
     ///     Walks all frames in order, decoding game events, processing string tables,
     ///     and extracting the RuntimeSchema.  Mutates each frame's <c>MessageList</c>
     ///     to replace raw <c>CMsgSource1LegacyGameEvent</c> slots with
@@ -426,20 +450,7 @@ public static class DemoParser
         // the top 8 distinct dropped types by count + one remainder summary, so it cannot crowd out
         // the structural-damage warnings this channel already carries even if that ordering ever
         // stops holding.
-        if (dropTotals is { Count: > 0 })
-        {
-            List<KeyValuePair<string, int>> ordered = RankDropTypes(dropTotals);
-            foreach ((string type, int n) in ordered.Take(8))
-            {
-                diagnostics.Warn(ParseWarningCodes.NetMessageDropped, $"{type} dropped", count: n);
-            }
-
-            if (ordered.Count > 8)
-            {
-                diagnostics.Warn(ParseWarningCodes.NetMessageDropped,
-                    $"{ordered.Count - 8} more distinct type(s) dropped", count: ordered.Skip(8).Sum(kv => kv.Value));
-            }
-        }
+        EmitDropWarnings(diagnostics, dropTotals);
 
         return new ParsedDemo(
             frames, allEvents, players, schema,
