@@ -1,11 +1,13 @@
 #region
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Reflection;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Diagnostics;
 using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Plugins;
+using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.Entities;
 using CS2DemoKit.Parser.EntityTracking;
@@ -44,6 +46,7 @@ public sealed class EntityChangeScanner
     // it adds is skipped otherwise.
     private readonly bool _emitMolotovThrows;
 
+
     private readonly Dictionary<IPerPlayerEntityValueProvider, int> _perPlayerProviderIndex =
         new(ReferenceEqualityComparer.Instance);
 
@@ -55,7 +58,13 @@ public sealed class EntityChangeScanner
     // entity ground truth" because the current frame's PacketEntities update arrives
     // concurrently with the event we're handling.
     private readonly List<IPerPlayerEntityValueProvider> _perPlayerProviders;
-    private readonly Dictionary<(int ProviderIdx, int Slot), object?> _preFrameSnapshot = [];
+
+    // The column plan of every digest this scanner consumes, and the typed snapshot indexed by
+    // it. A digest from a parallel worker carries its own layout instance over provider clones;
+    // MergePreFrameSnapshot checks it is compatible (same kinds, same names) before folding.
+    private readonly DigestColumnLayout _layout;
+    private readonly PreFrameSnapshot _preFrameSnapshot;
+    private DigestColumnLayout? _lastCompatibleLayout;
 
     // This scanner's own cell memory, used only on the sequential fallback path. The parallel path
     // never reaches BuildDigest, so each chunk worker keeps its own instead.
@@ -122,6 +131,18 @@ public sealed class EntityChangeScanner
     // TryValidateProviderSchema.
     private bool _schemaValidated;
 
+    // Visibility rising edges. Both are null unless a rule actually subscribes to enemy_spotted AND
+    // the caller supplied map geometry, so the per-frame consume pays nothing by default. They are
+    // driven off the SAME digest the rest of the consume reads: the vantage scanner folds the
+    // per-pawn delta rows the pre-frame snapshot is already folding, so no second entity decode,
+    // no second entity-set walk, and one Vantage per (player, tick) shared by every pair.
+    private readonly AimVantageScanner? _vantageScanner;
+    private readonly VisibilityTransitionScanner? _transitionScanner;
+
+    // The projectile slots the per-frame digest reads instead of walking every live entity. Bound
+    // to the layer's tracker on first use and rebound if the layer is reset under it.
+    private readonly ProjectileSlotIndex _projectiles = new();
+
     /// <param name="layer">The entity-state layer the scanner reads from; advanced one frame at a time.</param>
     /// <param name="providers">Singleton-entity providers paired with their backing value nodes (push model).</param>
     /// <param name="perPlayerProviders">Per-player providers polled into the pre-frame snapshot (pull model).</param>
@@ -129,14 +150,29 @@ public sealed class EntityChangeScanner
     ///     When true, synthesize a <c>molotov_thrown</c> event per newly-created
     ///     CMolotovProjectile.
     /// </param>
+    /// <param name="vantageScanner">
+    ///     When supplied, the per-frame consume folds the digest's per-pawn deltas into it and
+    ///     samples a vantage set (eye ray, duck, derived 2D speed) that shot-anchored enrichment
+    ///     edges read. Null (the default) leaves the whole vantage fold out of the per-frame path.
+    /// </param>
+    /// <param name="transitionScanner">
+    ///     When supplied ALONGSIDE <paramref name="vantageScanner" />, consumes that vantage set and
+    ///     synthesizes an <c>enemy_spotted</c> event per rising edge. It cannot run without a vantage
+    ///     source (it would be a silent no-op), but the vantage source runs perfectly well without
+    ///     it: visibility needs baked map geometry, and the aim columns do not.
+    /// </param>
     public EntityChangeScanner(
         EntityStateLayer layer,
         IReadOnlyList<(IEntityValueProvider Provider, StateNode ValueNode)> providers,
         IReadOnlyList<IPerPlayerEntityValueProvider>? perPlayerProviders = null,
-        bool emitMolotovThrows = false)
+        bool emitMolotovThrows = false,
+        AimVantageScanner? vantageScanner = null,
+        VisibilityTransitionScanner? transitionScanner = null)
     {
         Layer = layer;
         _emitMolotovThrows = emitMolotovThrows;
+        _vantageScanner = vantageScanner;
+        _transitionScanner = transitionScanner;
         _tracked = new List<TrackedProvider>(providers.Count);
         _singletonProviders = new List<IEntityValueProvider>(providers.Count);
         foreach ((IEntityValueProvider p, StateNode node) in providers)
@@ -153,7 +189,10 @@ public sealed class EntityChangeScanner
             _perPlayerProviderIndex[_perPlayerProviders[i]] = i;
         }
 
-        _delta = new PerPawnDeltaState(_perPlayerProviders.Count);
+        // In this order: the delta state and the snapshot are both indexed by the layout.
+        _layout = DigestColumnLayout.For(_perPlayerProviders);
+        _delta = new PerPawnDeltaState(_layout);
+        _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
 
     /// <summary>Test seam: the precomputed digests (ProviderDigestParityTests compares two scanners').</summary>
@@ -326,6 +365,7 @@ public sealed class EntityChangeScanner
             () => _perPlayerProviders.Select(CloneProvider).ToList(),
             () => _singletonProviders.Select(CloneProvider).ToList(),
             _emitMolotovThrows,
+            _transitionScanner is not null,
             maxDegreeOfParallelism,
             onProgress,
             cancellationToken);
@@ -387,6 +427,15 @@ public sealed class EntityChangeScanner
                 continue;
             }
 
+            if (p is IMultiSchemaFieldProvider multi)
+            {
+                // A field Valve renamed between builds has more than one correct spelling, and
+                // demos of both vintages are in circulation. Judging the single declared path
+                // would abort the entire analysis on every demo of the other vintage.
+                ValidateAnyOf(tracker, p.Name, p.EntityClass, multi.CandidateFieldNames, p.ValueType);
+                continue;
+            }
+
             ValidateOne(tracker, p.Name, p.EntityClass, p.FieldName, p.ValueType);
         }
 
@@ -420,6 +469,49 @@ public sealed class EntityChangeScanner
     }
 
     /// <summary>
+    ///     Validation for a provider whose field was renamed between CS2 builds
+    ///     (<see cref="IMultiSchemaFieldProvider" />): at least one candidate path must exist and
+    ///     be type-compatible.
+    ///     <para>
+    ///         Still loud when it should be. A demo carrying none of the candidates throws with
+    ///         every spelling listed, which is the drift signal; what it stops being loud about
+    ///         is a demo that legitimately uses the older spelling.
+    ///     </para>
+    /// </summary>
+    private static void ValidateAnyOf(EntityTracker tracker, string providerName,
+        string entityClass, IReadOnlyList<string> candidates, Type declaredType)
+    {
+        string? incompatible = null;
+        foreach (string path in candidates)
+        {
+            RuntimeField? meta = tracker.GetFieldMeta(entityClass, path);
+            if (meta is null)
+            {
+                continue;
+            }
+
+            if (IsWireTypeCompatible(declaredType, meta.TypeName))
+            {
+                return;
+            }
+
+            // Present but the wrong shape. Remember it so the throw below can say so, which is a
+            // different fault from "this demo is the other vintage" and wants a different fix.
+            incompatible ??= $"'{path}' exists with wire type '{meta.TypeName}'";
+        }
+
+        string detail = incompatible is null
+            ? "none of them exist on this demo"
+            : incompatible + ", which is not compatible";
+
+        throw new InvalidOperationException(
+            $"provider '{providerName}': no usable field on '{entityClass}' among "
+            + $"[{string.Join(", ", candidates)}] ({detail}) for declared type "
+            + $"'{declaredType.Name}' — CS2 schema drift; add the new spelling to the provider's "
+            + "candidate list.");
+    }
+
+    /// <summary>
     ///     Hop-1 validation for a <see cref="ProviderSpec.ViaHandleToField" /> spec: the handle
     ///     path must EXIST on the provider's class and its wire type must be a CHandle (any
     ///     schema spelling — <c>CHandle&lt;</c>, <c>CHandle &lt;</c>, <c>CHandle&amp;lt;</c> —
@@ -450,7 +542,9 @@ public sealed class EntityChangeScanner
     ///     Declared-type ↔ wire-type compatibility. Deliberately a CLOSED allowlist — an
     ///     unknown pairing throws at prime time rather than becoming a silent null at read
     ///     time (the coercion switch's fallback arm). string accepts handle types because
-    ///     string providers project a followed handle's ClassName (the active-weapon shape).
+    ///     string providers project a followed handle's ClassName (the active-weapon shape);
+    ///     float accepts QAngle because a float provider over an angle field is declaring "one
+    ///     component of this angle" (see the QAngle arm below).
     /// </summary>
     private static bool IsWireTypeCompatible(Type declaredType, string wireType)
     {
@@ -467,7 +561,18 @@ public sealed class EntityChangeScanner
 
         if (declaredType == typeof(float))
         {
-            return wireType is "float32" or "CNetworkedQuantizedFloat" or "float64";
+            // QAngle is admitted deliberately, and only under float. The position providers dodge
+            // this check by naming a scalar leaf (CBodyComponent.m_vecX) while reading the
+            // composite; an angle field has NO scalar leaf to name, so a component provider must
+            // declare the QAngle itself. A float provider over a QAngle therefore means "one
+            // component of this angle, in degrees", which is the only shape the rules language
+            // can express: it has no vector type and no member access, so the component split has
+            // to happen in the provider (PawnEyeAngleProvider, PawnAimPunchProvider). Widening
+            // here rather than adding a ComponentOf knob to ProviderSpec keeps the failure loud
+            // for every other pairing, which is the point of the allowlist: everything not named
+            // on one of these four arms still throws at prime time instead of decaying to a
+            // silent column of nulls.
+            return wireType is "float32" or "CNetworkedQuantizedFloat" or "float64" or "QAngle";
         }
 
         if (declaredType == typeof(string))
@@ -512,8 +617,78 @@ public sealed class EntityChangeScanner
             ConsumeMolotovs(digest, tick);
         }
 
+        ConsumeAimVantage(digest, tick);
+
         _prevDigest = digest;
         return _scratch;
+    }
+
+    /// <summary>
+    ///     Folds this frame's per-pawn deltas into the vantage scanner and samples one vantage per
+    ///     live pawn; when a transition scanner is also present, feeds that sample to it and
+    ///     synthesizes an <c>enemy_spotted</c> event per directed pair that crossed into visibility.
+    ///     No-op when no vantage scanner was supplied.
+    ///     <para>
+    ///         The two halves are separable on purpose. Visibility needs a map bake and answers
+    ///         "who can see whom"; vantage needs only the digest columns and answers "where is each
+    ///         player looking, and how fast are they moving", which is what the shot-anchored aim
+    ///         metrics read. Requiring geometry for the second would make counter-strafing depend on
+    ///         a collision file it has nothing to do with.
+    ///     </para>
+    ///     <para>
+    ///         Reads the CURRENT digest, not <c>_prevDigest</c>: singleton and molotov consumption
+    ///         above are both current-frame, and a spot is a claim about where the players are AT the
+    ///         sampled tick. The pre-frame snapshot's one-frame lag exists to answer "what was true
+    ///         before this frame's event", which is not the question here.
+    ///     </para>
+    ///     <para>
+    ///         Decode integrity gates it the same way the snapshot fold is gated, and for a stronger
+    ///         reason: a compromised digest freezes per-pawn values at their last decoded state, and
+    ///         frozen positions do not read as missing data, they read as ten players standing
+    ///         perfectly still with a plausible set of sightlines between them.
+    ///     </para>
+    ///     <para>
+    ///         Gating it is not enough on its own, because the transition scanner carries state
+    ///         BETWEEN samples and expires it only while samples keep arriving: stop feeding it and
+    ///         the visible set and the crosshair-arrival stamps freeze at their last values for the
+    ///         rest of the run, which a reader cannot tell from live ones. So the gate RESETS it
+    ///         rather than merely skipping it — the same "an absent pair reads as not-visible"
+    ///         posture the scanner already takes for a player who drops out of the vantage set,
+    ///         extended to the whole set dropping out at once. The cost is that the first contact
+    ///         after decode recovers is re-reported, which is the honest reading of a hole in the
+    ///         feed.
+    ///     </para>
+    /// </summary>
+    private void ConsumeAimVantage(EntityFrameDigest digest, int tick)
+    {
+        if (_vantageScanner is null)
+        {
+            return;
+        }
+
+        if (_preFrameSnapshotFrozen || digest.DecodeCompromised)
+        {
+            _transitionScanner?.Reset();
+            return;
+        }
+
+        PerPawnColumns rows = digest.PerPawn;
+        for (int r = 0; r < rows.Count; r++)
+        {
+            _vantageScanner.Observe(rows, r);
+        }
+
+        IReadOnlyList<AimVantage> vantages = _vantageScanner.Sample(tick);
+        if (_transitionScanner is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<EnemySpottedEvent> spots = _transitionScanner.Sample(tick, tick, vantages, digest.Smokes);
+        for (int i = 0; i < spots.Count; i++)
+        {
+            _scratch.Add(GameEventMessage.ForSynthesizedEvent(spots[i]));
+        }
     }
 
     /// <summary>
@@ -534,7 +709,7 @@ public sealed class EntityChangeScanner
         }
 
         EntityFrameDigest d = EntityDigestExtractor.Build(
-            Layer, _perPlayerProviders, _singletonProviders, _emitMolotovThrows, _delta);
+            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null, _projectiles);
         if (prof)
         {
             // Lumped under the historical "snapshot" sub-phase — it is the per-pawn sweep that dominated it;
@@ -573,16 +748,29 @@ public sealed class EntityChangeScanner
             return;
         }
 
-        foreach ((int slot, object?[] values) in prev.PerPawn)
+        PerPawnColumns rows = prev.PerPawn;
+        if (rows.Count == 0)
         {
-            for (int p = 0; p < values.Length; p++)
-            {
-                if (values[p] is not null)
-                {
-                    _preFrameSnapshot[(p, slot)] = values[p];
-                }
-            }
+            // Nothing to fold, and nothing to judge: an empty row set (the shared Empty instance
+            // included) carries no layout worth comparing, so a hand-built digest with no rows
+            // is accepted whatever providers the scanner holds.
+            return;
         }
+
+        if (!ReferenceEquals(rows.Layout, _lastCompatibleLayout))
+        {
+            if (!rows.Layout.IsCompatibleWith(_layout))
+            {
+                throw new InvalidOperationException(
+                    "digest column layout does not match this scanner's per-player provider set "
+                    + $"({rows.Layout.Count} columns in the digest, {_layout.Count} on the scanner); "
+                    + "digests must be produced over the same providers in the same order");
+            }
+
+            _lastCompatibleLayout = rows.Layout;
+        }
+
+        _preFrameSnapshot.Fold(rows);
     }
 
     /// <summary>
@@ -621,25 +809,34 @@ public sealed class EntityChangeScanner
     }
 
     /// <summary>
-    ///     Synthesizes one <c>molotov_thrown</c> event per newly-seen <c>CMolotovProjectile</c> in the
-    ///     digest, deduped by (index, serial) across the run. Identical to the pre-digest
-    ///     <c>DetectMolotovThrows</c>: every live molotov is recorded as seen, but only those with a
-    ///     resolvable thrower slot emit.
+    ///     Synthesizes one <c>molotov_thrown</c> event per <c>CMolotovProjectile</c> in the digest,
+    ///     deduped by (index, serial) across the run so a projectile still alive on the next frame
+    ///     does not throw again; the serial in the key is what keeps a later projectile reusing the
+    ///     same entity index a separate throw.
+    ///     <para>
+    ///         The dedup is keyed on EMISSION, not on first sighting: a projectile whose thrower has
+    ///         not resolved yet (<c>slot &lt; 0</c>) is left out of the set, so a later frame that
+    ///         does resolve it still emits. <c>m_hThrower</c> is not reliably networked on the frame
+    ///         the entity is created — a pawn killed on that same frame reports the 24-bit invalid
+    ///         handle, which <c>EntityDigestExtractor.ResolveThrowerSlot</c> folds to -1 — and
+    ///         recording the projectile as seen on that first sighting would drop the throw for the
+    ///         rest of the run with no diagnostic, silently undercounting the shipped
+    ///         <c>molotov_used</c> stat.
+    ///     </para>
     /// </summary>
     private void ConsumeMolotovs(EntityFrameDigest digest, int tick)
     {
         foreach ((int idx, int serial, int slot) in digest.Molotovs)
         {
-            if (!_seenMolotovs.Add((idx, serial)))
+            if (slot < 0 || !_seenMolotovs.Add((idx, serial)))
             {
                 continue;
             }
 
-            if (slot < 0)
-            {
-                continue;
-            }
-
+            // Frame clock in all three slots, deliberately: the scanner's tick IS the frame clock
+            // and it holds no ServerStartTick to build the absolute one. Same convention as the
+            // EnemySpottedEvent emitted in ConsumeAimVantage above; the event's class doc carries
+            // the reasoning and the event.tick caveat that follows from it.
             _scratch.Add(GameEventMessage.ForSynthesizedEvent(
                 new MolotovThrownEvent(tick, tick, tick, slot)));
         }
@@ -682,7 +879,8 @@ public sealed class EntityChangeScanner
                 + "it was reference-gated out at build time but something still reads it");
         }
 
-        return _preFrameSnapshot.GetValueOrDefault((idx, playerSlot));
+        // The one box on the per-pawn path: per event read, not per frame.
+        return _preFrameSnapshot.GetBoxed(idx, playerSlot);
     }
 
     private static EntityChangeMessage BuildSynthesizedMessage(IEntityValueProvider provider, int tick, object? oldValue, object? newValue)

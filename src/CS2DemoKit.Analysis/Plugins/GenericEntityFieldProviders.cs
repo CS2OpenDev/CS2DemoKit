@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics.CodeAnalysis;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2OpenDev.Sdk.Entities;
 using CS2DemoKit.Parser.EntityTracking;
@@ -101,13 +102,47 @@ public interface IPawnStateReader
 }
 
 /// <summary>
+///     Opt-in for a provider whose field moved between CS2 schema versions, so its declared
+///     <see cref="IPerPlayerEntityValueProvider.FieldName" /> is only one of several spellings a
+///     demo might carry.
+///     <para>
+///         Schema validation normally judges the single declared path and throws when it is
+///         missing, which is the right default: a typo or a drifted field has to be loud. But a
+///         field Valve RENAMED has two correct spellings depending on when the demo was recorded,
+///         and both are in circulation. Declaring one of them makes every demo of the other
+///         vintage throw at prime time, which aborts the whole analysis rather than degrading a
+///         single column.
+///     </para>
+///     <para>
+///         A provider implementing this is validated against <see cref="CandidateFieldNames" />
+///         instead: at least one must exist and be type-compatible. The gate stays loud, because
+///         a demo carrying NONE of them still throws.
+///     </para>
+/// </summary>
+public interface IMultiSchemaFieldProvider
+{
+    /// <summary>
+    ///     Every path this provider can read, in preference order. Validation passes when any one
+    ///     of them resolves on the demo at hand.
+    /// </summary>
+    IReadOnlyList<string> CandidateFieldNames { get; }
+}
+
+/// <summary>
 ///     Generic per-player entity-field provider: reads a <see cref="ProviderSpec" />
 ///     through the seen-gated <see cref="EntityState" /> indexer (lane-mapped and fallback
 ///     fields read identically), replacing one hand-written class per field.
 /// </summary>
 public sealed class GenericPerPlayerFieldProvider(ProviderSpec spec)
-    : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>
+    : IPerPlayerEntityValueProvider, IWorkerCloneable<IPerPlayerEntityValueProvider>,
+        IPawnIntCellReader, IPawnFloatCellReader, IPawnStringCellReader
 {
+    // Where the spec's leaf lives on the last class shape each was resolved against: the pawn
+    // side (the direct path, or the handle path of a hop) and the hop target's field. Per
+    // instance, and instances are per worker, so no sharing.
+    private readonly LaneCursor _pawnCursor = new();
+    private readonly LaneCursor _targetCursor = new();
+
     /// <summary>The spec this provider reads.</summary>
     public ProviderSpec Spec { get; } = spec.ViaHandleToClassName is not null && spec.ViaHandleToField is not null
         ? throw new ArgumentException(
@@ -182,8 +217,258 @@ public sealed class GenericPerPlayerFieldProvider(ProviderSpec spec)
     /// <inheritdoc />
     public IPerPlayerEntityValueProvider CloneForWorker() => new GenericPerPlayerFieldProvider(Spec);
 
+    // ── Typed cell readers ─────────────────────────────────────────────────────
+    //
+    // Each is ReadForPawn for one declared value type with the box removed: the leaf is read off
+    // its lane when the exact path is a seen lane slot, and through the same boxed indexer
+    // ReadForPawn uses otherwise (that read owns the fallback dictionary and the wrapper's alias
+    // walk, so a path the state does not carry under its exact spelling still resolves). The
+    // coercion and gate are the boxed ones restated on typed values; PawnCellReaderParityTests
+    // holds the two together on a real demo.
+
+    /// <inheritdoc />
+    public bool TryReadInt(PawnReadContext context, out int value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (Spec.ValueType == typeof(bool))
+        {
+            bool hasBool = TryReadBoolCell(context, out bool b);
+            value = b ? 1 : 0;
+            return hasBool;
+        }
+
+        RequireKind(typeof(int));
+        if (!TryReadLeaf(context, out LaneHit hit, out int lane, out _, out object? boxed))
+        {
+            value = 0;
+            return false;
+        }
+
+        bool has;
+        switch (hit)
+        {
+            case LaneHit.Int:
+                value = lane;
+                has = true;
+                break;
+            case LaneHit.Float:
+                value = 0;
+                has = false;
+                break;
+            default:
+                has = PawnCellCoercion.TryCoerceInt(boxed, out value);
+                break;
+        }
+
+        if (Spec.PositiveOnly)
+        {
+            return has && value > 0;
+        }
+
+        if (!has && Spec.UnseenAsDefault)
+        {
+            value = 0;
+            return true;
+        }
+
+        return has;
+    }
+
+    /// <inheritdoc />
+    public bool TryReadFloat(PawnReadContext context, out float value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        RequireKind(typeof(float));
+        if (!TryReadLeaf(context, out LaneHit hit, out _, out float lane, out object? boxed))
+        {
+            value = 0f;
+            return false;
+        }
+
+        bool has;
+        switch (hit)
+        {
+            case LaneHit.Float:
+                value = lane;
+                has = true;
+                break;
+            case LaneHit.Int:
+                value = 0f;
+                has = false;
+                break;
+            default:
+                has = PawnCellCoercion.TryCoerceFloat(boxed, out value);
+                break;
+        }
+
+        if (Spec.PositiveOnly)
+        {
+            // The gate admits only a positive int; a float never is one.
+            return false;
+        }
+
+        if (!has && Spec.UnseenAsDefault)
+        {
+            value = 0f;
+            return true;
+        }
+
+        return has;
+    }
+
+    /// <inheritdoc />
+    public bool TryReadString(PawnReadContext context, [NotNullWhen(true)] out string? value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        RequireKind(typeof(string));
+        if (Spec.ViaHandleToClassName is { } handlePath)
+        {
+            // The ClassName hop is neither coerced nor gated, exactly as in ReadForPawn.
+            value = TryResolveHop(context, handlePath, out EntityState? target) ? target.ClassName : null;
+            return value is not null;
+        }
+
+        if (!TryReadLeaf(context, out LaneHit hit, out _, out _, out object? boxed))
+        {
+            value = null;
+            return false;
+        }
+
+        value = hit is LaneHit.Int or LaneHit.Float ? null : boxed as string;
+
+        // PositiveOnly admits only a positive int, and UnseenAsDefault defaults value types only,
+        // so a string column has no value under either gate when the read produced none.
+        return value is not null && !Spec.PositiveOnly;
+    }
+
+    private bool TryReadBoolCell(PawnReadContext context, out bool value)
+    {
+        if (!TryReadLeaf(context, out LaneHit hit, out int lane, out _, out object? boxed))
+        {
+            value = false;
+            return false;
+        }
+
+        bool has;
+        switch (hit)
+        {
+            case LaneHit.Int:
+                value = lane != 0;
+                has = true;
+                break;
+            case LaneHit.Float:
+                value = false;
+                has = false;
+                break;
+            default:
+                has = PawnCellCoercion.TryCoerceBool(boxed, out value);
+                break;
+        }
+
+        if (Spec.PositiveOnly)
+        {
+            // The gate admits only a positive int; a bool never is one.
+            return false;
+        }
+
+        if (!has && Spec.UnseenAsDefault)
+        {
+            value = false;
+            return true;
+        }
+
+        return has;
+    }
+
+    // The spec's leaf for the bound pawn: on the pawn itself, or on the entity its handle hop
+    // resolves to. Returns false when the hop resolved to nothing: ReadForPawn reports that as
+    // null BEFORE Coerce and Gate run, so no gate may default or reject it, and the typed readers
+    // return "no value" without consulting the gate. Otherwise a lane hit carries the typed value
+    // and a miss carries the boxed read (possibly null), which the gate then judges.
+    private bool TryReadLeaf(PawnReadContext context, out LaneHit hit, out int intValue, out float floatValue, out object? boxed)
+    {
+        if (Spec.ViaHandleToClassName is not null)
+        {
+            throw new InvalidOperationException(
+                $"provider spec '{Spec.Name}' follows a handle to a class name, which is a string, but declares "
+                + $"{Spec.ValueType.Name}");
+        }
+
+        if (Spec.ViaHandleToField is { } hop)
+        {
+            if (!TryResolveHop(context, hop.HandlePath, out EntityState? target))
+            {
+                hit = LaneHit.Miss;
+                intValue = 0;
+                floatValue = 0f;
+                boxed = null;
+                return false;
+            }
+
+            hit = PawnCellCoercion.Probe(target, hop.TargetField, _targetCursor, out intValue, out floatValue, out boxed);
+            if (hit == LaneHit.Miss)
+            {
+                boxed = target[hop.TargetField];
+            }
+
+            return true;
+        }
+
+        hit = PawnCellCoercion.Probe(context.Pawn, Spec.Path, _pawnCursor, out intValue, out floatValue, out boxed);
+        if (hit == LaneHit.Miss)
+        {
+            boxed = context.Wrapper[Spec.Path];
+        }
+
+        return true;
+    }
+
+    // ReadForPawn's handle follow with the handle kept unboxed: an int-lane handle goes straight
+    // to IndexOf as the uint ResolveHandle would have unboxed it to.
+    private bool TryResolveHop(PawnReadContext context, string handlePath, [NotNullWhen(true)] out EntityState? target)
+    {
+        uint handle;
+        switch (PawnCellCoercion.Probe(context.Pawn, handlePath, _pawnCursor, out int lane, out _, out object? boxed))
+        {
+            case LaneHit.Int:
+                handle = unchecked((uint)lane);
+                break;
+            case LaneHit.Float:
+                handle = 0;
+                break;
+            case LaneHit.Object:
+                handle = PawnLookup.TryUnboxHandle(boxed);
+                break;
+            default:
+                object? read = context.Wrapper[handlePath];
+                if (read is null)
+                {
+                    target = null;
+                    return false;
+                }
+
+                handle = PawnLookup.TryUnboxHandle(read);
+                break;
+        }
+
+        int index = PawnLookup.IndexOf(handle);
+        target = index < 0 ? null : context.Tracker.CurrentEntities[index];
+        return target is not null;
+    }
+
+    private void RequireKind(Type expected)
+    {
+        if (Spec.ValueType != expected)
+        {
+            throw new InvalidOperationException(
+                $"provider spec '{Spec.Name}' declares {Spec.ValueType.Name}; it cannot be read as a {expected.Name} column");
+        }
+    }
+
     // CS2 networks ints as varints with wire-type variance; the indexer surfaces whatever the
-    // lane/fallback stored. Mirrors FreezePeriodProvider's coercion discipline.
+    // lane/fallback stored. Mirrors FreezePeriodProvider's coercion discipline. The typed cell
+    // readers apply the same PawnCellCoercion functions and restate Gate on typed values;
+    // PawnCellReaderParityTests holds the two together, gate arm by gate arm, on a real demo.
     private object? Coerce(object? raw)
     {
         if (raw is null)
@@ -193,25 +478,12 @@ public sealed class GenericPerPlayerFieldProvider(ProviderSpec spec)
 
         if (Spec.ValueType == typeof(int))
         {
-            return raw switch
-            {
-                int i => i,
-                uint u => (int)u,
-                long l => (int)l,
-                ulong ul => (int)ul,
-                _ => null
-            };
+            return PawnCellCoercion.TryCoerceInt(raw, out int i) ? i : null;
         }
 
         if (Spec.ValueType == typeof(bool))
         {
-            return raw switch
-            {
-                bool b => b,
-                int i => i != 0,
-                uint u => u != 0,
-                _ => null
-            };
+            return PawnCellCoercion.TryCoerceBool(raw, out bool b) ? b : null;
         }
 
         if (Spec.ValueType == typeof(string))
@@ -221,12 +493,7 @@ public sealed class GenericPerPlayerFieldProvider(ProviderSpec spec)
 
         if (Spec.ValueType == typeof(float))
         {
-            return raw switch
-            {
-                float f => f,
-                double d => (float)d,
-                _ => null
-            };
+            return PawnCellCoercion.TryCoerceFloat(raw, out float f) ? f : null;
         }
 
         return null;

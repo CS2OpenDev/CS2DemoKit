@@ -86,6 +86,15 @@ public abstract class DemoSourceProfile
             ? Kind.ToString()
             : $"{Kind} (builds {MinBuildNumber}..{MaxBuildNumber})";
 
+    /// <summary>
+    ///     Logical binding for the synthesized "enemy spotted" event (one per directed enemy pair
+    ///     crossing from not-visible to visible). No demo source carries this on the wire: it is
+    ///     recomputed from baked map geometry by <c>VisibilityTransitionScanner</c>, so a profile that
+    ///     binds it declares the concept AUTHORABLE, not that the recording contains it. See class
+    ///     summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? EnemySpotted => null;
+
     /// <summary>Logical binding for the "entity killed" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? EntityKilled => null;
 

@@ -87,4 +87,12 @@ public static class ResolveDiagnosticCodes
     ///     per-bucket reducers), which have no authoring surface yet.
     /// </summary>
     public const string UnsupportedKind = "resolve.unsupported-kind";
+
+    /// <summary>
+    ///     A <c>sum:</c>, a reducing <c>bucket: value:</c>, or a <c>capture: keep: min | max</c> over
+    ///     an enrichment that carries a no-measurement sentinel, with no <c>match:</c> or
+    ///     <c>where:</c> test on that enrichment (or on one the catalogue declares proves it). Left
+    ///     alone, the sentinel is summed and the result is a plausible number rather than an error.
+    /// </summary>
+    public const string UngatedSentinelAggregate = "resolve.ungated-sentinel-aggregate";
 }

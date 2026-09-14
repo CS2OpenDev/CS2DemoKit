@@ -160,9 +160,10 @@ public static class RulesSchemaBuilder
     {
         JsonObject defs = new()
         {
-            ["expression"] = ExpressionDef(),
+            ["expression"] = ExpressionDef(catalog.Providers),
+            ["providerRead"] = ProviderReadDef(catalog.Providers),
             ["triggerRef"] = TriggerRefDef(views),
-            ["match"] = MatchUnionDef(views),
+            ["match"] = MatchUnionDef(views, catalog.Enrichments),
             ["trigger"] = TriggerDef(),
             ["offTrigger"] = OffTriggerDef(),
             ["param"] = ParamDef(),
@@ -187,9 +188,70 @@ public static class RulesSchemaBuilder
 
     // ── Expression / trigger vocabulary ────────────────────────────────────────
 
-    private static JsonObject ExpressionDef() => new()
+    /// <summary>
+    ///     The <c>player.*</c> / <c>match.*</c> entity reads, emitted from the catalog's providers
+    ///     family so the vocabulary in the editor is the one the registries actually hold.
+    ///     <para>
+    ///         Each name is its own <c>const</c> branch carrying its type, its unit and its caveat,
+    ///         which is what gives a completion item a hover. The list is referenced from
+    ///         <see cref="ExpressionDef" /> as one arm of an <c>anyOf</c> whose other arm accepts
+    ///         any string, so every expression stays valid: a provider name is never the only thing
+    ///         an expression may be. That also means a MISSPELT provider name is still schema-valid
+    ///         — an expression is free text and a schema cannot parse it. Catching
+    ///         <c>player.weapon_recoil_indx</c> is the resolver's job, not this file's; what this
+    ///         buys is that the author is offered the right spelling in the first place.
+    ///     </para>
+    /// </summary>
+    private static JsonObject ProviderReadDef(IReadOnlyList<CatalogProvider> providers)
+    {
+        JsonArray branches = [];
+        foreach (CatalogProvider provider in providers
+                     .Where(p => p.V2Name is not null)
+                     .OrderBy(p => p.V2Name, StringComparer.Ordinal))
+        {
+            string unit = provider.Unit is null ? "" : $", in {provider.Unit}";
+            // Per-player reads are taken from the pre-frame snapshot, which is the difference
+            // between "the clip before the killing shot" and "the clip after it" at a rule site.
+            string cadence = string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal)
+                ? " Read at a rule site from the frame BEFORE the triggering event."
+                : "";
+            branches.Add(new JsonObject
+            {
+                ["const"] = provider.V2Name,
+                ["markdownDescription"] =
+                    $"`{provider.V2Name}` (type `{provider.ClrType}`{unit}) - an entity read, from "
+                    + $"`{provider.Name}`.{cadence}"
+                    + (provider.Note is null ? "" : " " + provider.Note)
+            });
+        }
+
+        return new JsonObject
+        {
+            ["markdownDescription"] =
+                "An entity-value provider read. GENERATED from the catalog's providers family: these "
+                + "are the `player.*` and `match.*` names a rule expression may read off the entity "
+                + "state, with the unit and the caveat each one carries.",
+            ["oneOf"] = branches
+        };
+    }
+
+    private static JsonObject ExpressionDef(IReadOnlyList<CatalogProvider> providers) => new()
     {
         ["type"] = "string",
+        // An expression is free text, so the schema cannot type-check one. The anyOf below is
+        // there only to hand the editor the provider vocabulary as completion items with hovers:
+        // the permissive arm keeps every other expression valid.
+        ["anyOf"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["type"] = "string"
+            },
+            new JsonObject
+            {
+                ["$ref"] = "#/$defs/providerRead"
+            }
+        },
         ["markdownDescription"] =
             "A v2 expression (docs/rules-v2/rules-v2-spec.md). Resolves against the slot's scope: `event.*` "
             + "fields, per-player providers `player.*`, B5 role handles `victim.*` / `killer.*` / "
@@ -200,7 +262,9 @@ public static class RulesSchemaBuilder
             + "`round.team.players` / `round.enemies.alive` / `round.enemies.players` (int, subject-"
             + "relative alive/connected counts, disconnect-aware), `round.team.equipment` / "
             + "`round.enemies.equipment` (int, freeze-end team economy sums) and `round.alive.in_clutch` "
-            + "(bool); read them in `when:` / `while:` / `compute:`."
+            + "(bool); read them in `when:` / `while:` / `compute:`. The `player.*` / `match.*` entity "
+            + "reads are enumerated with their types, units and caveats in `$defs/providerRead` - read "
+            + "the caveat before thresholding one: several are raw engine accumulators, not quantities."
     };
 
     private static JsonObject TriggerRefDef(List<CatalogView> views)
@@ -226,21 +290,48 @@ public static class RulesSchemaBuilder
         };
     }
 
-    private static JsonObject MatchUnionDef(List<CatalogView> views)
+    private static JsonObject MatchUnionDef(List<CatalogView> views, IReadOnlyList<CatalogEnrichment> enrichments)
     {
         // Union of every view's facets - the base match: shape (per-view precision is added by the
         // stat's per-view if/then). Each facet's markdownDescription names its type + the views that
-        // expose it + per-source availability.
-        SortedDictionary<string, (string Type, SortedSet<string> Views, string Availability)> facets =
-            new(StringComparer.Ordinal);
+        // expose it + per-source availability, and the sentinel when the facet reads a
+        // sentinel-defaulted enrichment, because the gate is written right here.
+        //
+        // Type and sentinel are asserted to agree across every view exposing one facet name rather
+        // than taken from whichever view is walked first. They are properties of the FACET, and the
+        // union carries one of each: two views disagreeing means the rendered hover tells half the
+        // authors the wrong thing, and the half it lies to depends on view order. Availability is
+        // not asserted - that one genuinely is per-view (player_blind is unbound on HLTV-pro), and
+        // the union's note says which of the exposing views it came from.
+        Dictionary<string, string> sentinelByEnrichment = enrichments
+            .Where(e => e.Sentinel is not null)
+            .ToDictionary(e => e.Name, e => e.Sentinel!, StringComparer.Ordinal);
+        SortedDictionary<string, FacetUnion> facets = new(StringComparer.Ordinal);
         foreach (CatalogView view in views)
         {
             foreach (CatalogFacet facet in view.Facets)
             {
-                if (!facets.TryGetValue(facet.Name, out (string Type, SortedSet<string> Views, string Availability) acc))
+                string? sentinel = facet.Enrichment is { } enrichment
+                                   && sentinelByEnrichment.TryGetValue(enrichment, out string? s)
+                    ? s
+                    : null;
+
+                if (!facets.TryGetValue(facet.Name, out FacetUnion? acc))
                 {
-                    acc = (facet.Type, new SortedSet<string>(StringComparer.Ordinal), view.Availability);
-                    facets[facet.Name] = acc;
+                    facets[facet.Name] = acc = new FacetUnion(
+                        facet.Type, view.Availability, sentinel, view.Name);
+                }
+                else if (!string.Equals(acc.Type, facet.Type, StringComparison.Ordinal)
+                         || !string.Equals(acc.Sentinel, sentinel, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"facet '{facet.Name}' does not agree across the views exposing it: "
+                        + $"'{acc.FirstView}' has it as {Describe(acc.Type, acc.Sentinel)} and "
+                        + $"'{view.Name}' as {Describe(facet.Type, sentinel)}. The union match: shape "
+                        + "carries one type and one sentinel per facet name, so whichever view sorts "
+                        + "first would silently win and the other view's authors would read a hover "
+                        + "describing a different quantity. Either rename one facet or back them with "
+                        + "enrichments that agree.");
                 }
 
                 acc.Views.Add(view.Name);
@@ -248,13 +339,17 @@ public static class RulesSchemaBuilder
         }
 
         JsonObject properties = new();
-        foreach ((string name, (string type, SortedSet<string> exposedBy, string availability)) in facets)
+        foreach ((string name, FacetUnion union) in facets)
         {
+            string sentinelNote = union.Sentinel is null
+                ? ""
+                : $" Reads `{union.Sentinel}` when there was nothing to measure: gate on it before a `sum:` over it.";
             properties[name] = new JsonObject
             {
                 ["markdownDescription"] =
-                    $"Facet `{name}` (type `{type}`). Exposed by: {string.Join(", ", exposedBy)}. "
-                    + $"Availability: {availability}. Value is a unary test (literal / `in list` / comparison / `[lo..hi]`)."
+                    $"Facet `{name}` (type `{union.Type}`). Exposed by: {string.Join(", ", union.Views)}. "
+                    + $"Availability: {union.Availability}. Value is a unary test (literal / `in list` / comparison / `[lo..hi]`)."
+                    + sentinelNote
             };
         }
 
@@ -281,6 +376,20 @@ public static class RulesSchemaBuilder
             ["properties"] = properties
         };
     }
+
+    /// <summary>
+    ///     One facet name's accumulated union entry: the type and sentinel every exposing view must
+    ///     agree on, the availability and view name of the first that declared it, and the full set
+    ///     of exposing views.
+    /// </summary>
+    private sealed record FacetUnion(string Type, string Availability, string? Sentinel, string FirstView)
+    {
+        public SortedSet<string> Views { get; } = new(StringComparer.Ordinal);
+    }
+
+    /// <summary>Renders a facet's (type, sentinel) pair for the disagreement message.</summary>
+    private static string Describe(string type, string? sentinel) =>
+        sentinel is null ? $"type '{type}' with no sentinel" : $"type '{type}' sentinel '{sentinel}'";
 
     private static JsonObject PerViewMatchDef(CatalogView view)
     {
@@ -314,7 +423,8 @@ public static class RulesSchemaBuilder
             ["additionalProperties"] = false,
             ["markdownDescription"] =
                 $"match: facets for view `{view.Name}` (event `{view.Event}`, binding `{view.Binding}`). "
-                + $"Available on: {(availableOn.Count > 0 ? string.Join(", ", availableOn) : "no profiles")}.",
+                + $"Available on: {(availableOn.Count > 0 ? string.Join(", ", availableOn) : "no profiles")}."
+                + (view.Note is null ? "" : " " + view.Note),
             ["properties"] = properties
         };
     }

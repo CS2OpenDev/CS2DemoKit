@@ -25,11 +25,13 @@ namespace CS2DemoKit.Parser;
 ///     </para>
 ///     <para>
 ///         <b>Single profiled run at a time.</b> The accumulators this flag gates
-///         (<c>ParseProfiler</c> statics, the per-tracker / per-scanner fields, the parallel producer's
-///         per-worker alloc sum) assume one profiled run is in flight at a time, with the flag set before it
-///         starts. The bench is single-shot per process; the App profiles via a deliberate reload / re-run.
-///         Overlapping concurrent profiled runs would interleave the static accumulators — not a supported
-///         configuration.
+///         (<c>ParseProfiler</c> statics, the per-tracker / per-scanner fields) assume one profiled run is
+///         in flight at a time, with the flag set before it starts. The bench is single-shot per process;
+///         the App profiles via a deliberate reload / re-run. Overlapping concurrent profiled runs would
+///         interleave the static accumulators — not a supported configuration. The parallel digest
+///         producer's per-worker alloc sum is the exception: it hangs off an <c>AsyncLocal</c> box
+///         published per <c>Produce</c> call, precisely because several demos decoding at once in one
+///         process is a supported configuration, so concurrent producers each report their own decode.
 ///     </para>
 /// </summary>
 public static class Profiling

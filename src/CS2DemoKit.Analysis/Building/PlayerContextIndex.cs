@@ -1,3 +1,10 @@
+#region
+
+using CS2DemoKit.Analysis.Edges;
+using CS2DemoKit.Analysis.Visibility;
+
+#endregion
+
 namespace CS2DemoKit.Analysis.Building;
 
 /// <summary>
@@ -31,6 +38,23 @@ public sealed class PlayerContextIndex
 
     /// <summary>Current round number (1-based), set by HealthResetEdge on round_freeze_end.</summary>
     public int RoundNumber { get; set; }
+
+    /// <summary>
+    ///     The one per-round anchor the aim metrics read that does NOT live on a
+    ///     <see cref="PlayerContext" />: <see cref="VisibilityTransitionScanner" />'s pair state and
+    ///     crosshair-arrival stamps. Everything else these metrics latch — <c>LastSpotTick</c>,
+    ///     <c>SpotCount</c>, the on-target answer latches — is cleared by
+    ///     <see cref="ResetRoundState" />; the scanner sits outside the index, so without somewhere
+    ///     to attach it, it is the only state in the feature that spans rounds. A pair still visible
+    ///     when the round ends suppresses its own first contact of the next one, and
+    ///     <see cref="Edges.SpottedEnrichmentEdge" /> then numbers whichever contact came second as
+    ///     the round's first.
+    ///     <para>
+    ///         Optional: null leaves the scanner spanning rounds, which is what it did before there
+    ///         was anywhere to attach it, and every other consumer of the index is unaffected.
+    ///     </para>
+    /// </summary>
+    public VisibilityTransitionScanner? VisibilityTransitions { get; set; }
 
     /// <summary>Clears any recorded flash-blind state for the given player slot.</summary>
     public void ClearBlind(int slot)
@@ -261,6 +285,7 @@ public sealed class PlayerContextIndex
         BombPlanted = false;
         BombExploded = false;
         BombDefused = false;
+        VisibilityTransitions?.Reset();
 
         foreach (PlayerContext ctx in _slots.Values)
         {
@@ -280,6 +305,16 @@ public sealed class PlayerContextIndex
             ctx.SprayShotCount = 0;
             ctx.SprayVictimsMask = 0;
             ctx.SprayKillCount = 0;
+            ctx.LastSpotTick = -1;
+            ctx.LastSpotPitch = 0f;
+            ctx.LastSpotYaw = 0f;
+            ctx.LastSpotChestAngle = 0f;
+            ctx.SpotAnsweredByShot = false;
+            ctx.SpotAnsweredByLanded = false;
+            ctx.AnsweredOnTargetSinceShot = -1;
+            ctx.AnsweredOnTargetSinceLanded = -1;
+            ctx.SpotCount = 0;
+            ctx.AimShot.Reset();
         }
     }
 
@@ -302,6 +337,16 @@ public sealed class PlayerContextIndex
     /// <param name="team">Initial team_num at registration (2 = T, 3 = CT).</param>
     public sealed class PlayerContext(int slot, int team)
     {
+        /// <summary>
+        ///     The shot-anchored aim state: this player's current spray run and the last
+        ///     <see cref="AimShotContext" /> resolved for them. One object rather than seven more
+        ///     properties here because it has one lifetime and one reset, and a field added beside
+        ///     the others that someone forgets to clear in <see cref="ResetRoundState" /> would carry
+        ///     a spray run across a round boundary. Always present (an inert run costs one small
+        ///     object per slot); populated only when a rule reads a shot-anchored enrichment.
+        /// </summary>
+        public AimShotState AimShot { get; } = new();
+
         /// <summary>Tick this player was last flash-blinded, or -1 if never (or already cleared).</summary>
         public int BlindedAtTick { get; set; } = -1;
 
@@ -386,6 +431,93 @@ public sealed class PlayerContextIndex
 
         /// <summary>Bitmask of distinct victim slots (0..63) damaged during the current spray run.</summary>
         public ulong SprayVictimsMask { get; set; }
+
+        // Visibility rising-edge state (written by Edges.SpottedEnrichmentEdge, driven by the
+        // synthesized enemy_spotted event). Per-round like the shot state above: a round boundary
+        // is a hard reset of everyone's contact history, so cleared by ResetRoundState.
+
+        /// <summary>
+        ///     Tick of the last enemy this player spotted, or -1 when they have spotted nobody this
+        ///     round. The clock is the spot event's FRAME clock, so it is directly comparable with a
+        ///     parsed event's <c>GameTick</c>; that is the whole point of latching it here.
+        /// </summary>
+        public int LastSpotTick { get; set; } = -1;
+
+        /// <summary>
+        ///     Where this player's crosshair was pointing at <see cref="LastSpotTick" />, pitch in
+        ///     degrees. Valid only when <see cref="LastSpotTick" /> is not -1.
+        /// </summary>
+        public float LastSpotPitch { get; set; }
+
+        /// <summary>
+        ///     The yaw half of <see cref="LastSpotPitch" />.
+        ///     <para>
+        ///         These two exist so a shot can measure its crosshair travel from the contact that
+        ///         PRECEDED IT rather than from the round's first contact. A YAML capture cannot make
+        ///         that pairing: <c>keep: first</c> pins the round's opening contact and
+        ///         <c>keep: last</c> settles to its final one, so on a round holding more than one
+        ///         engagement neither is the spot the shot actually answered, and the measured travel
+        ///         is the angle between unrelated instants.
+        ///     </para>
+        /// </summary>
+        public float LastSpotYaw { get; set; }
+
+        /// <summary>
+        ///     The crosshair error at <see cref="LastSpotTick" />: degrees between the viewer's eye
+        ///     ray and the target's chest anchor at the instant of contact. Latched alongside the
+        ///     angles so a shot can report how much of its travel was CORRECTION rather than
+        ///     placement, which is the difference between a flick and a held angle.
+        /// </summary>
+        public float LastSpotChestAngle { get; set; }
+
+        /// <summary>
+        ///     Whether a shot has already been FIRED in answer to <see cref="LastSpotTick" />.
+        ///     <para>
+        ///         The timing metrics measure the interval from a contact to the FIRST shot that
+        ///         answered it. Averaging every shot after a contact instead measures something
+        ///         else entirely: a spray of thirty bullets contributes thirty intervals, twenty-nine
+        ///         of which are just the spray's own duration, and the number drifts toward how long
+        ///         players hold the trigger rather than how fast they react.
+        ///     </para>
+        /// </summary>
+        public bool SpotAnsweredByShot { get; set; }
+
+        /// <summary>
+        ///     The same for the first shot that LANDED. Tracked separately from
+        ///     <see cref="SpotAnsweredByShot" /> because time-to-shoot and time-to-damage are
+        ///     different metrics over different events, and a contact answered by a miss has been
+        ///     answered for one and not the other.
+        /// </summary>
+        public bool SpotAnsweredByLanded { get; set; }
+
+        /// <summary>
+        ///     The acquisition tick (see <c>VisibilityTransitionScanner.OnTargetSince</c>) that a
+        ///     FIRED shot has already answered, or -1.
+        ///     <para>
+        ///         Stored as the acquisition's own tick rather than a bool, because the scanner
+        ///         re-arms whenever the crosshair leaves every enemy: comparing the two values tells a
+        ///         later shot whether it belongs to the SAME acquisition or a new one, which a flag
+        ///         cannot.
+        ///     </para>
+        /// </summary>
+        public int AnsweredOnTargetSinceShot { get; set; } = -1;
+
+        /// <summary>
+        ///     The same for the first shot that LANDED. Tracked separately from
+        ///     <see cref="AnsweredOnTargetSinceShot" /> for the reason
+        ///     <see cref="SpotAnsweredByLanded" /> is tracked separately from
+        ///     <see cref="SpotAnsweredByShot" />: <c>weapon_fire</c> always precedes the
+        ///     <c>bullet_damage</c> it produced, so one shared latch is consumed by the fired arm
+        ///     before the landed arm sees the shot at all, and the landed arm's copy of
+        ///     <c>first_after_on_target</c> is then false on every shot in the demo.
+        /// </summary>
+        public int AnsweredOnTargetSinceLanded { get; set; } = -1;
+
+        /// <summary>
+        ///     How many enemies this player has spotted so far this round, counting re-acquisitions
+        ///     of the same enemy separately. 0 before their first contact.
+        /// </summary>
+        public int SpotCount { get; set; }
 
         /// <summary>The CS2 player slot this context represents.</summary>
         public int Slot { get; } = slot;

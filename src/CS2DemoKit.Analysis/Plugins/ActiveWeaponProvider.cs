@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics.CodeAnalysis;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2OpenDev.Sdk.Entities;
 using CS2DemoKit.Parser.EntityTracking;
@@ -33,7 +34,7 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///         hop and ClassName read are unchanged.
 ///     </para>
 /// </summary>
-public sealed class ActiveWeaponProvider : IPerPlayerEntityValueProvider
+public sealed class ActiveWeaponProvider : IPerPlayerEntityValueProvider, IPawnStringCellReader
 {
     // Kept for the IPerPlayerEntityValueProvider.FieldName surface contract; the read
     // path no longer hits Fields[path] directly.
@@ -67,6 +68,29 @@ public sealed class ActiveWeaponProvider : IPerPlayerEntityValueProvider
 
         EntityState? weapon = PawnLookup.ResolveHandle(tracker, handle);
         return weapon?.ClassName;
+    }
+
+    /// <inheritdoc />
+    // ReadForPawn's two hops without the box ResolveHandle's object parameter costs: the raw uint
+    // goes straight through IndexOf, which is what ResolveHandle does once it has unboxed.
+    public bool TryReadString(PawnReadContext context, [NotNullWhen(true)] out string? value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        value = null;
+        uint handle = context.Wrapper.ActiveWeaponHandle;
+        if (handle == 0)
+        {
+            return false;
+        }
+
+        int index = PawnLookup.IndexOf(handle);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        value = context.Tracker.CurrentEntities[index]?.ClassName;
+        return value is not null;
     }
 
     /// <inheritdoc />

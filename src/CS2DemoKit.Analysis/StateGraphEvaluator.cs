@@ -1103,6 +1103,15 @@ public sealed class StateGraphEvaluator
                 yield return molotov.PlayerSlot;
 
                 break;
+
+            // Both halves of a spot materialize: the viewer because the view binds its actor slot
+            // to them, and the target because a role handle on `target` reads that player's own
+            // nodes, which do not exist until the slot is materialized.
+            case EnemySpottedEvent spotted:
+                yield return spotted.ViewerSlot;
+                yield return spotted.TargetSlot;
+
+                break;
         }
     }
 

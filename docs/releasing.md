@@ -98,6 +98,135 @@ In order, and any one of them fails the release rather than publishing something
 `ci.yml` runs 3 through 5 on every pull request with `-p:PublicRelease=true`, so a version bump gets
 its packaging exercised before the tag exists.
 
+## Compatibility notes worth carrying into a release
+
+These are the changes a consumer cannot see in a version number. Add to the list rather than
+rewriting it; each entry names the version the change first ships in.
+
+### `CatalogEnrichment` gained two positional parameters (0.11.0)
+
+Through 0.10.0 the record was
+
+```csharp
+public sealed record CatalogEnrichment(string Name, string ValueType, string Scope);
+```
+
+and it now carries `string? Sentinel = null` and `IReadOnlyList<string>? ProvenBy = null` after
+those three. Optional parameters read like an additive change and are not one on a public type in a
+shipped package, in three separate ways:
+
+- **Binary.** Optional arguments are baked at the *call site*, not the callee: an assembly compiled
+  against 0.10.0 emits `call .ctor(string, string, string)`, and that constructor no longer exists.
+  A consumer who upgrades the package without rebuilding gets a `MissingMethodException` the first
+  time one is constructed, at runtime, with nothing said at load.
+- **Source.** The generated `Deconstruct` goes from three `out` parameters to five, so
+  `var (name, valueType, scope) = enrichment;` stops compiling. This is the good failure — it shows
+  up on the rebuild, and it is a one-line fix.
+- **Behavioural.** Record equality and `GetHashCode` are generated over every positional member, so
+  two enrichments agreeing on name, type and scope but differing on sentinel or provenance were
+  equal under 0.10.0 and are not under 0.11.0. Anything grouping, deduplicating or dictionary-keying
+  on the record gets a different answer without any error at all.
+
+Deserialization is not affected: `CatalogResource` goes through the one constructor and
+System.Text.Json supplies the defaults, so a catalog written before the parameters existed still
+loads.
+
+### `CatalogProvider` gained two positional parameters (0.11.0)
+
+Same shape as the `CatalogEnrichment` break above, same three failure modes, so read that entry for
+the mechanics. Through 0.10.0 the record was
+
+```csharp
+public sealed record CatalogProvider(string Name, string Scope, string ClrType,
+    string? V2Name = null, string? V2Type = null);
+```
+
+and it now carries `string? Unit = null` and `string? Note = null` after those five. The reason is
+that the provider family stopped being self-describing: `health` and `armor` are ints that need no
+gloss, but `duck_amount` is a fraction rather than a flag, `max_speed` is units per second,
+`flash_duration` is a latched duration rather than a countdown, and `weapon_recoil_index` and
+`weapon_accuracy_penalty` are raw engine accumulators whose scale is per-weapon. Those facts lived
+only in C# XML docs, which no rule author reads. They are now catalog data and reach the editor
+through the generated schema.
+
+`catalog.json` grew a `unit` and a `note` key on ten of the twenty-one providers. Both are omitted
+when null, so a consumer parsing the file positionally or with a closed-shape deserializer is the
+one that notices.
+
+### The per-pawn digest narrowed the provider value types (0.11.0)
+
+`DigestColumnLayout` stores int, bool, float and string columns unboxed. Through 0.10.0 the digest
+held `object?[]` and compared with `Equals(object, object)`, so a provider declaring **any** value
+type worked. A third-party `IPerPlayerEntityValueProvider` declaring `double`, `long`, `uint` or an
+enum therefore compiled and ran against 0.10.0 and now throws `NotSupportedException` — from
+`EntityChangeScanner`'s constructor, before any frame is read. Both types are public in a packable
+assembly, so this is a consumer-visible break with no compile error in front of it.
+
+The exception names the four kinds and the narrowing to apply (`float` for a `double`, `int` for a
+`long`/`uint`/enum value). Widening the set is not on the table: the closed set is what lets the
+columns be unboxed at all.
+
+Two smaller guards in the same area change behaviour rather than shape:
+
+- `PerPlayerEntityValueProviderRegistry.Register` now throws `ArgumentException` on a name already
+  registered (compared case-insensitively) instead of replacing the provider under it. Replacing was
+  invisible — the column count is unchanged, so the layout still compares compatible and every rule
+  reading that name quietly reads the newcomer. A plugin that re-registered a builtin name to
+  override it has to pick its own name.
+- `DigestColumnLayout.For` throws `ArgumentException` when two providers claim one name, for the
+  same reason: a consumer resolves a column by name, so the second column would be unaddressable.
+
+### `EnrichmentInfrastructure` gained a required positional parameter (0.11.0)
+
+`BuiltinContexts.EnrichmentInfrastructure` went from three positional parameters to four; the new
+`IReadOnlyDictionary<string, EnrichmentSentinel> Sentinels` carries the no-measurement sentinel each
+enrichment declares, which the resolver's ungated-aggregate check reads. It has no default, so
+constructing or positionally deconstructing the record fails to compile against 0.11.0.
+
+It is deliberately not defaulted. An empty `Sentinels` is not a safe fallback: it is exactly the
+state in which every sentinel-aggregate check silently passes, which is the failure the dictionary
+exists to prevent. A compile error is the better outcome, and a caller who needs the old shape wants
+to look at what it should be passing rather than inherit an empty map.
+
+In practice the record is a return shape — `BuiltinContexts.CreateEnrichment` produces it and the
+rule-chain builder consumes it — so a consumer that only receives one is unaffected.
+
+### Two new facets dropped their `is_` prefix before they shipped (0.11.0)
+
+The `shot` and `shot_landed` views expose `first_after_spot` and `first_after_on_target`, not
+`is_first_after_spot` / `is_first_after_on_target`. Both names are new in 0.11.0 and neither reached
+a release, so nothing to migrate — recorded only because a prerelease consumer may have read the
+earlier spelling out of a dev-feed build.
+
+Every other boolean facet is a bare adjective (`enemy`, `silenced`, `bullet`, `no_scope`, `in_air`,
+`trade`), and this release's own `first_bullet` strips the prefix off
+`enrich.shot.is_first_bullet` — so the two `is_`-prefixed names were the outliers. The underlying
+enrichment nodes keep their `is_` names; only the facet spelling changed.
+
+### Two new hard errors reject rulesets that loaded under 0.10.0 (0.11.0)
+
+Both are deliberate — each replaces a silent wrong number — but each turns a working user rules
+directory into a failing one, which is not visible in a version number.
+
+- **A scoreboard label collision is now a load error.** A `label:` is the value-column key of the
+  per-player metric table, matched across every ruleset in the load unit, so two entries claiming
+  one label on one board fought over a single column and the loser read zero. The loader now
+  reports `scoreboard label '<L>' on the <board> board is also the column of ruleset '<other>'` as
+  an attributed `RuleConfigError`, which means `RuleConfigLoadResult.Success` is false for a
+  directory that loaded (wrongly) before. Fix: rename one of the two labels. The round board and the
+  match board are separate namespaces, so sharing a label across them is still fine.
+- **Aggregating a sentinel-defaulted enrichment without gating it is now a resolve diagnostic**
+  (`resolve.ungated-sentinel-aggregate`). A `sum:`, a reducing `bucket: value:`, or a
+  `capture: keep: min|max` over an enrichment that carries a no-measurement sentinel used to sum the
+  sentinel and produce a plausible number. Fix: add a `match:` or `where:` test on that enrichment
+  (or on one the catalog declares proves it measured) to the same stat.
+- **`enrich.shot.ticks_since_last_shot` is the sharp edge of that one.** It is a pre-existing public
+  enrichment and this release retro-fits it with `"sentinel": "1000000"`, so a consumer ruleset that
+  has been summing it ungated since before this release now fails to resolve — and, because the
+  resolver returns no ruleset when it has any diagnostic, one offending `sum:` discards every stat
+  and highlight in that file, not just the offending one. Fix the stat, or gate it, and the rest of
+  the file comes back.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

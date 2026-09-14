@@ -7,6 +7,7 @@ using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.Registry;
+using CS2DemoKit.Parser.GameEvents;
 
 #endregion
 
@@ -20,18 +21,101 @@ namespace CS2DemoKit.Analysis.Building;
 public static class BuiltinContexts
 {
     /// <summary>
+    ///     Every shot-anchored aim enrichment <see cref="AimShotContextEdge" /> writes, by output
+    ///     name. <c>RuleChainBuilder</c> gates the edge — and the six per-player columns it reads —
+    ///     on these: a ruleset names one of THESE, never the columns, so the gate has to be spelled
+    ///     at the output end, and it has to be decided before <see cref="CreateEnrichment" /> runs
+    ///     and builds the nodes.
+    ///     <para>
+    ///         Published from here because here is where the nodes are constructed, and because a name
+    ///         missing from this list fails silently: the node is registered either way, so the edge
+    ///         simply never writes it and every stat reading it reports the node's declared default —
+    ///         a sentinel, or a <c>false</c> — on every event, with no diagnostic anywhere.
+    ///         <c>AimShotEnrichmentGateTests</c> holds the list to the set the constructed edges
+    ///         actually declare as written.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyList<string> AimShotEnrichments { get; } =
+    [
+        "enrich.shot.counter_strafe_good",
+        "enrich.shot.counter_strafe_admitted",
+        "enrich.shot.is_first_bullet",
+        "enrich.shot.spray_residual_pitch",
+        "enrich.shot.spray_residual_yaw",
+        "enrich.shot.spray_residual_measured",
+        "enrich.shot.ticks_since_spot",
+        "enrich.shot.travel_from_spot_deg",
+        "enrich.shot.flick_error_deg",
+        "enrich.shot.is_first_after_spot",
+        "enrich.shot.spray_residual_deg",
+        "enrich.shot.ticks_since_on_target",
+        "enrich.shot.is_first_after_on_target"
+    ];
+
+    /// <summary>
+    ///     The enrichments that only carry a measurement while the synthesized <c>enemy_spotted</c>
+    ///     contact stream is running: the four spot-anchored shot facets, the two on-target ones,
+    ///     and the kill view's <c>ticks_since_spot</c>. Each is latched from a contact — through
+    ///     <c>PlayerContext.LastSpotTick</c>, which only <see cref="SpottedEnrichmentEdge" /> writes,
+    ///     or straight off <c>VisibilityTransitionScanner</c> — and that scan runs only when
+    ///     the caller supplied baked map geometry <b>and</b> some rule subscribes to the event.
+    ///     <para>
+    ///         Published separately from <see cref="AimShotEnrichments" /> because the two halves fail
+    ///         differently. The other six are movement and recoil facts computed from the digest
+    ///         columns alone, so they measure on any run; these seven, with the scan off, report their
+    ///         no-measurement sentinel (or <c>false</c>) on every single event — a number
+    ///         indistinguishable from a player who never spotted anyone. <c>RuleChainBuilder</c> reads
+    ///         this list to say so out loud instead, and <c>SpotDerivedCoverageTests</c> holds it to
+    ///         the facets the catalogue actually maps onto those views.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyList<string> SpotDerivedEnrichments { get; } =
+    [
+        "enrich.shot.ticks_since_spot",
+        "enrich.shot.travel_from_spot_deg",
+        "enrich.shot.flick_error_deg",
+        "enrich.shot.is_first_after_spot",
+        "enrich.shot.ticks_since_on_target",
+        "enrich.shot.is_first_after_on_target",
+        "enrich.kill.ticks_since_spot"
+    ];
+
+    /// <summary>
     ///     Creates the shared enrichment infrastructure (transient nodes + enrichment edges)
     ///     for team-based event classification. These are game-scoped and shared across all
     ///     players. <paramref name="resolver" /> is used to resolve <c>$round_end</c>; each
     ///     round-end enrichment edge is instantiated once per concrete event in the active
     ///     profile's binding so it covers GOTV, HLTV, and end-of-demo uniformly.
     /// </summary>
+    /// <param name="graphRoot">Source node every enrichment edge hangs off.</param>
+    /// <param name="playerContext">Per-slot mutable state the enrichment edges latch onto.</param>
+    /// <param name="registry">Event registry, used to resolve concrete event types for multi-event bindings.</param>
+    /// <param name="resolver">Logical-event resolver for <c>$round_end</c>.</param>
+    /// <param name="entityScanner">Entity scanner backing the pre-frame snapshot reads, when one was built.</param>
+    /// <param name="pawnHealthProvider">Pawn-health provider for the hurt enrichment's entity path.</param>
+    /// <param name="activeWeaponProvider">Active-weapon provider for the hurt enrichment's weapon path.</param>
+    /// <param name="aimShotSources">
+    ///     Entity reads and per-tick samplers for the shot-anchored aim enrichments, or null when no
+    ///     rule reads one. Null leaves <see cref="AimShotContextEdge" /> registered but inert, which
+    ///     is what keeps the six aim providers reference-gated; they are the expensive columns, for
+    ///     the reason <see cref="PerPlayerEntityValueProviderRegistry" /> gives.
+    /// </param>
+    /// <param name="tickRate">
+    ///     The demo's ticks per second (<c>ParsedDemo.TickRate</c>). The spray enrichments bound a
+    ///     weapon's refire cycle, which is a DURATION, so the two edges that read it convert their
+    ///     seconds constants at this rate; the wrong rate here segments the same spray differently
+    ///     on a 128-tick demo than on a 64-tick one and reports nothing. Defaults to 64 for the
+    ///     callers that build the infrastructure without a demo — the catalogue generator and the
+    ///     node-set tests — where no gap is ever evaluated.
+    /// </param>
     public static EnrichmentInfrastructure CreateEnrichment(
         StateNode graphRoot, PlayerContextIndex playerContext,
         EventRegistry registry, LogicalEventResolver resolver,
         EntityChangeScanner? entityScanner = null,
         IPerPlayerEntityValueProvider? pawnHealthProvider = null,
-        IPerPlayerEntityValueProvider? activeWeaponProvider = null)
+        IPerPlayerEntityValueProvider? activeWeaponProvider = null,
+        AimShotContextSources? aimShotSources = null,
+        double tickRate = 64.0)
     {
         // Kill enrichment bools
         TransientBoolNode killEnemyKill = new("enrich.kill.was_enemy_kill");
@@ -40,6 +124,11 @@ public static class BuiltinContexts
         // S7 fix: assister-vs-victim enmity (the assist view's `enemy` facet reads this,
         // NOT was_enemy_kill, which tests killer-vs-victim).
         TransientBoolNode killEnemyAssist = new("enrich.kill.was_enemy_assist");
+
+        // Ticks from the killer's last enemy contact to the kill, for time-to-kill. Declared here
+        // rather than beside the shot enrichments because the kill edge is constructed first.
+        TransientValueNode<int> killTicksSinceSpot = new(
+            "enrich.kill.ticks_since_spot", AimShotContextEdge.NoSpotSentinel);
 
         // Trade enrichment
         TransientBoolNode wasTradeKill = new("enrich.kill.was_trade_kill");
@@ -73,7 +162,7 @@ public static class BuiltinContexts
         KillTeamEnrichmentEdge killEnrichEdge = new(
             graphRoot, playerContext, killEnemyKill, killTeamKill, killSelfKill,
             wasTradeKill, tradedPlayerSlot, wasFlashKill, flashAttackerSlot,
-            killEnemyAssist);
+            killTicksSinceSpot, killEnemyAssist);
         ClutchEnrichmentEdge clutchEnrichEdge = new(
             graphRoot, playerContext, clutchDetected, clutchPlayerSlot);
         HurtTeamEnrichmentEdge hurtEnrichEdge = new(
@@ -104,9 +193,69 @@ public static class BuiltinContexts
         TransientValueNode<int> killSprayShotsAtKill = new("enrich.kill.spray_shots_at_kill");
         ShotEnrichmentEdge shotEnrichEdge = new(
             graphRoot, playerContext, shotTurnDegrees, shotTicksSinceLast,
-            shotSprayShots, shotSprayVictims);
+            shotSprayShots, shotSprayVictims, tickRate);
         SprayKillEnrichmentEdge sprayKillEnrichEdge = new(
-            graphRoot, playerContext, killSprayKills, killSprayShotsAtKill);
+            graphRoot, playerContext, killSprayKills, killSprayShotsAtKill, tickRate);
+
+        // Spot enrichment: per-viewer contact history over the synthesized enemy_spotted event.
+        // The contact ANGLE is not here, it rides on the event (see SpottedEnrichmentEdge); these
+        // three are the round-scoped counters the raw event cannot carry.
+        TransientValueNode<int> spottedTicksSinceLast = new(
+            "enrich.spotted.ticks_since_last_spot", SpottedEnrichmentEdge.NoPreviousSpotSentinel);
+        TransientValueNode<int> spottedSpotIndex = new("enrich.spotted.spot_index");
+        TransientBoolNode spottedFirstContact = new("enrich.spotted.is_first_contact");
+        SpottedEnrichmentEdge spottedEnrichEdge = new(
+            graphRoot, playerContext, spottedTicksSinceLast, spottedSpotIndex, spottedFirstContact);
+
+        // Shot context: ONE record per shot, from which every shot-anchored aim metric reads. The
+        // two instances are the two provenances of the same shot (see AimShotContextEdge): every
+        // shot fired, which is the only honest counter-strafing denominator, and the subset that
+        // landed, where the server reports its own movement penalty and resolved aim punch.
+        TransientBoolNode shotCounterStrafeGood = new("enrich.shot.counter_strafe_good");
+        TransientBoolNode shotCounterStrafeAdmitted = new("enrich.shot.counter_strafe_admitted");
+        TransientBoolNode shotIsFirstBullet = new("enrich.shot.is_first_bullet");
+        TransientValueNode<double> shotSprayResidualPitch = new("enrich.shot.spray_residual_pitch");
+        TransientValueNode<double> shotSprayResidualYaw = new("enrich.shot.spray_residual_yaw");
+        TransientBoolNode shotSprayResidualMeasured = new("enrich.shot.spray_residual_measured");
+
+        // Ticks from this player's last enemy-spot to this shot, so a spot-to-shot pairing can be
+        // bounded to one engagement instead of spanning a whole round. Defaults to the sentinel so
+        // an unspotted shot fails a `<= N` bound rather than passing it as "spotted right now".
+        TransientValueNode<int> shotTicksSinceSpot = new(
+            "enrich.shot.ticks_since_spot", AimShotContextEdge.NoSpotSentinel);
+
+        // Crosshair travel from the contact this shot answered, in degrees. Sentinel-defaulted so a
+        // shot with no contact behind it is excluded by a >= 0 gate rather than averaged in as a
+        // perfect zero-degree correction.
+        TransientValueNode<double> shotTravelFromSpot = new(
+            "enrich.shot.travel_from_spot_deg", AimShotContextEdge.NoTravelSentinel);
+
+        TransientValueNode<double> shotFlickError = new(
+            "enrich.shot.flick_error_deg", AimShotContextEdge.NoFlickSentinel);
+
+        // The first shot answering the current contact, per arm. Gates the timing metrics onto one
+        // interval per engagement instead of one per bullet.
+        TransientBoolNode shotIsFirstAfterSpot = new("enrich.shot.is_first_after_spot");
+
+        // The single-number spray-control residual: angular distance from the run anchor.
+        TransientValueNode<double> shotSprayResidualDeg = new("enrich.shot.spray_residual_deg");
+
+        // Aimed reaction: crosshair arriving on an enemy, then this shot. Separate from the spot
+        // interval, which also contains the turn onto the target.
+        TransientValueNode<int> shotTicksSinceOnTarget = new(
+            "enrich.shot.ticks_since_on_target", AimShotContextEdge.NoSpotSentinel);
+        TransientBoolNode shotIsFirstAfterOnTarget = new("enrich.shot.is_first_after_on_target");
+
+        AimShotContextEdge aimShotFiredEdge = new(
+            graphRoot, playerContext, shotCounterStrafeGood, shotCounterStrafeAdmitted,
+            shotIsFirstBullet, shotSprayResidualPitch, shotSprayResidualYaw, shotSprayResidualMeasured,
+            shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg, shotTicksSinceOnTarget, shotIsFirstAfterOnTarget,
+            typeof(WeaponFireEvent), aimShotSources);
+        AimShotContextEdge aimShotLandedEdge = new(
+            graphRoot, playerContext, shotCounterStrafeGood, shotCounterStrafeAdmitted,
+            shotIsFirstBullet, shotSprayResidualPitch, shotSprayResidualYaw, shotSprayResidualMeasured,
+            shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg, shotTicksSinceOnTarget, shotIsFirstAfterOnTarget,
+            typeof(BulletDamageEvent), aimShotSources);
 
         BombPlantedEdge bombPlantedEdge = new(graphRoot, playerContext);
         BombDefusedEdge bombDefusedEdge = new(graphRoot, playerContext);
@@ -164,7 +313,10 @@ public static class BuiltinContexts
             weaponFireEnrichEdge,
             hurtBulletEnrichEdge,
             shotEnrichEdge,
-            sprayKillEnrichEdge
+            sprayKillEnrichEdge,
+            spottedEnrichEdge,
+            aimShotFiredEdge,
+            aimShotLandedEdge
         };
         allEdges.AddRange(roundEndEdges);
 
@@ -179,7 +331,12 @@ public static class BuiltinContexts
                 roundHasWinner, roundWinnerTeam, roundWinnerSide,
                 weaponFireIsBullet, hurtIsBullet,
                 shotTurnDegrees, shotTicksSinceLast, shotSprayShots, shotSprayVictims,
-                killSprayKills, killSprayShotsAtKill
+                killSprayKills, killSprayShotsAtKill,
+                spottedTicksSinceLast, spottedSpotIndex, spottedFirstContact,
+                shotCounterStrafeGood, shotCounterStrafeAdmitted, shotIsFirstBullet,
+                shotSprayResidualPitch, shotSprayResidualYaw, shotSprayResidualMeasured,
+                shotTicksSinceSpot, shotTravelFromSpot, shotFlickError, shotIsFirstAfterSpot, shotSprayResidualDeg,
+                shotTicksSinceOnTarget, shotIsFirstAfterOnTarget, killTicksSinceSpot
             ],
             allEdges,
             new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase)
@@ -214,10 +371,54 @@ public static class BuiltinContexts
                 ["enrich.shot.spray_shots"] = shotSprayShots,
                 ["enrich.shot.spray_victims"] = shotSprayVictims,
                 ["enrich.kill.spray_kills"] = killSprayKills,
-                ["enrich.kill.spray_shots_at_kill"] = killSprayShotsAtKill
-            }
-        );
+                ["enrich.kill.spray_shots_at_kill"] = killSprayShotsAtKill,
+                ["enrich.spotted.ticks_since_last_spot"] = spottedTicksSinceLast,
+                ["enrich.spotted.spot_index"] = spottedSpotIndex,
+                ["enrich.spotted.is_first_contact"] = spottedFirstContact,
+                ["enrich.shot.counter_strafe_good"] = shotCounterStrafeGood,
+                ["enrich.shot.counter_strafe_admitted"] = shotCounterStrafeAdmitted,
+                ["enrich.shot.is_first_bullet"] = shotIsFirstBullet,
+                ["enrich.shot.spray_residual_pitch"] = shotSprayResidualPitch,
+                ["enrich.shot.spray_residual_yaw"] = shotSprayResidualYaw,
+                ["enrich.shot.spray_residual_measured"] = shotSprayResidualMeasured,
+                ["enrich.shot.ticks_since_spot"] = shotTicksSinceSpot,
+                ["enrich.shot.travel_from_spot_deg"] = shotTravelFromSpot,
+                ["enrich.shot.flick_error_deg"] = shotFlickError,
+                ["enrich.shot.is_first_after_spot"] = shotIsFirstAfterSpot,
+                ["enrich.shot.spray_residual_deg"] = shotSprayResidualDeg,
+                ["enrich.shot.ticks_since_on_target"] = shotTicksSinceOnTarget,
+                ["enrich.shot.is_first_after_on_target"] = shotIsFirstAfterOnTarget,
+                ["enrich.kill.ticks_since_spot"] = killTicksSinceSpot
+            },
+            // Sentinel-defaulted measurements, declared beside the nodes they describe so the
+            // catalogue can carry them and the resolver can refuse an ungated sum over one. Every
+            // entry here is a node whose default is ALSO its explicit "nothing to measure" write;
+            // a default that is a real value (victim_health_before's 100) does not belong here.
+            // The flick error is proven by the travel gate because AimShotContextEdge writes both
+            // under the same haveTravel condition.
+            new Dictionary<string, EnrichmentSentinel>(StringComparer.Ordinal)
+            {
+                ["enrich.shot.ticks_since_spot"] = new(AimShotContextEdge.NoSpotSentinel),
+                ["enrich.shot.ticks_since_on_target"] = new(AimShotContextEdge.NoSpotSentinel),
+                ["enrich.kill.ticks_since_spot"] = new(AimShotContextEdge.NoSpotSentinel),
+                ["enrich.shot.ticks_since_last_shot"] = new(ShotEnrichmentEdge.NoPreviousShotSentinel),
+                ["enrich.spotted.ticks_since_last_spot"] = new(SpottedEnrichmentEdge.NoPreviousSpotSentinel),
+                ["enrich.shot.travel_from_spot_deg"] = new(AimShotContextEdge.NoTravelSentinel),
+                ["enrich.shot.flick_error_deg"] = new(
+                    AimShotContextEdge.NoFlickSentinel, ["enrich.shot.travel_from_spot_deg"])
+            });
     }
+
+    /// <summary>
+    ///     The no-measurement value of a sentinel-defaulted enrichment node, and the other nodes
+    ///     whose gate proves this one measured. See <see cref="EnrichmentInfrastructure.Sentinels" />.
+    /// </summary>
+    /// <param name="Value">The sentinel, boxed as the node's own value type.</param>
+    /// <param name="ProvenBy">
+    ///     Enrichment names written under the same condition as this node, so a gate on any of them
+    ///     is as good as a gate on the node itself. Empty when only the node's own gate counts.
+    /// </param>
+    public sealed record EnrichmentSentinel(object Value, IReadOnlyList<string>? ProvenBy = null);
 
     /// <summary>
     ///     Returns the built-in context-rule chains (one game-scoped, one per-player) that wire
@@ -484,8 +685,15 @@ public static class BuiltinContexts
     /// <param name="Nodes">Transient enrichment nodes to register on the graph.</param>
     /// <param name="Edges">Enrichment edges (one per source event) wiring the transient nodes.</param>
     /// <param name="NodeLookup">Name lookup used by <c>ExpressionCompiler</c> to resolve <c>enrich.xxx</c> identifiers.</param>
+    /// <param name="Sentinels">
+    ///     The nodes in <paramref name="Nodes" /> whose default is a no-measurement sentinel rather
+    ///     than a value, keyed by node name. The catalogue generator publishes these so the ruleset
+    ///     resolver can refuse to aggregate one without a gate; a node missing from here is treated
+    ///     as measuring on every write.
+    /// </param>
     public sealed record EnrichmentInfrastructure(
         IReadOnlyList<StateNode> Nodes,
         IReadOnlyList<StateEdge> Edges,
-        Dictionary<string, StateNode> NodeLookup);
+        Dictionary<string, StateNode> NodeLookup,
+        IReadOnlyDictionary<string, EnrichmentSentinel> Sentinels);
 }

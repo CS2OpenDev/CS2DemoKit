@@ -58,6 +58,7 @@ views:
       - "event.Attacker != event.UserId"   # a kill excludes suicides/world deaths
     facets:
       enemy: { type: bool,   enrichment: enrich.kill.was_enemy_kill }
+      ticks_since_spot: { type: int,   enrichment: enrich.kill.ticks_since_spot }
       teamkill: { type: bool,   enrichment: enrich.kill.was_team_kill }
       trade: { type: bool,   enrichment: enrich.kill.was_trade_kill }
       flash_assisted: { type: bool,   enrichment: enrich.kill.was_flash_kill }
@@ -146,6 +147,17 @@ views:
     availability: all
 
   # ── weapon_fire (actor_slot) ─────────────────────────────────────────────────
+  # Every shot the player took, landed or not. That is the population the aim facets below need:
+  # a counter-strafing ratio computed only over shots that hit measures hitting, not stopping.
+  # All five come from AimShotContextEdge's single per-shot record, so the movement verdict a
+  # counter-strafe stat reads and the run a spray stat segments on are the same facts, resolved
+  # once. counter_strafe_admitted is AimShotContextEdge's DENOMINATOR gate, not a quality flag.
+  # spray_residual_* are per-shot deviations from the spray's first shot, in degrees, and are
+  # meant to be squared and averaged (RMS) rather than read one at a time. spray_residual_measured
+  # is their denominator gate, and it is load-bearing: a residual of 0 is emitted both by the shot
+  # that IS the anchor and by a shot whose effective aim could not be resolved, and neither is
+  # perfect spray control. A spray-control metric that skips it reports a flawless number on a
+  # demo where the aim-punch column decoded to nothing (see AimShotContextEdge.PlausiblePunch).
   shot:
     event: weapon_fire
     binding: actor_slot
@@ -157,6 +169,19 @@ views:
       weapon: { type: string, field: Weapon }
       silenced: { type: bool,   field: Silenced }
       bullet: { type: bool,   enrichment: enrich.weapon_fire.is_bullet }
+      counter_strafe_good: { type: bool,  enrichment: enrich.shot.counter_strafe_good }
+      counter_strafe_admitted: { type: bool,  enrichment: enrich.shot.counter_strafe_admitted }
+      first_bullet: { type: bool,  enrichment: enrich.shot.is_first_bullet }
+      spray_residual_pitch: { type: float, enrichment: enrich.shot.spray_residual_pitch }
+      spray_residual_yaw: { type: float, enrichment: enrich.shot.spray_residual_yaw }
+      spray_residual_measured: { type: bool,  enrichment: enrich.shot.spray_residual_measured }
+      spray_residual_deg: { type: float, enrichment: enrich.shot.spray_residual_deg }
+      ticks_since_spot: { type: int,   enrichment: enrich.shot.ticks_since_spot }
+      travel_from_spot_deg: { type: float, enrichment: enrich.shot.travel_from_spot_deg }
+      flick_error_deg: { type: float, enrichment: enrich.shot.flick_error_deg }
+      first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
+      ticks_since_on_target: { type: int,   enrichment: enrich.shot.ticks_since_on_target }
+      first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
     availability: all
 
   # ── bullet_damage (actor_slot) ───────────────────────────────────────────────
@@ -166,6 +191,21 @@ views:
   # turn_degrees/ticks-gap anchor on the attacker's PREVIOUS damaging shot (flick gating);
   # spray_shots/spray_victims describe the current uninterrupted spray run (RecoilIndex
   # monotone, small tick gaps).
+  #
+  # The three counter_strafe_*/first_bullet facets are the SERVER'S OWN answers to the questions
+  # the `shot` view answers by reconstruction: bullet_damage carries InaccuracyMove (the movement
+  # penalty the engine actually charged) and RecoilIndex (the index it actually fired at), which
+  # no entity-state derivation can better. They are here for two reasons: a stat that only wants
+  # landed shots should read the authoritative half, and a stat that computes both is the oracle
+  # for the reconstruction (on a demo carrying bullet_damage the two must agree per shot).
+  # The spray_residual_* facets are here too, but they are not the ones the `shot` view emits: the
+  # landed arm keeps its own anchor, the first bullet that LANDED in the run, and measures drift of
+  # ShootAng* from it. A spray is defined over shots FIRED, so that anchor rides on a
+  # survivorship-biased population and the two arms answer slightly different questions; a metric
+  # must not pool them. They are emitted anyway because the fired arm's anchor needs the entity
+  # punch column, which does not decode to degrees on a GOTV demo, while ShootAng* is the server's
+  # own resolved firing direction: without the landed arm there is no spray-control measurement at
+  # all.
   shot_landed:
     event: bullet_damage
     binding: actor_slot
@@ -183,6 +223,19 @@ views:
       ticks_since_last_shot: { type: int,   enrichment: enrich.shot.ticks_since_last_shot }
       spray_shots: { type: int,   enrichment: enrich.shot.spray_shots }
       spray_victims: { type: int,   enrichment: enrich.shot.spray_victims }
+      counter_strafe_good: { type: bool,  enrichment: enrich.shot.counter_strafe_good }
+      counter_strafe_admitted: { type: bool,  enrichment: enrich.shot.counter_strafe_admitted }
+      first_bullet: { type: bool,  enrichment: enrich.shot.is_first_bullet }
+      ticks_since_spot: { type: int,   enrichment: enrich.shot.ticks_since_spot }
+      travel_from_spot_deg: { type: float, enrichment: enrich.shot.travel_from_spot_deg }
+      flick_error_deg: { type: float, enrichment: enrich.shot.flick_error_deg }
+      first_after_spot: { type: bool,  enrichment: enrich.shot.is_first_after_spot }
+      ticks_since_on_target: { type: int,   enrichment: enrich.shot.ticks_since_on_target }
+      first_after_on_target: { type: bool,  enrichment: enrich.shot.is_first_after_on_target }
+      spray_residual_pitch: { type: float, enrichment: enrich.shot.spray_residual_pitch }
+      spray_residual_yaw: { type: float, enrichment: enrich.shot.spray_residual_yaw }
+      spray_residual_measured: { type: bool,  enrichment: enrich.shot.spray_residual_measured }
+      spray_residual_deg: { type: float, enrichment: enrich.shot.spray_residual_deg }
     availability: all
 
   # ── player_blind (actor_slot) ────────────────────────────────────────────────
@@ -253,8 +306,14 @@ views:
     facets: { }
     availability: all
 
-  molotov: # synthesized molotov_thrown (m_hThrower attribution)
+  # Synthesized molotov_thrown (m_hThrower attribution). The note travels into catalog.json and the
+  # schema hover, because the clock caveat is for the rule author, not for this file's reader.
+  molotov:
     event: molotov_thrown
+    note: >-
+      Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick
+      a wire event carries: differencing it against a kill or bomb_planted tick adds the demo's
+      ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.
     binding: actor_slot
     actor: thrower
     roles:
@@ -307,4 +366,37 @@ views:
       winner_team: { type: int,  enrichment: enrich.round.winner_team }
       winner_side: { type: int,  enrichment: enrich.round.winner_side }
       has_winner: { type: bool, enrichment: enrich.round.has_winner }
+    availability: all
+
+  # -- enemy spotted (actor_slot; actor = the VIEWER) --------------------------
+  # Synthesized by VisibilityTransitionScanner on the tick a directed enemy pair crosses from
+  # not-visible to visible. There is no wire event for this: the demo's own `spotted` bit is team
+  # radar, so visibility is recomputed from baked map geometry (Guiding Principle 2). Because it is
+  # recomputed rather than recorded, the profile binds it on every source; what varies per run is
+  # whether a map bake was supplied (AnalysisOptions.VisibilityEngine), and with none the event
+  # never fires.
+  #
+  # The actor is the viewer, so a per-player stat counts the spots a player MADE, not the times
+  # they were seen. `target` is a role handle for the enemy who became visible.
+  #
+  # angle_to_chest is a field, not an enrichment: it is measured by the scanner from geometry the
+  # graph never sees. The enrich.spotted.* facets are the round-scoped contact history an edge can
+  # derive but a single event cannot carry.
+  enemy_spotted:
+    event: enemy_spotted
+    note: >-
+      Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server
+      tick a wire event carries: differencing it against a kill or shot tick adds the demo's
+      ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.
+    binding: actor_slot
+    actor: viewer
+    roles:
+      viewer: ViewerSlot
+      target: TargetSlot
+    baked: [ ]
+    facets:
+      angle_to_chest: { type: float, field: AngleToChestDeg }
+      first_contact: { type: bool,  enrichment: enrich.spotted.is_first_contact }
+      spot_index: { type: int,   enrichment: enrich.spotted.spot_index }
+      ticks_since_last_spot: { type: int,   enrichment: enrich.spotted.ticks_since_last_spot }
     availability: all

@@ -21,7 +21,7 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///         wrapper come from the shared <see cref="PawnLookup" /> path.
 ///     </para>
 /// </summary>
-public sealed class PawnEquipmentValueProvider : IPerPlayerEntityValueProvider
+public sealed class PawnEquipmentValueProvider : IPerPlayerEntityValueProvider, IPawnIntCellReader
 {
     /// <inheritdoc />
     public void CaptureAllSlots(EntityStateLayer layer, Action<int, object> emit)
@@ -35,6 +35,15 @@ public sealed class PawnEquipmentValueProvider : IPerPlayerEntityValueProvider
     // An equipment value of 0 (eco / save round) is a legitimate observation, so this never
     // returns null — the emit gate is "always emit", unchanged from the old CaptureAllSlots body.
     public object? ReadForPawn(EntityTracker tracker, CSPlayerPawn pawn) => pawn.CurrentEquipmentValue;
+
+    /// <inheritdoc />
+    // Always a value, like ReadForPawn: an unseen lane reads as the wrapper's 0.
+    public bool TryReadInt(PawnReadContext context, out int value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        value = context.Wrapper.CurrentEquipmentValue;
+        return true;
+    }
 
     /// <inheritdoc />
     public string EntityClass => "CCSPlayerPawn";

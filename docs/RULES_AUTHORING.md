@@ -100,6 +100,10 @@ know the CS2 conventions. Common views:
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
 `round_won` · `round_lost`
 
+`enemy_spotted` is a view as well, but it is *synthesized* from recomputed visibility rather than
+read off the wire, so it only fires on a run set up for it — read "Facets that need a map bake" in
+section 5 before you count it or read anything spot-derived.
+
 A view carries **facets** — typed attributes you filter on with `match:`. The `kill` view has:
 `enemy`, `teamkill`, `headshot`, `no_scope`, `through_smoke`, `trade`, `flash_assisted`, `weapon`.
 
@@ -230,6 +234,84 @@ eco_kills:
 when: [enemy_kills > 0, player.survived]     # same as "enemy_kills > 0 and player.survived"
 ```
 
+**`event.tick` is not one clock across views.** On a wire event (`kill`, `shot`, `bomb_planted`,
+...) it is the absolute server tick. On the two views the engine synthesizes from entity state,
+`enemy_spotted` and `molotov`, there is no wire stamp and it is the frame clock instead, lower by
+the demo's `ServerStartTick` (about 20,000 ticks on a typical GOTV demo). A `where:` that
+differences a molotov or spot tick against a kill tick is off by that much and nothing reports it.
+For timing across views use the `ticks_since_*` facets, which the engine computes on one clock.
+
+### Facets that carry a sentinel
+
+A few timing and angle facets read a **sentinel** when there was nothing to measure, rather than
+zero: `ticks_since_spot`, `ticks_since_on_target`, `ticks_since_last_shot` and
+`ticks_since_last_spot` read `1000000` on an event with no contact behind it,
+`travel_from_spot_deg` reads `-1`, and `flick_error_deg` reads `-1000`. Zero would mean "spotted
+this very tick" or "a perfect correction", which is the opposite of the truth. The catalogue
+marks these (`sentinel:` on the enrichment; the schema hover on the facet says so too).
+
+The consequence: a `sum:`, a reducing `bucket: value:`, or a `capture: … keep: min | max` over
+one of them **must gate on it** in `match:` or `where:`, or the checker refuses the stat
+(`resolve.ungated-sentinel-aggregate`). Ungated, every unmeasured event would add a million to the
+total and the result would look plausible. A bound is the natural gate:
+
+```yaml
+burst_gaps:
+  sum: enrich.shot.ticks_since_last_shot
+  on: shot
+  where: "enrich.shot.ticks_since_last_shot <= 64"   # the gate: only shots inside one burst
+  per: round
+```
+
+A `capture:` with `keep: first | last | list` and a `count:` are not aggregates and need no gate.
+
+### Facets that need a map bake
+
+Seven facets are measured from **recomputed visibility** rather than from anything on the wire, and
+they measure nothing unless the run is set up for it:
+
+- on the `shot` view — `ticks_since_spot`, `travel_from_spot_deg`, `flick_error_deg`,
+  `first_after_spot`, `ticks_since_on_target`, `first_after_on_target`
+- on the `kill` view — `ticks_since_spot`
+
+Two things have to be true, and neither of them is something you can write inside the stat that
+reads the facet:
+
+1. **The run was given baked map collision** — `AnalysisOptions.VisibilityEngine`. There is no
+   spotted flag on the wire to fall back on: visibility is recomputed from geometry or not at all.
+2. **Some rule subscribes to the `enemy_spotted` view.** That scan is expensive, so it runs only
+   when a rule asks for the event. `on: shot` is not asking for it — a stat that merely *reads* the
+   spot facets does not switch the scan on.
+
+Miss either and the facets read their sentinel on every event, which sums to a plausible number
+instead of failing. The build says so rather than leaving you to guess: every stat that reads one
+gets a coverage row naming the stat, the facet, and which of the two prerequisites is missing. The
+same goes for the `enemy_spotted` view itself — `count: enemy_spotted` resolves and type-checks on
+any profile, and with no bake it reports 0 for every player.
+
+So the working shape is a subscribing stat next to the readers:
+
+```yaml
+stats:
+  contacts:                 # the subscription — this is what turns the contact scan on
+    count: enemy_spotted
+    per: round
+  reaction_ticks:
+    sum: enrich.shot.ticks_since_spot
+    on: shot
+    match: { first_after_spot: true, ticks_since_spot: "<= 320" }   # the sentinel gate
+    per: round
+  flick_error_sum:
+    sum: enrich.shot.flick_error_deg
+    on: shot
+    match: { travel_from_spot_deg: ">= 0" }   # travel proves the flick error measured too
+    per: round
+```
+
+The rest of the aim family — `counter_strafe_good`, `counter_strafe_admitted`, `first_bullet`,
+`spray_residual_deg` and the three `spray_residual_*` columns — is computed from movement and
+recoil state alone and needs neither prerequisite.
+
 ---
 
 ## 6. Highlights — per-round achievements and their totals
@@ -276,6 +358,61 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   place name the pawn last occupied — `"BombsiteA"`, `"TSpawn"`, `"Ramp"`, … — a string; names come
   from the map's nav mesh, so gate on the standard ones
   (`BombsiteA`/`BombsiteB`/`CTSpawn`/`TSpawn`) for map-portable rules.)
+- **Position:** `player.pos_x` / `player.pos_y` / `player.pos_z` — the pawn's world origin in map
+  units. That is its FEET, not its eyes; eye height is origin plus a stance-dependent offset.
+- **Movement and aim state:** the pawn and active-weapon reads the shot-anchored aim metrics are
+  built from. Each of these changes far more often than the economy reads above, so each costs the
+  digest a full column — but they are gated by name, and a ruleset that reads none of them pays
+  nothing.
+  - `player.duck_amount` — the crouch ramp: a **fraction** from `0` (standing) to `1` (fully
+    crouched), not a flag. It interpolates across the transition, so a threshold on it asks "how
+    far into the crouch", and `> 0` is "started to crouch" rather than "is crouching".
+  - `player.max_speed` — the pawn's movement cap in units/second. **Weapon-dependent** (an AWP out
+    caps far below a knife) and it changes again when scoped or walking, which is why it is the
+    denominator of a counter-strafe test rather than a fixed speed: the engine's own
+    "moving enough to spoil the shot" line is `0.34 * max_speed`.
+  - `player.shots_fired` — position within the CURRENT burst, not a round or match total: it
+    resets on trigger release and on weapon change.
+  - `player.is_scoped` — whether the pawn is looking down a scope.
+  - `player.flash_duration` — remaining blind time in **seconds**; `0` is not flashed. Gating an
+    aim metric on `== 0` keeps blinded engagements out of a population where they read as
+    catastrophic crosshair placement that says nothing about aim.
+  - `player.eye_pitch` / `player.eye_yaw` — where the crosshair points. See the wrap note below.
+  - `player.punch_pitch` / `player.punch_yaw` — the aim punch (recoil kick). **Do not build a
+    recoil metric on these without reading the warning below.**
+  - `player.weapon_recoil_index` — the active weapon's fractional index into its recoil pattern,
+    rising per shot and decaying between sprays. A raw engine accumulator with per-weapon scaling:
+    the property worth using is that it climbs monotonically within one spray (which is how a
+    spray is segmented at all), not the size of the number.
+  - `player.weapon_accuracy_penalty` — the active weapon's accumulated inaccuracy term. Also a raw
+    per-weapon accumulator, so a Deagle's `0.3` and a Negev's `0.3` are not the same statement and
+    thresholding across weapons compares nothing. It is the weapon's own decaying penalty and does
+    NOT include the movement contribution, so reading it alone as "how inaccurate was this shot"
+    understates a running player.
+
+**The four angle columns wrap at 360.** `eye_pitch`, `eye_yaw`, `punch_pitch` and `punch_yaw` are
+raw `QAngle` components as the engine networks them, over **[0, 360)** — a -2 degree kick arrives
+as `358`. So `abs(a - b)` is wrong across the wrap: two angles one degree apart read as 359 degrees
+apart when one of them is just below zero, and nothing reports it. Difference them through the
+modulo instead, which folds the result back onto (-180, 180]:
+
+```yaml
+# Killed from behind: the victim was facing the way the killer was, so the two view yaws
+# are close — which only reads as close if the difference goes through the wrap.
+back_kills:
+  count: kill
+  match: { enemy: true }
+  where: "abs(((player.eye_yaw - victim.eye_yaw + 180.0) % 360.0 + 360.0) % 360.0 - 180.0) <= 60.0"
+  per: round
+```
+
+**`punch_pitch` / `punch_yaw` do not currently decode to an aim punch.** On the bundled GOTV
+sample the column comes back clustered near -94 and +89 degrees, which is not a recoil kick by any
+reading — a real one is a couple of degrees. The framework's own consumer treats anything past 45
+degrees as unreal and **rejects every value this column produces**, which is why
+`enrich.shot.spray_residual_measured` reports `false` on that demo rather than reporting a
+300-degree residual as data. Until the column decodes, a rule that averages or thresholds these
+two is measuring the decode, not the player.
 
 **A timing note on entity reads.** In an event-gated site (`where:`, a `sum:`/`capture:` value,
 `while:`), an entity read is the value *at the moment of the event* (e.g. the victim's HP at the
@@ -300,6 +437,13 @@ ruleset has no subject and cannot read `player.*` or the team aggregates.
   `m:ss`).
 
 `scoreboard:` is inherently per-player; in a `for: match` ruleset use `tables:` instead.
+
+**A scoreboard `label:` is the column key**, and it is matched across every ruleset loaded
+together, not just yours. Two entries landing the same label on the same board (round or match)
+would fight over one column and the loser would silently read as zero, so the loader rejects the
+directory with an attributed error naming both rulesets. The board follows the stat's `per:`
+(a highlight `.count` is always match-scoped; `boards:` overrides), and the round and match
+scoreboards are separate tables, so the same label on a per-round stat and a match total is fine.
 
 ---
 
@@ -401,6 +545,10 @@ reference cycles — each with a clear message.
 - A ruleset that fails to compose lands in `result.Excluded` with the diagnostics that dropped it —
   at analysis time the same information is on `BuildResult.RulesetDiagnostics` / `.ExcludedRulesets`.
   Check them, or a ruleset that stopped compiling looks identical to stats that never fired.
+- A stat that resolved but cannot measure on *this* run gets a row on `BuildResult.RulesetCoverage`
+  instead: a view that does not bind on the demo's source profile, or a spot-derived facet on a run
+  with no map bake (above). Those are the two ways a correct ruleset legitimately reports zero, and
+  both are the kind you want to read rather than discover from the numbers.
 
 Author small, check often, and grow the file a stat at a time. Every file under
 `src/CS2DemoKit.Analysis/Rules/` is a working reference you can copy from.

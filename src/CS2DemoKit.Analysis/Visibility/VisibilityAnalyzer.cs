@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using CS2DemoKit.Analysis.Plugins;
@@ -39,8 +40,17 @@ namespace CS2DemoKit.Analysis.Visibility;
 /// </summary>
 public static class VisibilityAnalyzer
 {
-    /// <summary>The smoke-projectile entity class whose active clouds occlude vision.</summary>
-    private const string SmokeClass = "CSmokeGrenadeProjectile";
+    /// <summary>
+    ///     The smoke-projectile entity class whose active clouds occlude vision, and the only
+    ///     declaration of it. <see cref="TryActiveSmoke" /> is the gate that decides which entities
+    ///     are clouds; <c>ProjectileSlotIndex.IsProjectile</c>, which decides whether the indexed
+    ///     digest walk ever offers an entity to that gate, reads this same constant rather than a
+    ///     copy of the string. Two copies would let the index admit a narrower set than the gate
+    ///     accepts the moment either side changed — the clouds the index missed would be absent from
+    ///     the digest while the walk oracle still found them, and a sightline through a cloud that
+    ///     was never recorded reads as a spot.
+    /// </summary>
+    internal const string SmokeClass = "CSmokeGrenadeProjectile";
 
     /// <summary>Extracts a live pawn's vantage. Null when position can't be reconstructed (dormant/pre-spawn).</summary>
     public static Vantage? TryVantage(int slot, EntityState pawn, Func<EntityState, Vector3?> resolvePosition)
@@ -83,7 +93,130 @@ public static class VisibilityAnalyzer
     /// </summary>
     public static (bool Exposed, bool CouldSee) EvaluatePair(
         VisibilityEngine engine, in Vantage viewer, in Vantage target,
-        float yawHalfDeg, float pitchHalfDeg, ReadOnlySpan<Vector4> smokes)
+        float yawHalfDeg, float pitchHalfDeg, ReadOnlySpan<Vector4> smokes) =>
+        Evaluate(engine, viewer, target, yawHalfDeg, pitchHalfDeg, smokes, Span<int>.Empty, needExposed: true);
+
+    /// <summary>
+    ///     <see cref="EvaluatePair(VisibilityEngine, in Vantage, in Vantage, float, float, ReadOnlySpan{Vector4})" />
+    ///     with last-occluder hints, one per body anchor; see
+    ///     <see cref="CouldSee(VisibilityEngine, in Vantage, in Vantage, float, float, ReadOnlySpan{Vector4}, Span{int})" />
+    ///     for the contract.
+    /// </summary>
+    /// <param name="engine">The loaded collision geometry.</param>
+    /// <param name="viewer">The player whose view is being asked about.</param>
+    /// <param name="target">The enemy being looked for.</param>
+    /// <param name="yawHalfDeg">Half the horizontal FOV in degrees.</param>
+    /// <param name="pitchHalfDeg">Half the vertical FOV in degrees.</param>
+    /// <param name="smokes">Active smoke spheres <c>(centre.xyz, radius)</c>.</param>
+    /// <param name="occluderHints">
+    ///     Per-anchor hint slots for this directed pair, at least <see cref="PlayerVantage.MaxAnchors" />
+    ///     long, or empty for no hints.
+    /// </param>
+    public static (bool Exposed, bool CouldSee) EvaluatePair(
+        VisibilityEngine engine, in Vantage viewer, in Vantage target,
+        float yawHalfDeg, float pitchHalfDeg, ReadOnlySpan<Vector4> smokes, Span<int> occluderHints)
+    {
+        RequireHintSpan(occluderHints);
+        return Evaluate(engine, viewer, target, yawHalfDeg, pitchHalfDeg, smokes, occluderHints, needExposed: true);
+    }
+
+    /// <summary>
+    ///     The could-see half of <see cref="EvaluatePair(VisibilityEngine, in Vantage, in Vantage, float, float, ReadOnlySpan{Vector4})" />
+    ///     alone, for a caller that never reads <c>exposed</c>: true iff some body anchor is inside
+    ///     the viewer's frustum, not behind smoke, and has clear line of sight from the viewer's eye.
+    ///     <para>
+    ///         Same anchors, same frustum, same smoke test, same ray, same loop. What differs is what
+    ///         the loop is allowed to skip: an anchor outside the frustum or behind smoke cannot make
+    ///         could-see true, so no ray is cast for it here, whereas <c>EvaluatePair</c> still has to
+    ///         cast it while <c>exposed</c> is unknown. On a real demo roughly half of all anchors
+    ///         fall outside the viewer's frustum and nearly every ray cast for one is occluded, which
+    ///         is why this exists. The answer is identical by construction: could-see is an OR over
+    ///         anchors of three independent predicates, and this evaluates the two cheap ones first.
+    ///     </para>
+    /// </summary>
+    /// <param name="engine">The loaded collision geometry.</param>
+    /// <param name="viewer">The player whose view is being asked about.</param>
+    /// <param name="target">The enemy being looked for.</param>
+    /// <param name="yawHalfDeg">Half the horizontal FOV in degrees.</param>
+    /// <param name="pitchHalfDeg">Half the vertical FOV in degrees.</param>
+    /// <param name="smokes">Active smoke spheres <c>(centre.xyz, radius)</c>.</param>
+    public static bool CouldSee(
+        VisibilityEngine engine, in Vantage viewer, in Vantage target,
+        float yawHalfDeg, float pitchHalfDeg, ReadOnlySpan<Vector4> smokes) =>
+        Evaluate(engine, viewer, target, yawHalfDeg, pitchHalfDeg, smokes, Span<int>.Empty, needExposed: false).CouldSee;
+
+    /// <summary>
+    ///     <see cref="CouldSee(VisibilityEngine, in Vantage, in Vantage, float, float, ReadOnlySpan{Vector4})" />
+    ///     with last-occluder hints. <paramref name="occluderHints" /> holds one slot per body
+    ///     anchor for THIS directed pair: the triangle that blocked that anchor's sightline the last
+    ///     time this pair was evaluated, or -1. Each slot is handed to
+    ///     <see cref="VisibilityEngine.IsVisible(Vector3, Vector3, ref int)" /> for its anchor and
+    ///     updated by it, so a caller that keeps one span per (viewer, target) across samples gets
+    ///     most of its rays answered by a single triangle test.
+    ///     <para>
+    ///         The verdict is identical with hints and without, for any hint contents: the hinted
+    ///         test answers occluded only where the traversal would have reached and hit that
+    ///         triangle, and otherwise runs the traversal unchanged (see
+    ///         <see cref="TriangleBvh.AnyHit(Vector3, Vector3, float, float, ref int)" />). The
+    ///         anchors are built in a fixed order, so slot <c>i</c> is the same body point from one
+    ///         sample to the next.
+    ///     </para>
+    /// </summary>
+    /// <param name="engine">The loaded collision geometry.</param>
+    /// <param name="viewer">The player whose view is being asked about.</param>
+    /// <param name="target">The enemy being looked for.</param>
+    /// <param name="yawHalfDeg">Half the horizontal FOV in degrees.</param>
+    /// <param name="pitchHalfDeg">Half the vertical FOV in degrees.</param>
+    /// <param name="smokes">Active smoke spheres <c>(centre.xyz, radius)</c>.</param>
+    /// <param name="occluderHints">
+    ///     Per-anchor hint slots for this directed pair, at least <see cref="PlayerVantage.MaxAnchors" />
+    ///     long, or empty for no hints.
+    /// </param>
+    public static bool CouldSee(
+        VisibilityEngine engine, in Vantage viewer, in Vantage target,
+        float yawHalfDeg, float pitchHalfDeg, ReadOnlySpan<Vector4> smokes, Span<int> occluderHints)
+    {
+        RequireHintSpan(occluderHints);
+        return Evaluate(engine, viewer, target, yawHalfDeg, pitchHalfDeg, smokes, occluderHints, needExposed: false).CouldSee;
+    }
+
+    private static void RequireHintSpan(Span<int> occluderHints)
+    {
+        if (!occluderHints.IsEmpty && occluderHints.Length < PlayerVantage.MaxAnchors)
+        {
+            throw new ArgumentException(
+                $"occluder hints must be empty or hold at least {PlayerVantage.MaxAnchors} slots, one per body anchor",
+                nameof(occluderHints));
+        }
+    }
+
+    /// <summary>
+    ///     The one pair loop behind both public entry points. <paramref name="needExposed" /> decides
+    ///     whether a ray that can only decide <c>exposed</c> is worth casting; nothing else depends
+    ///     on it, so the two callers cannot disagree on a verdict they both compute.
+    ///     <para>
+    ///         Per anchor, the three predicates are ordered cheapest first: frustum (a few dot
+    ///         products), smoke (a few more per active cloud), then the ray. An anchor that fails
+    ///         either cheap test can only ever contribute to <c>exposed</c>, so its ray is cast only
+    ///         while <c>exposed</c> is both wanted and still false. The result is the same in every
+    ///         order because each anchor's contribution is a pure function of its own three tests.
+    ///     </para>
+    ///     <para>
+    ///         Counter bookkeeping: every anchor lands in exactly one of cast, skipped-by-gate or
+    ///         skipped-by-early-exit, so <c>RaysCast + RaysSkippedByGate + RaysSkippedByEarlyExit</c>
+    ///         equals <c>AnchorsTotal</c> in both modes. Gate skips are the frustum and smoke rejects
+    ///         above; early-exit skips are the anchors never visited once the pair is decided.
+    ///     </para>
+    ///     <para>
+    ///         <paramref name="occluderHints" /> is empty or one slot per anchor; when present, anchor
+    ///         <c>i</c>'s ray is cast through slot <c>i</c>. It changes which triangle is tested
+    ///         first, never the verdict.
+    ///     </para>
+    /// </summary>
+    private static (bool Exposed, bool CouldSee) Evaluate(
+        VisibilityEngine engine, in Vantage viewer, in Vantage target,
+        float yawHalfDeg, float pitchHalfDeg, ReadOnlySpan<Vector4> smokes, Span<int> occluderHints,
+        bool needExposed)
     {
         Span<Vector3> anchors = stackalloc Vector3[PlayerVantage.MaxAnchors];
         int n = PlayerVantage.BuildAnchors(target.Feet, target.Duck, viewer.Eye, anchors);
@@ -91,21 +224,78 @@ public static class VisibilityAnalyzer
             ? new ViewFrustum(viewer.Eye, viewer.Forward, yawHalfDeg, pitchHalfDeg)
             : default;
 
+        // Ray budget instrumentation. Off by default; when off, `count` is false and every block
+        // below is a predicted-not-taken branch. The counting never feeds back into the result.
+        bool count = VisibilityCounters.Enabled;
+        int anchorsInFov = 0, raysCast = 0, raysClear = 0, raysOutsideFov = 0;
+        int raysSkippedByEarlyExit = 0, raysSkippedByGate = 0, raysSkippedBySmoke = 0, raysShortCircuited = 0;
+        long rayTicks = 0;
+
         bool exposed = false, couldSee = false;
         for (int i = 0; i < n; i++)
         {
             bool inFov = viewer.HasForward && frustum.Contains(anchors[i]);
-            // Skip the ray if it can neither newly-expose nor newly-could-see.
-            if (exposed && (!inFov || couldSee))
+            if (count && inFov)
             {
+                anchorsInFov++;
+            }
+
+            // Smoke is only asked about anchors the frustum admits; outside it the answer is moot.
+            bool smoked = inFov && SmokeVolumes.SegmentBlocked(viewer.Eye, anchors[i], smokes);
+
+            // An anchor outside the frustum or behind smoke can newly-expose but never newly
+            // could-see, so its ray is cast only while exposed is wanted and still unknown.
+            if ((!inFov || smoked) && (exposed || !needExposed))
+            {
+                if (count)
+                {
+                    raysSkippedByGate++;
+                    if (smoked)
+                    {
+                        raysSkippedBySmoke++;
+                    }
+                }
+
                 continue;
             }
 
-            if (engine.IsVisible(viewer.Eye, anchors[i]))
+            long rayStart = count ? Stopwatch.GetTimestamp() : 0;
+            bool clear;
+            bool shortCircuited = false;
+            if (occluderHints.IsEmpty)
+            {
+                clear = engine.IsVisible(viewer.Eye, anchors[i]);
+            }
+            else
+            {
+                clear = engine.IsVisible(viewer.Eye, anchors[i], ref occluderHints[i], out shortCircuited);
+            }
+
+            if (count)
+            {
+                rayTicks += Stopwatch.GetTimestamp() - rayStart;
+                raysCast++;
+                if (clear)
+                {
+                    raysClear++;
+                }
+
+                if (shortCircuited)
+                {
+                    raysShortCircuited++;
+                }
+
+                if (!inFov)
+                {
+                    raysOutsideFov++;
+                }
+            }
+
+            if (clear)
             {
                 exposed = true;
-                // Vision additionally requires the sightline not to pass through active smoke.
-                if (inFov && !SmokeVolumes.SegmentBlocked(viewer.Eye, anchors[i], smokes))
+                // Vision additionally requires the frustum and a sightline clear of active smoke.
+                if (inFov && !smoked)
                 {
                     couldSee = true;
                 }
@@ -113,8 +303,31 @@ public static class VisibilityAnalyzer
 
             if (exposed && couldSee)
             {
+                if (count)
+                {
+                    // Anchors after this one are never visited. Count the frustum membership of
+                    // the unvisited tail too, so the no-anchor-in-frustum verdict is about the
+                    // pair, not about how far the loop got.
+                    raysSkippedByEarlyExit += n - i - 1;
+                    for (int j = i + 1; j < n; j++)
+                    {
+                        if (viewer.HasForward && frustum.Contains(anchors[j]))
+                        {
+                            anchorsInFov++;
+                        }
+                    }
+                }
+
                 break;
             }
+        }
+
+        if (count)
+        {
+            VisibilityCounters.RecordPair(
+                n, anchorsInFov, raysCast, raysClear, raysOutsideFov,
+                raysSkippedByEarlyExit, raysSkippedByGate, raysSkippedBySmoke, raysShortCircuited,
+                rayTicks, exposed, couldSee);
         }
 
         return (exposed, couldSee);
@@ -135,21 +348,43 @@ public static class VisibilityAnalyzer
         into.Clear();
         foreach ((int _, EntityState ent) in tracker.CurrentEntities.AllIndexed())
         {
-            if (ent.ClassName != SmokeClass)
+            if (TryActiveSmoke(ent, out Vector4 sphere))
             {
-                continue;
-            }
-
-            if (CoerceInt(ent["m_nSmokeEffectTickBegin"], 0) <= 0)
-            {
-                continue; // still a flying projectile, not yet a billowing cloud
-            }
-
-            if (ent.TryGet<Vector3>("m_vSmokeDetonationPos") is { } pos && (pos.X != 0 || pos.Y != 0))
-            {
-                into.Add(new Vector4(pos.X, pos.Y, pos.Z, SmokeVolumes.DefaultRadius));
+                into.Add(sphere);
             }
         }
+    }
+
+    /// <summary>
+    ///     The per-entity half of <see cref="CollectActiveSmokes" />: whether <paramref name="entity" />
+    ///     is a billowing smoke cloud, and its sphere if so. Split out so a caller already walking the
+    ///     entity set for something else (the digest extractor's molotov walk) applies the identical
+    ///     gate without a second walk.
+    /// </summary>
+    /// <param name="entity">Any live entity.</param>
+    /// <param name="sphere">The cloud as <c>(centre.xyz, radius)</c>, or default.</param>
+    /// <returns><c>true</c> for an active cloud.</returns>
+    public static bool TryActiveSmoke(EntityState entity, out Vector4 sphere)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        sphere = default;
+        if (entity.ClassName != SmokeClass)
+        {
+            return false;
+        }
+
+        if (CoerceInt(entity["m_nSmokeEffectTickBegin"], 0) <= 0)
+        {
+            return false; // still a flying projectile, not yet a billowing cloud
+        }
+
+        if (entity.TryGet<Vector3>("m_vSmokeDetonationPos") is { } pos && (pos.X != 0 || pos.Y != 0))
+        {
+            sphere = new Vector4(pos.X, pos.Y, pos.Z, SmokeVolumes.DefaultRadius);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -199,6 +434,22 @@ public static class VisibilityAnalyzer
         int sampledTicks = 0;
         double sampledSeconds = 0;
 
+        // Last-occluder hints per (viewer, target, anchor), carried across sampled ticks. Verdicts
+        // do not depend on them (see CouldSee), so nothing here needs them cleared between rounds.
+        // A slot outside the table's range gets no hints rather than an exception: this path has
+        // never range-checked slots and this step does not start.
+        OccluderHintTable hints = new();
+
+        // One delegate for the run rather than one per sampled tick: everything it closes over
+        // is loop-invariant, so building it inside the loop only allocated.
+        Action<int, EntityState> collect = (slot, pawn) =>
+        {
+            if (TryVantage(slot, pawn, resolvePosition) is { } v)
+            {
+                samples.Add(v);
+            }
+        };
+
         for (int i = start; i <= end; i++)
         {
             // Frame granularity is the cancellation quantum — one volatile read per frame, and it
@@ -225,13 +476,7 @@ public static class VisibilityAnalyzer
             }
 
             samples.Clear();
-            PawnLookup.ForEachLivePawn(tracker, (slot, pawn) =>
-            {
-                if (TryVantage(slot, pawn, resolvePosition) is { } v)
-                {
-                    samples.Add(v);
-                }
-            });
+            PawnLookup.ForEachLivePawn(tracker, collect);
 
             if (samples.Count < 2)
             {
@@ -262,32 +507,41 @@ public static class VisibilityAnalyzer
                         continue;
                     }
 
-                    (bool exposed, bool couldSee) =
-                        EvaluatePair(engine, viewer, target, opt.YawHalfDeg, opt.PitchHalfDeg, smokeSpan);
+                    (bool exposed, bool couldSee) = Evaluate(
+                        engine, viewer, target, opt.YawHalfDeg, opt.PitchHalfDeg, smokeSpan,
+                        hints.For(viewer.Slot, target.Slot), needExposed: true);
+
+                    // One hash probe per accumulate rather than a lookup and a store. The entry is
+                    // added on first touch exactly as the indexer store did, so insertion order,
+                    // and with it the report's pair order, is unchanged.
                     if (exposed)
                     {
-                        (int, int) key = (viewer.Slot, target.Slot);
-                        pairExposed[key] = pairExposed.GetValueOrDefault(key) + dt;
+                        ref double seconds = ref CollectionsMarshal.GetValueRefOrAddDefault(
+                            pairExposed, (viewer.Slot, target.Slot), out _);
+                        seconds += dt;
                         exposedThisTick.Add(target.Slot);
                     }
 
                     if (couldSee)
                     {
-                        (int, int) key = (viewer.Slot, target.Slot);
-                        pairCouldSee[key] = pairCouldSee.GetValueOrDefault(key) + dt;
+                        ref double seconds = ref CollectionsMarshal.GetValueRefOrAddDefault(
+                            pairCouldSee, (viewer.Slot, target.Slot), out _);
+                        seconds += dt;
                         viewerSawAny = true;
                     }
                 }
 
                 if (viewerSawAny)
                 {
-                    couldSeeAny[viewer.Slot] = couldSeeAny.GetValueOrDefault(viewer.Slot) + dt;
+                    ref double seconds = ref CollectionsMarshal.GetValueRefOrAddDefault(couldSeeAny, viewer.Slot, out _);
+                    seconds += dt;
                 }
             }
 
             foreach (int t in exposedThisTick)
             {
-                exposedToAny[t] = exposedToAny.GetValueOrDefault(t) + dt;
+                ref double seconds = ref CollectionsMarshal.GetValueRefOrAddDefault(exposedToAny, t, out _);
+                seconds += dt;
             }
         }
 

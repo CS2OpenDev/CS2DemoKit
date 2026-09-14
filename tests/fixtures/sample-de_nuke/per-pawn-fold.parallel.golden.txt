@@ -1,0 +1,40 @@
+frames 19238
+cells 227508
+hash 77ad5fceabf52e52
+frame 512 cells 671 hash 06ab2e9992154c4c
+frame 1024 cells 851 hash 8b979781f90a8eaa
+frame 1536 cells 992 hash 9b8eba74257cced5
+frame 2048 cells 1229 hash 78f0399bf87a7016
+frame 2560 cells 9644 hash b3f61ea068ef132e
+frame 3072 cells 25370 hash 1b1d4d9a2f22948b
+frame 3584 cells 39648 hash a2001300a4755a91
+frame 4096 cells 41685 hash bd83fd1622ab01bd
+frame 4608 cells 42426 hash 7fb868e322526e37
+frame 5120 cells 42719 hash 26fda13b5f93edb2
+frame 5632 cells 42911 hash 0931142842a9e5d2
+frame 6144 cells 42934 hash a1f5c80bb4d8ede0
+frame 6656 cells 43092 hash 48f3ba32330b761b
+frame 7168 cells 43092 hash 48f3ba32330b761b
+frame 7680 cells 43109 hash 27a253642e2cb74f
+frame 8192 cells 43343 hash 284c2e33bf7bb92c
+frame 8704 cells 43670 hash 80c66a91ef83e45a
+frame 9216 cells 44665 hash e2a3bb157b797c6a
+frame 9728 cells 45940 hash d6efa0ba2625e64a
+frame 10240 cells 62641 hash 050cfa9e39dad0a9
+frame 10752 cells 75878 hash a637072b3863c3e8
+frame 11264 cells 90505 hash 1fa77d83937f7620
+frame 11776 cells 108490 hash d39f6b58f0e44a9b
+frame 12288 cells 123001 hash 6bb2cafad0128b07
+frame 12800 cells 134400 hash df5dbda5206c0685
+frame 13312 cells 144013 hash b6140e77b8543767
+frame 13824 cells 152070 hash a9989dd1c496b323
+frame 14336 cells 154270 hash 099d11aec7791774
+frame 14848 cells 156070 hash f12e222b9511616e
+frame 15360 cells 159151 hash 9f25b8cb14441eb7
+frame 15872 cells 175820 hash 94ab5a0cd74b51bf
+frame 16384 cells 190317 hash 67c2745423082325
+frame 16896 cells 203320 hash a7f793a320ca8690
+frame 17408 cells 216442 hash aab68331fc6bad65
+frame 17920 cells 222952 hash 28b4a8b03c2ee4ad
+frame 18432 cells 225011 hash 5489e4440c2a8e4a
+frame 18944 cells 226639 hash 49a9a2682dbe9747

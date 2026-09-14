@@ -148,6 +148,113 @@ so the P/E-core asymmetry is not biting) and the serial layer bootstrap (0.8 ms)
 Ruled out already: snapshot capture. `AnalysisOptions.CaptureSnapshots` defaults to on, and
 turning it off does not make evaluation faster.
 
+## Eight-wide BVH build
+
+The tree the visibility engine builds per map changed twice at once: binary median split became
+eight-wide, and the builder gained a parallel path. Those are two wins, they multiply, and at a
+machine's core count either one can be dressed up as the whole of it. They are measured apart here.
+
+    machine   AMD Ryzen 9 7950X3D, 16 cores / 32 logical, 31 GB, Windows 11, otherwise idle
+    runtime   .NET 10, Release, workstation GC, Environment.ProcessorCount = 32
+    tree      working tree at 936b83e, branch feature/aim-rating-providers
+    bakes     <map>/collision.tris from the app checkout's assets directory
+    runs      1 cold build then 9 warm rounds per arm, arms interleaved, order flipped per round
+
+Raw output in `bvh-build-7950x3d.txt`. Reproduce with
+
+    dotnet run --project tools/CS2DemoKit.Bench -c Release -- \
+        rays <bake> --rays 100000 --rounds 9 --threads 32
+
+**This is not the machine the tables above were taken on** (that one is 10 cores, 6P + 4E). Nothing
+here is comparable with anything above it, and the ratios are the only figures that travel at all:
+the parallelism column is a function of the core count and will read lower on a smaller machine.
+
+### Wall-clock
+
+The binary builder is serial by construction and takes no thread count, so only the serial
+eight-wide column compares with it like for like. That column, and only that column, is the
+topology. Medians of the nine warm rounds.
+
+| bake | triangles | binary, 1 thread | wide, 1 thread | topology | wide, 32 threads | parallelism | product |
+|---|---|---|---|---|---|---|---|
+| de_nuke | 191,628 | 143.5 ms | 121.9 ms | 1.18x | 27.0 ms | 4.52x | 5.32x |
+| de_dust2 | 435,649 | 391.9 ms | 337.2 ms | 1.16x | 50.7 ms | 6.64x | 7.72x |
+| de_overpass | 713,341 | 784.4 ms | 708.2 ms | 1.11x | 88.9 ms | 7.97x | 8.82x |
+| de_ancient | 967,742 | 1137.8 ms | 1072.9 ms | 1.06x | 126.6 ms | 8.47x | 8.99x |
+
+**The topology is worth 1.06 to 1.18x, and shrinks as the bake grows; the rest is the thread
+count.** The product column is what a serial run of the old builder against a default run of the new
+one reports, and it is the number to avoid quoting: it charges the topology with the parallel
+build's win, and it moves with the core count of whoever ran it.
+
+Cold builds are one sample each and are not summarised into a ratio above. They land anywhere from
+0.74x to 1.66x their arm's warm median: above it on the smallest bake, where the builder's own JIT
+tier-up dominates, and consistently below it on the two largest, which one sample per arm cannot
+explain. Read them from the raw output, not from here.
+
+Nine rounds is a floor, not a luxury. At five rounds the de_overpass binary arm read
+674/1300/1701/1257/1425 ms and put the topology at 1.72x and the product at 12.95x; at nine rounds
+it settles to 1.11x and 8.82x with every round inside 670 to 801 ms. A single wall-clock sample per
+arm, which is what this verb used to take, cannot separate a 1.1x effect from that.
+
+### Memory
+
+`build --live` samples the live set during the build, forcing a compacting collection before each
+sample, and reports the high-water mark over a baseline read the same way. The bake's triangle soup
+is resident when the baseline is taken, so it is in neither arm's figure. Both arms serial, three
+rounds, repeatable to 0.1 MB.
+
+| bake | binary live peak | wide live peak | binary allocated | wide allocated |
+|---|---|---|---|---|
+| de_nuke | 19.0 MB | 14.9 MB | 37.0 MB | 27.8 MB |
+| de_dust2 | 43.2 MB | 33.8 MB | 79.6 MB | 64.7 MB |
+| de_overpass | 70.8 MB | 55.3 MB | 143.2 MB | 105.9 MB |
+| de_ancient | 96.0 MB | 75.4 MB | 169.1 MB | 146.3 MB |
+
+On de_ancient that is 96.0 to 75.4 MB, a 20.6 MB saving, 1.27x. The eight-wide arm's live peak sits
+within 1.7 MB of its retained size on every bake and lands exactly on it for de_ancient, which is
+the segment pooling doing what it claims: the builder never holds much more than the finished tree
+at once. The binary builder peaks at 2.8 to 3.5x its retained size, in intermediates it allocates
+and drops.
+
+**Retained is not comparable between the arms and is not a win here.** The binary tree holds the
+caller's triangle soup by reference; the eight-wide tree copies what it needs and lets the soup go.
+So on de_ancient the binary arm's 27.4 MB excludes 34.8 MB the tree still depends on and the
+eight-wide arm's 75.4 MB excludes nothing. Counting the soup on both sides, the finished trees are
+62.2 MB and 75.4 MB and the eight-wide one is the larger object. The saving is in the builder's
+transient peak, not in what it leaves behind.
+
+### The instrument, checked
+
+**Large object heap compaction.** Every live-set reading here (the baseline, the retained size and
+each `--live` sample) asks for `GCLargeObjectHeapCompactionMode.CompactOnce` first, because both
+builders work in large arrays and a gen2 leaves the large object heap uncompacted by default. It
+turned out to change nothing on this machine: with the compaction removed, de_ancient reads 96.0 and
+75.4 MB, identical to the figures above. It stays because without it the difference between two arms
+with different large-object habits is part fragmentation and part live set, with no way to size the
+shares, and that cannot be settled after the fact from a figure already taken.
+
+**The sampler's own cost.** `--live` holds a core and forces a blocking collection per sample, which
+suspends a parallel build's workers, so a parallel arm read this way is not comparable with a serial
+one. Measured rather than assumed: the de_ancient eight-wide peak reads 76.9 to 77.0 MB on 32
+threads against 75.4 MB serial, so the perturbation is about 1.5 MB, and the memory table above is
+taken at `--threads 1` on both arms regardless.
+
+**Tree identity across thread counts.** The structural digest is the same at 1 thread and at 32 on
+all four bakes (de_ancient `43AF9BBF399B09F9`, de_overpass `652353CE415B180B`, de_dust2
+`17A84C526631ED31`, de_nuke `54882E14EFAA64DF`), so the parallel column is the same tree built
+faster and not a different tree.
+
+### Figures that do not reproduce
+
+A set of build figures circulated before this section existed: 267 to 45 ms on de_nuke through 921
+to 117 ms on de_ancient, and a 182.4 to 75.4 MB live peak on de_ancient. The wall-clock pairs are
+the product column above, not the topology, and their ratios (5.9x to 7.9x) fall in the same range
+as this machine's product column, 5.3x to 9.0x. The 75.4 MB reproduces exactly, on the nose, at
+`--threads 1`. The 182.4 MB does not reproduce at any thread
+count here: the binary builder's live peak on de_ancient is 96.0 MB and its total allocation 169.1
+MB, and no reading of either builder from this tool lands on 182.4.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An
@@ -157,6 +264,22 @@ was interleaved and hit the contention equally, but their absolute figures did n
 
 **Watch the `load1` column.** Rows are stamped with the 1-minute load average. Discard outliers
 rather than averaging them in.
+
+**Rows from before the ray path was measured do not compare with rows after it.** Every table
+above was taken in the 27-column row shape. The row now has 34 columns (`vis` through `rays_cast`
+were added), and every measurement, `vis=0` included, evaluates a fifth ruleset on top of the four
+shipped ones: the bench's own `enemy_spotted` subscriber, loaded in both modes so the graph is the
+same with and without a bake. `eval_ms` therefore moved for a reason that is not the library, and
+a new sweep must be re-baselined rather than read against these tables. With `vis=1` the process
+also holds the map's visibility engine through every timed phase; `retained_mb` and the
+allocation deltas exclude it, since the baseline memory is read after the engine is built and
+settled, but `eval_ms` includes the rays it answers. `compare` refuses a row whose columns or
+`vis` disagree with its own header, so a CSV cannot hold both shapes.
+
+**The replacement sweep has not been taken.** Every load-pipeline table above is still in the old
+row shape, so it is the last measured state of the pipeline and not something a new sweep can be
+read against. Taking the replacement needs the 15-demo corpus, which is not in the repository, and a
+quiet machine; the BVH section is measured from bakes alone and does not stand in for it.
 
 **Medians, and the distribution.** A GC-bound pipeline is bimodal when a collection lands inside
 a timed window: modes hundreds of milliseconds apart with nothing between them. A mean over that

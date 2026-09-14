@@ -89,6 +89,10 @@ public sealed class EventRegistry
         // Synthesized (EntityChangeScanner): molotov/incendiary has no usable wire detonation
         // event in GOTV, so this is attributed from the CMolotovProjectile thrower handle.
         ("molotov_thrown", typeof(MolotovThrownEvent)),
+        // Synthesized (VisibilityTransitionScanner): "an enemy just became visible to me" has no
+        // wire event at all. The demo's spotted bit is team radar, so this is recomputed from map
+        // geometry on the rising edge of per-pair could-see.
+        ("enemy_spotted", typeof(EnemySpottedEvent)),
         ("decoy_detonate", typeof(DecoyDetonateEvent)),
         ("bullet_impact", typeof(BulletImpactEvent)),
         ("other_death", typeof(OtherDeathEvent)),

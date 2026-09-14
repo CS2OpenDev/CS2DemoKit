@@ -1,4 +1,8 @@
+#region
+
 using System.Diagnostics;
+
+#endregion
 
 namespace CS2DemoKit.Bench;
 
@@ -52,6 +56,7 @@ internal static class Compare
         Console.Error.WriteLine(
             $"A={options.A.Label} B={options.B.Label} rounds={options.Rounds} demos={demos.Length} "
             + $"cooldown={options.CooldownSeconds}s -> {options.Output}");
+        Console.Error.WriteLine(RayPathBanner.Line());
 
         for (int round = 1; round <= options.Rounds; round++)
         {
@@ -116,7 +121,16 @@ internal static class Compare
         child.WaitForExit();
 
         string row = stdout.Trim();
-        return child.ExitCode != 0 || row.Length == 0 ? (null, stderr) : (row, null);
+        if (child.ExitCode != 0 || row.Length == 0)
+        {
+            return (null, stderr);
+        }
+
+        // A child that exited cleanly can still be the wrong bench: exit code and a non-empty row
+        // say nothing about which pipeline it measured. The row itself has to agree with the header
+        // and the banner, or it is refused as loudly as a missing bake is.
+        string? rejected = Measurement.Reject(row);
+        return rejected is null ? (row, null) : (null, rejected);
     }
 }
 
@@ -180,7 +194,16 @@ internal sealed record CompareOptions
         };
     }
 
-    // Accepts either the published directory or the executable inside it.
-    private static string Resolve(string path) =>
-        Directory.Exists(path) ? Path.Combine(path, "CS2DemoKit.Bench") : path;
+    // Accepts either the published directory or the executable inside it. A publish on Windows
+    // names the host CS2DemoKit.Bench.exe, elsewhere CS2DemoKit.Bench; whichever is there wins.
+    private static string Resolve(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return path;
+        }
+
+        string windowsHost = Path.Combine(path, "CS2DemoKit.Bench.exe");
+        return File.Exists(windowsHost) ? windowsHost : Path.Combine(path, "CS2DemoKit.Bench");
+    }
 }

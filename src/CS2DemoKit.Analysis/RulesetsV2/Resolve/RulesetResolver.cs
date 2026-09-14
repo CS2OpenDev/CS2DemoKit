@@ -532,6 +532,8 @@ public static class RulesetResolver
                 bucketReducer = effective == "count" ? null : effective;
             }
 
+            RejectUngatedSentinelAggregate(stat, keep, bucketReducer, condition, valueSelector);
+
             return new CheckedStat(
                 _rulesetId,
                 stat.Id,
@@ -1099,6 +1101,82 @@ public static class RulesetResolver
             if (parsed is not null)
             {
                 conjuncts.Add(ParamInliner.Inline(parsed, _paramLiterals));
+            }
+        }
+
+        /// <summary>
+        ///     Refuses to aggregate a sentinel-bearing enrichment without a gate on it. The
+        ///     aggregating kinds are the ones that COMBINE values across matches: <c>sum:</c>, a
+        ///     <c>bucket:</c> whose reducer is sum/min/max, and <c>capture: keep: min | max</c>. A
+        ///     <c>keep: first | last | list</c> capture keeps the value as written, so the sentinel
+        ///     comes through as the "no measurement" it is and nothing is combined.
+        ///     <para>
+        ///         A gate is any read of the node itself, or of a node the catalogue declares proves it
+        ///         (<see cref="CatalogEnrichment.ProvenBy" />), anywhere in the lowered trigger
+        ///         condition: a <c>match:</c> binding, a free-form <c>where:</c>, or the view's own
+        ///         <c>baked:</c> filters all land there. The test's direction is not judged; the point
+        ///         is that the author has to write one, and a bound is the natural thing to write.
+        ///     </para>
+        /// </summary>
+        private void RejectUngatedSentinelAggregate(
+            StatDef stat, KeepKind keep, string? bucketReducer,
+            CheckedExpression? condition, CheckedExpression? valueSelector)
+        {
+            if (valueSelector is null)
+            {
+                return;
+            }
+
+            bool aggregates = stat.Kind switch
+            {
+                StatKind.Sum => true,
+                StatKind.Bucket => bucketReducer is "sum" or "min" or "max",
+                StatKind.Capture => keep is KeepKind.Min or KeepKind.Max,
+                _ => false
+            };
+            if (!aggregates)
+            {
+                return;
+            }
+
+            HashSet<string> gated = new(StringComparer.Ordinal);
+            if (condition is not null)
+            {
+                foreach (ResolvedReference reference in condition.References)
+                {
+                    gated.Add(reference.Path);
+                }
+            }
+
+            foreach (ResolvedReference reference in valueSelector.References)
+            {
+                if (!_adapter.TryGetEnrichment(reference.Path, out CatalogEnrichment? enrichment)
+                    || enrichment.Sentinel is not { } sentinel)
+                {
+                    continue;
+                }
+
+                bool proven = gated.Contains(enrichment.Name)
+                              || (enrichment.ProvenBy?.Any(gated.Contains) ?? false);
+                if (proven)
+                {
+                    continue;
+                }
+
+                string slot = stat.Kind switch
+                {
+                    StatKind.Sum => "sum:",
+                    StatKind.Bucket => "bucket: value:",
+                    _ => "capture:"
+                };
+                string alternatives = enrichment.ProvenBy is { Count: > 0 } provenBy
+                    ? $" (or on {string.Join(" / ", provenBy)}, which proves it)"
+                    : "";
+                Report(ResolveDiagnosticCodes.UngatedSentinelAggregate,
+                    $"{slot} '{stat.Id}' aggregates {enrichment.Name}, which reads {sentinel} when there was "
+                    + $"nothing to measure; gate the trigger on it with match: or where:{alternatives}, "
+                    + "otherwise every unmeasured event adds the sentinel and the total looks plausible",
+                    stat.Position);
             }
         }
 

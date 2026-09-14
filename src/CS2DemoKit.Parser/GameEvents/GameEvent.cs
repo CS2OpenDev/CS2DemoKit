@@ -82,4 +82,9 @@ public record GameEvent(
 
     protected static (string, string, string) F(string n, string v) =>
         (n, $"\"{v}\"", "string");
+
+    // Round-trippable and culture-invariant: "R" keeps the value exact for a consumer that parses
+    // it back, which the display-only fixed formats would quietly not.
+    protected static (string, string, string) F(string n, float v) =>
+        (n, v.ToString("R", CultureInfo.InvariantCulture), "float");
 }

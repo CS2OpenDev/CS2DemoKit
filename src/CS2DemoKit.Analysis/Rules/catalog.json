@@ -648,6 +648,44 @@
       ]
     },
     {
+      "name": "enemy_spotted",
+      "clrType": "EnemySpottedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "AngleToChestDeg",
+          "type": "float",
+          "v2Name": "event.AngleToChestDeg",
+          "v2Type": "Float"
+        },
+        {
+          "name": "TargetSlot",
+          "type": "int",
+          "v2Name": "event.TargetSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ViewerPitchDeg",
+          "type": "float",
+          "v2Name": "event.ViewerPitchDeg",
+          "v2Type": "Float"
+        },
+        {
+          "name": "ViewerSlot",
+          "type": "int",
+          "v2Name": "event.ViewerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ViewerYawDeg",
+          "type": "float",
+          "v2Name": "event.ViewerYawDeg",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
       "name": "flashbang_detonate",
       "clrType": "FlashbangDetonateEvent",
       "synthesized": false,
@@ -2249,6 +2287,12 @@
       "scope": "kill"
     },
     {
+      "name": "enrich.kill.ticks_since_spot",
+      "valueType": "int",
+      "scope": "kill",
+      "sentinel": "1000000"
+    },
+    {
       "name": "enrich.kill.traded_player_slot",
       "valueType": "int",
       "scope": "kill"
@@ -2299,6 +2343,60 @@
       "scope": "round"
     },
     {
+      "name": "enrich.shot.counter_strafe_admitted",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.counter_strafe_good",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.flick_error_deg",
+      "valueType": "double",
+      "scope": "shot",
+      "sentinel": "-1000",
+      "provenBy": [
+        "enrich.shot.travel_from_spot_deg"
+      ]
+    },
+    {
+      "name": "enrich.shot.is_first_after_on_target",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.is_first_after_spot",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.is_first_bullet",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_deg",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_measured",
+      "valueType": "bool",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_pitch",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
+      "name": "enrich.shot.spray_residual_yaw",
+      "valueType": "double",
+      "scope": "shot"
+    },
+    {
       "name": "enrich.shot.spray_shots",
       "valueType": "int",
       "scope": "shot"
@@ -2311,12 +2409,47 @@
     {
       "name": "enrich.shot.ticks_since_last_shot",
       "valueType": "int",
-      "scope": "shot"
+      "scope": "shot",
+      "sentinel": "1000000"
+    },
+    {
+      "name": "enrich.shot.ticks_since_on_target",
+      "valueType": "int",
+      "scope": "shot",
+      "sentinel": "1000000"
+    },
+    {
+      "name": "enrich.shot.ticks_since_spot",
+      "valueType": "int",
+      "scope": "shot",
+      "sentinel": "1000000"
+    },
+    {
+      "name": "enrich.shot.travel_from_spot_deg",
+      "valueType": "double",
+      "scope": "shot",
+      "sentinel": "-1"
     },
     {
       "name": "enrich.shot.turn_degrees",
       "valueType": "double",
       "scope": "shot"
+    },
+    {
+      "name": "enrich.spotted.is_first_contact",
+      "valueType": "bool",
+      "scope": "spotted"
+    },
+    {
+      "name": "enrich.spotted.spot_index",
+      "valueType": "int",
+      "scope": "spotted"
+    },
+    {
+      "name": "enrich.spotted.ticks_since_last_spot",
+      "valueType": "int",
+      "scope": "spotted",
+      "sentinel": "1000000"
     },
     {
       "name": "enrich.weapon_fire.is_bullet",
@@ -2650,6 +2783,15 @@
       "v2Type": "Int"
     },
     {
+      "name": "entity.pawn.duck_amount",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.duck_amount",
+      "v2Type": "Float",
+      "unit": "fraction",
+      "note": "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
+    },
+    {
       "name": "entity.pawn.equipment_value",
       "scope": "perPlayer",
       "clrType": "int",
@@ -2657,11 +2799,54 @@
       "v2Type": "Int"
     },
     {
+      "name": "entity.pawn.eye_pitch",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.eye_pitch",
+      "v2Type": "Float",
+      "unit": "degrees",
+      "note": "CS2\u0027s convention: NEGATIVE is up. Wraps, so subtract two of these only after normalising the difference."
+    },
+    {
+      "name": "entity.pawn.eye_yaw",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.eye_yaw",
+      "v2Type": "Float",
+      "unit": "degrees",
+      "note": "Counter-clockwise from world \u002BX, and it wraps at 360, so subtract two of these only after normalising the difference."
+    },
+    {
+      "name": "entity.pawn.flash_duration",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.flash_duration",
+      "v2Type": "Float",
+      "unit": "seconds",
+      "note": "The duration the server LATCHED for the flash, not a countdown: probed on the bundled GOTV sample it holds one value for the whole blind and then steps to 0, and the step is about 1.4x the latched value after the flash, so it never reads as \u0022time still blind\u0022. Use \u0060\u003E 0\u0060 for \u0022is blinded\u0022; a magnitude test on it measures the flash, not what is left of it."
+    },
+    {
       "name": "entity.pawn.health",
       "scope": "perPlayer",
       "clrType": "int",
       "v2Name": "player.health",
       "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.is_scoped",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.is_scoped",
+      "v2Type": "Bool"
+    },
+    {
+      "name": "entity.pawn.max_speed",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.max_speed",
+      "v2Type": "Float",
+      "unit": "units/second",
+      "note": "Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
     },
     {
       "name": "entity.pawn.place",
@@ -2690,6 +2875,49 @@
       "clrType": "float",
       "v2Name": "player.pos_z",
       "v2Type": "Float"
+    },
+    {
+      "name": "entity.pawn.punch_pitch",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.punch_pitch",
+      "v2Type": "Float",
+      "unit": "degrees",
+      "note": "NOT USABLE AS RECOIL TODAY. It is the raw aim-punch spring sample, correct only at its own base tick, and on the bundled GOTV sample it does not decode to degrees of punch at all: the two components cluster near -94 and \u002B89, which no weapon\u0027s kick reaches. The engine\u0027s own consumer rejects every value outside \u002B/-45 for that reason. A threshold on this column is true on nearly every tick and means nothing about recoil."
+    },
+    {
+      "name": "entity.pawn.punch_yaw",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.punch_yaw",
+      "v2Type": "Float",
+      "unit": "degrees",
+      "note": "NOT USABLE AS RECOIL TODAY, for the reasons under \u0060player.punch_pitch\u0060: same raw spring sample, same undecoded cluster on the bundled sample, same rejection by the engine\u0027s own consumer."
+    },
+    {
+      "name": "entity.pawn.shots_fired",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.shots_fired",
+      "v2Type": "Int",
+      "unit": "shots",
+      "note": "Position within the CURRENT burst, not a round or match total: it resets on trigger release and on weapon change."
+    },
+    {
+      "name": "entity.weapon.accuracy_penalty",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.weapon_accuracy_penalty",
+      "v2Type": "Float",
+      "note": "A raw engine accumulator in no unit, scaled per weapon: the same number means a different spread on a Deagle and on a Negev, so compare it within one weapon and never across two. It also excludes the movement term, so a running player\u0027s shot is more inaccurate than this says. For the movement term itself, ask the \u0060shot_landed\u0060 view instead: its counter-strafe facets are lowered from \u0060bullet_damage.InaccuracyMove\u0060, which is the penalty the server actually charged the shot, and no entity read can better it. This column is the accumulator as it stood BEFORE the frame, which is the only answer available on a demo that emits no \u0060bullet_damage\u0060 and the only one available at all for a shot that missed."
+    },
+    {
+      "name": "entity.weapon.recoil_index",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.weapon_recoil_index",
+      "v2Type": "Float",
+      "note": "A raw engine accumulator in no unit, scaled per weapon. Its useful property is that it rises within a spray and falls between sprays (a run over which it never drops is one spray), not its absolute magnitude, which is not comparable across weapons. Not the same number as the \u0060recoil_index\u0060 FACET on \u0060shot_landed\u0060: that one is \u0060bullet_damage.RecoilIndex\u0060, the index the server fired the shot at, and is authoritative for \u0022what did this shot fire at\u0022. This column is the entity read as it stood BEFORE the frame, so it answers \u0022where was the spray up to when the shot site fired\u0022 and is the only answer on a demo carrying no \u0060bullet_damage\u0060 or for a shot that missed. Do not pool the two in one stat."
     }
   ],
   "profiles": [
@@ -2800,6 +3028,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
           ]
         },
         {
@@ -3188,6 +3423,13 @@
           ]
         },
         {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
           "logicalName": "$flashbang_detonate",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3563,6 +3805,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
           ]
         },
         {
@@ -3951,6 +4200,13 @@
           ]
         },
         {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
           "logicalName": "$flashbang_detonate",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4298,6 +4554,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
           ]
         },
         {
@@ -5153,6 +5416,83 @@
       ]
     },
     {
+      "name": "enemy_spotted",
+      "event": "enemy_spotted",
+      "binding": "actor_slot",
+      "actor": "viewer",
+      "roles": [
+        {
+          "role": "target",
+          "field": "TargetSlot"
+        },
+        {
+          "role": "viewer",
+          "field": "ViewerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "angle_to_chest",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "AngleToChestDeg"
+        },
+        {
+          "name": "first_contact",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.spotted.is_first_contact"
+        },
+        {
+          "name": "spot_index",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.spotted.spot_index"
+        },
+        {
+          "name": "ticks_since_last_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.spotted.ticks_since_last_spot"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        }
+      ],
+      "note": "Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or shot tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
+    },
+    {
       "name": "flash_grenade",
       "event": "flashbang_detonate",
       "binding": "actor_slot",
@@ -5306,6 +5646,12 @@
           "field": "ThruSmoke"
         },
         {
+          "name": "ticks_since_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.kill.ticks_since_spot"
+        },
+        {
           "name": "trade",
           "type": "bool",
           "v2Type": "Bool",
@@ -5397,7 +5743,8 @@
             "molotov_thrown"
           ]
         }
-      ]
+      ],
+      "note": "Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
     },
     {
       "name": "round_lost",
@@ -5551,10 +5898,88 @@
           "enrichment": "enrich.weapon_fire.is_bullet"
         },
         {
+          "name": "counter_strafe_admitted",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_admitted"
+        },
+        {
+          "name": "counter_strafe_good",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_good"
+        },
+        {
+          "name": "first_after_on_target",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_on_target"
+        },
+        {
+          "name": "first_after_spot",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_spot"
+        },
+        {
+          "name": "first_bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_bullet"
+        },
+        {
+          "name": "flick_error_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.flick_error_deg"
+        },
+        {
           "name": "silenced",
           "type": "bool",
           "v2Type": "Bool",
           "field": "Silenced"
+        },
+        {
+          "name": "spray_residual_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_deg"
+        },
+        {
+          "name": "spray_residual_measured",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.spray_residual_measured"
+        },
+        {
+          "name": "spray_residual_pitch",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_pitch"
+        },
+        {
+          "name": "spray_residual_yaw",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_yaw"
+        },
+        {
+          "name": "ticks_since_on_target",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_on_target"
+        },
+        {
+          "name": "ticks_since_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_spot"
+        },
+        {
+          "name": "travel_from_spot_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.travel_from_spot_deg"
         },
         {
           "name": "weapon",
@@ -5615,10 +6040,46 @@
       "baked": [],
       "facets": [
         {
+          "name": "counter_strafe_admitted",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_admitted"
+        },
+        {
+          "name": "counter_strafe_good",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.counter_strafe_good"
+        },
+        {
           "name": "distance",
           "type": "float",
           "v2Type": "Float",
           "field": "Distance"
+        },
+        {
+          "name": "first_after_on_target",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_on_target"
+        },
+        {
+          "name": "first_after_spot",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_after_spot"
+        },
+        {
+          "name": "first_bullet",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.is_first_bullet"
+        },
+        {
+          "name": "flick_error_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.flick_error_deg"
         },
         {
           "name": "in_air",
@@ -5639,6 +6100,30 @@
           "field": "RecoilIndex"
         },
         {
+          "name": "spray_residual_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_deg"
+        },
+        {
+          "name": "spray_residual_measured",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.shot.spray_residual_measured"
+        },
+        {
+          "name": "spray_residual_pitch",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_pitch"
+        },
+        {
+          "name": "spray_residual_yaw",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.spray_residual_yaw"
+        },
+        {
           "name": "spray_shots",
           "type": "int",
           "v2Type": "Int",
@@ -5655,6 +6140,24 @@
           "type": "int",
           "v2Type": "Int",
           "enrichment": "enrich.shot.ticks_since_last_shot"
+        },
+        {
+          "name": "ticks_since_on_target",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_on_target"
+        },
+        {
+          "name": "ticks_since_spot",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.shot.ticks_since_spot"
+        },
+        {
+          "name": "travel_from_spot_deg",
+          "type": "float",
+          "v2Type": "Float",
+          "enrichment": "enrich.shot.travel_from_spot_deg"
         },
         {
           "name": "turn_degrees",

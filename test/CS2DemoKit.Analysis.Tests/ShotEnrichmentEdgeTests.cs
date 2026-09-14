@@ -34,7 +34,7 @@ public class ShotEnrichmentEdgeTests
         TransientValueNode<int> SprayKills,
         TransientValueNode<int> SprayShotsAtKill);
 
-    private static Fixture Build()
+    private static Fixture Build(double tickRate = 64.0)
     {
         PlayerContextIndex index = new();
         index.Register(0, new PlayerContextIndex.PlayerContext(0, 2));
@@ -51,8 +51,10 @@ public class ShotEnrichmentEdgeTests
         TransientValueNode<int> sprayShotsAtKill = new("enrich.kill.spray_shots_at_kill");
 
         GenericBoolNode root = new("root");
-        ShotEnrichmentEdge shotEdge = new(root, index, turn, ticks, sprayShots, sprayVictims);
-        SprayKillEnrichmentEdge killEdge = new(root, index, sprayKills, sprayShotsAtKill);
+        ShotEnrichmentEdge shotEdge = new(
+            root, index, turn, ticks, sprayShots, sprayVictims, tickRate);
+        SprayKillEnrichmentEdge killEdge = new(
+            root, index, sprayKills, sprayShotsAtKill, tickRate);
         return new Fixture(index, shotEdge, killEdge, turn, ticks, sprayShots, sprayVictims,
             sprayKills, sprayShotsAtKill);
     }
@@ -263,6 +265,70 @@ public class ShotEnrichmentEdgeTests
         await Assert.That(f.SprayVictims.Value).IsEqualTo(2);
     }
 
+    /// <summary>
+    ///     The gap that continues a spray run is a DURATION, so the same real pause between two
+    ///     damaging shots continues the run at every tick rate.
+    ///     <para>
+    ///         The 64-tick case is the control and passed before
+    ///         <see cref="ShotEnrichmentEdge.SprayContinuationMaxGapSeconds" /> existed; the
+    ///         128-tick case is the one a hardcoded 24-tick bound got wrong, because 24 ticks there
+    ///         is 188 ms rather than 375, so a 300 ms pause — one burst-to-burst spacing, well
+    ///         inside the window the constant was chosen to express — closed the run and restarted
+    ///         <c>spray_shots</c> at 1. A rule gated on <c>spray_shots &gt;= N</c> therefore counted
+    ///         a different thing on a FACEIT or ESEA demo than on a Valve one, with nothing in the
+    ///         output saying so.
+    ///     </para>
+    /// </summary>
+    /// <param name="tickRate">The demo's tick rate.</param>
+    /// <returns>A task.</returns>
+    [Test]
+    [Arguments(64.0)]
+    [Arguments(128.0)]
+    public async Task SprayContinuation_IsADuration_NotATickCount(double tickRate)
+    {
+        const double pauseSeconds = 0.300;
+        int gap = (int)Math.Round(pauseSeconds * tickRate);
+        Console.WriteLine($"   {tickRate:F0}-tick: {pauseSeconds * 1000:F0} ms is {gap} ticks");
+
+        Fixture f = Build(tickRate);
+        Shot(f, tick: 1000, attacker: 0, victim: 5, recoil: 1f);
+        Shot(f, tick: 1000 + gap, attacker: 0, victim: 6, recoil: 2f);
+
+        await Assert.That(f.SprayShots.Value).IsEqualTo(2)
+            .Because($"{pauseSeconds * 1000:F0} ms is one run's spacing at any tick rate");
+        await Assert.That(f.SprayVictims.Value).IsEqualTo(2)
+            .Because("a run that survives keeps the victims it has already damaged");
+    }
+
+    /// <summary>
+    ///     The run still closes on a pause that is genuinely too long, at either rate: the bound
+    ///     moved from a tick count to a duration, it did not widen. Pins the other side of the
+    ///     conversion, so "sprays now never end" could not pass as a fix.
+    /// </summary>
+    /// <param name="tickRate">The demo's tick rate.</param>
+    /// <returns>A task.</returns>
+    [Test]
+    [Arguments(64.0)]
+    [Arguments(128.0)]
+    public async Task SprayContinuation_StillBreaksOneTickPastTheWindow(double tickRate)
+    {
+        int window = (int)Math.Round(
+            ShotEnrichmentEdge.SprayContinuationMaxGapSeconds * tickRate);
+
+        Fixture atTheEdge = Build(tickRate);
+        Shot(atTheEdge, tick: 1000, attacker: 0, victim: 5, recoil: 1f);
+        Shot(atTheEdge, tick: 1000 + window, attacker: 0, victim: 5, recoil: 2f);
+
+        Fixture pastIt = Build(tickRate);
+        Shot(pastIt, tick: 1000, attacker: 0, victim: 5, recoil: 1f);
+        Shot(pastIt, tick: 1000 + window + 1, attacker: 0, victim: 5, recoil: 2f);
+
+        await Assert.That(atTheEdge.SprayShots.Value).IsEqualTo(2)
+            .Because($"a gap of exactly {window} ticks is the last one the window covers");
+        await Assert.That(pastIt.SprayShots.Value).IsEqualTo(1)
+            .Because($"one tick past {window} the trigger was released");
+    }
+
     // ── Kill ↔ spray-run correlation (spray_kills / spray_shots_at_kill) ─────
 
     [Test]
@@ -327,5 +393,31 @@ public class ShotEnrichmentEdgeTests
     {
         Fixture f = Build();
         await Assert.That(Kill(f, tick: 1000, killer: 1, victim: 5)).IsFalse();
+    }
+
+    /// <summary>
+    ///     The kill-to-run attach window is the same duration the shot stream continues a run over,
+    ///     so it converts at the demo's rate for the same reason. At 128-tick a hardcoded 24-tick
+    ///     bound is 188 ms, which drops the spray credit for a kill whose own damaging shot is only
+    ///     300 ms back and leaves <c>spray_kills</c> at 0 on a real spray-down.
+    /// </summary>
+    /// <param name="tickRate">The demo's tick rate.</param>
+    /// <returns>A task.</returns>
+    [Test]
+    [Arguments(64.0)]
+    [Arguments(128.0)]
+    public async Task KillAttachWindow_IsADuration_NotATickCount(double tickRate)
+    {
+        const double pauseSeconds = 0.300;
+        int gap = (int)Math.Round(pauseSeconds * tickRate);
+
+        Fixture f = Build(tickRate);
+        Shot(f, tick: 1000, attacker: 0, victim: 5, recoil: 1f);
+        bool applied = Kill(f, tick: 1000 + gap, killer: 0, victim: 5);
+
+        await Assert.That(applied).IsTrue()
+            .Because($"{pauseSeconds * 1000:F0} ms after the last damaging shot is inside the "
+                     + "attach window at any tick rate");
+        await Assert.That(f.SprayKills.Value).IsEqualTo(1);
     }
 }

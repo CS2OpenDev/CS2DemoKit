@@ -32,13 +32,16 @@ public class HurtEnrichmentDecodeCompromiseTests
 {
     // ── Digest fixtures ───────────────────────────────────────────────────────
 
+    /// <summary>The one-column (health) layout every digest here is built on; index 0 in every row.</summary>
+    private static readonly DigestColumnLayout _layout = DigestColumnLayout.For([new PawnHealthProvider()]);
+
     /// <summary>One per-player provider (health) — index 0 in every digest's value array.</summary>
     private static EntityFrameDigest Digest(int? hpForSlot3, bool compromised = false)
     {
         EntityFrameDigest d = new() { DecodeCompromised = compromised };
         if (hpForSlot3 is not null)
         {
-            d.PerPawn.Add((3, new object?[] { hpForSlot3.Value }));
+            d.PerPawn = PerPawnColumns.FromBoxedRows(_layout, [(3, new object?[] { hpForSlot3.Value })]);
         }
 
         return d;

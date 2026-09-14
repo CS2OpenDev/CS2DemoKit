@@ -250,6 +250,9 @@ public class EdgeBreakpointConditionsTests
             "event.PlayerSlot == 4 && event.tick > 100", reg.EventType, reg.Fields,
             typeof(GameEvent))!;
 
+        // Three different clocks on purpose, a shape the scanner never produces (it stamps the
+        // frame tick in all three slots; see the record's doc). The point here is only that a
+        // transport read lands on the envelope's ServerTick, so the slots must be distinguishable.
         MolotovThrownEvent thrown = new(FrameNumber: 3, ServerTick: 500, GameTick: 400, PlayerSlot: 4);
         MolotovThrownEvent early = thrown with { ServerTick = 50 };
         await Assert.That(pred.DynamicInvoke(thrown) is true).IsTrue();

@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics.CodeAnalysis;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.Rules.Ast;
@@ -240,6 +241,20 @@ public sealed class CatalogScopeAdapter
 
         throw new InvalidOperationException(
             $"facet '{facet.Name}' sets none of field/enrichment/expr — the generator must set exactly one.");
+    }
+
+    /// <summary>
+    ///     Looks up an enrichment by its full node name (<c>enrich.shot.ticks_since_spot</c>). The
+    ///     resolver reads the entry's sentinel declaration off it before it lets a stat aggregate the
+    ///     node.
+    /// </summary>
+    /// <param name="name">The full <c>enrich.*</c> node name.</param>
+    /// <param name="enrichment">The catalog entry when the name is a registered enrichment.</param>
+    /// <returns>True when the name is in the catalog's enrichment family.</returns>
+    public bool TryGetEnrichment(string name, [NotNullWhen(true)] out CatalogEnrichment? enrichment)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return _enrichmentsByName.TryGetValue(name, out enrichment);
     }
 
     /// <summary>The v2 type the facet resolves to (used for typing a free-form facet read symbol).</summary>

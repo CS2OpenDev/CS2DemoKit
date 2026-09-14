@@ -78,6 +78,14 @@ public class Cs2GotvProfile : DemoSourceProfile
         LogicalEventBinding.Of("defuser_pickup");
 
     /// <inheritdoc />
+    public override LogicalEventBinding? EnemySpotted =>
+        // Synthesized by VisibilityTransitionScanner from baked map geometry, never read off the
+        // wire, so it is bound on every source rather than per recording: what varies between demos
+        // is whether the map bake is available, not whether the demo carries the signal. Backs the
+        // `enemy_spotted` actor_slot view.
+        LogicalEventBinding.Of("enemy_spotted");
+
+    /// <inheritdoc />
     public override DemoFeatureSet Features =>
         DemoFeatureSet.HasPlayerBlind
         | DemoFeatureSet.HasRoundOfficiallyEnded
