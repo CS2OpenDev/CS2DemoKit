@@ -6,6 +6,8 @@ using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis;
@@ -278,13 +280,13 @@ internal static class ParallelDigestProducer
         List<int> fullIdx = [];
         for (int i = 0; i < frames.Count; i++)
         {
-            string cmd = frames[i].Command;
-            if (schemaPrefixEnd < 0 && cmd == "DEM_Packet")
+            EDemoCommands cmd = frames[i].CommandKind;
+            if (schemaPrefixEnd < 0 && cmd == EDemoCommands.DemPacket)
             {
                 schemaPrefixEnd = i;
             }
 
-            if (cmd == "DEM_FullPacket")
+            if (cmd == EDemoCommands.DemFullPacket)
             {
                 fullIdx.Add(i);
             }

@@ -1,9 +1,7 @@
 #region
 
-using System.Collections.Frozen;
-using System.Reflection;
+using CS2OpenSchema.Protos;
 using Google.Protobuf;
-using Google.Protobuf.Reflection;
 using Snappier;
 
 #endregion
@@ -35,12 +33,6 @@ public static class DownstreamUtilities
 
     private const uint DemIsCompressedFlag = 64; // EDemoCommands.DEM_IsCompressed bit on the frame command varint
 
-    // Net-message type id → proto name, mirroring DemoParser's combined cache (NET → Bidirectional → SVC
-    // → EBaseGameEvents, first writer wins on collision). This is the SAME mapping the parser uses to
-    // assign NetMessage.MessageTypeName, so resolving a slice's type id here yields the exact string a
-    // known message carries — the bridge ExtractInnerMessageBytesAligned matches on.
-    private static readonly FrozenDictionary<int, string> _innerMsgNameByTypeId = BuildInnerMsgNameCache();
-
     /// <summary>
     ///     Re-extracts the exact raw proto bytes for each inner message, in the same order as
     ///     <see cref="DemoFrame.InnerMessages" />, without storing them long-term.
@@ -59,13 +51,13 @@ public static class DownstreamUtilities
 
         // Direct-payload frames: the single message IS the full decompressed payload.
         // DecompressedStart == 0 distinguishes them from inner messages.
-        if (frame.Command is not ("DEM_Packet" or "DEM_SignonPacket" or "DEM_FullPacket"))
+        if (!NetMessageCatalog.IsContainer(frame.CommandKind))
         {
             return [decompressedPayload.ToArray()];
         }
 
         // DEM_Packet / DEM_SignonPacket: CDemoPacket.data is field 3.
-        if (frame.Command is "DEM_Packet" or "DEM_SignonPacket")
+        if (frame.CommandKind is EDemoCommands.DemPacket or EDemoCommands.DemSignonPacket)
         {
             if (!DemoParser.FindBytesField(decompressedPayload, 3, out int dataStart, out int dataLen) || dataLen == 0)
             {
@@ -118,7 +110,7 @@ public static class DownstreamUtilities
         }
 
         // DEM_Packet / DEM_SignonPacket: CDemoPacket.data is field 3.
-        if (frame.Command is "DEM_Packet" or "DEM_SignonPacket")
+        if (frame.CommandKind is EDemoCommands.DemPacket or EDemoCommands.DemSignonPacket)
         {
             if (DemoParser.FindBytesField(decompressedPayload, 3, out int dataStart, out int dataLen) && dataLen > 0)
             {
@@ -129,7 +121,7 @@ public static class DownstreamUtilities
         }
 
         // DEM_FullPacket: inner messages live in CDemoPacket.data found at field 2 → field 3.
-        if (frame.Command == "DEM_FullPacket"
+        if (frame.CommandKind == EDemoCommands.DemFullPacket
             && DemoParser.FindBytesField(decompressedPayload, 2, out int pktStart, out int pktLen) && pktLen > 0
             && DemoParser.FindBytesField(decompressedPayload.Slice(pktStart, pktLen), 3, out int dataRel, out int innerLen) && innerLen > 0)
         {
@@ -193,7 +185,7 @@ public static class DownstreamUtilities
 
         // Direct-payload (non-packet) frames carry a single message that IS the whole payload — no inner
         // bitstream, so no unknowns and nothing to align.
-        if (frame.Command is not ("DEM_Packet" or "DEM_SignonPacket" or "DEM_FullPacket"))
+        if (!NetMessageCatalog.IsContainer(frame.CommandKind))
         {
             return [decompressedPayload.ToArray()];
         }
@@ -203,7 +195,7 @@ public static class DownstreamUtilities
         // DEM_FullPacket message 0 is the CDemoStringTables blob (field 1), not part of the inner
         // bitstream; the aligned inner messages start at index 1.
         int innerStart = 0;
-        if (frame.Command == "DEM_FullPacket")
+        if (frame.CommandKind == EDemoCommands.DemFullPacket)
         {
             if (DemoParser.FindBytesField(decompressedPayload, 1, out int stStart, out int stLen) && stLen > 0)
             {
@@ -231,7 +223,7 @@ public static class DownstreamUtilities
             int found = -1;
             for (int j = sliceIdx; j < slices.Count; j++)
             {
-                if (_innerMsgNameByTypeId.TryGetValue(slices[j].TypeId, out string? name) && name == typeName)
+                if (NetMessageCatalog.TryGetName(slices[j].TypeId, out string name) && name == typeName)
                 {
                     found = j;
                     break;
@@ -248,27 +240,56 @@ public static class DownstreamUtilities
         }
     }
 
-    private static FrozenDictionary<int, string> BuildInnerMsgNameCache()
+    /// <summary>
+    ///     Walks a packet frame's inner-message bitstream and returns one header per message, known or
+    ///     unknown, in bitstream order, without decoding any payload. Takes the decompressed frame
+    ///     payload and its command rather than a <see cref="DemoFrame" />, so a caller walking a file
+    ///     by hand can count messages by type with nothing else from the parser. Empty for a command
+    ///     that is not one of the three packet containers.
+    /// </summary>
+    public static List<InnerMessageHeader> ReadInnerMessageHeaders(ReadOnlySpan<byte> decompressedPayload, EDemoCommands command)
     {
-        Dictionary<int, string> result = new();
-        AddProtoEnumNames<NET_Messages>(result);
-        AddProtoEnumNames<Bidirectional_Messages>(result);
-        AddProtoEnumNames<SVC_Messages>(result);
-        AddProtoEnumNames<EBaseGameEvents>(result);
-        return result.ToFrozenDictionary();
-    }
-
-    private static void AddProtoEnumNames<TEnum>(Dictionary<int, string> into) where TEnum : struct, Enum
-    {
-        foreach (FieldInfo field in typeof(TEnum).GetFields(BindingFlags.Public | BindingFlags.Static))
+        List<InnerMessageHeader> headers = [];
+        if (decompressedPayload.IsEmpty)
         {
-            string? protoName = field.GetCustomAttribute<OriginalNameAttribute>()?.Name;
-            if (protoName is null)
+            return headers;
+        }
+
+        if (command is EDemoCommands.DemPacket or EDemoCommands.DemSignonPacket)
+        {
+            if (DemoParser.FindBytesField(decompressedPayload, 3, out int dataStart, out int dataLen) && dataLen > 0)
             {
-                continue;
+                WalkInnerHeaders(decompressedPayload.Slice(dataStart, dataLen), dataStart, headers);
             }
 
-            into.TryAdd((int)field.GetValue(null)!, protoName);
+            return headers;
+        }
+
+        if (command == EDemoCommands.DemFullPacket
+            && DemoParser.FindBytesField(decompressedPayload, 2, out int pktStart, out int pktLen) && pktLen > 0
+            && DemoParser.FindBytesField(decompressedPayload.Slice(pktStart, pktLen), 3, out int dataRel, out int innerLen) && innerLen > 0)
+        {
+            WalkInnerHeaders(decompressedPayload.Slice(pktStart + dataRel, innerLen), pktStart + dataRel, headers);
+        }
+
+        return headers;
+    }
+
+    // Same walk as ParseInnerMessages, recording (type, size, byte-approximate start) and skipping the bytes.
+    private static void WalkInnerHeaders(ReadOnlySpan<byte> data, int dataFieldStart, List<InnerMessageHeader> headers)
+    {
+        BitBuffer buf = new(data);
+        while (buf.RemainingBits > 0)
+        {
+            int typeId = (int)buf.ReadUBitVar();
+            int size = (int)buf.ReadUVarInt32();
+            if (size <= 0 || size > buf.RemainingBytes)
+            {
+                break;
+            }
+
+            headers.Add(new InnerMessageHeader(typeId, size, dataFieldStart + (buf.TellBits >> 3), false));
+            buf.SkipBytes(size);
         }
     }
 

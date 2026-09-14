@@ -15,6 +15,8 @@ using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -822,7 +824,7 @@ public class VisibilityTransitionScannerTests
         GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(spotted);
         return edge.TryApplyDirect(spotted, new EvaluationContext(msg, new DemoFrame
         {
-            Command = "DEM_Packet",
+            CommandKind = EDemoCommands.DemPacket,
             FrameNumber = 0,
             ServerTick = tick,
             RawStart = 0,

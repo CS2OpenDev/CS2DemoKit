@@ -1,3 +1,9 @@
+#region
+
+using CS2OpenSchema.Protos;
+
+#endregion
+
 namespace CS2DemoKit.Parser;
 
 /// <summary>
@@ -5,10 +11,14 @@ namespace CS2DemoKit.Parser;
 /// </summary>
 public sealed class DemoFrame
 {
+    /// <summary>The demo command, with the compressed flag already stripped.</summary>
+    public required EDemoCommands CommandKind { get; init; }
+
     /// <summary>
-    ///     Name of the demo command, e.g. "DEM_Packet", "DEM_SyncTick", etc.
+    ///     Name of the demo command, e.g. "DEM_Packet", "DEM_SyncTick", etc. Derived from
+    ///     <see cref="CommandKind" />.
     /// </summary>
-    public required string Command { get; init; }
+    public string Command => NetMessageCatalog.DemoCommandName(CommandKind);
 
     /// <summary>Zero-based sequential index of this frame in <see cref="ParsedDemo.Frames" />.</summary>
     public required int FrameNumber { get; init; }
@@ -17,7 +27,15 @@ public sealed class DemoFrame
     ///     Alias for <see cref="ServerTick" />. In CS2 demos the frame header tick IS the game tick,
     ///     so this always equals <see cref="ServerTick" />.
     /// </summary>
-    public int? GameTick { get; internal set; }
+    public int? GameTick { get; init; }
+
+    /// <summary>
+    ///     One header per inner message of a packet frame, in bitstream order, recorded when the
+    ///     parse's <see cref="DecodePlan.RecordStructure" /> was set. Empty otherwise, and always
+    ///     empty on a direct-payload frame. This is what answers "how many messages of which type"
+    ///     when the payloads were never decoded.
+    /// </summary>
+    public ReadOnlyMemory<InnerMessageHeader> InnerMessageHeaders { get; init; }
 
     /// <summary>
     ///     Byte length of the three ULEB128-encoded header fields (cmd, tick, size) that precede the payload.

@@ -2,6 +2,8 @@
 
 using CS2DemoKit.Parser;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -173,7 +175,7 @@ public class ParallelChunkPlanningTests
     }
 
     private static int[] FullPacketIndices(List<DemoFrame> frames) =>
-        [.. Enumerable.Range(0, frames.Count).Where(i => frames[i].Command == "DEM_FullPacket")];
+        [.. Enumerable.Range(0, frames.Count).Where(i => frames[i].CommandKind == EDemoCommands.DemFullPacket)];
 
     /// <summary>
     ///     A frame list shaped like a GOTV recording: a two-frame signon prefix, then a
@@ -185,9 +187,9 @@ public class ParallelChunkPlanningTests
     {
         List<DemoFrame> frames = [];
 
-        void Add(string command, int tick) => frames.Add(new DemoFrame
+        void Add(EDemoCommands command, int tick) => frames.Add(new DemoFrame
         {
-            Command = command,
+            CommandKind = command,
             FrameNumber = frames.Count,
             ServerTick = tick,
             RawStart = 0,
@@ -196,23 +198,23 @@ public class ParallelChunkPlanningTests
             IsCompressed = false
         });
 
-        Add("DEM_FileHeader", -1);
-        Add("DEM_Packet", 0); // first DEM_Packet: schemaPrefixEnd lands here
+        Add(EDemoCommands.DemFileHeader, -1);
+        Add(EDemoCommands.DemPacket, 0); // first DEM_Packet: schemaPrefixEnd lands here
 
         for (int f = 0; f < fullPacketCount; f++)
         {
             // Real full packets sit at ticks 1, 1+period, 1+2*period, ... which is the cadence the
             // corpus shows (every one on the (tick-1) % 3840 lattice at 64 tick).
             int tick = 1 + (f * period);
-            Add("DEM_FullPacket", tick);
+            Add(EDemoCommands.DemFullPacket, tick);
             if (clashAt(f))
             {
-                Add("DEM_Packet", tick);
+                Add(EDemoCommands.DemPacket, tick);
             }
 
             for (int i = 1; i < period; i++)
             {
-                Add("DEM_Packet", tick + i);
+                Add(EDemoCommands.DemPacket, tick + i);
             }
         }
 

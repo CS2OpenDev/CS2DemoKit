@@ -8,6 +8,8 @@ using CS2DemoKit.Parser;
 using Google.Protobuf.WellKnownTypes;
 using Type = System.Type;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -115,7 +117,7 @@ public class StateGraphEvaluatorSnapshotTests
 
     private static DemoFrame MakeBlankFrame() => new()
     {
-        Command = "DEM_FakeProbe",
+        CommandKind = EDemoCommands.DemPacket,
         FrameNumber = 0,
         ServerTick = 0,
         RawStart = 0,

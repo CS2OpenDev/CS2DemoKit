@@ -5,6 +5,8 @@ using CS2DemoKit.Parser.Entities;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.EntityTracking;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Abstractions;
@@ -168,7 +170,7 @@ public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
         //     baseline-sourced field such as a projectile's m_hThrower stays unset on mid-chunk creates.
         for (int i = checkpointFrameIndex; i >= 0; i--)
         {
-            if (frames[i].Command == "DEM_FullPacket" && Tracker.LoadInstanceBaselineSnapshot(frames[i]))
+            if (frames[i].CommandKind == EDemoCommands.DemFullPacket && Tracker.LoadInstanceBaselineSnapshot(frames[i]))
             {
                 break;
             }

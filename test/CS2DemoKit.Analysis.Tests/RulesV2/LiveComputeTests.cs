@@ -10,6 +10,8 @@ using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 using CS2DemoKit.TestSupport;
@@ -59,7 +61,7 @@ public class LiveComputeTests
 
     private static DemoFrame Frame(params NetMessage[] msgs) => new()
     {
-        Command = "DEM_Packet",
+        CommandKind = EDemoCommands.DemPacket,
         FrameNumber = 0,
         ServerTick = 0,
         RawStart = 0,

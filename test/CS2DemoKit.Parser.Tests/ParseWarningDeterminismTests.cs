@@ -21,23 +21,23 @@ public class ParseWarningDeterminismTests
     ///     throws at the right moment.
     /// </summary>
     [Test]
-    public async Task Parse_AfterAThrownParseLeftResidue_DoesNotInheritIt()
+    public async Task Parse_WarningsBelongToTheResult()
     {
         string path = DemoTestHelper.RequireDemo();
 
-        ParseDiagnostics.Reset();
         ParsedDemo clean = MemoryMappedDemoSource.ParseFile(path);
         int baseline = clean.Warnings.Count;
 
-        ParseDiagnostics.Warn("test-residue", "left behind by a parse that threw");
-        ParseDiagnostics.Warn("test-residue", "and a second one");
+        // Another channel warning on this thread is another decode's business.
+        ParseDiagnostics stray = new();
+        stray.Warn("test-residue", "belongs to a different decode");
 
         ParsedDemo after = MemoryMappedDemoSource.ParseFile(path);
 
         await Assert.That(after.Warnings.Count).IsEqualTo(baseline)
             .Because("a parse's warning count must not depend on what ran before it on this thread");
-        await Assert.That(after.Warnings.Any(w => w.Code == "test-residue")).IsFalse()
-            .Because("the residue belonged to a different parse");
+        await Assert.That(after.Warnings.Any(w => w.Code == "test-residue")).IsFalse();
+        await Assert.That(stray.Count).IsEqualTo(1);
     }
 
     [Test]

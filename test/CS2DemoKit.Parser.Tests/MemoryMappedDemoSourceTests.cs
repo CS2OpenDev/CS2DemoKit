@@ -52,7 +52,7 @@ public class MemoryMappedDemoSourceTests
     /// <summary>
     ///     Pins the load-bearing half of the ownership contract: the mapping may be released the
     ///     moment <c>Parse</c> returns because nothing on the parse output points into it.
-    ///     <see cref="MemoryMappedDemoSource.ParseFile" /> disposes internally, so every access here
+    ///     <see cref="MemoryMappedDemoSource.ParseFile(string,DemoProfile?)" /> disposes internally, so every access here
     ///     happens against an already-unmapped file. If a <see cref="DemoFrame" /> or
     ///     <see cref="NetMessage" /> ever starts retaining a slice, this test stops being a pass and
     ///     starts being an access violation — which is exactly the signal we want.

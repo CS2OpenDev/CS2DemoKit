@@ -10,6 +10,8 @@ using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 using CS2OpenSchema.Events;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -913,7 +915,7 @@ public class AimShotContextEdgeTests
             GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(evt);
             DemoFrame frame = new()
             {
-                Command = "DEM_Packet",
+                CommandKind = EDemoCommands.DemPacket,
                 FrameNumber = evt.FrameNumber,
                 ServerTick = evt.ServerTick,
                 RawStart = 0,

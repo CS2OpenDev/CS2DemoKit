@@ -6,6 +6,8 @@ using CS2DemoKit.Parser;
 using CS2DemoKit.TestSupport;
 using TUnit.Core.Exceptions;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -302,9 +304,9 @@ public class ParallelDigestDopTests
         const int period = 8;
         List<DemoFrame> frames = [];
 
-        void Add(string command, int tick) => frames.Add(new DemoFrame
+        void Add(EDemoCommands command, int tick) => frames.Add(new DemoFrame
         {
-            Command = command,
+            CommandKind = command,
             FrameNumber = frames.Count,
             ServerTick = tick,
             RawStart = 0,
@@ -313,16 +315,16 @@ public class ParallelDigestDopTests
             IsCompressed = false
         });
 
-        Add("DEM_FileHeader", -1);
-        Add("DEM_Packet", 0); // first DEM_Packet: schemaPrefixEnd lands here
+        Add(EDemoCommands.DemFileHeader, -1);
+        Add(EDemoCommands.DemPacket, 0); // first DEM_Packet: schemaPrefixEnd lands here
 
         for (int f = 0; f < fullPackets; f++)
         {
             int tick = 1 + (f * period);
-            Add("DEM_FullPacket", tick);
+            Add(EDemoCommands.DemFullPacket, tick);
             for (int i = 1; i < period; i++)
             {
-                Add("DEM_Packet", tick + i);
+                Add(EDemoCommands.DemPacket, tick + i);
             }
         }
 

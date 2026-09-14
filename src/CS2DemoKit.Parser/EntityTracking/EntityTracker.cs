@@ -1851,7 +1851,7 @@ public sealed class EntityTracker
         // must NOT re-process these (they double-deliver PacketEntities, causing duplicate
         // ENTERPVS events and entity-baseline confusion that cascades into bit-misalignment
         // ~5 packets later).
-        bool isFullPacketCheckpoint = frame.Command == "DEM_FullPacket";
+        bool isFullPacketCheckpoint = frame.CommandKind == EDemoCommands.DemFullPacket;
 
         foreach (NetMessage msg in frame.MessageList)
         {

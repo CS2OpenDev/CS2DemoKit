@@ -71,4 +71,12 @@ public sealed record ParseOptions
     ///     </para>
     /// </summary>
     public bool CountDropSites { get; init; }
+
+    /// <summary>
+    ///     What to decode and keep. Defaults to <see cref="DecodePlan.Everything" />, which is the
+    ///     options-less behaviour. A narrower plan leaves the unplanned messages out of
+    ///     <see cref="DemoFrame.DecodedMessages" /> and never materialises their payloads; with
+    ///     <see cref="DecodePlan.RecordStructure" /> each packet frame still records what it held.
+    /// </summary>
+    public DecodePlan Plan { get; init; } = DecodePlan.Everything;
 }

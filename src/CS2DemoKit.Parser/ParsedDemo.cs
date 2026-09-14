@@ -14,7 +14,11 @@ namespace CS2DemoKit.Parser;
 /// </summary>
 public sealed class ParsedDemo
 {
-    internal ParsedDemo(
+    /// <summary>
+    ///     Builds a demo from its parts. The parser is the producer in practice; the constructor is
+    ///     public so a consumer's tests can assemble a synthetic demo without reflection.
+    /// </summary>
+    public ParsedDemo(
         IReadOnlyList<DemoFrame> frames,
         IReadOnlyList<GameEvent> allGameEvents,
         IReadOnlyDictionary<int, PlayerInfo> players,
@@ -31,8 +35,15 @@ public sealed class ParsedDemo
         string demoVersionName,
         string demoVersionGuid,
         string addons,
-        DemoProfile profile)
+        DemoProfile profile,
+        DecodePlan? plan = null,
+        DecodeProvenance? provenance = null,
+        IReadOnlyList<ParseWarning>? warnings = null)
     {
+        Warnings = warnings ?? [];
+        Plan = plan ?? DecodePlan.Everything;
+        Provenance = provenance ?? new DecodeProvenance(DecodeSource.DemoParserParse, DecodeMode.ParallelWholeFile,
+            0, null, frames.Count, 0, 0, 0, 0);
         Frames = frames;
         AllGameEvents = allGameEvents;
         Players = players;
@@ -50,10 +61,6 @@ public sealed class ParsedDemo
         DemoVersionGuid = demoVersionGuid;
         Addons = addons;
         Profile = profile;
-        // S11 diagnostics channel (v0.6.0): drain the parse-thread accumulator INSIDE the ctor
-        // body, so the call site in the (protected) DemoParser.cs needs no signature change.
-        // Drain-on-construct is also the per-parse reset — see ParseDiagnostics.
-        Warnings = ParseDiagnostics.Drain();
     }
 
     /// <summary>
@@ -121,6 +128,12 @@ public sealed class ParsedDemo
     ///     field in game events.
     /// </summary>
     public IReadOnlyDictionary<int, PlayerInfo> Players { get; }
+
+    /// <summary>The plan this parse decoded under. <see cref="DecodePlan.Everything" /> unless one was passed.</summary>
+    public DecodePlan Plan { get; }
+
+    /// <summary>Which path produced this result and how much it decoded.</summary>
+    public DecodeProvenance Provenance { get; }
 
     /// <summary>
     ///     Identification of the demo's recording source (GOTV, HLTV, etc.) and

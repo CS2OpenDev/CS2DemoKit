@@ -216,6 +216,30 @@ public ref struct BitBuffer
     }
 
     /// <summary>
+    ///     Advances past <paramref name="count" /> bytes without reading them. Re-seats the cursor from
+    ///     the original span, so the cost does not grow with <paramref name="count" />.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Negative, or more than <see cref="RemainingBytes" />.</exception>
+    public void SkipBytes(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, RemainingBytes);
+        if (count == 0)
+        {
+            return;
+        }
+
+        (int fromByte, int skipBits) = Math.DivRem(TellBits + count * 8, 8);
+        _spanPointer = _original[fromByte..];
+        FetchNext();
+        TellBits = fromByte * 8;
+        if (skipBits > 0)
+        {
+            ReadUBits(skipBits);
+        }
+    }
+
+    /// <summary>
     ///     Reads <paramref name="bits" /> bits into <paramref name="output" />, packing 8 bits per
     ///     destination byte. Any trailing remainder bits land in the final byte's low bits.
     /// </summary>

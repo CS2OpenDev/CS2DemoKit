@@ -1,13 +1,10 @@
 #region
 
 using System.Buffers;
-using System.Collections.Frozen;
 using System.Diagnostics;
-using System.Reflection;
 using CS2DemoKit.Parser.Entities;
 using CS2DemoKit.Parser.GameEvents;
 using Google.Protobuf;
-using Google.Protobuf.Reflection;
 using Snappier;
 
 #endregion
@@ -22,21 +19,6 @@ namespace CS2DemoKit.Parser;
 /// </summary>
 public static class DemoParser
 {
-    // ── Proto name caches ─────────────────────────────────────────────────
-    // Built once at startup from OriginalNameAttribute reflection.
-    // Used in the hot parsing paths instead of per-call reflection.
-
-    /// <summary>EDemoCommands int → proto name (e.g. 4 → "DEM_Packet").</summary>
-    private static readonly FrozenDictionary<int, string> _demoCommandNames =
-        BuildNameCache<EDemoCommands>();
-
-    /// <summary>
-    ///     Combined NET / Bidirectional / SVC message int → proto name
-    ///     (e.g. 40 → "svc_PacketEntities").  NET entries take priority on any collision.
-    /// </summary>
-    private static readonly FrozenDictionary<int, string> _netMessageNames =
-        BuildCombinedNetNameCache();
-
     /// <summary>
     ///     Raised whenever <see cref="ParseNetMessage" /> sees a net-message type ID it has
     ///     no parser registered for. Carries the occurrence's frame number, type ID/name, and
@@ -116,12 +98,10 @@ public static class DemoParser
     private static ParsedDemo ParseCore(ReadOnlyMemory<byte> data, DemoProfile? profileOverride,
         ParseOptions? options)
     {
-        // Every public Parse overload funnels here, so this is the one place a parse can claim a
-        // clean warning channel. A parse that throws never reaches Drain, and its residue would
-        // otherwise be handed to whatever parses next on this thread.
-        ParseDiagnostics.Reset();
-
+        ParseDiagnostics diagnostics = new();
         CancellationToken cancellationToken = options?.CancellationToken ?? default;
+        DecodePlan plan = options?.Plan ?? DecodePlan.Everything;
+        DecodeMask mask = ReferenceEquals(plan, DecodePlan.Everything) ? DecodeMask.Everything : DecodeMask.Compile(plan);
 
         // File header layout:
         //   bytes  0-7  : ASCII magic "PBDEMS2\0"
@@ -165,57 +145,9 @@ public static class DemoParser
         List<FrameDescriptor> frameDescs = new(estimatedCapacity);
         int pos = 16;
 
-        while (pos < data.Length)
+        while (TryScanFrame(data, ref pos, frameDescs.Count, diagnostics, out FrameDescriptor scanned) == FrameScanResult.Frame)
         {
-            int frameStart = pos;
-
-            // Decode three-varint frame header (cmd, tick, size) in one unrolled pass.
-            int headerBytes = Leb128Utils.ParseFrameHeader(span[pos..], out FrameHeader header);
-            if (headerBytes < 0)
-            {
-                ParseDiagnostics.Warn(ParseWarningCodes.DemoTruncated,
-                    $"frame header at byte {frameStart} is incomplete ({data.Length - frameStart} byte(s) left); "
-                    + $"stopped after {frameDescs.Count} frame(s).");
-                break;
-            }
-
-            pos += headerBytes;
-
-            // DEM_Stop marks end of recording — no payload follows.
-            if ((EDemoCommands)header.Command == EDemoCommands.DemStop)
-            {
-                break;
-            }
-
-            int size = (int)header.Size;
-            if (size < 0)
-            {
-                // Was a throw. Frame offsets chain, so this is unrecoverable for the REST of the
-                // stream, but the frames already scanned are intact and a caller can use them.
-                // Discarding them made a corrupt byte late in a match cost the whole parse.
-                ParseDiagnostics.Warn(ParseWarningCodes.FrameStreamCorrupt,
-                    $"frame at byte {frameStart} declares size {header.Size}, which cannot be real; "
-                    + $"cannot resynchronize, stopped after {frameDescs.Count} frame(s).", header.Tick);
-                break;
-            }
-
-            if (pos + size > data.Length)
-            {
-                ParseDiagnostics.Warn(ParseWarningCodes.DemoTruncated,
-                    $"frame at byte {frameStart} declares {size} payload byte(s) but only "
-                    + $"{data.Length - pos} remain; stopped after {frameDescs.Count} frame(s).", header.Tick);
-                break;
-            }
-
-            // Zero-copy slice for both cases:
-            //   uncompressed — direct view into the caller's buffer (no allocation)
-            //   compressed   — the compressed bytes; Snappy inflates in the parallel pass
-            frameDescs.Add(new FrameDescriptor(
-                frameStart, headerBytes,
-                (EDemoCommands)header.Command, header.Tick,
-                size, header.IsCompressed,
-                data.Slice(pos, size)));
-            pos += size;
+            frameDescs.Add(scanned);
         }
 
         if (prof)
@@ -259,11 +191,14 @@ public static class DemoParser
         {
             CancellationToken = cancellationToken
         };
+        int? dopCap = null;
         if (options?.MaxDegreeOfParallelism is int dop and > 0)
         {
             parallelOptions.MaxDegreeOfParallelism = dop;
+            dopCap = dop;
         }
 
+        long messagesDecoded = 0, messagesSkipped = 0, userCmdsStored = 0, bytesDecompressed = 0;
         Parallel.For(0, frameDescs.Count, parallelOptions,
             // localInit: each partition starts with no decompress buffer (it grows on the first
             // compressed frame) and its own user-command store.
@@ -275,33 +210,7 @@ public static class DemoParser
                 // Parallel.For's own range-partitioner assigns contiguous i-ranges to workers
                 // internally — there is no explicit chunk loop in this file to hook instead).
                 cancellationToken.ThrowIfCancellationRequested();
-                FrameDescriptor d = frameDescs[i];
-                ReadOnlyMemory<byte> payload;
-                if (d.IsCompressed)
-                {
-                    int decompressedLength = Snappy.GetUncompressedLength(d.RawPayload.Span);
-                    if (state.DecompressBuffer.Length < decompressedLength)
-                    {
-                        state.DecompressBuffer = new byte[decompressedLength]; // grow-only, never shrink
-                    }
-
-                    byte[] decompressBuffer = state.DecompressBuffer;
-                    int written = Snappy.Decompress(d.RawPayload.Span, decompressBuffer);
-                    // Slice to the exact written count — the buffer may be larger than this frame
-                    // from a prior iteration. Passing the whole oversized buffer would make the
-                    // proto parser read trailing garbage AND would corrupt the direct-message
-                    // DecompressedLength field (= framePayload.Length) on single-payload frames.
-                    payload = decompressBuffer.AsMemory(0, written);
-                }
-                else
-                {
-                    // Uncompressed frames are a zero-copy view into the caller's buffer (unchanged).
-                    payload = d.RawPayload;
-                }
-
-                results[i] = ParseFrame(d.Command, d.Tick, payload,
-                    d.RawStart, d.HeaderLength, d.RawPayloadSize, d.IsCompressed, i,
-                    onUnknownMessage, dropCounts?.Value, state.UserCmds);
+                results[i] = DecodeFrame(frameDescs[i], i, state, mask, onUnknownMessage, dropCounts?.Value);
 
                 if (progressStride > 0)
                 {
@@ -314,9 +223,17 @@ public static class DemoParser
 
                 return state;
             },
-            // localFinally: nothing to release. The buffer is plain managed memory, GC'd with the
-            // partition, and the store's blocks are kept alive by the frames that point into them.
-            _ => { });
+            // localFinally: fold this partition's counters. The buffer is plain managed memory, GC'd
+            // with the partition, and the store's blocks are kept alive by the frames that point into them.
+            state =>
+            {
+                Interlocked.Add(ref messagesDecoded, state.MessagesDecoded);
+                Interlocked.Add(ref messagesSkipped, state.MessagesSkipped);
+                Interlocked.Add(ref userCmdsStored, state.UserCmdsStored);
+                Interlocked.Add(ref bytesDecompressed, state.BytesDecompressed);
+            });
+        DecodeProvenance provenance = new(DecodeSource.DemoParserParse, DecodeMode.ParallelWholeFile, 0, dopCap,
+            frameDescs.Count, messagesDecoded, messagesSkipped, userCmdsStored, bytesDecompressed);
         if (prof)
         {
             ParseProfiler.SetPass2Ticks(Stopwatch.GetTimestamp() - p2Ticks);
@@ -361,7 +278,7 @@ public static class DemoParser
         // Checkpoint 3 of 3 — before Pass 3 (the file's own three-pass boundaries; see class doc).
         cancellationToken.ThrowIfCancellationRequested();
 
-        ParsedDemo result = Enrich(results, profileOverride, dropTotals);
+        ParsedDemo result = Enrich(results, profileOverride, dropTotals, plan, provenance, diagnostics, mask);
         if (prof)
         {
             ParseProfiler.AddPass3(Stopwatch.GetTimestamp() - p3Ticks,
@@ -456,61 +373,6 @@ public static class DemoParser
         return false;
     }
 
-    /// <summary>
-    ///     Merges the three net-message enums into a single lookup, with NET entries winning on
-    ///     any collision (matching the original three-chain fallback order).
-    /// </summary>
-    private static FrozenDictionary<int, string> BuildCombinedNetNameCache()
-    {
-        Dictionary<int, string> result = new();
-        foreach (KeyValuePair<int, string> kvp in BuildNameCache<NET_Messages>())
-        {
-            result.TryAdd(kvp.Key, kvp.Value);
-        }
-
-        foreach (KeyValuePair<int, string> kvp in BuildNameCache<Bidirectional_Messages>())
-        {
-            result.TryAdd(kvp.Key, kvp.Value);
-        }
-
-        foreach (KeyValuePair<int, string> kvp in BuildNameCache<SVC_Messages>())
-        {
-            result.TryAdd(kvp.Key, kvp.Value);
-        }
-
-        foreach (KeyValuePair<int, string> kvp in BuildNameCache<EBaseGameEvents>())
-        {
-            result.TryAdd(kvp.Key, kvp.Value);
-        }
-
-        return result.ToFrozenDictionary();
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────
-
-    /// <summary>
-    ///     Builds a <see cref="FrozenDictionary{TKey,TValue}" /> mapping enum integer values to their
-    ///     <see cref="OriginalNameAttribute" /> proto names (e.g. <c>DemPacket → "DEM_Packet"</c>).
-    ///     Called once at class initialization — eliminates per-parse reflection.
-    /// </summary>
-    private static FrozenDictionary<int, string> BuildNameCache<TEnum>() where TEnum : struct, Enum
-    {
-        Dictionary<int, string> result = new();
-        foreach (FieldInfo field in typeof(TEnum).GetFields(BindingFlags.Public | BindingFlags.Static))
-        {
-            string? protoName = field.GetCustomAttribute<OriginalNameAttribute>()?.Name;
-            if (protoName is null)
-            {
-                continue;
-            }
-
-            int intValue = (int)field.GetValue(null)!;
-            result.TryAdd(intValue, protoName);
-        }
-
-        return result.ToFrozenDictionary();
-    }
-
     // ── Enrichment (pass 3) ────────────────────────────────────────────────
 
     /// <summary>
@@ -534,168 +396,25 @@ public static class DemoParser
     ///     <c>GameEventMessage</c> instances; all other slots are untouched.
     /// </summary>
     private static ParsedDemo Enrich(DemoFrame[] frames, DemoProfile? profileOverride,
-        IReadOnlyDictionary<string, int>? dropTotals)
+        IReadOnlyDictionary<string, int>? dropTotals, DecodePlan plan, DecodeProvenance provenance,
+        ParseDiagnostics diagnostics, DecodeMask mask)
     {
-        GameEventDecoder eventDecoder = new();
-        StringTableProcessor stringTables = new();
+        DemoEnrichmentCursor cursor = new(diagnostics, mask, profileOverride);
         List<GameEvent> allEvents = new();
-        RuntimeSchema? schema = null;
-        string mapName = string.Empty;
-        string serverName = string.Empty;
-        string clientName = string.Empty;
-        string gameDirectory = string.Empty;
-        int buildNumber = 0;
-        int serverStartTick = 0;
-        int patchVersion = 0;
-        string demoVersionName = string.Empty;
-        string demoVersionGuid = string.Empty;
-        string addons = string.Empty;
-        float tickInterval = 1f / 64f; // CS2 default; overwritten by svc_ServerInfo
-        int tickCount = 0;
-        int playbackTicks = 0; // from CDemoFileInfo; preferred over max-tick-seen
-
         foreach (DemoFrame frame in frames)
         {
-            if (frame.ServerTick > tickCount)
-            {
-                tickCount = frame.ServerTick;
-            }
-
-            for (int i = 0; i < frame.MessageList.Count; i++)
-            {
-                NetMessage msg = frame.MessageList[i];
-                switch (msg.Payload)
-                {
-                    case CDemoFileHeader hdr:
-                        if (!string.IsNullOrEmpty(hdr.MapName))
-                        {
-                            mapName = hdr.MapName;
-                        }
-
-                        if (!string.IsNullOrEmpty(hdr.ServerName))
-                        {
-                            serverName = hdr.ServerName;
-                        }
-
-                        if (!string.IsNullOrEmpty(hdr.ClientName))
-                        {
-                            clientName = hdr.ClientName;
-                        }
-
-                        if (!string.IsNullOrEmpty(hdr.GameDirectory))
-                        {
-                            gameDirectory = hdr.GameDirectory;
-                        }
-
-                        if (hdr.BuildNum > 0)
-                        {
-                            buildNumber = hdr.BuildNum;
-                        }
-
-                        if (hdr.PatchVersion > 0)
-                        {
-                            patchVersion = hdr.PatchVersion;
-                        }
-
-                        if (!string.IsNullOrEmpty(hdr.DemoVersionName))
-                        {
-                            demoVersionName = hdr.DemoVersionName;
-                        }
-
-                        if (!string.IsNullOrEmpty(hdr.DemoVersionGuid))
-                        {
-                            demoVersionGuid = hdr.DemoVersionGuid;
-                        }
-
-                        if (!string.IsNullOrEmpty(hdr.Addons))
-                        {
-                            addons = hdr.Addons;
-                        }
-
-                        serverStartTick = hdr.ServerStartTick;
-                        eventDecoder.ServerStartTick = hdr.ServerStartTick;
-                        break;
-
-                    case CDemoFileInfo { PlaybackTicks: > 0 } info:
-                        playbackTicks = info.PlaybackTicks;
-                        break;
-
-                    case CSVCMsg_ServerInfo { TickInterval: > 0 } serverInfo:
-                        tickInterval = serverInfo.TickInterval;
-                        if (!string.IsNullOrEmpty(serverInfo.MapName) && string.IsNullOrEmpty(mapName))
-                        {
-                            mapName = serverInfo.MapName;
-                        }
-
-                        break;
-
-                    case CDemoSendTables sendTables when schema is null:
-                        schema = TryExtractSchema(sendTables);
-                        break;
-
-                    case CMsgSource1LegacyGameEventList eventList:
-                        eventDecoder.LoadSchema(eventList);
-                        break;
-
-                    case CMsgSource1LegacyGameEvent rawEvent:
-                        GameEvent evt = eventDecoder.Decode(rawEvent, frame.ServerTick, frame.FrameNumber);
-                        frame.MessageList[i] = new GameEventMessage(
-                            msg.MessageTypeName, msg.Payload,
-                            msg.DecompressedStart, msg.DecompressedLength, evt);
-                        allEvents.Add(evt);
-                        break;
-
-                    case CDemoStringTables snapshot:
-                        stringTables.ProcessSnapshot(snapshot);
-                        break;
-
-                    case CSVCMsg_CreateStringTable createTable:
-                        stringTables.ProcessCreate(createTable);
-                        break;
-
-                    case CSVCMsg_UpdateStringTable updateTable:
-                        stringTables.ProcessUpdate(updateTable);
-                        break;
-                }
-            }
+            cursor.Observe(frame, allEvents);
         }
 
-        // Prefer CDemoFileInfo.PlaybackTicks as the authoritative tick count;
-        // fall back to the highest tick seen when FileInfo was absent or zero.
-        if (playbackTicks > 0)
-        {
-            tickCount = playbackTicks;
-        }
-
-        // Post-pass: set GameTick = ServerTick.
-        // In CS2 demos the per-frame tick varint already represents the game tick directly:
-        // pre-game frames share a single large negative sentinel (≈ −1 − server_start_tick)
-        // and actual gameplay frames use ServerTick = 1, 2, … which IS the user-visible
-        // game tick. Note: despite the name, DemoFrame.ServerTick holds the game tick in CS2.
-        foreach (DemoFrame f in frames)
-        {
-            f.GameTick = f.ServerTick;
-        }
-
-        // Post-pass: fill in player team assignments from player_team game events.
-        // PlayerTeamEvent.UserId is the controller slot (KV1 tag player_controller_and_pawn), which
-        // is the controller entity index and therefore the Players key.
-        // Iterate in tick order so the last team event per slot wins (final team state).
-        Dictionary<int, PlayerInfo> players = new(stringTables.Players);
-        foreach (GameEvent evt in allEvents)
-        {
-            if (evt.Payload is PlayerTeamEvent teamEvt
-                && players.TryGetValue(teamEvt.UserId, out PlayerInfo? info))
-            {
-                players[teamEvt.UserId] = info with
-                {
-                    Team = teamEvt.Team
-                };
-            }
-        }
-
-        DemoProfile profile = profileOverride
-                              ?? DemoSourceClassifier.Classify(serverName, clientName, gameDirectory, buildNumber);
+        IReadOnlyDictionary<int, PlayerInfo> players = cursor.Players;
+        RuntimeSchema? schema = cursor.Schema;
+        string mapName = cursor.MapName, serverName = cursor.ServerName, clientName = cursor.ClientName,
+            gameDirectory = cursor.GameDirectory, demoVersionName = cursor.DemoVersionName,
+            demoVersionGuid = cursor.DemoVersionGuid, addons = cursor.Addons;
+        int tickCount = cursor.TickCount, buildNumber = cursor.BuildNumber, serverStartTick = cursor.ServerStartTick,
+            patchVersion = cursor.PatchVersion;
+        float tickInterval = cursor.TickInterval;
+        DemoProfile profile = cursor.Profile;
 
         // Ranked by count, then by type name. The name is not cosmetic: dropTotals is merged from
         // per-thread partials in completion order, so ties broken by dictionary order would put a
@@ -712,12 +431,12 @@ public static class DemoParser
             List<KeyValuePair<string, int>> ordered = RankDropTypes(dropTotals);
             foreach ((string type, int n) in ordered.Take(8))
             {
-                ParseDiagnostics.Warn(ParseWarningCodes.NetMessageDropped, $"{type} dropped", count: n);
+                diagnostics.Warn(ParseWarningCodes.NetMessageDropped, $"{type} dropped", count: n);
             }
 
             if (ordered.Count > 8)
             {
-                ParseDiagnostics.Warn(ParseWarningCodes.NetMessageDropped,
+                diagnostics.Warn(ParseWarningCodes.NetMessageDropped,
                     $"{ordered.Count - 8} more distinct type(s) dropped", count: ordered.Skip(8).Sum(kv => kv.Value));
             }
         }
@@ -728,32 +447,7 @@ public static class DemoParser
             serverName, clientName, gameDirectory,
             buildNumber, serverStartTick,
             patchVersion, demoVersionName, demoVersionGuid, addons,
-            profile);
-    }
-
-    /// Returns the original proto name (e.g. "DEM_FileHeader", "svc_UserCmds") for an
-    /// enum value via the
-    /// <see cref="OriginalNameAttribute" />
-    /// attached by the code generator,
-    /// or
-    /// <c>null</c>
-    /// if
-    /// <paramref name="value" />
-    /// is not a defined member of
-    /// <typeparamref name="TEnum" />
-    /// \
-    /// Kept for ad-hoc lookups; hot paths use the static caches above.
-    private static string? GetProtoName<TEnum>(int value) where TEnum : struct, Enum
-    {
-        string? memberName = Enum.GetName(typeof(TEnum), value);
-        if (memberName is null)
-        {
-            return null;
-        }
-
-        return typeof(TEnum).GetField(memberName)
-            ?.GetCustomAttribute<OriginalNameAttribute>()
-            ?.Name;
+            profile, plan, provenance, diagnostics.Drain());
     }
 
     /// <summary>
@@ -777,7 +471,10 @@ public static class DemoParser
 
     /// <summary>
     ///     Given a decoded frame header and the (already-decompressed) payload, builds a
-    ///     <see cref="DemoFrame" /> with fully populated <see cref="DemoFrame.InnerMessages" />.
+    ///     <see cref="DemoFrame" /> with the <see cref="DemoFrame.InnerMessages" /> the plan asked for.
+    ///     Packet payloads are sliced with <see cref="FindBytesField" /> rather than parsed as an outer
+    ///     proto, so a plan that decodes nothing never copies a payload; the outer parse remains as
+    ///     the fallback for a payload the field scan cannot walk.
     /// </summary>
     /// <param name="cmd">The <see cref="EDemoCommands" /> value (compressed flag already stripped).</param>
     /// <param name="tick">Server tick; <c>-1</c> for pre-recording frames.</param>
@@ -791,7 +488,6 @@ public static class DemoParser
     /// <param name="headerLength">Byte length of the three ULEB128 header varints.</param>
     /// <param name="rawPayloadSize">Byte length of the payload as stored in the file (compressed or not).</param>
     /// <param name="isCompressed">Whether the payload was Snappy-compressed on disk.</param>
-    /// <param name="userCmds">This partition's user-command store; bracketed per frame by the caller.</param>
     /// <param name="frameNumber">
     ///     Zero-based index of this frame in the result array (set on
     ///     <see cref="DemoFrame.FrameNumber" />).
@@ -806,6 +502,8 @@ public static class DemoParser
     ///     <see cref="ParseOptions.CountDropSites" /> is on, else <c>null</c>. Thread-owned — never
     ///     shared between workers.
     /// </param>
+    /// <param name="state">This partition's user-command store and counters; bracketed per frame here.</param>
+    /// <param name="mask">The compiled plan.</param>
     private static DemoFrame ParseFrame(
         EDemoCommands cmd,
         int tick,
@@ -817,49 +515,50 @@ public static class DemoParser
         int frameNumber,
         Action<UnknownMessageInfo>? onUnknownMessage,
         Dictionary<string, int>? dropCounts,
-        UserCmdsWriter userCmds)
+        PartitionState state,
+        DecodeMask mask)
     {
         int rawLength = headerLength + rawPayloadSize;
+        UserCmdsWriter userCmds = state.UserCmds;
 
         // Brackets every ParseInnerMessages call below, so a frame's user-command payloads land in one
         // contiguous block run.
         userCmds.BeginFrame();
 
-        // O(1) hash lookup into the pre-built cache — no reflection per frame.
-        string name = _demoCommandNames.TryGetValue((int)cmd, out string? n)
-            ? n
-            : $"DEM_Unknown({(int)cmd})";
+        string name = NetMessageCatalog.DemoCommandName(cmd);
 
         // Wrap the Memory in a single-segment ReadOnlySequence.  This is a pure struct
         // operation — no heap allocation — and satisfies the ParseFrom(ReadOnlySequence<byte>)
         // overload available in Google.Protobuf 3.21+.
         ReadOnlySequence<byte> payloadSeq = new(framePayload);
+        List<InnerMessageHeader>? headers = mask.RecordStructure ? [] : null;
 
         // DEM_Packet / DEM_SignonPacket: outer CDemoPacket is a transport envelope; the actual
-        // subcomponents are the net messages multiplexed in CDemoPacket.data.
+        // subcomponents are the net messages multiplexed in CDemoPacket.data (field 3).
         if (cmd is EDemoCommands.DemPacket or EDemoCommands.DemSignonPacket)
         {
-            CDemoPacket? outer = Try(CDemoPacket.Parser, payloadSeq, name);
-
-            // Find where CDemoPacket.data (field 3) payload starts within framePayload so that
-            // each inner message can record its approximate byte position in the decompressed frame.
-            int dataFieldStart = 0;
-            if (outer is not null)
+            List<NetMessage> packetMessages;
+            if (FindBytesField(framePayload.Span, 3, out int dataFieldStart, out int dataLen))
             {
-                FindBytesField(framePayload.Span, 3, out dataFieldStart, out _);
+                packetMessages = ParseInnerMessages(framePayload.Span.Slice(dataFieldStart, dataLen), dataFieldStart,
+                    frameNumber, onUnknownMessage, dropCounts, state, mask, headers);
+            }
+            else
+            {
+                CDemoPacket? outer = Try(CDemoPacket.Parser, payloadSeq, name);
+                packetMessages = outer is not null
+                    ? ParseInnerMessages(outer.Data.Span, 0, frameNumber, onUnknownMessage, dropCounts, state, mask, headers)
+                    : [];
             }
 
-            List<NetMessage> packetMessages = outer is not null
-                ? ParseInnerMessages(outer.Data.Span, dataFieldStart, frameNumber, onUnknownMessage, dropCounts,
-                    userCmds)
-                : [];
             (byte[]? packetBlock, int packetOffset, int packetCount) = userCmds.EndFrame();
 
             return new DemoFrame
             {
                 ServerTick = tick,
+                GameTick = tick,
                 FrameNumber = frameNumber,
-                Command = name,
+                CommandKind = cmd,
                 RawStart = rawStart,
                 RawLength = rawLength,
                 HeaderLength = headerLength,
@@ -867,46 +566,65 @@ public static class DemoParser
                 MessageList = packetMessages,
                 UserCmdsBlock = packetBlock,
                 UserCmdsOffset = packetOffset,
-                UserCmdsCount = packetCount
+                UserCmdsCount = packetCount,
+                InnerMessageHeaders = headers is { Count: > 0 } ? headers.ToArray() : default
             };
         }
 
         // DEM_FullPacket is a seek checkpoint bundling:
-        //   [0] CDemoStringTables — full string-table snapshot at this tick
-        //   [1..N] net messages from the nested CDemoPacket
+        //   [0] CDemoStringTables: full string-table snapshot at this tick (field 1)
+        //   [1..N] net messages from the nested CDemoPacket (field 2, then its field 3)
         if (cmd == EDemoCommands.DemFullPacket)
         {
-            CDemoFullPacket? outer = Try(CDemoFullPacket.Parser, payloadSeq, name);
-
             List<NetMessage> messages = [];
-            if (outer?.StringTable is { } st)
+            bool foundTables = FindBytesField(framePayload.Span, 1, out int stStart, out int stLen);
+            bool foundPacket = FindBytesField(framePayload.Span, 2, out int packetBytesStart, out int packetBytesLen);
+            if (foundTables || foundPacket)
             {
-                // Find CDemoStringTables bytes (field 1 of CDemoFullPacket) within framePayload.
-                FindBytesField(framePayload.Span, 1, out int stStart, out int stLen);
-                messages.Add(new NetMessage
+                if (foundTables && mask.FullPacketStringTable)
                 {
-                    MessageTypeName = "DEM_StringTables",
-                    Payload = st,
-                    DecompressedStart = stLen > 0 ? stStart : null,
-                    DecompressedLength = stLen > 0 ? stLen : null
-                });
-            }
-
-            if (outer?.Packet is { } innerPacket)
-            {
-                // Find CDemoPacket bytes (field 2 of CDemoFullPacket) within framePayload,
-                // then find CDemoPacket.data (field 3) within those bytes.
-                int absoluteDataFieldStart = 0;
-                if (FindBytesField(framePayload.Span, 2, out int packetBytesStart, out int packetBytesLen)
-                    && packetBytesLen > 0)
-                {
-                    FindBytesField(framePayload.Span.Slice(packetBytesStart, packetBytesLen), 3,
-                        out int dataRelStart, out _);
-                    absoluteDataFieldStart = packetBytesStart + dataRelStart;
+                    ReadOnlySequence<byte> tablesSeq = new(framePayload.Slice(stStart, stLen));
+                    CDemoStringTables? st = Try(CDemoStringTables.Parser, tablesSeq, name);
+                    if (st is not null)
+                    {
+                        messages.Add(new NetMessage
+                        {
+                            MessageTypeName = "DEM_StringTables",
+                            Payload = st,
+                            DecompressedStart = stLen > 0 ? stStart : null,
+                            DecompressedLength = stLen > 0 ? stLen : null
+                        });
+                    }
                 }
 
-                messages.AddRange(ParseInnerMessages(innerPacket.Data.Span, absoluteDataFieldStart, frameNumber,
-                    onUnknownMessage, dropCounts, userCmds));
+                if (foundPacket && packetBytesLen > 0
+                    && FindBytesField(framePayload.Span.Slice(packetBytesStart, packetBytesLen), 3,
+                        out int dataRelStart, out int innerLen))
+                {
+                    int absoluteDataFieldStart = packetBytesStart + dataRelStart;
+                    messages.AddRange(ParseInnerMessages(framePayload.Span.Slice(absoluteDataFieldStart, innerLen),
+                        absoluteDataFieldStart, frameNumber, onUnknownMessage, dropCounts, state, mask, headers));
+                }
+            }
+            else
+            {
+                CDemoFullPacket? outer = Try(CDemoFullPacket.Parser, payloadSeq, name);
+                if (outer?.StringTable is { } st && mask.FullPacketStringTable)
+                {
+                    messages.Add(new NetMessage
+                    {
+                        MessageTypeName = "DEM_StringTables",
+                        Payload = st,
+                        DecompressedStart = null,
+                        DecompressedLength = null
+                    });
+                }
+
+                if (outer?.Packet is { } innerPacket)
+                {
+                    messages.AddRange(ParseInnerMessages(innerPacket.Data.Span, 0, frameNumber,
+                        onUnknownMessage, dropCounts, state, mask, headers));
+                }
             }
 
             (byte[]? fullBlock, int fullOffset, int fullCount) = userCmds.EndFrame();
@@ -914,8 +632,9 @@ public static class DemoParser
             return new DemoFrame
             {
                 ServerTick = tick,
+                GameTick = tick,
                 FrameNumber = frameNumber,
-                Command = name,
+                CommandKind = cmd,
                 RawStart = rawStart,
                 RawLength = rawLength,
                 HeaderLength = headerLength,
@@ -923,14 +642,15 @@ public static class DemoParser
                 MessageList = messages,
                 UserCmdsBlock = fullBlock,
                 UserCmdsOffset = fullOffset,
-                UserCmdsCount = fullCount
+                UserCmdsCount = fullCount,
+                InnerMessageHeaders = headers is { Count: > 0 } ? headers.ToArray() : default
             };
         }
 
         // All remaining command types map 1-to-1 to a top-level protobuf message.
         // Notable: DEM_SendTables embeds a size-prefixed CSVCMsg_FlattenedSerializer inside
         // CDemoSendTables.data — that inner decode is handled by RuntimeSchema, not here.
-        IMessage? payload = cmd switch
+        IMessage? payload = !mask.DecodesCommand(cmd) ? null : cmd switch
         {
             EDemoCommands.DemFileHeader => Try(CDemoFileHeader.Parser, payloadSeq, name),
             EDemoCommands.DemFileInfo => Try(CDemoFileInfo.Parser, payloadSeq, name),
@@ -964,12 +684,18 @@ public static class DemoParser
                 }
             ]
             : [];
+        if (payload is not null)
+        {
+            state.MessagesDecoded++;
+        }
 
+        userCmds.EndFrame();
         return new DemoFrame
         {
             ServerTick = tick,
+            GameTick = tick,
             FrameNumber = frameNumber,
-            Command = name,
+            CommandKind = cmd,
             RawStart = rawStart,
             RawLength = rawLength,
             HeaderLength = headerLength,
@@ -1003,12 +729,15 @@ public static class DemoParser
     ///     <c>null</c>. Two of the three drop sites are in this method; the third is
     ///     <see cref="HandleUnknown" />'s caller arm.
     /// </param>
-    /// <param name="userCmds">
-    ///     This partition's user-command store. <c>svc_UserCmds</c> payloads are appended here instead of
-    ///     becoming <see cref="NetMessage" /> entries.
+    /// <param name="state">
+    ///     This partition's user-command store and counters. <c>svc_UserCmds</c> payloads are appended
+    ///     to the store instead of becoming <see cref="NetMessage" /> entries.
     /// </param>
+    /// <param name="mask">The compiled plan; an unplanned message is skipped in the bitstream unread.</param>
+    /// <param name="headers">Receives one header per message when the plan records structure, else <c>null</c>.</param>
     private static List<NetMessage> ParseInnerMessages(ReadOnlySpan<byte> data, int dataFieldStart, int frameNumber,
-        Action<UnknownMessageInfo>? onUnknownMessage, Dictionary<string, int>? dropCounts, UserCmdsWriter userCmds)
+        Action<UnknownMessageInfo>? onUnknownMessage, Dictionary<string, int>? dropCounts, PartitionState state,
+        DecodeMask mask, List<InnerMessageHeader>? headers)
     {
         List<NetMessage> messages = [];
         int userCmdsSoFar = 0;
@@ -1044,10 +773,49 @@ public static class DemoParser
             // Computed before the parse so the unknown-message path can forward it (see HandleUnknown).
             int decompStart = dataFieldStart + (bitPayloadStart >> 3);
 
-            // O(1) cache lookup — replaces the three-chain GetProtoName reflection calls.
-            string typeName = _netMessageNames.TryGetValue(typeId, out string? cachedName)
-                ? cachedName
-                : $"unknown({typeId})";
+            // User commands go to the store and get no NetMessage. It is ~90% of the messages
+            // in a demo, so one live object per message is what made parse GC-bound. Skipped
+            // before the drop-site accounting below: this is a routing decision, not a decode
+            // failure, and counting it would grade every demo Degraded.
+            if (typeId == NetMessageCatalog.UserCmdsTypeId)
+            {
+                if (mask.UserCmds)
+                {
+                    byte[] cmdBytes = ArrayPool<byte>.Shared.Rent(size);
+                    try
+                    {
+                        buf.ReadBytes(cmdBytes.AsSpan(0, size));
+                        // Ordinal is the position this message occupies among the frame's messages, so
+                        // DemoFrame.InnerMessages can present it in wire order without storing an object.
+                        state.UserCmds.Append(cmdBytes.AsSpan(0, size), messages.Count + userCmdsSoFar);
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(cmdBytes);
+                    }
+
+                    userCmdsSoFar++;
+                    state.UserCmdsStored++;
+                }
+                else
+                {
+                    buf.SkipBytes(size);
+                    state.MessagesSkipped++;
+                }
+
+                headers?.Add(new InnerMessageHeader(typeId, size, decompStart, mask.UserCmds));
+                continue;
+            }
+
+            if (!mask.DecodesNet(typeId))
+            {
+                buf.SkipBytes(size);
+                state.MessagesSkipped++;
+                headers?.Add(new InnerMessageHeader(typeId, size, decompStart, false));
+                continue;
+            }
+
+            string typeName = NetMessageCatalog.NameOf(typeId);
 
             // Rent a pooled buffer, read the bitstream bytes into it, parse, then return.
             // Google.Protobuf copies all data out of the input buffer during ParseFrom,
@@ -1057,20 +825,6 @@ public static class DemoParser
             try
             {
                 buf.ReadBytes(rented.AsSpan(0, size));
-
-                // User commands go to the store and get no NetMessage. It is ~90% of the messages
-                // in a demo, so one live object per message is what made parse GC-bound. Skipped
-                // before the drop-site accounting below: this is a routing decision, not a decode
-                // failure, and counting it would grade every demo Degraded.
-                if (typeId == (int)SVC_Messages.SvcUserCmds)
-                {
-                    // Ordinal is the position this message occupies among the frame's messages, so
-                    // DemoFrame.InnerMessages can present it in wire order without storing an object.
-                    userCmds.Append(rented.AsSpan(0, size), messages.Count + userCmdsSoFar);
-                    userCmdsSoFar++;
-                    continue;
-                }
-
                 msg = ParseNetMessage(typeId, new ReadOnlyMemory<byte>(rented, 0, size), typeName,
                     frameNumber, decompStart, onUnknownMessage);
             }
@@ -1088,9 +842,12 @@ public static class DemoParser
                     dropCounts[typeName] = dropCounts.GetValueOrDefault(typeName) + 1;
                 }
 
+                headers?.Add(new InnerMessageHeader(typeId, size, decompStart, false));
                 continue;
             }
 
+            state.MessagesDecoded++;
+            headers?.Add(new InnerMessageHeader(typeId, size, decompStart, true));
             messages.Add(new NetMessage
             {
                 MessageTypeName = typeName,
@@ -1189,7 +946,7 @@ public static class DemoParser
     ///     Extracts <see cref="RuntimeSchema" /> from a <c>CDemoSendTables</c> message.
     ///     <c>CDemoSendTables.data</c> = [uvarint size][CSVCMsg_FlattenedSerializer bytes].
     /// </summary>
-    private static RuntimeSchema? TryExtractSchema(CDemoSendTables sendTables)
+    internal static RuntimeSchema? TryExtractSchema(CDemoSendTables sendTables)
     {
         if (sendTables.Data.IsEmpty)
         {
@@ -1209,15 +966,136 @@ public static class DemoParser
         }
     }
 
-    // ── Frame descriptor (first-pass scan result) ─────────────────────────
+    // ── Frame scan and decode, shared by Parse and the forward reader ─────
+
+    /// <summary>What the scan of one frame header found.</summary>
+    internal enum FrameScanResult
+    {
+        Frame,
+        Stop,
+        EndOfData,
+        Truncated,
+        Corrupt
+    }
+
+    /// <summary>
+    ///     Scans the frame header at <paramref name="pos" /> and describes the frame, advancing
+    ///     <paramref name="pos" /> past its payload. Every outcome but <see cref="FrameScanResult.Frame" />
+    ///     ends the stream; the damaged ones warn first, so frames already scanned stay usable.
+    /// </summary>
+    internal static FrameScanResult TryScanFrame(ReadOnlyMemory<byte> data, ref int pos, int framesSoFar,
+        ParseDiagnostics diagnostics, out FrameDescriptor descriptor)
+    {
+        descriptor = default;
+        if (pos >= data.Length)
+        {
+            return FrameScanResult.EndOfData;
+        }
+
+        int frameStart = pos;
+        int headerBytes = Leb128Utils.ParseFrameHeader(data.Span[pos..], out FrameHeader header);
+        if (headerBytes < 0)
+        {
+            diagnostics.Warn(ParseWarningCodes.DemoTruncated,
+                $"frame header at byte {frameStart} is incomplete ({data.Length - frameStart} byte(s) left); "
+                + $"stopped after {framesSoFar} frame(s).");
+            return FrameScanResult.Truncated;
+        }
+
+        pos += headerBytes;
+
+        // DEM_Stop marks end of recording; no payload follows.
+        if ((EDemoCommands)header.Command == EDemoCommands.DemStop)
+        {
+            return FrameScanResult.Stop;
+        }
+
+        int size = (int)header.Size;
+        if (size < 0)
+        {
+            // Frame offsets chain, so this is unrecoverable for the rest of the stream, but the
+            // frames already scanned are intact and a caller can use them.
+            diagnostics.Warn(ParseWarningCodes.FrameStreamCorrupt,
+                $"frame at byte {frameStart} declares size {header.Size}, which cannot be real; "
+                + $"cannot resynchronize, stopped after {framesSoFar} frame(s).", header.Tick);
+            return FrameScanResult.Corrupt;
+        }
+
+        if (pos + size > data.Length)
+        {
+            diagnostics.Warn(ParseWarningCodes.DemoTruncated,
+                $"frame at byte {frameStart} declares {size} payload byte(s) but only "
+                + $"{data.Length - pos} remain; stopped after {framesSoFar} frame(s).", header.Tick);
+            return FrameScanResult.Truncated;
+        }
+
+        // Zero-copy slice for both cases: a direct view for uncompressed frames, the compressed
+        // bytes otherwise (Snappy inflates at decode time).
+        descriptor = new FrameDescriptor(
+            frameStart, headerBytes,
+            (EDemoCommands)header.Command, header.Tick,
+            size, header.IsCompressed,
+            data.Slice(pos, size));
+        pos += size;
+        return FrameScanResult.Frame;
+    }
+
+    /// <summary>
+    ///     Decodes one scanned frame: inflates a compressed payload into the partition's grow-only
+    ///     buffer, then parses what the plan asks for. A command the plan does not decode yields a
+    ///     frame with offsets and no messages, without touching its payload.
+    /// </summary>
+    internal static DemoFrame DecodeFrame(FrameDescriptor d, int frameNumber, PartitionState state, DecodeMask mask,
+        Action<UnknownMessageInfo>? onUnknownMessage, Dictionary<string, int>? dropCounts)
+    {
+        if (!mask.DecodesCommand(d.Command))
+        {
+            return new DemoFrame
+            {
+                ServerTick = d.Tick,
+                GameTick = d.Tick,
+                FrameNumber = frameNumber,
+                CommandKind = d.Command,
+                RawStart = d.RawStart,
+                RawLength = d.HeaderLength + d.RawPayloadSize,
+                HeaderLength = d.HeaderLength,
+                IsCompressed = d.IsCompressed
+            };
+        }
+
+        ReadOnlyMemory<byte> payload;
+        if (d.IsCompressed)
+        {
+            int decompressedLength = Snappy.GetUncompressedLength(d.RawPayload.Span);
+            if (state.DecompressBuffer.Length < decompressedLength)
+            {
+                state.DecompressBuffer = new byte[decompressedLength]; // grow-only, never shrink
+            }
+
+            byte[] decompressBuffer = state.DecompressBuffer;
+            int written = Snappy.Decompress(d.RawPayload.Span, decompressBuffer);
+            state.BytesDecompressed += written;
+            // Slice to the exact written count. The buffer may be larger than this frame from a
+            // prior iteration, and the proto parser would read the trailing garbage.
+            payload = decompressBuffer.AsMemory(0, written);
+        }
+        else
+        {
+            payload = d.RawPayload;
+        }
+
+        return ParseFrame(d.Command, d.Tick, payload,
+            d.RawStart, d.HeaderLength, d.RawPayloadSize, d.IsCompressed, frameNumber,
+            onUnknownMessage, dropCounts, state, mask);
+    }
 
     /// <summary>
     ///     Lightweight record of a single frame's location and metadata, populated by the
-    ///     sequential header-scan pass and consumed by the parallel payload-parse pass.
+    ///     sequential header-scan pass and consumed by the payload decode.
     ///     <see cref="RawPayload" /> is a zero-copy slice of the caller's buffer for uncompressed
     ///     frames, or the compressed bytes when <see cref="IsCompressed" /> is true.
     /// </summary>
-    private readonly record struct FrameDescriptor(
+    internal readonly record struct FrameDescriptor(
         int RawStart,
         int HeaderLength,
         EDemoCommands Command,
@@ -1227,13 +1105,17 @@ public static class DemoParser
         ReadOnlyMemory<byte> RawPayload);
 
     /// <summary>
-    ///     One Pass-2 partition's scratch state, threaded through <c>Parallel.For</c>'s local-init
-    ///     overload. Both members MUST stay partition-local: concurrent workers would stomp a shared
-    ///     decompress buffer, and a shared store writer would interleave two frames' payload runs.
+    ///     One decoder's scratch state and counters: a pass-2 partition, or the forward reader. Must
+    ///     stay owned by one decoder: concurrent workers would stomp a shared decompress buffer, and a
+    ///     shared store writer would interleave two frames' payload runs.
     /// </summary>
-    private sealed class PartitionState
+    internal sealed class PartitionState
     {
         public byte[] DecompressBuffer = [];
         public readonly UserCmdsWriter UserCmds = new();
+        public long MessagesDecoded;
+        public long MessagesSkipped;
+        public long UserCmdsStored;
+        public long BytesDecompressed;
     }
 }

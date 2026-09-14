@@ -1,3 +1,5 @@
+using CS2OpenSchema.Protos;
+
 namespace CS2DemoKit.Parser.Tests;
 
 /// <summary>
@@ -26,7 +28,7 @@ public class TickBoundariesTests
     private static IReadOnlyList<DemoFrame> Frames(int[] ticks) =>
         [.. ticks.Select((tick, index) => new DemoFrame
         {
-            Command = "dem_packet",
+            CommandKind = EDemoCommands.DemPacket,
             FrameNumber = index,
             HeaderLength = 0,
             IsCompressed = false,

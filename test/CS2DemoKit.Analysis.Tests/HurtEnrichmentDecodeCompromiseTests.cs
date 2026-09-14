@@ -9,6 +9,8 @@ using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 using CS2OpenSchema.Events;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -186,7 +188,7 @@ public class HurtEnrichmentDecodeCompromiseTests
         GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(hurt);
         DemoFrame frame = new()
         {
-            Command = "DEM_Packet",
+            CommandKind = EDemoCommands.DemPacket,
             FrameNumber = frameNumber,
             ServerTick = 0,
             RawStart = 0,
