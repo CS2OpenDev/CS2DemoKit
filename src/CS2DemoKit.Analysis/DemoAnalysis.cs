@@ -76,8 +76,9 @@ public sealed record AnalysisOptions
 
     /// <summary>
     ///     Over a <see cref="DemoReader" /> that has not started, run the structure-only vocabulary
-    ///     probe so the round-end dialect is exact instead of guessed from the header: one extra
-    ///     pass over the file that decodes event ids and nothing else. Off, a stream resolves from
+    ///     probe so the round-end dialect is exact instead of guessed from the header: a pass that
+    ///     decodes event ids and nothing else, and stops as soon as the first round has decided
+    ///     the dialect. Off, a stream resolves from
     ///     the header alone and the run reports <see cref="ProfileResolutionKind.HeaderOnly" />.
     ///     Ignored when <see cref="Profile" /> is set.
     /// </summary>
@@ -593,7 +594,7 @@ public static class DemoAnalysis
         DemoProfile header = source.Enrichment.Profile;
         if (source is DemoReader { Started: false } reader && (options?.ProbeDialect ?? true))
         {
-            IReadOnlySet<string> probed = reader.ProbeGameEventNames(options?.CancellationToken ?? default);
+            IReadOnlySet<string> probed = reader.ProbeGameEventNames(DialectProbe.Stop(), options?.CancellationToken ?? default);
             return (DemoSourceProfileRegistry.Resolve(header, probed), ProfileResolutionKind.HeaderAndVocabulary);
         }
 

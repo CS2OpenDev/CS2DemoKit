@@ -14,7 +14,7 @@ namespace CS2DemoKit.Parser;
 ///     Reads a demo forward, one frame at a time, decoding what the plan asks for and keeping
 ///     nothing the caller has let go of. Forward-only in what it retains, not in what it can
 ///     address: the input is always a buffer or a mapping, so <see cref="Configure" /> and
-///     <see cref="ProbeGameEventNames" /> before the first read are cheap rewinds.
+///     <see cref="ProbeGameEventNames(CancellationToken)" /> before the first read are cheap rewinds.
 ///     <para>
 ///         Single consumer. <see cref="TryReadNext" />, <see cref="TryPeekNext" />,
 ///         <see cref="ReadFrames" />, <see cref="Materialize" /> and <see cref="Dispose" /> must
@@ -214,7 +214,17 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
     ///     from a matchmaking one when the header cannot. Allowed only before the first read.
     /// </summary>
     /// <exception cref="InvalidOperationException">A frame has already been read or peeked.</exception>
-    public IReadOnlySet<string> ProbeGameEventNames(CancellationToken cancellationToken = default)
+    public IReadOnlySet<string> ProbeGameEventNames(CancellationToken cancellationToken = default) =>
+        ProbeGameEventNames(null, cancellationToken);
+
+    /// <summary>
+    ///     The same pass, ended early when <paramref name="stopAfter" /> returns true for a fire. It
+    ///     is called with every fire's name and frame tick, in order; the names returned are those
+    ///     seen up to and including the fire it stopped on. For a caller that can decide from the
+    ///     first round what the whole file would only confirm.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A frame has already been read or peeked.</exception>
+    public IReadOnlySet<string> ProbeGameEventNames(Func<string, int, bool>? stopAfter, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         if (_started)
@@ -245,7 +255,13 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
 
                         break;
                     case CMsgSource1LegacyGameEvent fire:
-                        names.Add(nameById.TryGetValue(fire.Eventid, out string? name) ? name : $"event_{fire.Eventid}");
+                        string fired = nameById.TryGetValue(fire.Eventid, out string? name) ? name : $"event_{fire.Eventid}";
+                        names.Add(fired);
+                        if (stopAfter is not null && stopAfter(fired, frame.ServerTick))
+                        {
+                            return names;
+                        }
+
                         break;
                 }
             }

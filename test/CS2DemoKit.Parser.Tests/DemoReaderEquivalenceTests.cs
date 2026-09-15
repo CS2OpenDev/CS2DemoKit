@@ -214,6 +214,26 @@ public class DemoReaderEquivalenceTests
     }
 
     [Test]
+    public async Task Probe_StopsWhereTheCallerSays_AndIsStillARewind()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        ParsedDemo full = DemoTestHelper.GetOrParse(path);
+
+        using DemoReader reader = DemoReader.Open(bytes.AsMemory());
+        int fires = 0;
+        IReadOnlySet<string> early = reader.ProbeGameEventNames((_, _) => ++fires == 5);
+        await Assert.That(fires).IsEqualTo(5);
+        await Assert.That(early.Count).IsBetween(1, 5).WithInclusiveBounds();
+        await Assert.That(early.Count).IsLessThan(full.AllGameEvents.Select(e => e.Name).Distinct().Count());
+        await Assert.That(reader.Position).IsEqualTo(16L);
+
+        IReadOnlySet<string> whole = reader.ProbeGameEventNames();
+        await Assert.That(early.IsSubsetOf(whole)).IsTrue();
+        await Assert.That(reader.Started).IsFalse();
+    }
+
+    [Test]
     public async Task AsFrameSource_WalksTheListAndKeepsRandomAccess()
     {
         string path = DemoTestHelper.RequireDemo();

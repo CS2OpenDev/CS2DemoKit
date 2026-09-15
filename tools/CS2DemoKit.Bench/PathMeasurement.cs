@@ -251,7 +251,8 @@ internal static class PathMeasurement
         RuleConfigLoadResult rules = LoadRules();
         AnalysisOptions options = new()
         {
-            MaxDegreeOfParallelism = int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null
+            MaxDegreeOfParallelism = int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null,
+            ProbeDialect = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_PROBE") != "0"
         };
         AnalysisRun run = DemoAnalysis.Run(demoPath, rules.Rulesets, options);
         return new ArmResult(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));

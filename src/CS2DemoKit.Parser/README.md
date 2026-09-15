@@ -75,7 +75,9 @@ the plan it was decoded under as `Plan` and the counters as `Provenance`.
 What a reader knows before its first frame: the header and server info are probed at `Open`, so
 `Enrichment.TickRate`, `MapName` and `Profile` are valid immediately. `ProbeGameEventNames()` is a
 structure-only pass over the file that reports which game events it fires, the one thing that
-tells a tournament recording from a matchmaking one when the header cannot. `Configure(plan)`
+tells a tournament recording from a matchmaking one when the header cannot; the overload with a
+stop predicate ends the pass as soon as the caller has seen enough, which for the dialect is the
+first round. `Configure(plan)`
 replaces the plan; both are allowed only before the first read, as is `Materialize()`, which runs
 the parallel whole-file parse under the reader's plan instead of a forward read.
 
