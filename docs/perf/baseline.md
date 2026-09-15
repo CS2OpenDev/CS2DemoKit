@@ -255,6 +255,58 @@ as this machine's product column, 5.3x to 9.0x. The 75.4 MB reproduces exactly, 
 count here: the binary builder's live peak on de_ancient is 96.0 MB and its total allocation 169.1
 MB, and no reading of either builder from this tool lands on 182.4.
 
+## Paths: the forward reader against the retained parse
+
+    commit    0a617f9
+    runs      105 (1 round x 15 demos x 7 arms), zero failures, zero digest mismatches, 437 s
+    machine   10 cores (6P + 4E), .NET 10, Release, workstation GC
+    corpus    15 full-match demos, 40 to 524 MB, 36k to 229k frames
+
+Raw rows in `paths-0a617f9.csv`. Reproduce with
+`dotnet run --project tools/CS2DemoKit.Bench -c Release -- paths --rounds 1`.
+
+Each arm is one way of consuming a demo, run in its own process with a sampler thread that
+records the heap (`GC.GetTotalMemory(false)`, live data plus garbage not yet collected) and the
+working set every 20 ms. The two replay arms and the two scoreboard arms fold what they produce
+into a digest and the orchestrator drops both rows of a pair that disagrees; on this corpus no
+pair did. Wall-clock includes JIT, because a warm-up pass would leave its heap committed and the
+sampler would report that instead of the arm, so the times compare arms with each other and
+with demo size, not with the load-pipeline table above.
+
+Peak heap in MB against demo size, the smallest and largest demos and three between:
+
+| demo | size | frames | message-scan | game-events | entity-replay | materialised-replay | scoreboard-stream | scoreboard-materialised |
+|---|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 35,731 | 8.8 | 8.0 | 38.6 | 217.1 | 50.0 | 438.0 |
+| ...0748090338_404 | 204 MB | 91,566 | 10.5 | 10.6 | 43.5 | 778.3 | 59.1 | 910.2 |
+| ...1163782782_410 | 280 MB | 121,233 | 10.9 | 11.6 | 68.5 | 1009.5 | 80.7 | 1180.3 |
+| ...0449092279_123 | 432 MB | 196,844 | 11.2 | 11.0 | 49.9 | 1336.4 | 64.7 | 1622.6 |
+| ...1522348072_129 | 524 MB | 228,902 | 11.1 | 11.1 | 81.1 | 1704.0 | 101.2 | 2036.9 |
+
+**The reader's arms are flat.** Across a 13x range of demo size the structure scan and the
+event scan sit between 8 and 12 MB of heap, the tracker walk between 39 and 81 MB, and the
+shipped rulesets between 50 and 101 MB. What growth there is follows the match rather than the
+file: the tracker's live entity set and the per-player state the rules keep are larger for a
+longer match with more players seen. The retained parse grows with the file on every arm, 3.1
+to 5.4x the demo's size in heap for the materialised replay (the decoded frames of the whole
+demo) and 3.8 to 11x for the scoreboard with snapshots on, which adds one row per dispatched
+message on top.
+
+**Working set is the mapping plus the heap.** The reader arms memory-map the file and touch
+every page, so their working set is the file size plus a near-constant amount: about 60 MB for
+the structure scan, 125 to 160 MB for the stream scoreboard. Subtract `size_mb` from
+`peak_working_set_mb` to see the process's own. `peak_private_mb` reads zero on macOS and is
+only informative elsewhere.
+
+**Wall-clock is where the stream still pays.** On this corpus the stream scoreboard takes 1.3
+to 2.0x the materialised one: the reader decodes one frame at a time on the reading thread,
+the entity digests are produced sequentially in step with the evaluator, and the dialect probe
+is one more pass over the file. The tracker walk off the reader, by contrast, runs in 0.75 to
+1.0x the materialised walk's time, because the entity-replay plan never decodes what the
+tracker does not read. The stream scoreboard's gap is the cost the windowed read-ahead and the
+pipelined digest producer exist to take back; re-run `paths` after them and put the two
+scoreboard columns side by side.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An
