@@ -63,6 +63,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly IReadOnlyDictionary<int, PlayerInfo> _initialPlayers;
     private readonly View _view;
 
+    // Summed over the fold workers while Profiling.Enabled; the consumer's own thread counter
+    // sees none of what they allocate.
+    private long _foldAllocBytes;
+
     // Consumer thread only.
     private Chunk? _current;
     private int _currentPos;
@@ -480,15 +484,25 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         return chunk;
     }
 
+    /// <summary>Bytes the fold workers allocated so far, counted only while profiling was on.</summary>
+    internal long FoldAllocBytes => Interlocked.Read(ref _foldAllocBytes);
+
     private EntityFrameDigest[] Fold(Chunk chunk)
     {
         Worker worker = TakeWorker(fresh: chunk.Checkpoint is null);
+        bool prof = Profiling.Enabled;
+        long allocStart = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
         try
         {
             return Fold(chunk, worker);
         }
         finally
         {
+            if (prof)
+            {
+                Interlocked.Add(ref _foldAllocBytes, GC.GetAllocatedBytesForCurrentThread() - allocStart);
+            }
+
             _pool.Add(worker);
         }
     }

@@ -18,10 +18,11 @@ namespace CS2DemoKit.Analysis;
 ///     <para>
 ///         Only the sequential producer drives these. Under the pipelined producer the fold runs
 ///         on worker threads and the per-frame <see cref="SeekTicks" />/<see cref="SnapshotTicks" />
-///         stay near zero. <see cref="ProviderPollTicks" />/<see cref="ProjectileScanTicks" /> are legacy
-///         sub-phases folded into the snapshot/digest build since the Track-4 seam, and
-///         <see cref="PrecomputeTicks" />/<see cref="PrecomputeAlloc" /> belonged to the up-front producer
-///         retired in 0.12.0; all four always read zero.
+///         stay near zero. <see cref="PrecomputeTicks" /> is the wall time of
+///         <see cref="EntityChangeScanner.PrecomputeParallelDigests" /> and <see cref="PrecomputeAlloc" />
+///         what its fold workers allocated; both read zero when the evaluation's own producer
+///         folded. <see cref="ProviderPollTicks" />/<see cref="ProjectileScanTicks" /> are legacy
+///         sub-phases folded into the snapshot/digest build since the Track-4 seam and always zero.
 ///     </para>
 /// </summary>
 public readonly record struct ScannerProfilingSnapshot(

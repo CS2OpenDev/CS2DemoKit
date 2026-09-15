@@ -307,13 +307,18 @@ The up-front parallel producer that decoded a retained demo's entity digests bef
 frame was evaluated is gone; the pipelined checkpoint-parallel producer that served a forward
 reader now serves a `ParsedDemo` too. `DigestProducerKind.ParallelUpFront` is removed, so a
 `switch` over the enum that named it no longer compiles and a retained run reports
-`Pipelined`. `EntityChangeScanner.PrecomputeParallelDigests` and `AdvanceAndPoll(int)` are
-removed: the scanner is driven by the evaluator alone. `EntityStateLayer.PrimeFromCheckpoint(int,
-int)` is removed; the frame-based overload is the one priming. `SeekToTick` and `SeekBeforeFrame`
-over a list-backed layer remain for consumers that seek. `ScannerProfilingSnapshot.PrecomputeTicks`
-and `PrecomputeAlloc` keep their slots and always read zero. `AnalysisOptions.MaxDegreeOfParallelism`
-is the digest worker count on either source: unset, three over a reader and two fewer than the core
-count over a retained demo; one is the sequential producer.
+`Pipelined`. `EntityChangeScanner.AdvanceAndPoll(int)` is removed: the evaluator drives the
+scanner by frame index. `PrecomputeParallelDigests` keeps its signature and now runs the pipelined
+producer over the frames to completion, holding one digest per frame for the next evaluation over
+them, which starts no producer of its own and reports `Pipelined`; a second evaluation folds live
+again. It is no longer idempotent: every call folds, so a benchmark that calls it per iteration
+measures every iteration. `ScannerProfilingSnapshot.PrecomputeTicks` and `PrecomputeAlloc` bracket
+that call alone and read zero when the evaluation folded on its own producer; `analysis.precompute`
+is emitted around it. `EntityStateLayer.PrimeFromCheckpoint(int, int)` is removed; the frame-based
+overload is the one priming. `SeekToTick` and `SeekBeforeFrame` over a list-backed layer remain for
+consumers that seek. `AnalysisOptions.MaxDegreeOfParallelism` is the digest worker count on either
+source: unset, three over a reader and two fewer than the core count over a retained demo; one is
+the sequential producer.
 
 ### Entity values live on five typed lanes (0.12.0)
 

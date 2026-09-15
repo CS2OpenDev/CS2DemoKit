@@ -8,7 +8,8 @@ namespace CS2DemoKit.Analysis.Diagnostics;
 
 /// <summary>
 ///     Runtime <see cref="ActivitySource" /> for the analysis / load-pipeline phase timeline
-///     (<c>analysis.eval</c>, plus any phases a host chooses to span).
+///     (<c>analysis.eval</c>, <c>analysis.precompute</c> when a host folds the digests up front,
+///     plus any phases the host chooses to span).
 ///     <see cref="System.Diagnostics.ActivitySource.StartActivity(string, ActivityKind)" /> returns <c>null</c> when no
 ///     <see cref="ActivityListener" /> is sampling, so these spans are near-free in the default build:
 ///     they ship in the binary but cost ~one predicted branch when idle (no allocation, no listener).

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Diagnostics;
 using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Visibility;
@@ -103,6 +104,11 @@ public sealed class EntityChangeScanner
     // digest[frameIdx] and BeginEvaluation starts no producer while they are set.
     private EntityFrameDigest?[]? _injected;
 
+    // Digests PrecomputeParallelDigests folded ahead of an evaluation, one per frame. They serve
+    // one evaluation: AdvanceAndPollAt releases each as it is consumed and EndEvaluation drops
+    // the rest, so a run cut short leaves nothing half-consumed for the next.
+    private EntityFrameDigest?[]? _precomputed;
+
     // The previous frame's digest. The pre-frame snapshot consumed inside frame N
     // is the per-pawn state from frame N-1 — which is exactly _prevDigest.PerPawn (built last frame from
     // N-1's post-seek state == N's pre-seek state). Holding one frame back lets the digest carry the
@@ -126,6 +132,11 @@ public sealed class EntityChangeScanner
     private long _profSeekTicks;
     private long _profSnapshotAlloc;
     private long _profSnapshotTicks;
+
+    // PrecomputeParallelDigests: wall time on the calling thread, allocation summed over the fold
+    // workers, since the calling thread's counter sees none of theirs.
+    private long _profPrecomputeTicks;
+    private long _profPrecomputeAlloc;
 
     // Provider schema validation: latched once every provider's target class has
     // descriptors and every declared type matched the wire schema. Loud on drift — see
@@ -214,9 +225,10 @@ public sealed class EntityChangeScanner
     /// <summary>
     ///     Consumes frame <paramref name="frameIndex" />'s digest and returns any synthesized change
     ///     messages produced by the providers whose values transitioned this frame. The digest is
-    ///     the pipelined producer's, or built from this scanner's own layer after
-    ///     <see cref="BeginTickRun" /> applied the frame's tick run. Returns an empty list (not
-    ///     null) when nothing changed; callers may skip iteration by checking the count first.
+    ///     the pipelined producer's, one <see cref="PrecomputeParallelDigests" /> held, or built
+    ///     from this scanner's own layer after <see cref="BeginTickRun" /> applied the frame's tick
+    ///     run. Returns an empty list (not null) when nothing changed; callers may skip iteration
+    ///     by checking the count first.
     /// </summary>
     public IReadOnlyList<NetMessage> AdvanceAndPollAt(int frameIndex, int tick)
     {
@@ -229,6 +241,20 @@ public sealed class EntityChangeScanner
         if (_pipeline is not null)
         {
             return Consume(_pipeline.Take(frameIndex), tick);
+        }
+
+        if (_precomputed is not null)
+        {
+            EntityFrameDigest? held = frameIndex < _precomputed.Length ? _precomputed[frameIndex] : null;
+            if (held is null)
+            {
+                throw new InvalidOperationException(
+                    $"No precomputed digest for frame {frameIndex}: an evaluation over precomputed digests "
+                    + "must read the frames they were folded from, once each, in order.");
+            }
+
+            _precomputed[frameIndex] = null;
+            return Consume(held, tick);
         }
 
         if (_injected is not null && _injected[frameIndex] is { } injected)
@@ -280,8 +306,9 @@ public sealed class EntityChangeScanner
     ///     producer: the pipelined checkpoint-parallel producer, which reads ahead on the
     ///     evaluator's behalf and is what the evaluator must then read from, or one layer driven
     ///     in step with the loop by <see cref="BeginTickRun" /> when the parallelism cap is one.
-    ///     Without this a second evaluation over one <c>BuildResult</c> would start from the prior
-    ///     run's terminal values.
+    ///     Digests <see cref="PrecomputeParallelDigests" /> holds are consumed instead, and no
+    ///     producer starts. Without this a second evaluation over one <c>BuildResult</c> would
+    ///     start from the prior run's terminal values.
     /// </summary>
     /// <returns>The source the evaluator reads frames from for this evaluation.</returns>
     internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, int? maxDegreeOfParallelism,
@@ -311,6 +338,12 @@ public sealed class EntityChangeScanner
             _layerAdvanced = false;
         }
 
+        if (_precomputed is not null)
+        {
+            ProducerKind = DigestProducerKind.Pipelined;
+            return source;
+        }
+
         // A test's hand-built digests stand in for a producer.
         if (_injected is not null)
         {
@@ -325,19 +358,81 @@ public sealed class EntityChangeScanner
             return source;
         }
 
-        _pipeline = new PipelinedDigestSource(
-            source,
+        _pipeline = StartPipeline(source, workers, _releaseFolded, cancellationToken);
+        ProducerKind = DigestProducerKind.Pipelined;
+        return _pipeline;
+    }
+
+    private PipelinedDigestSource StartPipeline(IDemoFrameSource source, int workers, bool releaseFolded,
+        CancellationToken cancellationToken) =>
+        new(source,
             () => _perPlayerProviders.Select(CloneProvider).ToList(),
             () => _singletonProviders.Select(CloneProvider).ToList(),
             _emitMolotovThrows,
             _transitionScanner is not null,
             workers,
-            _releaseFolded,
+            releaseFolded,
             ValidateSchema,
             cancellationToken,
             MinChunkFrames(source.FrameCount, workers));
-        ProducerKind = DigestProducerKind.Pipelined;
-        return _pipeline;
+
+    /// <summary>
+    ///     Folds every frame's digest on the pipelined producer up front: the next evaluation over
+    ///     these frames consumes the held digests and starts no producer. The evaluator never calls
+    ///     this; it is for a host that times or schedules the fold apart from the loop, at the cost
+    ///     of holding every digest at once, which the producer run live never does. The digests
+    ///     serve one evaluation, which must read the same frames in the same order; a run cut
+    ///     short drops the rest.
+    /// </summary>
+    /// <param name="frames">The frames the evaluation will read, in order.</param>
+    /// <param name="onProgress">
+    ///     Fraction complete in [0, 1], reported on the calling thread every 2048 frames and once
+    ///     at the end.
+    /// </param>
+    /// <param name="maxDegreeOfParallelism">
+    ///     The worker count, mapped as <see cref="AnalysisOptions.MaxDegreeOfParallelism" /> is over
+    ///     a retained demo; one folds on a single worker.
+    /// </param>
+    /// <param name="cancellationToken">Cancels every worker. A cancelled fold holds nothing.</param>
+    public void PrecomputeParallelDigests(IReadOnlyList<DemoFrame> frames, Action<double>? onProgress = null,
+        int? maxDegreeOfParallelism = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+        using Activity? span = AnalysisDiagnostics.ActivitySource.StartActivity("analysis.precompute");
+        bool prof = Profiling.Enabled;
+        long start = 0;
+        if (prof)
+        {
+            _profiled = true;
+            start = Stopwatch.GetTimestamp();
+        }
+
+        int workers = ResolveWorkers(maxDegreeOfParallelism, randomAccess: true);
+        PipelinedDigestSource pipeline = StartPipeline(new FrameListSource(frames, null), workers, false, cancellationToken);
+        EntityFrameDigest?[] digests = new EntityFrameDigest?[frames.Count];
+        try
+        {
+            for (int i = 0; pipeline.TryReadNext(out _); i++)
+            {
+                digests[i] = pipeline.Take(i);
+                if (onProgress is not null && (i & 2047) == 0)
+                {
+                    onProgress(i / (double)frames.Count);
+                }
+            }
+        }
+        finally
+        {
+            pipeline.Close();
+        }
+
+        _precomputed = digests;
+        onProgress?.Invoke(1.0);
+        if (prof)
+        {
+            _profPrecomputeTicks += Stopwatch.GetTimestamp() - start;
+            _profPrecomputeAlloc += pipeline.FoldAllocBytes;
+        }
     }
 
     // Over a stream a chunk is memory held ahead of the loop, so it stays at the producer's
@@ -349,11 +444,15 @@ public sealed class EntityChangeScanner
             ? Math.Max(PipelinedDigestSource.MinChunkFrames, frames / (2 * Math.Max(1, workers)))
             : PipelinedDigestSource.MinChunkFrames;
 
-    /// <summary>Releases the pipelined producer, cancelling any chunk still decoding ahead.</summary>
+    /// <summary>
+    ///     Releases the pipelined producer, cancelling any chunk still decoding ahead, and drops
+    ///     any precomputed digests the evaluation did not consume.
+    /// </summary>
     internal void EndEvaluation()
     {
         _pipeline?.Close();
         _pipeline = null;
+        _precomputed = null;
     }
 
     // Runs on whichever thread applied the frame: the loop's on the sequential path, a fold
@@ -372,11 +471,12 @@ public sealed class EntityChangeScanner
     ///     sequential producer, which applies it before any frame in the run is polled. A run whose
     ///     tick is not past the layer's current tick is held back, exactly as the tick-gated seek
     ///     over a list would skip it, and applied with the first run that is. A no-op while the
-    ///     pipelined producer runs, or while a test's digests stand in for one.
+    ///     pipelined producer runs, while precomputed digests are held, or while a test's digests
+    ///     stand in for a producer.
     /// </summary>
     internal void BeginTickRun(IReadOnlyList<DemoFrame> run)
     {
-        if (_injected is not null || _pipeline is not null || run.Count == 0)
+        if (_injected is not null || _precomputed is not null || _pipeline is not null || run.Count == 0)
         {
             return;
         }
@@ -927,12 +1027,12 @@ public sealed class EntityChangeScanner
     /// </summary>
     public ScannerProfilingSnapshot GetProfilingSnapshot() =>
         // ProviderPoll/ProjectileScan phases were folded into the snapshot/digest build at the Track-4
-        // seam (always 0 now), and Precompute went with the up-front producer: the pipelined fold
-        // runs on worker threads and is not bracketed here.
+        // seam (always 0 now). Precompute brackets PrecomputeParallelDigests alone: an evaluation's
+        // own pipelined fold runs on worker threads and is not bracketed here.
         _profiled
             ? new ScannerProfilingSnapshot(true, _profSeekTicks, 0L, 0L,
                 _profSnapshotTicks, _profSeekAlloc, 0L, 0L,
-                _profSnapshotAlloc, _profFramesPolled)
+                _profSnapshotAlloc, _profFramesPolled, _profPrecomputeTicks, _profPrecomputeAlloc)
             : default;
 
     /// <summary>
