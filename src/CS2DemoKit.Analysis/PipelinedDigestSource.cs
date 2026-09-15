@@ -542,7 +542,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 }
             }
 
-            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, _emitMolotov, _captureSmokes, worker.Projectiles);
+            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, _emitMolotov, _captureSmokes, worker.Projectiles, worker.Pawns);
         }
 
         return digests;
@@ -604,6 +604,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     {
         public readonly EntityStateLayer Layer = new() { StoreUnlensedFields = false };
         public readonly ProjectileSlotIndex Projectiles = new();
+        public readonly PawnSlotIndex Pawns = new();
         public bool SchemaLoaded;
     }
 

@@ -53,13 +53,19 @@ internal static class EntityDigestExtractor
     ///     Null falls back to the full walk; the two produce byte-identical digests (the parity
     ///     tests pin it), so the walk stays as the oracle rather than as a path anything ships on.
     /// </param>
+    /// <param name="pawns">
+    ///     The caller's pawn slot index, which turns the per-pawn sweep from a walk over every live
+    ///     entity into a read of the dozen slots that hold one. Null falls back to the full walk,
+    ///     which produces the same digest.
+    /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
         PerPawnDeltaState delta,
         IReadOnlyList<IEntityValueProvider> singletonProviders,
         bool emitMolotovThrows,
         bool captureSmokes = false,
-        ProjectileSlotIndex? projectiles = null)
+        ProjectileSlotIndex? projectiles = null,
+        PawnSlotIndex? pawns = null)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(delta);
@@ -77,8 +83,17 @@ internal static class EntityDigestExtractor
 
         if (delta.Layout.Count > 0)
         {
-            PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
-                static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            if (pawns is not null)
+            {
+                pawns.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
+                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            }
+            else
+            {
+                PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
+                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            }
+
             delta.LastRowCount = d.PerPawn.Count;
         }
 
