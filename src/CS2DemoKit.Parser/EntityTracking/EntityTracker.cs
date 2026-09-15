@@ -883,7 +883,17 @@ public sealed class EntityTracker
                 RuntimeField elemField = CloneAsElementField(field, GetArrayElementType(field.TypeName));
                 IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(elemField);
                 FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(elemField) : null;
-                if (intDec is not null)
+                UInt64Decoder? longDec = intDec is null && floatDec is null ? FieldDecoderFactory.TryCreateUInt64(elemField) : null;
+                if (longDec is not null)
+                {
+                    // Element values go nowhere a lane could hold them, but a typed decoder consumes
+                    // the bits without a box each.
+                    result.Add(new FieldDescriptor(path, lengthOneDecoder, BuildTypedLongArrayDescs(path, longDec, elemField))
+                    {
+                        Field = field
+                    });
+                }
+                else if (intDec is not null)
                 {
                     result.Add(new FieldDescriptor(path, lengthOneDecoder, BuildTypedIntArrayDescs(path, intDec, elemField))
                     {
@@ -948,11 +958,13 @@ public sealed class EntityTracker
                 IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(field);
                 FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(field) : null;
                 Vector3Decoder? vecDec = intDec is null && floatDec is null ? FieldDecoderFactory.TryCreateVector3(field) : null;
+                UInt64Decoder? longDec = intDec is null && floatDec is null && vecDec is null ? FieldDecoderFactory.TryCreateUInt64(field) : null;
 
                 // Classify the natural decoder lane from the factory output.
                 LaneKind naturalLane = intDec is not null ? LaneKind.Int
                     : floatDec is not null ? LaneKind.Float
                     : vecDec is not null ? LaneKind.Vector
+                    : longDec is not null ? LaneKind.Long
                     : LaneKind.Object;
 
                 // Consult the Lens resolver to override the natural lane with the
@@ -995,14 +1007,14 @@ public sealed class EntityTracker
                 if (targetLane != LaneKind.Fallback && shapeBuilder is not null)
                 {
                     SlotAddr addr = shapeBuilder.Allocate(targetLane, path, transform, fallbackDefault, lensSlot);
-                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, naturalLane, addr, transform);
+                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, longDec, naturalLane, addr, transform);
                 }
                 else
                 {
                     // No shape builder (we're inside an array element walk) — emit a fallback
                     // descriptor and let the lane-write site route to _fallback.
                     SlotAddr addr = SlotAddr.Fallback;
-                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, naturalLane, addr, transform);
+                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, longDec, naturalLane, addr, transform);
                 }
             }
         }
@@ -1028,11 +1040,21 @@ public sealed class EntityTracker
         IntDecoder? intDec,
         FloatDecoder? floatDec,
         Vector3Decoder? vecDec,
+        UInt64Decoder? longDec,
         LaneKind naturalLane,
         SlotAddr addr,
         LensTransform transform)
     {
-        if (vecDec is not null)
+        if (longDec is not null)
+        {
+            result.Add(new FieldDescriptor(path, longDec, null)
+            {
+                Field = field,
+                SlotAddr = addr,
+                Transform = transform
+            });
+        }
+        else if (vecDec is not null)
         {
             result.Add(new FieldDescriptor(path, vecDec, null)
             {
@@ -1128,6 +1150,15 @@ public sealed class EntityTracker
     {
         return new LazyArrayElementDescs(ArrayPregenSize,
             e => new FieldDescriptor($"{arrayPath}[{e}]", floatDecoder, null)
+            {
+                Field = elemField
+            });
+    }
+
+    private static LazyArrayElementDescs BuildTypedLongArrayDescs(string arrayPath, UInt64Decoder longDecoder, RuntimeField elemField)
+    {
+        return new LazyArrayElementDescs(ArrayPregenSize,
+            e => new FieldDescriptor($"{arrayPath}[{e}]", longDecoder, null)
             {
                 Field = elemField
             });
@@ -1566,9 +1597,11 @@ public sealed class EntityTracker
             IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(field);
             FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(field) : null;
             bool isVector = intDec is null && floatDec is null && FieldDecoderFactory.TryCreateVector3(field) is not null;
+            bool isLong = intDec is null && floatDec is null && !isVector && FieldDecoderFactory.TryCreateUInt64(field) is not null;
             LaneKind naturalLane = intDec is not null ? LaneKind.Int
                 : floatDec is not null ? LaneKind.Float
                 : isVector ? LaneKind.Vector
+                : isLong ? LaneKind.Long
                 : LaneKind.Object;
 
             LensSlotRule r = rule.Value;
@@ -2529,6 +2562,9 @@ public sealed class EntityTracker
                                 : Boxes.Int(iv);
                             state.SetObjectSlot(desc.SlotAddr.Slot, boxed);
                             break;
+                        case LaneKind.Long:
+                            state.SetLongSlot(desc.SlotAddr.Slot, (ulong)iv);
+                            break;
                         default:
                             if (StoreUnlensedFields)
                             {
@@ -2562,6 +2598,34 @@ public sealed class EntityTracker
                             if (StoreUnlensedFields)
                             {
                                 state.SetFallback(desc.Path, fv);
+                            }
+
+                            break;
+                    }
+
+                    break;
+                case DecoderKind.UInt64 when desc.LongDecoder is { } ld:
+                    ulong lv = ld(ref buf);
+                    if (_suppressFieldStore)
+                    {
+                        break;
+                    }
+
+                    switch (desc.SlotAddr.Lane)
+                    {
+                        case LaneKind.Long:
+                            state.SetLongSlot(desc.SlotAddr.Slot, lv);
+                            break;
+                        case LaneKind.Object:
+                            state.SetObjectSlot(desc.SlotAddr.Slot, lv);
+                            break;
+                        case LaneKind.Int:
+                            state.SetIntSlot(desc.SlotAddr.Slot, (int)lv);
+                            break;
+                        default:
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, lv);
                             }
 
                             break;
@@ -2609,6 +2673,9 @@ public sealed class EntityTracker
                                 break;
                             case LaneKind.Vector when ov is Vector3 v3:
                                 state.SetVectorSlot(desc.SlotAddr.Slot, v3);
+                                break;
+                            case LaneKind.Long when ov is ulong ul:
+                                state.SetLongSlot(desc.SlotAddr.Slot, ul);
                                 break;
                             case LaneKind.Int:
                                 // Lens drift: object wire (uint64/etc.), int Lens lane.
@@ -2970,7 +3037,8 @@ public sealed class EntityTracker
         Object,
         Int,
         Float,
-        Vector3
+        Vector3,
+        UInt64
     }
 
     /// <summary>
@@ -3062,6 +3130,16 @@ public sealed class EntityTracker
         }
 
         public Vector3Decoder? VectorDecoder { get; }
+
+        public FieldDescriptor(string path, UInt64Decoder longDecoder, IReadOnlyList<FieldDescriptor>? childDescs)
+        {
+            Path = path;
+            LongDecoder = longDecoder;
+            ChildDescs = childDescs;
+            Kind = DecoderKind.UInt64;
+        }
+
+        public UInt64Decoder? LongDecoder { get; }
 
         /// <summary>Child descs.</summary>
         public IReadOnlyList<FieldDescriptor>? ChildDescs { get; }

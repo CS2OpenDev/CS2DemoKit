@@ -293,8 +293,45 @@ internal static class PawnCellCoercion
                 }
 
                 return LaneHit.Miss;
+            case LaneKind.Long:
+                if (entity.TryGetLongSlot(addr.Slot, out ulong wide))
+                {
+                    objectValue = wide;
+                    return LaneHit.Object;
+                }
+
+                return LaneHit.Miss;
             default:
                 return LaneHit.Miss;
+        }
+    }
+
+    /// <summary>
+    ///     <see cref="Probe" /> for a handle path, folded to the 32-bit wire handle the way
+    ///     <see cref="PawnLookup.TryUnboxHandle" /> folds a boxed read, and never boxing to get there.
+    ///     A seen non-integral lane folds to zero, as the boxed read would. False is a miss.
+    /// </summary>
+    public static bool TryProbeHandle(EntityState entity, string path, LaneCursor cursor, out uint handle)
+    {
+        SlotAddr addr = cursor.Resolve(entity, path);
+        switch (addr.Lane)
+        {
+            case LaneKind.Long when entity.TryGetLongSlot(addr.Slot, out ulong wide):
+                handle = unchecked((uint)wide);
+                return true;
+            case LaneKind.Int when entity.TryGetIntSlot(addr.Slot, out int narrow):
+                handle = unchecked((uint)narrow);
+                return true;
+            case LaneKind.Object when entity.TryGetObjectSlot(addr.Slot, out object? boxed):
+                handle = PawnLookup.TryUnboxHandle(boxed);
+                return true;
+            case LaneKind.Float when entity.TryGetFloatSlot(addr.Slot, out _):
+            case LaneKind.Vector when entity.TryGetVectorSlot(addr.Slot, out _):
+                handle = 0;
+                return true;
+            default:
+                handle = 0;
+                return false;
         }
     }
 

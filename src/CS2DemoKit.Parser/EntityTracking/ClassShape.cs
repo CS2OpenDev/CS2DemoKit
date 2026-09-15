@@ -27,7 +27,10 @@ public enum LaneKind : byte
     Object = 3,
 
     /// <summary>The <c>Vector3[]</c> lane: three-component vectors and angles, unboxed.</summary>
-    Vector = 4
+    Vector = 4,
+
+    /// <summary>The <c>ulong[]</c> lane: 64-bit unsigned scalars and entity handles, unboxed.</summary>
+    Long = 5
 }
 
 /// <summary>
@@ -75,11 +78,17 @@ public sealed class ClassShape
         LensTransform[]? objectTransforms = null,
         string[]? vectorSlotPaths = null,
         object?[]? vectorDefaults = null,
-        LensTransform[]? vectorTransforms = null)
+        LensTransform[]? vectorTransforms = null,
+        string[]? longSlotPaths = null,
+        object?[]? longDefaults = null,
+        LensTransform[]? longTransforms = null)
     {
         VectorSlotPaths = vectorSlotPaths ?? [];
         VectorDefaults = vectorDefaults;
         VectorTransforms = vectorTransforms;
+        LongSlotPaths = longSlotPaths ?? [];
+        LongDefaults = longDefaults;
+        LongTransforms = longTransforms;
         ClassName = className;
         PathToSlot = pathToSlot;
         IntSlotPaths = intSlotPaths;
@@ -146,6 +155,12 @@ public sealed class ClassShape
     public object?[]? VectorDefaults { get; }
 
     public LensTransform[]? VectorTransforms { get; }
+
+    public string[] LongSlotPaths { get; }
+
+    public object?[]? LongDefaults { get; }
+
+    public LensTransform[]? LongTransforms { get; }
 }
 
 /// <summary>
@@ -175,6 +190,10 @@ internal sealed class ClassShapeBuilder
     private readonly List<object?> _vectorDefaults = new();
     private readonly List<string> _vectorSlotPaths = new();
     private readonly List<LensTransform> _vectorTransforms = new();
+    private readonly HashSet<int> _longCodegenSlots = new();
+    private readonly List<object?> _longDefaults = new();
+    private readonly List<string> _longSlotPaths = new();
+    private readonly List<LensTransform> _longTransforms = new();
     private bool _hasAnyDefault;
     private bool _hasAnyTransform;
 
@@ -220,6 +239,9 @@ internal sealed class ClassShapeBuilder
             case LaneKind.Vector:
                 _vectorCodegenSlots.Add(lensSlot);
                 break;
+            case LaneKind.Long:
+                _longCodegenSlots.Add(lensSlot);
+                break;
         }
     }
 
@@ -254,6 +276,8 @@ internal sealed class ClassShapeBuilder
                 LaneKind.Object, path, transform, fallbackDefault, lensSlot),
             LaneKind.Vector => Append(_vectorSlotPaths, _vectorTransforms, _vectorDefaults, _vectorCodegenSlots,
                 LaneKind.Vector, path, transform, fallbackDefault, lensSlot),
+            LaneKind.Long => Append(_longSlotPaths, _longTransforms, _longDefaults, _longCodegenSlots,
+                LaneKind.Long, path, transform, fallbackDefault, lensSlot),
             _ => SlotAddr.Fallback
         };
         if (addr.Lane != LaneKind.Fallback)
@@ -288,7 +312,10 @@ internal sealed class ClassShapeBuilder
             _hasAnyTransform ? _objectTransforms.ToArray() : null,
             _vectorSlotPaths.ToArray(),
             _hasAnyDefault ? _vectorDefaults.ToArray() : null,
-            _hasAnyTransform ? _vectorTransforms.ToArray() : null);
+            _hasAnyTransform ? _vectorTransforms.ToArray() : null,
+            _longSlotPaths.ToArray(),
+            _hasAnyDefault ? _longDefaults.ToArray() : null,
+            _hasAnyTransform ? _longTransforms.ToArray() : null);
 
     private SlotAddr Append(
         List<string> paths,

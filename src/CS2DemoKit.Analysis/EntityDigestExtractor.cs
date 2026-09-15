@@ -188,25 +188,13 @@ internal static class EntityDigestExtractor
     /// </summary>
     internal static int ResolveThrowerSlot(EntityTracker tracker, EntityState projectile)
     {
-        // Single-key seen-gated read via the indexer instead of projectile.Fields, which rebuilds the
-        // ENTIRE per-entity dict projection on every access (per live molotov per frame). The indexer
-        // returns null for an unseen field (the _seen[] bitvector gates every lane and it falls through
-        // to the fallback dict), byte-identical to the old Fields.TryGetValue-false path; a received
-        // handle flows on unchanged. Mirrors the FreezePeriodProvider seen-gated swap.
-        object? throwerHandle = projectile["m_hThrower"];
-        if (throwerHandle is null)
+        if (!PawnLookup.TryReadHandle(projectile, "m_hThrower", out uint throwerHandle))
         {
             return -1;
         }
 
         EntityState? pawn = PawnLookup.ResolveHandle(tracker, throwerHandle);
-
-        // m_hController is NOT a clean indexer swap: the control flow returns -1 only on ABSENT and
-        // lets a present-null fall through to TryUnboxHandle, a shape the indexer cannot reproduce
-        // (it collapses absent and present-null). EntityState.TryGetValue keeps that distinction with
-        // Fields' exact resolution order, without materialising the whole per-entity dict projection,
-        // which this call site was doing per live molotov per frame.
-        if (pawn is null || !pawn.TryGetValue("m_hController", out object? controllerHandle))
+        if (pawn is null || !PawnLookup.TryReadHandle(pawn, "m_hController", out uint controllerHandle))
         {
             return -1;
         }
@@ -214,7 +202,7 @@ internal static class EntityDigestExtractor
         // Must go through IndexOf. A dead pawn's m_hController is the 24-bit invalid handle, and
         // masking it raw yields slot 16382, which this method's contract says should be -1. Nothing
         // downstream re-checks, and unlike a table lookup there is no empty slot to save it.
-        int controllerIdx = PawnLookup.IndexOf(PawnLookup.TryUnboxHandle(controllerHandle));
+        int controllerIdx = PawnLookup.IndexOf(controllerHandle);
         return controllerIdx <= 0 ? -1 : controllerIdx - 1;
     }
 

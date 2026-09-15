@@ -301,6 +301,22 @@ takes one.
 It was filled by a post-pass after the header decoded. It is set when the frame is built, so a
 frame read forward carries it too. A hand-built frame that relied on the post-pass must set it.
 
+### Entity values live on five typed lanes (0.12.0)
+
+`LaneKind` gained `Vector` and `Long`, `WireType` gained `VectorLane` and `LongLane`, and the
+`ClassShape` constructor took six more optional parameters for those lanes' paths, defaults and
+transforms. Vectors, angles, 64-bit scalars and entity handles are decoded typed and stored
+unboxed; `EntityState.Fields`, the indexer and `TryGetValue` still hand them back boxed as
+`Vector3` and `ulong`, and `Get<T>` and `TryGet<T>` read them without a box. Two projections
+changed type: enum-typed fields (`MoveType_t`, `CSPlayerState`, `PlayerConnectedState` and the
+rest of the `m_e` and `MixedCase_t` family) and `GameTick_t` fields box an `int` where they boxed
+a `ulong`, so the 0xFFFFFFFE tick sentinel reads -2. Handles keep the `HandleIndex` marker and
+moved from the object lane to the long lane in the generated lens. `PawnLookup.ResolveHandle`
+gained a `uint` overload, so a `cref` to it must name a signature; `PawnLookup.TryReadHandle`
+reads a handle without boxing. `EntityTracker.StoreUnlensedFields`, off in the analysis engine,
+drops the fallback dictionary for fields no lens rule names, and `AdoptSchemaState` shares one
+parsed schema between trackers.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

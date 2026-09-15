@@ -98,9 +98,16 @@ public sealed class LensBoundReader : IEntityFieldReader
 
     /// <inheritdoc />
     public bool TryReadUInt64(int ordinal, out ulong value)
-        // No ulong lane exists: wide ints land boxed on the object lane under the
-        // honour-the-wire rule (m_steamID, m_nButtons), so this is always a boxed read.
-        => TryReadConverted(ordinal, out value);
+    {
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Long
+            && _state.TryGetLongSlot(addr.Slot, out value))
+        {
+            return true;
+        }
+
+        return TryReadConverted(ordinal, out value);
+    }
 
     /// <inheritdoc />
     public bool TryReadSingle(int ordinal, out float value)
@@ -160,6 +167,14 @@ public sealed class LensBoundReader : IEntityFieldReader
     /// <inheritdoc />
     public bool TryReadEntityHandle(int ordinal, out uint rawHandle)
     {
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Long
+            && _state.TryGetLongSlot(addr.Slot, out ulong wide))
+        {
+            rawHandle = unchecked((uint)wide);
+            return true;
+        }
+
         if (!TryReadRaw(ordinal, out object? raw) || raw is null)
         {
             rawHandle = default;
@@ -320,6 +335,14 @@ public sealed class LensBoundReader : IEntityFieldReader
                 if (_state.TryGetVectorSlot(addr.Slot, out Vector3 vec))
                 {
                     value = vec;
+                    return true;
+                }
+
+                break;
+            case LaneKind.Long:
+                if (_state.TryGetLongSlot(addr.Slot, out ulong wide))
+                {
+                    value = wide;
                     return true;
                 }
 

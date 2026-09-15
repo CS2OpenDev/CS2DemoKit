@@ -14,3 +14,6 @@ internal delegate float FloatDecoder(ref BitBuffer buffer);
 
 /// <summary>A typed decoder for the three-component vector and angle types; nothing on its path boxes.</summary>
 internal delegate System.Numerics.Vector3 Vector3Decoder(ref BitBuffer buffer);
+
+/// <summary>A typed decoder for 64-bit unsigned fields; nothing on its path boxes.</summary>
+internal delegate ulong UInt64Decoder(ref BitBuffer buffer);

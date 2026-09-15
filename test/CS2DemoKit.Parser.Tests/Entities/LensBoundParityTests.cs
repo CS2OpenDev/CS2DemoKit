@@ -19,7 +19,7 @@ namespace CS2DemoKit.Parser.Entities.Tests;
 ///     decisions hold under real wire data:
 ///     <list type="bullet">
 ///         <item>
-///             HandleIndex-tagged paths stay on the natural decoder lane (Object for
+///             HandleIndex-tagged paths stay on the natural decoder lane (Long for
 ///             <c>CHandle&lt;&gt;</c> wires) so <c>Fields["m_hController"]</c>
 ///             returns the raw boxed integer in BOTH modes.
 ///         </item>

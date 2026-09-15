@@ -44,13 +44,12 @@ internal sealed class PawnSlotIndex
                 continue;
             }
 
-            object? hv = ent["m_hController"];
-            if (hv is null)
+            if (!PawnLookup.TryReadHandle(ent, "m_hController", out uint hv))
             {
                 continue;
             }
 
-            int ctrlIdx = PawnLookup.IndexOf(PawnLookup.TryUnboxHandle(hv));
+            int ctrlIdx = PawnLookup.IndexOf(hv);
             int slot = ctrlIdx - 1;
             if (slot < 0)
             {

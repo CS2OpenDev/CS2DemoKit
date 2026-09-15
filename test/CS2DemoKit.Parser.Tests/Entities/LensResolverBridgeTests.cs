@@ -108,6 +108,7 @@ public class LensResolverBridgeTests
                     WireType.FloatLane => LaneKind.Float,
                     WireType.ObjectLane => LaneKind.Object,
                     WireType.VectorLane => LaneKind.Vector,
+                    WireType.LongLane => LaneKind.Long,
                     _ => LaneKind.Fallback
                 };
                 await Assert.That(resolved!.Value.Lane).IsEqualTo(expectedLane);
@@ -162,13 +163,13 @@ public class LensResolverBridgeTests
     }
 
     /// <summary>
-    ///     Handle spot-check: <c>m_hController</c> resolves to the OBJECT lane (the honest
-    ///     lane — the decoder boxes the raw wire handle there) and carries the
+    ///     Handle spot-check: <c>m_hController</c> resolves to the LONG lane (the decoder reads
+    ///     the raw wire handle typed there) and carries the
     ///     <see cref="EtLensTransform.HandleIndex" /> marker. The raw integer stays
     ///     undecoded on the lane; masking and sentinels belong to handle resolution.
     /// </summary>
     [Test]
-    public async Task Bridge_HandleIndex_RoutesToObjectLane_WithHandleIndexTransform()
+    public async Task Bridge_HandleIndex_RoutesToLongLane_WithHandleIndexTransform()
     {
         LensState state = GeneratedLensRegistry.Load();
         LensResolver resolver = BridgeLensStateToResolver(state);
@@ -176,7 +177,7 @@ public class LensResolverBridgeTests
         LensSlotRule? rule = resolver("CCSPlayerPawn", "m_hController");
 
         await Assert.That(rule).IsNotNull();
-        await Assert.That(rule!.Value.Lane).IsEqualTo(LaneKind.Object);
+        await Assert.That(rule!.Value.Lane).IsEqualTo(LaneKind.Long);
         await Assert.That(rule.Value.Transform).IsEqualTo(EtLensTransform.HandleIndex);
     }
 
