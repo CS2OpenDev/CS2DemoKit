@@ -465,6 +465,44 @@ or `<ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>` in its pro
 a UI thread keeps concurrent GC and takes the gen0 knob alone, which was worth 12 of 15 on its
 own. `src/CS2DemoKit.Analysis/README.md` says the same in fewer words.
 
+### One producer
+
+    runs      10 sampled (1 round x 5 demos x 2 arms), zero failures, zero digest mismatches
+    rows      paths-one-producer.csv (the demos were symlinked into a scratch directory, so size_mb reads 0.0)
+
+The up-front parallel producer that decoded a retained demo's digests before the first frame
+was evaluated is gone; the pipelined producer that served the forward reader serves the
+`ParsedDemo` too, with the same chunks, the same prime and the same fold. Over a list it
+releases nothing and cuts its chunks from the frame count to about twice the worker count,
+because every chunk costs a checkpoint prime and the frames are resident either way: with the
+stream's 1024-frame chunks the retained arm ran 15 to 20% slower than the producer it replaced
+(39 primes where that one did 10), and the derived size closes that. Same five demos, before
+(`paths-alloc.csv`) and after, single runs:
+
+| demo | size | retained wall before | after | retained peak heap before | after | forward wall before | after |
+|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 0.9 s | 0.9 s | 271 MB | 238 MB | 0.8 s | 0.7 s |
+| ...0748090338_404 | 204 MB | 2.2 s | 2.4 s | 906 MB | 868 MB | 1.8 s | 1.4 s |
+| ...1163782782_410 | 280 MB | 2.5 s | 2.5 s | 1028 MB | 1030 MB | 1.9 s | 2.0 s |
+| ...0449092279_123 | 432 MB | 3.0 s | 2.7 s | 1536 MB | 1497 MB | 2.3 s | 3.8 s |
+| ...1522348072_129 | 524 MB | 3.3 s | 3.3 s | 1791 MB | 1788 MB | 4.0 s | 4.7 s |
+
+**The worker default.** Over a list the default is two fewer than the core count, never below
+the stream's three: retained arm, three rounds each on the 280 and 524 MB demos, three workers
+sit at the back (2.55 s and 3.15 s medians) while six through ten are within noise of each other
+(2.41 to 2.56 s and 2.93 to 3.12 s) and of the retired producer built and measured in the same
+session (2.49 s and 3.13 s). The retained peak heap is the `ParsedDemo` and its snapshots, so
+it moves only on the small demos, where the digest array the old producer held for every frame
+was a visible share of it.
+
+**The control.** Nothing on the forward path changed in a way that should move it, and the
+single-run rows above move both ways because the default collector is bimodal on this arm (the
+base build measured 2.7 s and 3.8 s on consecutive runs of the 524 MB demo). Three rounds each,
+base build against this one, same session, forward arm medians: 1.75 s against 1.72 s (204 MB),
+3.26 s against 2.74 s (432 MB), 3.78 s against 2.58 s (524 MB). The sampled forward peak is 30
+to 80 MB lower on every demo: the schema probe, a throwaway layer replayed over the first chunk
+on the reader thread, is gone, and the check runs on the fold worker's own tracker.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An

@@ -301,6 +301,20 @@ takes one.
 It was filled by a post-pass after the header decoded. It is set when the frame is built, so a
 frame read forward carries it too. A hand-built frame that relied on the post-pass must set it.
 
+### One digest producer serves both frame sources (0.12.0)
+
+The up-front parallel producer that decoded a retained demo's entity digests before the first
+frame was evaluated is gone; the pipelined checkpoint-parallel producer that served a forward
+reader now serves a `ParsedDemo` too. `DigestProducerKind.ParallelUpFront` is removed, so a
+`switch` over the enum that named it no longer compiles and a retained run reports
+`Pipelined`. `EntityChangeScanner.PrecomputeParallelDigests` and `AdvanceAndPoll(int)` are
+removed: the scanner is driven by the evaluator alone. `EntityStateLayer.PrimeFromCheckpoint(int,
+int)` is removed; the frame-based overload is the one priming. `SeekToTick` and `SeekBeforeFrame`
+over a list-backed layer remain for consumers that seek. `ScannerProfilingSnapshot.PrecomputeTicks`
+and `PrecomputeAlloc` keep their slots and always read zero. `AnalysisOptions.MaxDegreeOfParallelism`
+is the digest worker count on either source: unset, three over a reader and two fewer than the core
+count over a retained demo; one is the sequential producer.
+
 ### Entity values live on five typed lanes (0.12.0)
 
 `LaneKind` gained `Vector` and `Long`, `WireType` gained `VectorLane` and `LongLane`, and the
