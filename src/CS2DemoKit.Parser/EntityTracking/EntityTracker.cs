@@ -3042,54 +3042,71 @@ public sealed class EntityTracker
     }
 
     /// <summary>
-    ///     Array-element descriptors, materialised on first access instead of all at once.
-    ///     <para>
-    ///         Every array field used to pre-generate <see cref="ArrayPregenSize" /> (1024) descriptors —
-    ///         and for arrays-of-class, a full recursive child tree PER ELEMENT. On a real demo that came
-    ///         to 3,117,491 FieldDescriptor objects / 231 MB, the single largest consumer of the loaded
-    ///         heap, plus ~1024 interpolated <c>"path[N]"</c> strings per array field. Actual demos touch
-    ///         a handful of indices per array, so nearly all of it was never read.
-    ///     </para>
-    ///     <para>
-    ///         This is safe precisely because of the invariant <see cref="ResolveNestedField" /> already
-    ///         relies on: array elements are decoder-equivalent — same wire shape, only the path string
-    ///         differs — which is why that method can clamp an out-of-range index onto the last entry.
-    ///         Deferring construction changes when a descriptor is built, never what it decodes.
-    ///         <see cref="Count" /> reports the full logical size, so that clamp is unaffected.
-    ///     </para>
-    ///     <para>
-    ///         Races are benign by the same invariant: two threads may both materialise index <c>i</c> and
-    ///         one write wins, but the loser's instance is functionally identical and remains valid for
-    ///         the caller holding it. No lock, to keep the decode path allocation- and contention-free.
-    ///     </para>
+    ///     Array-element descriptors, materialised on first access into a cache that grows with the
+    ///     highest index touched. <see cref="Count" /> is the logical size, so the out-of-range clamp
+    ///     in <see cref="ResolveNestedField" /> is unaffected. Elements are decoder-equivalent (same
+    ///     wire shape, only the path differs), which is what makes the races benign: a slot lost to a
+    ///     concurrent grow, or materialised twice, is rebuilt identical. No lock on the decode path.
     /// </summary>
     private sealed class LazyArrayElementDescs : IReadOnlyList<FieldDescriptor>
     {
-        private readonly FieldDescriptor?[] _cache;
+        private const int InitialCapacity = 8;
         private readonly Func<int, FieldDescriptor> _create;
+        private FieldDescriptor?[] _cache;
 
         public LazyArrayElementDescs(int count, Func<int, FieldDescriptor> create)
         {
-            _cache = new FieldDescriptor?[count];
+            Count = count;
+            _cache = new FieldDescriptor?[Math.Min(count, InitialCapacity)];
             _create = create;
         }
 
-        public FieldDescriptor this[int index] => _cache[index] ??= _create(index);
+        public FieldDescriptor this[int index]
+        {
+            get
+            {
+                FieldDescriptor?[] cache = _cache;
+                if ((uint)index >= (uint)cache.Length)
+                {
+                    cache = Grow(index);
+                }
 
-        public int Count => _cache.Length;
+                return cache[index] ??= _create(index);
+            }
+        }
 
-        // Enumerating materialises everything, defeating the point. Nothing on the decode path
-        // enumerates element lists (they are index-addressed); FindLeafField has a direct-index fast
-        // path for exactly this reason. Kept correct for debug/inspection callers.
+        public int Count { get; }
+
         public IEnumerator<FieldDescriptor> GetEnumerator()
         {
-            for (int i = 0; i < _cache.Length; i++)
+            for (int i = 0; i < Count; i++)
             {
                 yield return this[i];
             }
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        // Never past Count: an index beyond it throws here exactly as the full-size array did.
+        private FieldDescriptor?[] Grow(int index)
+        {
+            FieldDescriptor?[] old = _cache;
+            if (index < old.Length)
+            {
+                return old;
+            }
+
+            int size = Math.Max(old.Length, 1);
+            while (size <= index && size < Count)
+            {
+                size = Math.Min(size * 2, Count);
+            }
+
+            FieldDescriptor?[] grown = new FieldDescriptor?[size];
+            Array.Copy(old, grown, old.Length);
+            _cache = grown;
+            return grown;
+        }
     }
 
     private sealed class FieldDescriptor
