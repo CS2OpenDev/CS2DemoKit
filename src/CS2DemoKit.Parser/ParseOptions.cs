@@ -18,7 +18,7 @@ public sealed record ParseOptions
     ///     the Pass 2 <c>Parallel.For</c> (also wired into <c>ParallelOptions.CancellationToken</c>
     ///     so the scheduler stops handing out new work), and before Pass 3. A canceled parse throws
     ///     <see cref="OperationCanceledException" /> — no partial <see cref="ParsedDemo" /> is ever
-    ///     returned (mirrors <c>ParallelDigestProducer.Produce</c>'s identical contract).
+    ///     returned, the same contract the analysis engine's evaluation gives.
     /// </summary>
     public CancellationToken CancellationToken { get; init; }
 

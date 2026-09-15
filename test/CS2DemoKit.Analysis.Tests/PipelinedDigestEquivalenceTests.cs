@@ -13,10 +13,10 @@ using CS2DemoKit.TestSupport;
 namespace CS2DemoKit.Analysis.Tests;
 
 /// <summary>
-///     The sharp correctness gate for parallel entity decode.
+///     The sharp correctness gate for the checkpoint-parallel digest producer.
 ///     <para>
 ///         Builds the per-frame <see cref="EntityFrameDigest" /> array two ways. Sequentially, emitting the
-///         full per-frame readout, and in parallel (<see cref="ParallelDigestProducer" />), which emits only
+///         full per-frame readout, and through <see cref="PipelinedDigestSource" />, which emits only
 ///         changed cells from each chunk worker. Both must agree on every frame. Singletons and the
 ///         molotov list are compared element-wise. Per-pawn values are compared as the FOLD: the running
 ///         last-value-per-(provider, slot) map that <c>EntityChangeScanner.MergePreFrameSnapshot</c> derives,
@@ -27,22 +27,24 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         checkpoint, so it re-emits every live cell on its chunk's first frame, and rows differ there by
 ///         construction. Comparing the fold is the stronger statement anyway: it judges the value the
 ///         consumer ends up with rather than the encoding it arrived in. The digest seam already proved the
-///         sequential readout drives byte-identical golden output, so <em>same fold ⟹ parallel → golden</em>
+///         sequential readout drives byte-identical golden output, so <em>same fold ⟹ pipelined → golden</em>
 ///         by composition; a mismatch points at the exact frame (hence chunk) and cell that diverged.
 ///     </para>
 ///     <para>
-///         The provider set deliberately includes all four per-player providers AND
-///         <c>emitMolotov: true</c>, so the gate exercises the two riskiest checkpoint reconstructions: the
-///         active-weapon CLASS two-hop (handle → weapon entity → ClassName) and the molotov thrower-slot
-///         chain (m_hThrower → pawn → m_hController → slot).
+///         One producer serves both frame sources, so the gate runs it over a retained
+///         <see cref="ParsedDemo" /> and over a <see cref="DemoReader" /> of the same bytes and holds the
+///         two to each other as well as to the sequential fold. The provider set deliberately includes all
+///         four per-player providers AND <c>emitMolotov: true</c>, so the gate exercises the two riskiest
+///         checkpoint reconstructions: the active-weapon CLASS two-hop (handle → weapon entity → ClassName)
+///         and the molotov thrower-slot chain (m_hThrower → pawn → m_hController → slot).
 ///     </para>
 /// </summary>
 [NotInParallel]
 [Category("Integration")]
-public class ParallelDigestEquivalenceTests
+public class PipelinedDigestEquivalenceTests
 {
     // Per-worker provider factories. Order is fixed (the digest's per-pawn value arrays and Singletons[]
-    // are positionally indexed), and each call returns FRESH instances so a parallel worker never shares a
+    // are positionally indexed), and each call returns FRESH instances so a worker never shares a
     // provider with another (FreezePeriodProvider caches a mutable entity index).
     private static IReadOnlyList<IPerPlayerEntityValueProvider> NewPerPlayer() =>
     [
@@ -58,40 +60,34 @@ public class ParallelDigestEquivalenceTests
     ];
 
     [Test]
-    public async Task ParallelDigest_FoldsToTheSameSnapshotAs_SequentialDigest()
+    public async Task PipelinedDigest_FoldsToTheSameSnapshotAs_SequentialDigest()
     {
         string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
         IReadOnlyList<DemoFrame> frames = demo.Frames;
 
         Console.WriteLine($"Demo: {Path.GetFileName(path)}  frames={frames.Count:N0}");
-        // Note: this test runs the PRODUCTION chunking, which coarsens to ~Environment.ProcessorCount
-        // chunks — so its own layout is the runner's. Coarsening is correctness-neutral (intermediate full
-        // packets decode via the normal PE-skipped SeekToTick path), which is what this assertion proves on
-        // whatever layout the runner picks; ParallelDigest_FoldsToTheSameSnapshot_AtEveryChunkTarget below
-        // is where the layout stops being the runner's and gets swept.
-        IReadOnlyList<ParallelDigestProducer.Chunk> chunks =
-            ParallelDigestProducer.PlanChunks(frames, out int schemaPrefixEnd);
-        Console.WriteLine($"chunks={chunks.Count}  schemaPrefixEnd={schemaPrefixEnd}  " +
-                          $"checkpoints={chunks.Count(c => c.CheckpointFrameIndex >= 0)}");
 
         // ── Sequential reference: one layer, SeekToTick + Build per frame, emitting the FULL per-frame
         //    readout (dedup off). That is the ground truth the fold below is judged against. ──
         EntityFrameDigest[] sequential = BuildSequential(frames, dedup: false);
 
-        // ── Parallel under test. ──
-        EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
-            frames, NewPerPlayer, NewSingletons, true);
+        // ── Under test, with the production chunking: every candidate full packet past MinChunkFrames
+        //    closes a chunk. PipelinedDigest_FoldsToTheSameSnapshot_AtEveryChunkPlan below moves them. ──
+        EntityFrameDigest[] pipelined = PipelinedDigests.Produce(
+            demo.AsFrameSource(), NewPerPlayer, NewSingletons, true,
+            out IReadOnlyList<PipelinedDigestSource.ChunkSpan> spans);
+        Console.WriteLine($"chunks={spans.Count}  checkpoints={spans.Count(s => s.CheckpointFrameIndex >= 0)}");
 
         // ── The scanner's own sequential arm: ONE delta stream over every frame, no chunk resets.
-        //    That is what EntityChangeScanner.BuildDigest does on the fallback path, and it is a
-        //    different shape from the parallel arm (which restarts its cell memory per chunk). ──
+        //    That is what EntityChangeScanner.BuildDigest does on the sequential path, and it is a
+        //    different shape from the pipelined arm (which restarts its cell memory per chunk). ──
         EntityFrameDigest[] sequentialDelta = BuildSequential(frames, dedup: true);
 
-        await Assert.That(parallel.Length).IsEqualTo(sequential.Length);
+        await Assert.That(pipelined.Length).IsEqualTo(sequential.Length);
 
         // ── Categorize ALL divergences (don't stop at the first) by the digest field that diverged, so we
-        //    can tell apart a per-pawn/singleton break (fatal — those are consumed every frame without
+        //    can tell apart a per-pawn/singleton break (fatal: those are consumed every frame without
         //    dedup) from a raw-molotov re-resolution (the per-frame molotov list is deduped by the consume,
         //    so only the FIRST-seen ThrowerSlot per (index,serial) is golden-relevant). ──
         int pawnMismatchFrames = 0;
@@ -100,7 +96,7 @@ public class ParallelDigestEquivalenceTests
         int framesWithPawns = 0;
         int framesWithMolotovs = 0;
         Dictionary<(int Provider, int Slot), object?> seqSnapshot = [];
-        Dictionary<(int Provider, int Slot), object?> parSnapshot = [];
+        Dictionary<(int Provider, int Slot), object?> pipeSnapshot = [];
         Dictionary<(int Provider, int Slot), object?> seqDeltaSnapshot = [];
         int seqDeltaMismatchFrames = 0;
         string? firstSeqDelta = null;
@@ -111,7 +107,7 @@ public class ParallelDigestEquivalenceTests
         for (int n = 0; n < frames.Count; n++)
         {
             EntityFrameDigest s = sequential[n];
-            EntityFrameDigest p = parallel[n];
+            EntityFrameDigest p = pipelined[n];
             if (s.PerPawn.Count > 0)
             {
                 framesWithPawns++;
@@ -122,12 +118,12 @@ public class ParallelDigestEquivalenceTests
                 framesWithMolotovs++;
             }
 
-            // Per-pawn is compared as the FOLD, not row-for-row: the parallel path emits only changed
+            // Per-pawn is compared as the FOLD, not row-for-row: the pipelined path emits only changed
             // cells and each worker re-emits everything on its chunk's first frame, so the raw rows
             // legitimately differ. What must not differ is the pre-frame snapshot the consumer derives
             // from them, which is what every rule actually reads.
             Fold(seqSnapshot, s);
-            Fold(parSnapshot, p);
+            Fold(pipeSnapshot, p);
 
             // The scanner's arm, judged against the same ground truth.
             Fold(seqDeltaSnapshot, sequentialDelta[n]);
@@ -137,7 +133,7 @@ public class ParallelDigestEquivalenceTests
                 firstSeqDelta ??= $"frame {n}: {sd}";
             }
 
-            string? pawnSingle = DiffSnapshots(seqSnapshot, parSnapshot) ?? DiffSingletons(s, p);
+            string? pawnSingle = DiffSnapshots(seqSnapshot, pipeSnapshot) ?? DiffSingletons(s, p);
             if (pawnSingle is not null)
             {
                 pawnMismatchFrames++;
@@ -169,8 +165,8 @@ public class ParallelDigestEquivalenceTests
         //    each (index,serial) wins) over BOTH digest arrays and compare the resulting (throw-frame, slot)
         //    event stream. This is the value golden actually consumes. ──
         List<(int Frame, int Index, int Serial, int Slot)> seqEvents = DedupMolotovEvents(sequential);
-        List<(int Frame, int Index, int Serial, int Slot)> parEvents = DedupMolotovEvents(parallel);
-        string? dedupDiff = DiffMolotovEventStreams(seqEvents, parEvents);
+        List<(int Frame, int Index, int Serial, int Slot)> pipeEvents = DedupMolotovEvents(pipelined);
+        string? dedupDiff = DiffMolotovEventStreams(seqEvents, pipeEvents);
 
         Console.WriteLine($"compared {frames.Count:N0} frames " +
                           $"({framesWithPawns:N0} w/pawns, {framesWithMolotovs:N0} w/molotovs)");
@@ -189,7 +185,7 @@ public class ParallelDigestEquivalenceTests
             Console.WriteLine($"  first @ frame {firstMolotovRawFrame} (tick {f.ServerTick}): {firstMolotovRaw}");
         }
 
-        Console.WriteLine($"deduped molotov events: sequential={seqEvents.Count} parallel={parEvents.Count}  " +
+        Console.WriteLine($"deduped molotov events: sequential={seqEvents.Count} pipelined={pipeEvents.Count}  " +
                           $"event-stream equal: {dedupDiff is null}");
         if (dedupDiff is not null)
         {
@@ -200,14 +196,14 @@ public class ParallelDigestEquivalenceTests
         // match on every frame. (The dedup-aware molotov stream is computed too and is necessarily equal when
         // the raw list is; it's asserted as an explicit statement of the consume-relevant invariant and was
         // the lens that originally localized the instancebaseline checkpoint bug.) Since Step 1 proved the
-        // sequential digest drives byte-identical golden, parallel == sequential ⟹ parallel → golden.
+        // sequential digest drives byte-identical golden, pipelined == sequential ⟹ pipelined → golden.
         Console.WriteLine($"sequential-delta snapshot mismatch frames: {seqDeltaMismatchFrames:N0}"
                           + (firstSeqDelta is null ? "" : $"  first: {firstSeqDelta}"));
 
         await Assert.That(pawnMismatchFrames).IsEqualTo(0);
         await Assert.That(seqDeltaMismatchFrames).IsEqualTo(0)
             .Because("one continuous delta stream is what EntityChangeScanner.BuildDigest produces on "
-                     + "the sequential fallback, and it must fold to the same snapshot");
+                     + "the sequential path, and it must fold to the same snapshot");
         await Assert.That(molotovRawMismatchFrames).IsEqualTo(0);
         await Assert.That(dedupDiff).IsNull();
 
@@ -215,31 +211,28 @@ public class ParallelDigestEquivalenceTests
         await Assert.That(framesWithPawns).IsGreaterThan(0);
         await Assert.That(seqSnapshot.Count).IsGreaterThan(0)
             .Because("an empty fold would make the snapshot comparison pass while checking nothing");
-        Console.WriteLine($"folded snapshot keys: sequential={seqSnapshot.Count} parallel={parSnapshot.Count}");
+        await Assert.That(spans.Count).IsGreaterThan(1)
+            .Because("with one chunk the producer is the sequential fold and the gate proves nothing about checkpoints");
+        Console.WriteLine($"folded snapshot keys: sequential={seqSnapshot.Count} pipelined={pipeSnapshot.Count}");
     }
 
     /// <summary>
     ///     The same equivalence at several chunk layouts, against one sequential reference. This is the
     ///     half of the gate the test above cannot give: a chunk boundary is where a worker primes from a
     ///     checkpoint and re-emits every live cell, so it is the one position a reconstruction bug can hide
-    ///     at, and left to the planner's default the boundaries land wherever the runner's core count puts
-    ///     them. A bug that only bites when a chunk starts near an entity lifecycle event — a pawn
-    ///     spawning, a molotov's creation frame, a smoke's first billowing tick — would then be reachable
-    ///     on a 32-core box and unreachable on a two-core one, or the reverse.
+    ///     at, and left to the production chunk size the boundaries land wherever the demo's full-packet
+    ///     cadence puts them. A bug that only bites when a chunk starts near an entity lifecycle event (a
+    ///     pawn spawning, a molotov's creation frame, a smoke's first billowing tick) would then be
+    ///     reachable on one demo and unreachable on the next.
     ///     <para>
-    ///         Sweeping the target moves every boundary: the planner strides through the clash-free full
-    ///         packets, so a different target picks a different subset of them, not a subset of the same
-    ///         one. The machine's own target is swept too, so whatever layout production would pick on this
-    ///         runner is in the set rather than only the small ones.
-    ///     </para>
-    ///     <para>
-    ///         Matches how <see cref="TriangleBvhParallelBuildTests" /> sweeps the degree of parallelism
-    ///         over the other half of this PR's fan-out: there the partition is explicit arithmetic and the
-    ///         gate varies it, and a decode whose partition is only ever the runner's is the weaker claim.
+    ///         Sweeping the minimum chunk size moves every boundary: a chunk closes at the first candidate
+    ///         full packet after that many frames, so a larger minimum takes a sparser subset of the full
+    ///         packets, not a subset of the same one. The production size is swept too, so the layout an
+    ///         evaluation would run is in the set rather than only the small ones.
     ///     </para>
     /// </summary>
     [Test]
-    public async Task ParallelDigest_FoldsToTheSameSnapshot_AtEveryChunkTarget()
+    public async Task PipelinedDigest_FoldsToTheSameSnapshot_AtEveryChunkPlan()
     {
         string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
@@ -259,26 +252,25 @@ public class ParallelDigestEquivalenceTests
             .Because("an empty fold would make every comparison below pass while checking nothing");
 
         HashSet<string> layouts = [];
-        foreach (int target in (int[]) [1, 2, 3, 5, Environment.ProcessorCount])
+        foreach (int minChunkFrames in (int[]) [1, 512, PipelinedDigestSource.MinChunkFrames, 4096, 8192, int.MaxValue])
         {
-            IReadOnlyList<ParallelDigestProducer.Chunk> chunks =
-                ParallelDigestProducer.PlanChunks(frames, out _, target);
-            layouts.Add(string.Join(",", chunks.Select(c => c.Start)));
-
-            EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
-                frames, NewPerPlayer, NewSingletons, true, target);
+            EntityFrameDigest[] pipelined = PipelinedDigests.Produce(
+                demo.AsFrameSource(), NewPerPlayer, NewSingletons, true,
+                out IReadOnlyList<PipelinedDigestSource.ChunkSpan> spans,
+                minChunkFrames: minChunkFrames);
+            layouts.Add(string.Join(",", spans.Select(s => s.FirstFrameIndex)));
 
             Dictionary<(int Provider, int Slot), object?> seqSnapshot = [];
-            Dictionary<(int Provider, int Slot), object?> parSnapshot = [];
+            Dictionary<(int Provider, int Slot), object?> pipeSnapshot = [];
             int mismatchFrames = 0;
             string? firstMismatch = null;
             for (int n = 0; n < frames.Count; n++)
             {
                 Fold(seqSnapshot, sequential[n]);
-                Fold(parSnapshot, parallel[n]);
-                string? diff = DiffSnapshots(seqSnapshot, parSnapshot)
-                               ?? DiffSingletons(sequential[n], parallel[n])
-                               ?? DiffMolotovsRaw(sequential[n], parallel[n]);
+                Fold(pipeSnapshot, pipelined[n]);
+                string? diff = DiffSnapshots(seqSnapshot, pipeSnapshot)
+                               ?? DiffSingletons(sequential[n], pipelined[n])
+                               ?? DiffMolotovsRaw(sequential[n], pipelined[n]);
                 if (diff is null)
                 {
                     continue;
@@ -288,64 +280,122 @@ public class ParallelDigestEquivalenceTests
                 firstMismatch ??= $"frame {n} (tick {frames[n].ServerTick}): {diff}";
             }
 
-            string? dedupDiff = DiffMolotovEventStreams(seqEvents, DedupMolotovEvents(parallel));
-            Console.WriteLine($"target={target,3}  chunks={chunks.Count,3}  mismatch frames={mismatchFrames:N0}  "
+            string? dedupDiff = DiffMolotovEventStreams(seqEvents, DedupMolotovEvents(pipelined));
+            Console.WriteLine($"minChunkFrames={minChunkFrames,10}  chunks={spans.Count,3}  mismatch frames={mismatchFrames:N0}  "
                               + $"molotov events equal: {dedupDiff is null}"
                               + (firstMismatch is null ? "" : $"  first: {firstMismatch}"));
 
-            await Assert.That(parallel.Length).IsEqualTo(sequential.Length);
+            await Assert.That(pipelined.Length).IsEqualTo(sequential.Length);
             await Assert.That(mismatchFrames).IsEqualTo(0)
-                .Because($"a chunk target of {target} ({chunks.Count} chunks) moved the fold the consumer reads");
+                .Because($"a minimum chunk of {minChunkFrames} frames ({spans.Count} chunks) moved the fold the consumer reads");
             await Assert.That(dedupDiff).IsNull()
-                .Because($"a chunk target of {target} changed which molotov throw golden would consume");
+                .Because($"a minimum chunk of {minChunkFrames} frames changed which molotov throw golden would consume");
         }
 
         await Assert.That(layouts.Count).IsGreaterThan(1)
-            .Because("the targets must actually produce different chunk boundaries, or the sweep is one "
+            .Because("the chunk sizes must actually produce different chunk boundaries, or the sweep is one "
                      + "layout asserted several times");
+    }
+
+    /// <summary>
+    ///     One producer, two sources. Over a <see cref="DemoReader" /> the frames arrive one at a time
+    ///     and their payloads are released behind the fold; over the retained list nothing is released.
+    ///     The chunk boundaries are a property of the frame sequence alone, so they must land on the same
+    ///     frames, and every digest must fold to the same value, smokes included.
+    /// </summary>
+    [Test]
+    public async Task PipelinedDigest_OverAStream_FoldsToTheSameSnapshotAs_OverTheList()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+
+        EntityFrameDigest[] list = PipelinedDigests.Produce(
+            demo.AsFrameSource(), NewPerPlayer, NewSingletons, true,
+            out IReadOnlyList<PipelinedDigestSource.ChunkSpan> listSpans, captureSmokes: true);
+
+        EntityFrameDigest[] stream;
+        IReadOnlyList<PipelinedDigestSource.ChunkSpan> streamSpans;
+        using (DemoReader reader = DemoReader.Open(bytes.AsMemory()))
+        {
+            stream = PipelinedDigests.Produce(
+                reader, NewPerPlayer, NewSingletons, true, out streamSpans, captureSmokes: true, releaseFolded: true);
+        }
+
+        Console.WriteLine($"frames: list={list.Length:N0} stream={stream.Length:N0}  chunks: list={listSpans.Count} stream={streamSpans.Count}");
+        await Assert.That(stream.Length).IsEqualTo(list.Length);
+        await Assert.That(streamSpans).IsEquivalentTo(listSpans)
+            .Because("the chunk plan depends on the frame sequence, not on where the frames came from");
+
+        Dictionary<(int Provider, int Slot), object?> listSnapshot = [];
+        Dictionary<(int Provider, int Slot), object?> streamSnapshot = [];
+        int mismatchFrames = 0;
+        int framesWithSmoke = 0;
+        string? firstMismatch = null;
+        for (int n = 0; n < list.Length; n++)
+        {
+            Fold(listSnapshot, list[n]);
+            Fold(streamSnapshot, stream[n]);
+            if (list[n].Smokes.Length > 0)
+            {
+                framesWithSmoke++;
+            }
+
+            string? diff = DiffSnapshots(listSnapshot, streamSnapshot)
+                           ?? DiffSingletons(list[n], stream[n])
+                           ?? DiffMolotovsRaw(list[n], stream[n])
+                           ?? DiffSmokes(list[n], stream[n]);
+            if (diff is null)
+            {
+                continue;
+            }
+
+            mismatchFrames++;
+            firstMismatch ??= $"frame {n}: {diff}";
+        }
+
+        Console.WriteLine($"mismatch frames: {mismatchFrames:N0}" + (firstMismatch is null ? "" : $"  first: {firstMismatch}"));
+        await Assert.That(mismatchFrames).IsEqualTo(0);
+        await Assert.That(DiffMolotovEventStreams(DedupMolotovEvents(list), DedupMolotovEvents(stream))).IsNull();
+        await Assert.That(listSnapshot.Count).IsGreaterThan(0)
+            .Because("an empty fold would make the comparison pass while checking nothing");
+        await Assert.That(framesWithSmoke).IsGreaterThan(0)
+            .Because("a demo with no smoke at all would leave the smoke comparison unexercised");
     }
 
     /// <summary>
     ///     The active-smoke list is the one digest field with no delta encoding and no dedup: the
     ///     visibility transition scan reads it whole on every sampled tick, and an empty list does not
-    ///     read as missing data, it reads as "no smoke was in the way". A parallel path that lost the
+    ///     read as missing data, it reads as "no smoke was in the way". A producer that lost the
     ///     clouds would report every through-smoke sightline as a spot and nothing would complain.
     ///     Compared frame for frame, unlike per-pawn values, because smoke is absolute state at the
     ///     seeked tick rather than a delta.
     /// </summary>
     [Test]
-    public async Task ParallelDigest_CarriesTheSameActiveSmokesAs_SequentialDigest()
+    public async Task PipelinedDigest_CarriesTheSameActiveSmokesAs_SequentialDigest()
     {
         string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
         IReadOnlyList<DemoFrame> frames = demo.Frames;
 
         EntityFrameDigest[] sequential = BuildSequential(frames, captureSmokes: true);
-        EntityFrameDigest[] parallel = ParallelDigestProducer.Produce(
-            frames, NewPerPlayer, NewSingletons, true, true);
+        EntityFrameDigest[] pipelined = PipelinedDigests.Produce(
+            demo.AsFrameSource(), NewPerPlayer, NewSingletons, true, captureSmokes: true);
 
         int framesWithSmoke = 0;
         int mismatchFrames = 0;
         string? firstMismatch = null;
         for (int n = 0; n < frames.Count; n++)
         {
-            ReadOnlySpan<Vector4> s = sequential[n].Smokes;
-            ReadOnlySpan<Vector4> p = parallel[n].Smokes;
-            if (s.Length > 0)
+            if (sequential[n].Smokes.Length > 0)
             {
                 framesWithSmoke++;
             }
 
-            bool same = s.Length == p.Length;
-            for (int i = 0; same && i < s.Length; i++)
-            {
-                same = s[i] == p[i];
-            }
-
-            if (!same)
+            if (DiffSmokes(sequential[n], pipelined[n]) is { } diff)
             {
                 mismatchFrames++;
-                firstMismatch ??= $"frame {n}: sequential={s.Length} parallel={p.Length}";
+                firstMismatch ??= $"frame {n}: {diff}";
             }
         }
 
@@ -365,7 +415,7 @@ public class ParallelDigestEquivalenceTests
     ///         and the digest carries as <c>ThrowerSlot = -1</c>; the next frame the handle settles.
     ///         Recording the (index, serial) as seen on the unresolved sighting dropped that throw for the
     ///         rest of the run, and the only symptom was a <c>player_stats</c> <c>molotov_used</c> count
-    ///         one short — no exception, no diagnostic, a plausible number.
+    ///         one short: no exception, no diagnostic, a plausible number.
     ///     </para>
     ///     <para>
     ///         Digests are hand-built rather than decoded: the deferred resolution needs a kill landing on
@@ -399,7 +449,7 @@ public class ParallelDigestEquivalenceTests
         ];
 
         EntityChangeScanner scanner = new(new EntityStateLayer([]), [], null, true);
-        scanner.SetPrecomputedDigests(digests);
+        scanner.InjectDigests(digests);
 
         List<(int Frame, int Tick, int Slot)> thrown = [];
         for (int n = 0; n < digests.Length; n++)
@@ -480,7 +530,7 @@ public class ParallelDigestEquivalenceTests
         {
             if (!b.TryGetValue((provider, slot), out object? valueB))
             {
-                return $"snapshot missing slot {slot} provider[{provider}] in parallel";
+                return $"snapshot missing slot {slot} provider[{provider}] on the second side";
             }
 
             if (!Equals(valueA, valueB))
@@ -552,9 +602,30 @@ public class ParallelDigestEquivalenceTests
         return null;
     }
 
+    /// <summary>Returns null when the two active-smoke lists are identical, else a short description.</summary>
+    private static string? DiffSmokes(EntityFrameDigest a, EntityFrameDigest b)
+    {
+        ReadOnlySpan<Vector4> s = a.Smokes;
+        ReadOnlySpan<Vector4> p = b.Smokes;
+        if (s.Length != p.Length)
+        {
+            return $"smoke-count {s.Length} vs {p.Length}";
+        }
+
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (s[i] != p[i])
+            {
+                return $"smoke[{i}] {s[i]} vs {p[i]}";
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>
     ///     Replays the consume's dedup over a digest array: each (index, serial) produces one event on
-    ///     the first frame it appears WITH A RESOLVED THROWER, carrying that slot — exactly what
+    ///     the first frame it appears WITH A RESOLVED THROWER, carrying that slot, exactly what
     ///     <c>EntityChangeScanner.ConsumeMolotovs</c> emits. The dedup is keyed on emission, not on
     ///     first sighting, so a projectile seen before its <c>m_hThrower</c> has settled is not
     ///     consumed by that sighting and still throws on the frame that resolves it; one that never

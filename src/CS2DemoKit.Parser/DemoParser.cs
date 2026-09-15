@@ -1,9 +1,7 @@
 #region
 
 using System.Buffers;
-using System.Diagnostics;
 using CS2DemoKit.Parser.Entities;
-using CS2DemoKit.Parser.GameEvents;
 using Google.Protobuf;
 using Snappier;
 
@@ -29,9 +27,8 @@ public static class DemoParser
     ///     downstream tooling can surface protocol additions Valve has shipped that this parser
     ///     hasn't yet added a case for.
     ///     <para>
-    ///         <b>Threading:</b> raised from Pass 2 parallel parse threads. Handlers MUST be
-    ///         thread-safe — use <c>System.Collections.Concurrent</c> types, <c>Interlocked</c>,
-    ///         or explicit locks.
+    ///         <b>Threading:</b> raised from the decode workers. Handlers MUST be thread-safe:
+    ///         <c>System.Collections.Concurrent</c> types, <c>Interlocked</c>, or explicit locks.
     ///     </para>
     ///     <para>
     ///         <b>Process-global.</b> Concurrent parses on a shared queue see each other's
@@ -44,10 +41,10 @@ public static class DemoParser
     // ── Public entry point ────────────────────────────────────────────────
 
     /// <summary>
-    ///     Parses a CS2 demo file from an in-memory buffer.
-    ///     Runs three passes: (1) sequential header scan, (2) parallel proto parse,
-    ///     (3) sequential enrichment — decoding game events, extracting player info,
-    ///     and building the <see cref="RuntimeSchema" />.
+    ///     Parses a CS2 demo file from an in-memory buffer: <see cref="DemoReader.Materialize" />
+    ///     over a reader opened on <paramref name="data" />. Every header is scanned, every frame
+    ///     decoded in one parallel window, then enriched in order (game events, player info, the
+    ///     <see cref="RuntimeSchema" />).
     /// </summary>
     /// <param name="data">
     ///     The raw .dem file bytes.  Call <c>array.AsMemory()</c> to wrap an existing
@@ -71,7 +68,7 @@ public static class DemoParser
     ///     <see cref="ParseHealth.Clean" />.
     /// </exception>
     public static ParsedDemo Parse(ReadOnlyMemory<byte> data, DemoProfile? profileOverride = null) =>
-        ParseCore(data, profileOverride, null);
+        ParseCore(data, null, profileOverride);
 
     /// <summary>
     ///     Overload of <see cref="Parse(ReadOnlyMemory{byte},DemoProfile)" /> accepting
@@ -93,199 +90,12 @@ public static class DemoParser
     /// </exception>
     public static ParsedDemo Parse(ReadOnlyMemory<byte> data, ParseOptions options,
         DemoProfile? profileOverride = null) =>
-        ParseCore(data, profileOverride, options ?? throw new ArgumentNullException(nameof(options)));
+        ParseCore(data, options ?? throw new ArgumentNullException(nameof(options)), profileOverride);
 
-    private static ParsedDemo ParseCore(ReadOnlyMemory<byte> data, DemoProfile? profileOverride,
-        ParseOptions? options)
+    private static ParsedDemo ParseCore(ReadOnlyMemory<byte> data, ParseOptions? options, DemoProfile? profileOverride)
     {
-        ParseDiagnostics diagnostics = new();
-        CancellationToken cancellationToken = options?.CancellationToken ?? default;
-        DecodePlan plan = options?.Plan ?? DecodePlan.Everything;
-        DecodeMask mask = ReferenceEquals(plan, DecodePlan.Everything) ? DecodeMask.Everything : DecodeMask.Compile(plan);
-
-        // File header layout:
-        //   bytes  0-7  : ASCII magic "PBDEMS2\0"
-        //   bytes  8-11 : int32LE — spawngroups stream offset
-        //   bytes 12-15 : int32LE — second fixed field (reserved / CDemoFileInfo offset)
-        // Frames begin at byte 16.
-        ReadOnlySpan<byte> span = data.Span;
-        if (data.Length < 16 || !"PBDEMS2"u8.SequenceEqual(span[..7]))
-        {
-            throw new InvalidDataException("Not a CS2 demo file (invalid magic bytes).");
-        }
-
-        // Checkpoint 1 of 3 — before Pass 1 (the file's own three-pass boundaries; see class doc).
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // ── First pass: scan headers sequentially ─────────────────────────
-        // Each frame's start position depends on the previous frame's size, so this pass
-        // must be sequential.  It is near-zero cost: only LEB128 decoding, no proto parsing
-        // and no heap allocation beyond the FrameDesc list itself.
-        // Estimate capacity from file size (empirically ~200-300 bytes/frame on average)
-        // to avoid List<T> reallocation during scan.
-        // Capture the profiling flag once at parse start. ParseProfiler.Reset() records this snapshot
-        // (so the resulting ParseProfilingSnapshot.Enabled reflects whether THIS parse was profiled, not
-        // the live flag at read time) and zeroes its accumulators for a clean per-parse measurement.
-        bool prof = Profiling.Enabled;
-        long p1Ticks = 0, p1Alloc = 0;
-        if (prof)
-        {
-            ParseProfiler.Reset(true);
-            p1Ticks = Stopwatch.GetTimestamp();
-            p1Alloc = GC.GetAllocatedBytesForCurrentThread();
-        }
-        else
-        {
-            // Default (un-profiled) parse: still mark the snapshot as "not captured" so a later Read() in
-            // the same process doesn't report a previous profiled parse's stale numbers as this parse's.
-            ParseProfiler.Reset(false);
-        }
-
-        int estimatedCapacity = Math.Max(64, data.Length / 250);
-        List<FrameDescriptor> frameDescs = new(estimatedCapacity);
-        int pos = 16;
-
-        while (TryScanFrame(data, ref pos, frameDescs.Count, diagnostics, out FrameDescriptor scanned) == FrameScanResult.Frame)
-        {
-            frameDescs.Add(scanned);
-        }
-
-        if (prof)
-        {
-            ParseProfiler.AddPass1(Stopwatch.GetTimestamp() - p1Ticks,
-                GC.GetAllocatedBytesForCurrentThread() - p1Alloc);
-            // Count(predicate) is an O(n) scan — kept inside the guard so the default path pays nothing.
-            ParseProfiler.SetCounts(frameDescs.Count, frameDescs.Count(d => d.IsCompressed));
-        }
-
-        // ── Second pass: parse payloads in parallel ───────────────────────
-        // Each frame's proto parsing is fully independent — no shared mutable state.
-        // Snappy decompression is also stateless and thread-safe.
-        // The result array is pre-sized exactly, so no resizing or locking is needed.
-        //
-        // Snappy decompress reuses ONE grow-on-demand byte[] per partition (the local-init
-        // TLocal below), so the per-frame DecompressToArray allocation is gone. This is safe
-        // ONLY because nothing on the returned DemoFrame retains a reference into the
-        // decompressed buffer: ParseFrame stores integer offsets (RawStart/RawLength/…) plus
-        // parsed protobuf IMessages whose bytes Google.Protobuf already copied out of the input
-        // during ParseFrom (see the comment at ParseInnerMessages), and the RAW/hex view
-        // re-derives bytes on demand from the *original* file (DownstreamUtilities
-        // .GetDecompressedPayload). The buffer MUST be partition-local — a single shared array
-        // would be stomped by concurrent workers — hence the Parallel.For local-init overload.
-        DemoFrame[] results = new DemoFrame[frameDescs.Count];
-        long p2Ticks = prof ? Stopwatch.GetTimestamp() : 0;
-
-        // ParseOptions plumbing (0.8+): all null/default when options is absent, so the body
-        // below adds one predicted-false branch per frame and no per-frame allocation. Every
-        // options-derived value is snapshotted into a local ONCE before the fork — the same
-        // discipline Profiling/Tracing prescribe for Parallel.For closures.
-        Action<UnknownMessageInfo>? onUnknownMessage = options?.OnUnknownMessage;
-        ThreadLocal<Dictionary<string, int>>? dropCounts = options?.CountDropSites == true
-            ? new ThreadLocal<Dictionary<string, int>>(() => new Dictionary<string, int>(), trackAllValues: true)
-            : null;
-        IProgress<double>? progress = options?.Progress;
-        int progressStride = progress is null ? 0 : Math.Max(1, frameDescs.Count / 200);
-        int framesDone = 0;
-
-        ParallelOptions parallelOptions = new()
-        {
-            CancellationToken = cancellationToken
-        };
-        int? dopCap = null;
-        if (options?.MaxDegreeOfParallelism is int dop and > 0)
-        {
-            parallelOptions.MaxDegreeOfParallelism = dop;
-            dopCap = dop;
-        }
-
-        long messagesDecoded = 0, messagesSkipped = 0, userCmdsStored = 0, bytesDecompressed = 0;
-        Parallel.For(0, frameDescs.Count, parallelOptions,
-            // localInit: each partition starts with no decompress buffer (it grows on the first
-            // compressed frame) and its own user-command store.
-            () => new PartitionState(),
-            // body: returns the partition state to thread it forward.
-            (i, _, state) =>
-            {
-                // Checkpoint 2 of 3 — per frame, inside pass 2 (the only chunked/parallel pass;
-                // Parallel.For's own range-partitioner assigns contiguous i-ranges to workers
-                // internally — there is no explicit chunk loop in this file to hook instead).
-                cancellationToken.ThrowIfCancellationRequested();
-                results[i] = DecodeFrame(frameDescs[i], i, state, mask, onUnknownMessage, dropCounts?.Value);
-
-                if (progressStride > 0)
-                {
-                    int done = Interlocked.Increment(ref framesDone);
-                    if (done % progressStride == 0 || done == frameDescs.Count)
-                    {
-                        progress!.Report((double)done / frameDescs.Count);
-                    }
-                }
-
-                return state;
-            },
-            // localFinally: fold this partition's counters. The buffer is plain managed memory, GC'd
-            // with the partition, and the store's blocks are kept alive by the frames that point into them.
-            state =>
-            {
-                Interlocked.Add(ref messagesDecoded, state.MessagesDecoded);
-                Interlocked.Add(ref messagesSkipped, state.MessagesSkipped);
-                Interlocked.Add(ref userCmdsStored, state.UserCmdsStored);
-                Interlocked.Add(ref bytesDecompressed, state.BytesDecompressed);
-            });
-        DecodeProvenance provenance = new(DecodeSource.DemoParserParse, DecodeMode.ParallelWholeFile, 0, dopCap,
-            frameDescs.Count, messagesDecoded, messagesSkipped, userCmdsStored, bytesDecompressed);
-        if (prof)
-        {
-            ParseProfiler.SetPass2Ticks(Stopwatch.GetTimestamp() - p2Ticks);
-        }
-
-        // Opt-in drop-site counting (0.8+). Pass-2 workers cannot write to the [ThreadStatic]
-        // ParseDiagnostics channel — that store is drained on the pass-3/ctor thread only (see
-        // ParseDiagnostics.cs) and pass-2 workers are DIFFERENT threads. Instead each worker
-        // accumulates into its OWN ThreadLocal dictionary; here, back on the orchestrating thread
-        // after the join, the per-thread partials are merged once. The ThreadLocal is deliberately
-        // per-CALL, never static: a static one would let pool-thread reuse leak drop counts across
-        // unrelated concurrent parses. Emission is deferred to the END of Enrich (Pass 3) so Pass
-        // 3's own warnings claim the shared warning budget first.
-        IReadOnlyDictionary<string, int>? dropTotals = null;
-        if (dropCounts is not null)
-        {
-            Dictionary<string, int> totals = new();
-            foreach (Dictionary<string, int> partial in dropCounts.Values)
-            {
-                foreach ((string type, int n) in partial)
-                {
-                    totals[type] = totals.GetValueOrDefault(type) + n;
-                }
-            }
-
-            dropCounts.Dispose();
-            dropTotals = totals;
-        }
-
-        // ── Third pass: sequential enrichment ────────────────────────────
-        // Single forward pass over all frames in recording order.
-        // Decodes game events, extracts player info, builds RuntimeSchema.
-        // Single Enrich call on both paths — the profiling branch only brackets it with timestamps,
-        // it never re-invokes it (no double-enrich).
-        long p3Ticks = 0, p3Alloc = 0;
-        if (prof)
-        {
-            p3Ticks = Stopwatch.GetTimestamp();
-            p3Alloc = GC.GetAllocatedBytesForCurrentThread();
-        }
-
-        // Checkpoint 3 of 3 — before Pass 3 (the file's own three-pass boundaries; see class doc).
-        cancellationToken.ThrowIfCancellationRequested();
-
-        ParsedDemo result = Enrich(results, profileOverride, dropTotals, plan, provenance, diagnostics, mask);
-        if (prof)
-        {
-            ParseProfiler.AddPass3(Stopwatch.GetTimestamp() - p3Ticks,
-                GC.GetAllocatedBytesForCurrentThread() - p3Alloc);
-        }
-
-        return result;
+        using DemoReader reader = DemoReader.Open(data, options, profileOverride);
+        return reader.Materialize();
     }
 
     // ── Proto wire helpers ────────────────────────────────────────────────
@@ -373,7 +183,7 @@ public static class DemoParser
         return false;
     }
 
-    // ── Enrichment (pass 3) ────────────────────────────────────────────────
+    // ── Drop warnings ──────────────────────────────────────────────────────
 
     /// <summary>
     ///     Orders dropped net-message types for warning emission: by count descending, then by
@@ -411,54 +221,6 @@ public static class DemoParser
             diagnostics.Warn(ParseWarningCodes.NetMessageDropped,
                 $"{ordered.Count - 8} more distinct type(s) dropped", count: ordered.Skip(8).Sum(kv => kv.Value));
         }
-    }
-
-    /// <summary>
-    ///     Walks all frames in order, decoding game events, processing string tables,
-    ///     and extracting the RuntimeSchema.  Mutates each frame's <c>MessageList</c>
-    ///     to replace raw <c>CMsgSource1LegacyGameEvent</c> slots with
-    ///     <c>GameEventMessage</c> instances; all other slots are untouched.
-    /// </summary>
-    private static ParsedDemo Enrich(DemoFrame[] frames, DemoProfile? profileOverride,
-        IReadOnlyDictionary<string, int>? dropTotals, DecodePlan plan, DecodeProvenance provenance,
-        ParseDiagnostics diagnostics, DecodeMask mask)
-    {
-        DemoEnrichmentCursor cursor = new(diagnostics, mask, profileOverride);
-        List<GameEvent> allEvents = new();
-        foreach (DemoFrame frame in frames)
-        {
-            cursor.Observe(frame, allEvents);
-        }
-
-        IReadOnlyDictionary<int, PlayerInfo> players = cursor.Players;
-        RuntimeSchema? schema = cursor.Schema;
-        string mapName = cursor.MapName, serverName = cursor.ServerName, clientName = cursor.ClientName,
-            gameDirectory = cursor.GameDirectory, demoVersionName = cursor.DemoVersionName,
-            demoVersionGuid = cursor.DemoVersionGuid, addons = cursor.Addons;
-        int tickCount = cursor.TickCount, buildNumber = cursor.BuildNumber, serverStartTick = cursor.ServerStartTick,
-            patchVersion = cursor.PatchVersion;
-        float tickInterval = cursor.TickInterval;
-        DemoProfile profile = cursor.Profile;
-
-        // Ranked by count, then by type name. The name is not cosmetic: dropTotals is merged from
-        // per-thread partials in completion order, so ties broken by dictionary order would put a
-        // different set of types in the top 8 from run to run on the same demo.
-        //
-        // Emitted LAST, after every Pass-3 Warn() call above (string tables, player-info), so those
-        // calls claim the shared MaxWarnings budget first: an untrusted upload's corrupted bitstream
-        // can synthesize hundreds of distinct garbage type IDs. Emission is additionally capped to
-        // the top 8 distinct dropped types by count + one remainder summary, so it cannot crowd out
-        // the structural-damage warnings this channel already carries even if that ordering ever
-        // stops holding.
-        EmitDropWarnings(diagnostics, dropTotals);
-
-        return new ParsedDemo(
-            frames, allEvents, players, schema,
-            mapName, tickCount, tickInterval,
-            serverName, clientName, gameDirectory,
-            buildNumber, serverStartTick,
-            patchVersion, demoVersionName, demoVersionGuid, addons,
-            profile, plan, provenance, diagnostics.Drain());
     }
 
     /// <summary>
@@ -500,8 +262,7 @@ public static class DemoParser
     /// <param name="rawPayloadSize">Byte length of the payload as stored in the file (compressed or not).</param>
     /// <param name="isCompressed">Whether the payload was Snappy-compressed on disk.</param>
     /// <param name="frameNumber">
-    ///     Zero-based index of this frame in the result array (set on
-    ///     <see cref="DemoFrame.FrameNumber" />).
+    ///     Zero-based index of this frame in the file (set on <see cref="DemoFrame.FrameNumber" />).
     /// </param>
     /// <param name="onUnknownMessage">
     ///     The per-parse unknown-message callback from <see cref="ParseOptions.OnUnknownMessage" />,
@@ -977,7 +738,7 @@ public static class DemoParser
         }
     }
 
-    // ── Frame scan and decode, shared by Parse and the forward reader ─────
+    // ── Frame scan and decode, the reader's per-frame body ───────────────
 
     /// <summary>What the scan of one frame header found.</summary>
     internal enum FrameScanResult
@@ -1102,7 +863,7 @@ public static class DemoParser
 
     /// <summary>
     ///     Lightweight record of a single frame's location and metadata, populated by the
-    ///     sequential header-scan pass and consumed by the payload decode.
+    ///     sequential header scan and consumed by the payload decode.
     ///     <see cref="RawPayload" /> is a zero-copy slice of the caller's buffer for uncompressed
     ///     frames, or the compressed bytes when <see cref="IsCompressed" /> is true.
     /// </summary>
@@ -1116,9 +877,9 @@ public static class DemoParser
         ReadOnlyMemory<byte> RawPayload);
 
     /// <summary>
-    ///     One decoder's scratch state and counters: a pass-2 partition, or the forward reader. Must
-    ///     stay owned by one decoder: concurrent workers would stomp a shared decompress buffer, and a
-    ///     shared store writer would interleave two frames' payload runs.
+    ///     One decoder's scratch state and counters: a window decode partition, or the sequential
+    ///     read. Must stay owned by one decoder: concurrent workers would stomp a shared decompress
+    ///     buffer, and a shared store writer would interleave two frames' payload runs.
     /// </summary>
     internal sealed class PartitionState
     {

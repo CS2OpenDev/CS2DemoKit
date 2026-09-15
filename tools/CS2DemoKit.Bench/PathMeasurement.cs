@@ -44,18 +44,26 @@ internal static class PathMeasurement
     public const string ScoreboardMaterialised = "scoreboard-materialised";
     public const string ScoreboardStream = "scoreboard-stream";
     public const string TrackerPrime = "tracker-prime";
+    public const string Parse = "parse";
+    public const string Materialise = "materialise";
 
     public static readonly IReadOnlyList<string> AllArms =
     [
-        FileRead, MessageScan, GameEvents, EntityReplay, MaterialisedReplay, ScoreboardMaterialised, ScoreboardStream, TrackerPrime
+        FileRead, MessageScan, GameEvents, EntityReplay, MaterialisedReplay, ScoreboardMaterialised, ScoreboardStream, TrackerPrime,
+        Parse, Materialise
     ];
 
     /// <summary>Arm pairs that must produce the same digest on the same demo.</summary>
     public static readonly IReadOnlyList<(string A, string B)> DigestPairs =
     [
         (EntityReplay, MaterialisedReplay),
-        (ScoreboardStream, ScoreboardMaterialised)
+        (ScoreboardStream, ScoreboardMaterialised),
+        (Parse, Materialise)
     ];
+
+    // The reader sizes its window arrays up front, so a whole-file window has to be a number.
+    // Above every frame count in the corpus (228,902), so each demo decodes in one window.
+    private const int WholeFileWindow = 1 << 18;
 
     public const string Header =
         "variant,arm,demo,size_mb,run,wall_ms,alloc_mb,pause_ms,gen0,gen1,gen2,"
@@ -79,6 +87,8 @@ internal static class PathMeasurement
             ScoreboardMaterialised => RunScoreboardMaterialised,
             ScoreboardStream => RunScoreboardStream,
             TrackerPrime => RunTrackerPrime,
+            Parse => RunParse,
+            Materialise => RunMaterialise,
             _ => throw new ArgumentException($"unknown arm {arm}", nameof(arm))
         };
 
@@ -240,12 +250,13 @@ internal static class PathMeasurement
         return new ArmResult(demo.Frames.Count, packets, digest);
     }
 
-    // The shipped rulesets over a retained demo, snapshots on: what a viewer does today.
+    // The shipped rulesets over a retained demo, snapshots on: what a viewer does today. The
+    // parse takes no cap, so the DOP knob moves only the digest workers.
     private static ArmResult RunScoreboardMaterialised(string demoPath)
     {
         RuleConfigLoadResult rules = LoadRules();
         ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
-        AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets);
+        AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets, new AnalysisOptions { MaxDegreeOfParallelism = Dop });
         ArmResult result = new(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
         GC.KeepAlive(demo);
         return result;
@@ -258,7 +269,7 @@ internal static class PathMeasurement
         RuleConfigLoadResult rules = LoadRules();
         AnalysisOptions options = new()
         {
-            MaxDegreeOfParallelism = int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null,
+            MaxDegreeOfParallelism = Dop,
             ProbeDialect = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_PROBE") != "0"
         };
         AnalysisRun run;
@@ -323,7 +334,60 @@ internal static class PathMeasurement
         return new ArmResult(frames, after - before, digest);
     }
 
+    // The whole-file parse as a consumer calls it: the reader's window decode with one window
+    // over the file's bytes, every frame retained. Digested afterwards, so the digest walk costs
+    // the same on both arms.
+    private static ArmResult RunParse(string demoPath)
+    {
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory(), new ParseOptions());
+        ArmResult result = DecodeDigest(demo.Frames);
+        GC.KeepAlive(demo);
+        return result;
+    }
+
+    // The same loop pulled through ReadFrames with one window over the whole file, every frame
+    // retained: what the parse arm costs when the frames are handed out instead of kept.
+    private static ArmResult RunMaterialise(string demoPath)
+    {
+        int window = ReadAhead > 0 ? ReadAhead : WholeFileWindow;
+        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { ReadAheadFrames = window });
+        List<DemoFrame> frames = [];
+        foreach (DemoFrame frame in reader.ReadFrames())
+        {
+            frames.Add(frame);
+        }
+
+        ArmResult result = DecodeDigest(frames);
+        GC.KeepAlive(frames);
+        return result;
+    }
+
+    // Frame count, then per frame the command, the tick and each decoded message's type id;
+    // the name where the catalog has no id, which is the direct-payload commands.
+    private static ArmResult DecodeDigest(IReadOnlyList<DemoFrame> frames)
+    {
+        ulong digest = Fold(FnvOffset, (long)frames.Count);
+        long messages = 0;
+        foreach (DemoFrame frame in frames)
+        {
+            digest = Fold(digest, (long)frame.CommandKind);
+            digest = Fold(digest, frame.ServerTick);
+            IReadOnlyList<NetMessage> decoded = frame.DecodedMessages;
+            messages += decoded.Count;
+            foreach (NetMessage msg in decoded)
+            {
+                digest = NetMessageCatalog.TryGetTypeId(msg.MessageTypeName, out int id)
+                    ? Fold(digest, id)
+                    : Fold(digest, msg.MessageTypeName);
+            }
+        }
+
+        return new ArmResult(frames.Count, messages, digest);
+    }
+
     private static int ReadAhead => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_READAHEAD"), out int n) ? n : 0;
+
+    private static int? Dop => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null;
 
     private static RuleConfigLoadResult LoadRules()
     {

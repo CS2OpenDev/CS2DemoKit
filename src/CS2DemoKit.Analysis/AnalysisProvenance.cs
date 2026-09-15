@@ -26,10 +26,10 @@ public enum DigestProducerKind
     /// <summary>One layer advanced in step with the evaluator.</summary>
     Sequential,
 
-    /// <summary>Every chunk decoded in parallel before the first frame was evaluated.</summary>
-    ParallelUpFront,
-
-    /// <summary>Chunks decoded ahead of the evaluator over a bounded window.</summary>
+    /// <summary>
+    ///     Chunks decoded ahead of the evaluator over a bounded window, on either source, or the
+    ///     whole demo before it when the host precomputed.
+    /// </summary>
     Pipelined
 }
 

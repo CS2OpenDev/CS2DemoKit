@@ -50,7 +50,7 @@ public class HurtEnrichmentDecodeCompromiseTests
     }
 
     /// <summary>
-    ///     Scanner over an empty frame list (the precomputed-digest path never drives the layer),
+    ///     Scanner over an empty frame list (the injected-digest path never drives the layer),
     ///     with one registered health provider and the given hand-built digest stream.
     /// </summary>
     private static (EntityChangeScanner Scanner, PawnHealthProvider Health) BuildScanner(
@@ -61,7 +61,7 @@ public class HurtEnrichmentDecodeCompromiseTests
             new EntityStateLayer([]),
             providers: [],
             perPlayerProviders: [health]);
-        scanner.SetPrecomputedDigests(digests);
+        scanner.InjectDigests(digests);
         return (scanner, health);
     }
 

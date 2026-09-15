@@ -617,14 +617,14 @@ public class EntityIntegrationTests
             [],
             [provider]);
 
-        // Walk frames; on each, capture the snapshot (which reflects PREVIOUS frame's HP).
-        // Verify at least one slot has a non-null snapshot value across the demo.
+        // Walk frames as the evaluator's sequential producer does; on each, capture the snapshot
+        // (which reflects the PREVIOUS frame's HP). Verify at least one slot has a non-null
+        // snapshot value across the demo.
         int slotsWithSnapshotEver = 0;
         HashSet<int> observedSlots = new();
 
-        for (int i = 0; i < parsed.Frames.Count; i++)
+        foreach ((int i, DemoFrame _, IReadOnlyList<NetMessage> _) in SequentialScan.Frames(scanner, parsed))
         {
-            scanner.AdvanceAndPoll(parsed.Frames[i].ServerTick);
             for (int slot = 0; slot < 64; slot++)
             {
                 if (scanner.GetPreFrameValue(provider, slot) is int)
@@ -649,6 +649,51 @@ public class EntityIntegrationTests
         // a slightly smaller count for short demos, but anything under 2
         // means the scanner missed almost every pawn.
         await Assert.That(slotsWithSnapshotEver).IsBetween(2, 10).WithInclusiveBounds();
+    }
+
+    /// <summary>
+    ///     The finding's shape: a host builds a scanner over a parsed demo's frames and polls it
+    ///     with the public method, no evaluation around it. The poll must seek the layer itself,
+    ///     so the pre-frame snapshot fills as it does under the evaluator's sequential producer.
+    /// </summary>
+    [Test]
+    public async Task Scanner_PolledOutsideAnEvaluation_SeeksItsOwnLayer()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
+
+        {
+            EntityStateLayer probe = new(parsed.Frames);
+            probe.SeekToTick(parsed.TickCount / 2);
+            SkipIfEntityDecodeFailed(probe.Tracker);
+        }
+
+        PawnHealthProvider provider = new();
+        EntityChangeScanner scanner = new(new EntityStateLayer(parsed.Frames), [], [provider]);
+        HashSet<int> observedSlots = [];
+        int polled = 0;
+        for (int i = 0; i < parsed.Frames.Count; i++)
+        {
+            scanner.AdvanceAndPollAt(i, parsed.Frames[i].ServerTick);
+            polled++;
+            for (int slot = 0; slot < 64; slot++)
+            {
+                if (scanner.GetPreFrameValue(provider, slot) is int)
+                {
+                    observedSlots.Add(slot);
+                }
+            }
+
+            if (observedSlots.Count >= 5 && i > 5_000)
+            {
+                break;
+            }
+        }
+
+        await Assert.That(scanner.Layer.Tracker.CurrentFrameIndex).IsEqualTo(parsed.Frames[polled - 1].FrameNumber)
+            .Because("the poll advanced the layer through every frame it was given");
+        await Assert.That(observedSlots.Count).IsBetween(2, 10).WithInclusiveBounds()
+            .Because("a scanner polled directly sees the same pawns the evaluator's producer does");
     }
 
     /// <summary>Scanner_captures pre frame weapon snapshot.</summary>
@@ -678,9 +723,8 @@ public class EntityIntegrationTests
         int slotsWithSnapshotEver = 0;
         HashSet<int> observedSlots = new();
 
-        for (int i = 0; i < parsed.Frames.Count; i++)
+        foreach ((int i, DemoFrame _, IReadOnlyList<NetMessage> _) in SequentialScan.Frames(scanner, parsed))
         {
-            scanner.AdvanceAndPoll(parsed.Frames[i].ServerTick);
             for (int slot = 0; slot < 64; slot++)
             {
                 if (scanner.GetPreFrameValue(provider, slot) is string { Length: > 0 })
@@ -720,12 +764,10 @@ public class EntityIntegrationTests
         EntityChangeScanner scanner = new(layer, [(provider, valueNode)]);
 
         int risingEdgesObserved = 0;
-        // Walk frames in order; each AdvanceAndPoll returns synthesized messages for any
-        // changes since the last call. We sample every ~5000 frames for speed; the scanner
-        // still observes every frame internally because the layer is forward-seek-only.
-        for (int i = 0; i < parsed.Frames.Count; i += 1)
+        // Walk frames in order; each poll returns synthesized messages for any changes since
+        // the last one.
+        foreach ((int i, DemoFrame _, IReadOnlyList<NetMessage> msgs) in SequentialScan.Frames(scanner, parsed))
         {
-            IReadOnlyList<NetMessage> msgs = scanner.AdvanceAndPoll(parsed.Frames[i].ServerTick);
             risingEdgesObserved += msgs.Count;
             if (risingEdgesObserved > 0 && i > 10_000)
             {
@@ -759,9 +801,9 @@ public class EntityIntegrationTests
 
         Dictionary<int, int> bySlot = new();
         int total = 0;
-        foreach (DemoFrame frame in parsed.Frames)
+        foreach ((int _, DemoFrame _, IReadOnlyList<NetMessage> msgs) in SequentialScan.Frames(scanner, parsed))
         {
-            foreach (NetMessage msg in scanner.AdvanceAndPoll(frame.ServerTick))
+            foreach (NetMessage msg in msgs)
             {
                 if (msg is GameEventMessage { DecodedEvent: MolotovThrownEvent mt })
                 {
@@ -806,13 +848,11 @@ public class EntityIntegrationTests
         EntityChangeScanner scanner = new(layer, [], null, true);
 
         int seen = 0;
-        for (int frameIndex = 0; frameIndex < parsed.Frames.Count; frameIndex++)
+        // Driven as the evaluator drives it, so a future change that derived the tick from the
+        // digest would still have to get past this pin.
+        foreach ((int _, DemoFrame frame, IReadOnlyList<NetMessage> msgs) in SequentialScan.Frames(scanner, parsed))
         {
-            // The eval loop's entry point (StateGraphEvaluator), not the bare AdvanceAndPoll, so a
-            // future change that derived the tick from the digest on the precomputed path would
-            // still have to get past this pin.
-            DemoFrame frame = parsed.Frames[frameIndex];
-            foreach (NetMessage msg in scanner.AdvanceAndPollAt(frameIndex, frame.ServerTick))
+            foreach (NetMessage msg in msgs)
             {
                 if (msg is not GameEventMessage { DecodedEvent: MolotovThrownEvent mt })
                 {
@@ -909,6 +949,8 @@ public class EntityIntegrationTests
 
         // Independent oracle: the scanner's pre-frame snapshot, captured walking frames in order.
         EntityChangeScanner scanner = new(new EntityStateLayer(parsed.Frames), [], [provider]);
+        using IEnumerator<(int FrameIndex, DemoFrame Frame, IReadOnlyList<NetMessage> Messages)> walk =
+            SequentialScan.Frames(scanner, parsed).GetEnumerator();
         int nextScannerFrame = 0;
 
         int verified = 0;
@@ -935,9 +977,8 @@ public class EntityIntegrationTests
             // its ServerTick (so the scanner's tick-granular pre-frame is directly comparable).
             if (frame == 0 || parsed.Frames[frame].ServerTick != parsed.Frames[frame - 1].ServerTick)
             {
-                while (nextScannerFrame <= frame)
+                while (nextScannerFrame <= frame && walk.MoveNext())
                 {
-                    scanner.AdvanceAndPoll(parsed.Frames[nextScannerFrame].ServerTick);
                     nextScannerFrame++;
                 }
 

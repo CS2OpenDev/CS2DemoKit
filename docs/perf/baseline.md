@@ -465,6 +465,118 @@ or `<ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>` in its pro
 a UI thread keeps concurrent GC and takes the gen0 knob alone, which was worth 12 of 15 on its
 own. `src/CS2DemoKit.Analysis/README.md` says the same in fewer words.
 
+### One producer
+
+    runs      10 sampled (1 round x 5 demos x 2 arms), zero failures, zero digest mismatches
+    rows      paths-one-producer.csv (the demos were symlinked into a scratch directory, so size_mb reads 0.0)
+
+The up-front parallel producer that decoded a retained demo's digests before the first frame
+was evaluated is gone; the pipelined producer that served the forward reader serves the
+`ParsedDemo` too, with the same chunks, the same prime and the same fold. Over a list it
+releases nothing and cuts its chunks from the frame count to about twice the worker count,
+because every chunk costs a checkpoint prime and the frames are resident either way: with the
+stream's 1024-frame chunks the retained arm ran 15 to 20% slower than the producer it replaced
+(39 primes where that one did 10), and the derived size closes that. Same five demos, before
+(`paths-alloc.csv`) and after, single runs:
+
+| demo | size | retained wall before | after | retained peak heap before | after | forward wall before | after |
+|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 0.9 s | 0.9 s | 271 MB | 238 MB | 0.8 s | 0.7 s |
+| ...0748090338_404 | 204 MB | 2.2 s | 2.4 s | 906 MB | 868 MB | 1.8 s | 1.4 s |
+| ...1163782782_410 | 280 MB | 2.5 s | 2.5 s | 1028 MB | 1030 MB | 1.9 s | 2.0 s |
+| ...0449092279_123 | 432 MB | 3.0 s | 2.7 s | 1536 MB | 1497 MB | 2.3 s | 3.8 s |
+| ...1522348072_129 | 524 MB | 3.3 s | 3.3 s | 1791 MB | 1788 MB | 4.0 s | 4.7 s |
+
+**The worker default.** Over a list the default is two fewer than the core count, never below
+the stream's three: retained arm, three rounds each on the 280 and 524 MB demos, three workers
+sit at the back (2.55 s and 3.15 s medians) while six through ten are within noise of each other
+(2.41 to 2.56 s and 2.93 to 3.12 s) and of the retired producer built and measured in the same
+session (2.49 s and 3.13 s). The retained peak heap is the `ParsedDemo` and its snapshots, so
+it moves only on the small demos, where the digest array the old producer held for every frame
+was a visible share of it.
+
+**The control.** Nothing on the forward path changed in a way that should move it, and the
+single-run rows above move both ways because the default collector is bimodal on this arm (the
+base build measured 2.7 s and 3.8 s on consecutive runs of the 524 MB demo). Three rounds each,
+base build against this one, same session, forward arm medians: 1.75 s against 1.72 s (204 MB),
+3.26 s against 2.74 s (432 MB), 3.78 s against 2.58 s (524 MB). The sampled forward peak is 30
+to 80 MB lower on every demo: the schema probe, a throwaway layer replayed over the first chunk
+on the reader thread, is gone, and the check runs on the fold worker's own tracker.
+
+### Two decode loops
+
+    runs      30 sampled (3 rounds x 5 demos x 2 arms) and 10 live (1 round), zero failures, zero digest mismatches
+    rows      paths-decode-loops.csv (sampled), paths-decode-loops-live.csv (live)
+    load      2.6 to 4.9 throughout
+
+`DemoParser.Parse` decodes in three passes over the whole file: a sequential header scan, a
+`Parallel.For` over every frame, then enrichment. `DemoReader` scans one window of
+`ReadAheadFrames` headers, decodes the window with the same `Parallel.For` into pooled partitions,
+and hands the frames out in order with enrichment running on the consumer's thread.
+`DemoReader.Materialize()` as shipped delegates to `DemoParser.Parse`, so the `materialise` arm
+walks the reader itself with one window over the whole file and keeps every frame, which is what
+a `ParsedDemo` holds; the reader sizes its window arrays up front, so the window has to be a
+number, and 262,144 is above the corpus's largest frame count. The `parse` arm is
+`DemoParser.Parse` over `File.ReadAllBytes`. Both arms fold the frame count, every frame's command
+and tick, and every decoded message's type id into one digest, and no pair disagreed. Wall is the
+median of three; peak heap is the sampled median and the live-set round.
+
+| demo | size | frames | parse wall | materialise wall | ratio | parse peak heap, sampled / live | materialise peak heap, sampled / live | parse alloc | materialise alloc |
+|---|---|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 35,731 | 0.25 s | 0.26 s | 1.04x | 179 / 166 MB | 145 / 139 MB | 136 MB | 102 MB |
+| ...0748090338_404 | 204 MB | 91,566 | 0.74 s | 0.74 s | 1.00x | 749 / 715 MB | 518 / 492 MB | 594 MB | 363 MB |
+| ...1163782782_410 | 280 MB | 121,233 | 0.81 s | 0.85 s | 1.05x | 1014 / 950 MB | 697 / 662 MB | 793 MB | 473 MB |
+| ...0449092279_123 | 432 MB | 196,844 | 1.16 s | 1.08 s | 0.93x | 1305 / 1296 MB | 809 / 771 MB | 1242 MB | 745 MB |
+| ...1522348072_129 | 524 MB | 228,902 | 1.21 s | 1.22 s | 1.01x | 1612 / 1549 MB | 1007 / 952 MB | 1481 MB | 868 MB |
+
+The reader's loop runs at 0.93x to 1.05x the whole-file parse's wall over the five demos, median
+1.01x. The three runs' spreads overlap on four demos (the 280 MB demo's parse runs span 0.80 to
+0.91 s, its reader runs 0.76 to 0.86 s); on the 432 MB demo the reader's three runs, 1.07 to
+1.10 s, all sit below the parse's 1.11 to 1.17 s. The parse arm's heap carries the file's
+`byte[]` where the reader maps the file and carries it in working set instead: peak heap less the
+file size is 139, 545, 734, 873 and 1088 MB for the parse arm against 145, 518, 697, 809 and 1007
+MB for the reader. What remains of the gap grows with the file, and it is the descriptor list
+`Parse` pre-sizes at one entry per 250 bytes of file (40 bytes each: 7, 34, 47, 72 and 88 MB here)
+less the reader's fixed 12.5 MB of window arrays, to within 6 MB on every demo. The reader
+allocates 34 to 613 MB less per run, which is the file's bytes plus that list. Collector pauses are
+within 15% of each other on every demo, gen2 counts are equal except on the 524 MB demo (3 against
+4 or 5), and working set is 6 MB higher on the reader for the 40 MB demo and 22 to 74 MB lower
+on the other four.
+
+#### After the unification
+
+    commit    d527da4
+    runs      30 sampled on each build (3 passes x 5 demos x 2 arms, the builds alternated per pass), 10 live on this build, zero failures, zero digest mismatches
+    rows      paths-one-loop.csv (this build, sampled), paths-one-loop-live.csv (live), paths-one-loop-base.csv (776de80, sampled)
+    load      2.6 to 4.5 throughout
+
+`DemoParser.Parse` is now `DemoReader.Materialize()` over a reader it opens: one window over every
+frame, through the same `ScanWindow` and `DecodeWindow` the `materialise` arm pulls through
+`ReadFrames`, then the cursor over the result. The `parse` arm is that call over the file's bytes;
+the `materialise` arm's mechanics did not change, which makes it the control for the session. The
+base build and this one ran three passes alternated in one session rather than against the rows
+above, because the machine was not quiet: the lock screen's wallpaper kept `WindowServer` busy
+throughout, and a first run of this build alone read 1.03x to 1.19x against those rows. Wall is
+the median of three; peak heap is the sampled median and the live-set round on this build.
+
+| demo | size | frames | parse wall, 776de80 | parse wall | ratio | parse peak heap, sampled / live | parse alloc | materialise wall, 776de80 | materialise wall |
+|---|---|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 35,731 | 0.26 s | 0.26 s | 0.99x | 180 / 165 MB | 137 MB | 0.27 s | 0.26 s |
+| ...0748090338_404 | 204 MB | 91,566 | 0.68 s | 0.69 s | 1.02x | 729 / 689 MB | 586 MB | 0.68 s | 0.68 s |
+| ...1163782782_410 | 280 MB | 121,233 | 0.78 s | 0.85 s | 1.09x | 1007 / 954 MB | 784 MB | 0.79 s | 0.81 s |
+| ...0449092279_123 | 432 MB | 196,844 | 1.14 s | 1.18 s | 1.03x | 1296 / 1235 MB | 1230 MB | 1.10 s | 1.15 s |
+| ...1522348072_129 | 524 MB | 228,902 | 1.26 s | 1.24 s | 0.98x | 1589 / 1508 MB | 1462 MB | 1.23 s | 1.27 s |
+
+The parse arm runs at 0.98x to 1.09x the base build's wall, median 1.02x, with the same digest on
+every row. The materialise arm runs at 0.99x to 1.05x in the same passes, median 1.03x, so the
+parse arm is inside the session's drift. The one demo past 1.05x, the 280 MB one, has its three
+parse runs at 0.77, 0.85 and 0.86 s against the base's 0.77, 0.78 and 0.80 s; the 524 MB demo's
+overlap the other way. The parse arm allocates 1 to 20 MB less (137, 586, 784, 1230 and 1462 MB
+against 136, 592, 794, 1242 and 1482), because the decode partitions are pooled across the
+window's tasks where the old loop's local-init built one per task; its peak heap is within 19 MB
+of the base, collector pauses within 8 ms, and the gen2 counts are the same. Against the rows
+above, the reader's loop now decodes every frame that reaches a `ParsedDemo`.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An

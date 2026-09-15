@@ -16,8 +16,8 @@ namespace CS2DemoKit.Analysis.Tests;
 
 /// <summary>
 ///     The two paths must agree: the same rules run over a forward reader that decodes only what
-///     the graph asked for and drops frames as it goes, and over the retained frame list with the
-///     up-front parallel digest, produce the same timeline, highlights, node values, materialised
+///     the graph asked for and drops frames as it goes, and over the retained frame list, through
+///     the one pipelined producer, produce the same timeline, highlights, node values, materialised
 ///     roster, per-slot teams and configured tables. Player names are compared by slot: the reader
 ///     resolves a name when the slot first materialises, the list resolves the final one, and a
 ///     mid-match rename is the one place the two legitimately read differently.
@@ -50,7 +50,7 @@ public class ForwardPathParityTests
 
         await Assert.That(list.Provenance.Source).IsEqualTo(AnalysisSourceKind.Materialised);
         await Assert.That(streamed.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
-        await Assert.That(list.Provenance.Digest).IsEqualTo(DigestProducerKind.ParallelUpFront);
+        await Assert.That(list.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
         await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(list.Provenance.FramesConsumed);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(demo.Frames.Count);

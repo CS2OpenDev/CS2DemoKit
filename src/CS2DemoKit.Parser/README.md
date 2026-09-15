@@ -78,8 +78,9 @@ structure-only pass over the file that reports which game events it fires, the o
 tells a tournament recording from a matchmaking one when the header cannot; the overload with a
 stop predicate ends the pass as soon as the caller has seen enough, which for the dialect is the
 first round. `Configure(plan)`
-replaces the plan; both are allowed only before the first read, as is `Materialize()`, which runs
-the parallel whole-file parse under the reader's plan instead of a forward read.
+replaces the plan; both are allowed only before the first read, as is `Materialize()`, the
+whole-file parse under the reader's plan: one window over every frame, every frame kept.
+`DemoParser.Parse` is that call over a reader it opens and disposes.
 
 `Enrichment` is live: `Players`, `TickCount` and `Warnings` reflect the frames read so far and
 settle on what a whole-file parse reports once the stream ends. `EndReason` says how it ended

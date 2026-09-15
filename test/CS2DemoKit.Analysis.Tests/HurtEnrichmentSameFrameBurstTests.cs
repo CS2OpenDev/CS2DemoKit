@@ -54,7 +54,7 @@ public class HurtEnrichmentSameFrameBurstTests
             new EntityStateLayer([]),
             providers: [],
             perPlayerProviders: [health]);
-        scanner.SetPrecomputedDigests([Digest(slot, hp), Digest(slot, hp), Digest(slot, hp)]);
+        scanner.InjectDigests([Digest(slot, hp), Digest(slot, hp), Digest(slot, hp)]);
         scanner.AdvanceAndPollAt(0, 10);
         scanner.AdvanceAndPollAt(1, 20); // folds digest 0 → snapshot: slot → hp
         return (scanner, health);
@@ -196,7 +196,7 @@ public class HurtEnrichmentSameFrameBurstTests
             perPlayerProviders: [health]);
         EntityFrameDigest d = new();
         d.PerPawn = PerPawnColumns.FromBoxedRows(_layout, [(9, new object?[] { 66 }), (3, new object?[] { 80 })]);
-        scanner.SetPrecomputedDigests([d, d, d]);
+        scanner.InjectDigests([d, d, d]);
         scanner.AdvanceAndPollAt(0, 10);
         scanner.AdvanceAndPollAt(1, 20);
 

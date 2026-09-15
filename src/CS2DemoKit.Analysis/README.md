@@ -107,11 +107,13 @@ this to your project so that class of skew fails the build instead:
 
 ## Parallelism
 
-Set `AnalysisOptions.MaxDegreeOfParallelism` when evaluating several demos in one process —
-otherwise each demo's entity-decode precompute fans out to every core, and each worker holds a
-full `EntityTracker`. `null`/≤0 means unbounded (the default). Still gate the number of
-*concurrent demos* with your own `SemaphoreSlim`, sized with the parse-side memory multiplier
-in mind.
+`AnalysisOptions.MaxDegreeOfParallelism` is the number of entity digest workers, each holding a
+tracker and a chunk of frames folded ahead of the evaluation loop. Unset, a forward reader gets
+three (the read bounds the run, and each worker is memory the run would otherwise not hold) and
+a retained demo gets two fewer than the core count (the frames are already resident; the fold is
+the only thing left to hide). One selects the sequential producer. Set it when evaluating several
+demos in one process, and still gate the number of *concurrent demos* with your own
+`SemaphoreSlim`, sized with the parse-side memory multiplier in mind.
 
 ## Garbage collection
 
