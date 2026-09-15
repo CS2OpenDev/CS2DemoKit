@@ -503,6 +503,46 @@ base build against this one, same session, forward arm medians: 1.75 s against 1
 to 80 MB lower on every demo: the schema probe, a throwaway layer replayed over the first chunk
 on the reader thread, is gone, and the check runs on the fold worker's own tracker.
 
+### Two decode loops
+
+    runs      30 sampled (3 rounds x 5 demos x 2 arms) and 10 live (1 round), zero failures, zero digest mismatches
+    rows      paths-decode-loops.csv (sampled), paths-decode-loops-live.csv (live)
+    load      2.6 to 4.9 throughout
+
+`DemoParser.Parse` decodes in three passes over the whole file: a sequential header scan, a
+`Parallel.For` over every frame, then enrichment. `DemoReader` scans one window of
+`ReadAheadFrames` headers, decodes the window with the same `Parallel.For` into pooled partitions,
+and hands the frames out in order with enrichment running on the consumer's thread.
+`DemoReader.Materialize()` as shipped delegates to `DemoParser.Parse`, so the `materialise` arm
+walks the reader itself with one window over the whole file and keeps every frame, which is what
+a `ParsedDemo` holds; the reader sizes its window arrays up front, so the window has to be a
+number, and 262,144 is above the corpus's largest frame count. The `parse` arm is
+`DemoParser.Parse` over `File.ReadAllBytes`. Both arms fold the frame count, every frame's command
+and tick, and every decoded message's type id into one digest, and no pair disagreed. Wall is the
+median of three; peak heap is the sampled median and the live-set round.
+
+| demo | size | frames | parse wall | materialise wall | ratio | parse peak heap, sampled / live | materialise peak heap, sampled / live | parse alloc | materialise alloc |
+|---|---|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 35,731 | 0.25 s | 0.26 s | 1.04x | 179 / 166 MB | 145 / 139 MB | 136 MB | 102 MB |
+| ...0748090338_404 | 204 MB | 91,566 | 0.74 s | 0.74 s | 1.00x | 749 / 715 MB | 518 / 492 MB | 594 MB | 363 MB |
+| ...1163782782_410 | 280 MB | 121,233 | 0.81 s | 0.85 s | 1.05x | 1014 / 950 MB | 697 / 662 MB | 793 MB | 473 MB |
+| ...0449092279_123 | 432 MB | 196,844 | 1.16 s | 1.08 s | 0.93x | 1305 / 1296 MB | 809 / 771 MB | 1242 MB | 745 MB |
+| ...1522348072_129 | 524 MB | 228,902 | 1.21 s | 1.22 s | 1.01x | 1612 / 1549 MB | 1007 / 952 MB | 1481 MB | 868 MB |
+
+The reader's loop runs at 0.93x to 1.05x the whole-file parse's wall over the five demos, median
+1.01x. The three runs' spreads overlap on four demos (the 280 MB demo's parse runs span 0.80 to
+0.91 s, its reader runs 0.76 to 0.86 s); on the 432 MB demo the reader's three runs, 1.07 to
+1.10 s, all sit below the parse's 1.11 to 1.17 s. The parse arm's heap carries the file's
+`byte[]` where the reader maps the file and carries it in working set instead: peak heap less the
+file size is 139, 545, 734, 873 and 1088 MB for the parse arm against 145, 518, 697, 809 and 1007
+MB for the reader. What remains of the gap grows with the file, and it is the descriptor list
+`Parse` pre-sizes at one entry per 250 bytes of file (40 bytes each: 7, 34, 47, 72 and 88 MB here)
+less the reader's fixed 12.5 MB of window arrays, to within 6 MB on every demo. The reader
+allocates 34 to 613 MB less per run, which is the file's bytes plus that list. Collector pauses are
+within 15% of each other on every demo, gen2 counts are equal except on the 524 MB demo (3 against
+4 or 5), and working set is 6 MB higher on the reader for the 40 MB demo and 22 to 74 MB lower
+on the other four.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An
