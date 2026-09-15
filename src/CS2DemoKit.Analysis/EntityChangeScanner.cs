@@ -72,7 +72,9 @@ public sealed class EntityChangeScanner
     // Sequential path driven by the evaluator's tick runs. Frames whose tick is not past the
     // layer's current tick are held back and applied with the first run that is, which is the
     // tick-gated seek's behaviour over a list; the signon prefix is the case that needs it.
+    // Outside an evaluation nothing feeds the layer, so the poll seeks it itself.
     private readonly List<DemoFrame> _pendingFrames = [];
+    private bool _runDriven;
     private bool _layerAdvanced;
 
     // Each slot's controller team as last observed in a digest, -1 until seen. The evaluator seeds
@@ -210,9 +212,11 @@ public sealed class EntityChangeScanner
 
     /// <summary>
     ///     Entity-state layer owned by this scanner. Exposed for per-event reads in edges that
-    ///     follow the pre-frame pull model. On the sequential path it is advanced by
-    ///     <see cref="BeginTickRun" />; on the pipelined path it never advances, since each chunk
-    ///     worker folds on a layer of its own. Do not seek it directly.
+    ///     follow the pre-frame pull model. The scanner advances it: through
+    ///     <see cref="BeginTickRun" /> on the sequential path, by seeking it when
+    ///     <see cref="AdvanceAndPollAt" /> is called outside an evaluation, and never on the
+    ///     pipelined path, where each chunk worker folds on a layer of its own. Do not seek it
+    ///     directly.
     /// </summary>
     public EntityStateLayer Layer { get; }
 
@@ -227,9 +231,13 @@ public sealed class EntityChangeScanner
     ///     messages produced by the providers whose values transitioned this frame. The digest is
     ///     the pipelined producer's, one <see cref="PrecomputeParallelDigests" /> held, or built
     ///     from this scanner's own layer after <see cref="BeginTickRun" /> applied the frame's tick
-    ///     run. Returns an empty list (not null) when nothing changed; callers may skip iteration
-    ///     by checking the count first.
+    ///     run. Called outside an evaluation, it seeks a list-backed layer to
+    ///     <paramref name="tick" /> itself, so a caller can walk a scanner frame by frame; a layer
+    ///     built without frames throws, since nothing else can advance it. Returns an empty list
+    ///     (not null) when nothing changed; callers may skip iteration by checking the count first.
     /// </summary>
+    /// <param name="frameIndex">Index of the frame in the evaluation's read order, from zero.</param>
+    /// <param name="tick">The frame's server tick.</param>
     public IReadOnlyList<NetMessage> AdvanceAndPollAt(int frameIndex, int tick)
     {
         if (Profiling.Enabled)
@@ -262,8 +270,33 @@ public sealed class EntityChangeScanner
             return Consume(injected, tick);
         }
 
+        if (!_runDriven)
+        {
+            SeekLayer(tick);
+        }
+
         ValidateSchema(Layer.Tracker);
         return Consume(BuildDigest(), tick);
+    }
+
+    // One tick-gated seek per poll, which is what the evaluator's tick runs reproduce.
+    private void SeekLayer(int tick)
+    {
+        bool prof = Profiling.Enabled;
+        long seekStart = 0, seekStartA = 0;
+        if (prof)
+        {
+            seekStart = Stopwatch.GetTimestamp();
+            seekStartA = GC.GetAllocatedBytesForCurrentThread();
+        }
+
+        Layer.SeekToTick(tick);
+        _layerAdvanced = true;
+        if (prof)
+        {
+            _profSeekTicks += Stopwatch.GetTimestamp() - seekStart;
+            _profSeekAlloc += GC.GetAllocatedBytesForCurrentThread() - seekStartA;
+        }
     }
 
     /// <summary>How this evaluation's digests are being produced; <see cref="DigestProducerKind.None" /> before one starts.</summary>
@@ -323,6 +356,7 @@ public sealed class EntityChangeScanner
         _preFrameSnapshotFrozen = false;
         _lastCompatibleLayout = null;
         _pendingFrames.Clear();
+        _runDriven = false;
         Array.Fill(_lastTeam, -1);
         _delta = new PerPawnDeltaState(_layout);
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
@@ -354,6 +388,7 @@ public sealed class EntityChangeScanner
         int workers = ResolveWorkers(maxDegreeOfParallelism, source.SupportsRandomAccess);
         if (workers <= 1)
         {
+            _runDriven = true;
             ProducerKind = DigestProducerKind.Sequential;
             return source;
         }
@@ -453,6 +488,7 @@ public sealed class EntityChangeScanner
         _pipeline?.Close();
         _pipeline = null;
         _precomputed = null;
+        _runDriven = false;
     }
 
     // Runs on whichever thread applied the frame: the loop's on the sequential path, a fold

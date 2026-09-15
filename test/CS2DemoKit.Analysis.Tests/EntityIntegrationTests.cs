@@ -651,6 +651,51 @@ public class EntityIntegrationTests
         await Assert.That(slotsWithSnapshotEver).IsBetween(2, 10).WithInclusiveBounds();
     }
 
+    /// <summary>
+    ///     The finding's shape: a host builds a scanner over a parsed demo's frames and polls it
+    ///     with the public method, no evaluation around it. The poll must seek the layer itself,
+    ///     so the pre-frame snapshot fills as it does under the evaluator's sequential producer.
+    /// </summary>
+    [Test]
+    public async Task Scanner_PolledOutsideAnEvaluation_SeeksItsOwnLayer()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
+
+        {
+            EntityStateLayer probe = new(parsed.Frames);
+            probe.SeekToTick(parsed.TickCount / 2);
+            SkipIfEntityDecodeFailed(probe.Tracker);
+        }
+
+        PawnHealthProvider provider = new();
+        EntityChangeScanner scanner = new(new EntityStateLayer(parsed.Frames), [], [provider]);
+        HashSet<int> observedSlots = [];
+        int polled = 0;
+        for (int i = 0; i < parsed.Frames.Count; i++)
+        {
+            scanner.AdvanceAndPollAt(i, parsed.Frames[i].ServerTick);
+            polled++;
+            for (int slot = 0; slot < 64; slot++)
+            {
+                if (scanner.GetPreFrameValue(provider, slot) is int)
+                {
+                    observedSlots.Add(slot);
+                }
+            }
+
+            if (observedSlots.Count >= 5 && i > 5_000)
+            {
+                break;
+            }
+        }
+
+        await Assert.That(scanner.Layer.Tracker.CurrentFrameIndex).IsEqualTo(parsed.Frames[polled - 1].FrameNumber)
+            .Because("the poll advanced the layer through every frame it was given");
+        await Assert.That(observedSlots.Count).IsBetween(2, 10).WithInclusiveBounds()
+            .Because("a scanner polled directly sees the same pawns the evaluator's producer does");
+    }
+
     /// <summary>Scanner_captures pre frame weapon snapshot.</summary>
     [Test]
     public async Task Scanner_CapturesPreFrameWeaponSnapshot()

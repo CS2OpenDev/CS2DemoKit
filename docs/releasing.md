@@ -308,7 +308,10 @@ frame was evaluated is gone; the pipelined checkpoint-parallel producer that ser
 reader now serves a `ParsedDemo` too. `DigestProducerKind.ParallelUpFront` is removed, so a
 `switch` over the enum that named it no longer compiles and a retained run reports
 `Pipelined`. `EntityChangeScanner.AdvanceAndPoll(int)` is removed: the evaluator drives the
-scanner by frame index. `PrecomputeParallelDigests` keeps its signature and now runs the pipelined
+scanner by frame index. `AdvanceAndPollAt` called outside an evaluation still seeks a list-backed
+layer itself, one tick-gated seek per call, so a host that walks a scanner frame by frame gets what
+`AdvanceAndPoll` gave it; over a layer built without frames it throws, since nothing else can
+advance one. `PrecomputeParallelDigests` keeps its signature and now runs the pipelined
 producer over the frames to completion, holding one digest per frame for the next evaluation over
 them, which starts no producer of its own and reports `Pipelined`; a second evaluation folds live
 again. It is no longer idempotent: every call folds, so a benchmark that calls it per iteration

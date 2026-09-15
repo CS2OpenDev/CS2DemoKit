@@ -59,11 +59,12 @@ public class EntityStateLayerTickRunTests
         return runs;
     }
 
-    [Test]
-    public async Task RunDriven_AppliesTheSameFramesAsTheTickGatedSeek()
+    // A signon prefix at the sentinel tick, tick-zero frames, a full packet with a same-tick
+    // successor, and a run of three at one tick: every shape the tick gate has to get right.
+    private static List<DemoFrame> SignonThenTicks()
     {
         const int sentinel = -1 - 20000;
-        List<DemoFrame> frames = Frames(
+        return Frames(
             (EDemoCommands.DemFileHeader, sentinel),
             (EDemoCommands.DemSendTables, sentinel),
             (EDemoCommands.DemClassInfo, sentinel),
@@ -80,15 +81,27 @@ public class EntityStateLayerTickRunTests
             (EDemoCommands.DemPacket, 4),
             (EDemoCommands.DemPacket, 7),
             (EDemoCommands.DemFileInfo, 7));
+    }
 
-        // Reference: the tick-gated seek over the list, polled once per frame as the evaluator did.
+    // The tick-gated seek over the list, polled once per frame as the evaluator did.
+    private static List<(int Tick, int Index)> SeekTrace(List<DemoFrame> frames)
+    {
         EntityStateLayer seeking = new(frames);
-        List<(int Tick, int Index)> seekTrace = [];
+        List<(int Tick, int Index)> trace = [];
         foreach (DemoFrame frame in frames)
         {
             seeking.SeekToTick(frame.ServerTick);
-            seekTrace.Add((seeking.Tracker.CurrentTick, seeking.Tracker.CurrentFrameIndex));
+            trace.Add((seeking.Tracker.CurrentTick, seeking.Tracker.CurrentFrameIndex));
         }
+
+        return trace;
+    }
+
+    [Test]
+    public async Task RunDriven_AppliesTheSameFramesAsTheTickGatedSeek()
+    {
+        List<DemoFrame> frames = SignonThenTicks();
+        List<(int Tick, int Index)> seekTrace = SeekTrace(frames);
 
         // Under test: the frame-free layer driven by runs, through the scanner's own rule.
         EntityStateLayer driven = new();
@@ -117,6 +130,44 @@ public class EntityStateLayerTickRunTests
         await Assert.That(seekTrace[9]).IsEqualTo((3, 10));
         await Assert.That(seekTrace[10]).IsEqualTo((3, 10));
         await Assert.That(seekTrace[^1]).IsEqualTo((7, 15));
+    }
+
+    // AdvanceAndPollAt is public and BeginTickRun is not, so a caller outside the evaluator has
+    // only the poll to drive a scanner with. Over a list-backed layer it must seek as the
+    // evaluator's runs do, frame for frame; a digest built from a never-advanced tracker is
+    // empty and nothing says so.
+    [Test]
+    public async Task PolledOutsideAnEvaluation_SeeksItsOwnLayer()
+    {
+        List<DemoFrame> frames = SignonThenTicks();
+        List<(int Tick, int Index)> seekTrace = SeekTrace(frames);
+
+        EntityStateLayer own = new(frames);
+        EntityChangeScanner scanner = new(own, []);
+        List<(int Tick, int Index)> pollTrace = [];
+        for (int i = 0; i < frames.Count; i++)
+        {
+            scanner.AdvanceAndPollAt(i, frames[i].ServerTick);
+            pollTrace.Add((own.Tracker.CurrentTick, own.Tracker.CurrentFrameIndex));
+        }
+
+        await Assert.That(pollTrace.Count).IsEqualTo(seekTrace.Count);
+        for (int i = 0; i < seekTrace.Count; i++)
+        {
+            await Assert.That(pollTrace[i]).IsEqualTo(seekTrace[i]).Because($"after polling frame {i}");
+        }
+
+        await Assert.That(own.Tracker.CurrentFrameIndex).IsEqualTo(15).Because("the poll applied every frame");
+    }
+
+    // A layer built without frames has no producer and no owner feeding it, so the poll cannot
+    // advance it and must not hand back digests of nothing.
+    [Test]
+    public async Task PolledOutsideAnEvaluation_AFrameFreeLayerThrows()
+    {
+        EntityChangeScanner scanner = new(new EntityStateLayer(), []);
+        Assert.Throws<InvalidOperationException>(() => scanner.AdvanceAndPollAt(0, 1));
+        await Task.CompletedTask;
     }
 
     [Test]
