@@ -449,7 +449,7 @@ public class PipelinedDigestEquivalenceTests
         ];
 
         EntityChangeScanner scanner = new(new EntityStateLayer([]), [], null, true);
-        scanner.SetPrecomputedDigests(digests);
+        scanner.InjectDigests(digests);
 
         List<(int Frame, int Tick, int Slot)> thrown = [];
         for (int n = 0; n < digests.Length; n++)

@@ -126,7 +126,6 @@ public class EntityStateLayerTickRunTests
         await Assert.That(layer.HasFrames).IsFalse();
         Assert.Throws<InvalidOperationException>(() => layer.SeekToTick(5));
         Assert.Throws<InvalidOperationException>(() => layer.SeekBeforeFrame(5));
-        Assert.Throws<InvalidOperationException>(() => layer.PrimeFromCheckpoint(0, 0));
         await Assert.That(new EntityStateLayer(Frames((EDemoCommands.DemPacket, 1))).HasFrames).IsTrue();
     }
 

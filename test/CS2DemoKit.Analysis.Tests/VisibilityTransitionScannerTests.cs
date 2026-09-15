@@ -714,7 +714,7 @@ public class VisibilityTransitionScannerTests
             transitionScanner: transitions);
 
         // Frame 0 puts slot 0's crosshair on slot 1's chest; frame 1's decode is compromised.
-        entities.SetPrecomputedDigests(
+        entities.InjectDigests(
         [
             AimDigest(false, (0, AimRow(0f, 0f, -16f, 0f, 0f)), (1, AimRow(500f, 0f, 0f, 0f, 0f))),
             AimDigest(true)

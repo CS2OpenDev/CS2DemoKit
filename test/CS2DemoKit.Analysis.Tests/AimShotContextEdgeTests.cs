@@ -20,7 +20,7 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     Unit pins for <see cref="AimShotContextEdge" />: the counter-strafe admission gate and
 ///     verdict, spray segmentation by recoil decay, the effective-aim residual, and the dual
 ///     entity-state / server-value path. Pure in-memory, no demo file: the entity side is driven
-///     through <c>EntityChangeScanner</c>'s precomputed-digest lane, which is the same code path a
+///     through <c>EntityChangeScanner</c>'s injected-digest lane, which is the same code path a
 ///     real evaluation takes, so the frame-start-versus-current-frame distinction the edge depends
 ///     on is exercised rather than mocked away.
 ///     <para>
@@ -641,7 +641,7 @@ public class AimShotContextEdgeTests
 
     /// <summary>
     ///     One shooter, both edge arms, and the entity pipeline behind them. Frames are fed through
-    ///     the scanner's precomputed-digest lane so the pre-frame snapshot (what the edge reads for
+    ///     the scanner's injected-digest lane so the pre-frame snapshot (what the edge reads for
     ///     recoil and aim) and the current-frame vantage sample (what it reads for speed) come apart
     ///     exactly as they do in a real evaluation.
     /// </summary>
@@ -794,7 +794,7 @@ public class AimShotContextEdgeTests
                 perPlayerProviders: providers,
                 emitMolotovThrows: false,
                 vantageScanner: Vantage);
-            _scanner.SetPrecomputedDigests(_digests);
+            _scanner.InjectDigests(_digests);
 
             AimShotContextSources sources = new(
                 _scanner, providers[ColMaxSpeed], providers[ColRecoil],

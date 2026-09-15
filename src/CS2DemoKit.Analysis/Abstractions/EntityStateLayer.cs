@@ -133,42 +133,12 @@ public sealed class EntityStateLayer
     }
 
     /// <summary>
-    ///     Seeds the layer from a <c>DEM_FullPacket</c> checkpoint in the frame list: the schema
-    ///     prefix <c>[0, schemaPrefixEnd)</c> is replayed ungated, the entities it created are
-    ///     dropped, the most recent full packet at or before the checkpoint that carries the
-    ///     <c>instancebaseline</c> table is loaded, then the checkpoint's own snapshot.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">The layer was built without frames, or the checkpoint has a same-tick successor.</exception>
-    public void PrimeFromCheckpoint(int checkpointFrameIndex, int schemaPrefixEnd)
-    {
-        IReadOnlyList<DemoFrame> frames = RequireFrames();
-        if (schemaPrefixEnd > 0 && _template is null)
-        {
-            Tracker.Replay(new FrameSlice(frames, 0, schemaPrefixEnd));
-        }
-
-        Tracker.ResetEntitiesKeepSchema();
-
-        // The full-packet string-table dump is incremental: a full packet carries the
-        // instancebaseline table only when it changed since the previous one, and then completely.
-        for (int i = checkpointFrameIndex; i >= 0; i--)
-        {
-            if (frames[i].CommandKind == EDemoCommands.DemFullPacket && Tracker.LoadInstanceBaselineSnapshot(frames[i]))
-            {
-                break;
-            }
-        }
-
-        DemoFrame checkpoint = frames[checkpointFrameIndex];
-        int next = checkpointFrameIndex + 1;
-        SeedCheckpoint(checkpoint, next < frames.Count ? frames[next] : null);
-        _nextFrameIndex = next;
-    }
-
-    /// <summary>
-    ///     The same priming from frames a forward source hands over: the retained signon prefix,
-    ///     the most recent instancebaseline-carrying full packet seen before the checkpoint, the
-    ///     checkpoint, and its successor when known. What a chunk worker over a stream uses.
+    ///     Seeds the layer from a <c>DEM_FullPacket</c> checkpoint: the retained signon prefix is
+    ///     applied ungated unless a template's schema was adopted, the entities it created are
+    ///     dropped, the most recent full packet before the checkpoint that carried the
+    ///     <c>instancebaseline</c> table is loaded (the full-packet string-table dump is
+    ///     incremental, so it may be an earlier one), then the checkpoint's own snapshot. What a
+    ///     chunk worker primes with.
     /// </summary>
     /// <exception cref="InvalidOperationException">The checkpoint has a same-tick successor.</exception>
     public void PrimeFromCheckpoint(IReadOnlyList<DemoFrame> signonPrefix, DemoFrame? instanceBaselineFullPacket,

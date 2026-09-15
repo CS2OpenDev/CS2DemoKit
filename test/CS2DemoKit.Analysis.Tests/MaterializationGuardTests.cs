@@ -114,7 +114,7 @@ public class MaterializationGuardTests
         EntityChangeScanner scanner = new(new EntityStateLayer([]), [], null, true);
         EntityFrameDigest digest = new();
         digest.AddMolotov(index: 1, serial: 1, throwerSlot: 7);
-        scanner.SetPrecomputedDigests([digest]);
+        scanner.InjectDigests([digest]);
 
         new StateGraphEvaluator(graph, null, null, scanner).Evaluate([Frame()]);
 
@@ -135,7 +135,7 @@ public class MaterializationGuardTests
         EntityChangeScanner scanner = new(new EntityStateLayer([]), [], null, true);
         EntityFrameDigest digest = new();
         digest.AddMolotov(index: 1, serial: 1, throwerSlot: 64);
-        scanner.SetPrecomputedDigests([digest]);
+        scanner.InjectDigests([digest]);
 
         new StateGraphEvaluator(graph, null, null, scanner).Evaluate([Frame()]);
 

@@ -51,8 +51,8 @@ They are gated on listener attachment, not on `Profiling.Enabled`:
 - **`Meter` `CS2DemoKit.Analysis.Evaluator`** — counters (`analysis.messages.processed`,
   `analysis.edges.evaluated`, `analysis.edges.fired`, `analysis.logic_nodes.recomputed`,
   `analysis.players.materialized`) plus the `analysis.frame.duration_ms` histogram.
-- **`ActivitySource` `CS2DemoKit.Analysis`** — phase-timeline spans (`analysis.eval` ⊃
-  `analysis.precompute`). `StartActivity` returns `null` when nothing is sampling, so the spans are
+- **`ActivitySource` `CS2DemoKit.Analysis`**: the `analysis.eval` phase-timeline span.
+  `StartActivity` returns `null` when nothing is sampling, so the spans are
   near-free by default. A host can nest its own spans (read / parse / build) on the same source to get
   the full pipeline in one timeline.
 
@@ -144,8 +144,8 @@ Reading the trees correctly:
   unattributed remainder.
 - **`ScannerProfilingSnapshot`** — `SeekTicks` is the outer cost of advancing the entity layer one
   frame and transitively contains the tracker-internal decode that `EntityProfilingSnapshot` reports
-  separately. Under the parallel precompute path the decode runs up front on throwaway worker
-  trackers, so `SeekTicks`/`SnapshotTicks` and the tracker sub-tree read ~0 and the cost lands in
-  `PrecomputeTicks` instead. That is expected, not a regression. `ProviderPollTicks` and
-  `ProjectileScanTicks` are legacy sub-phases folded into the snapshot/digest build and are now
-  always zero.
+  separately. Only the sequential producer (`MaxDegreeOfParallelism = 1`) drives it: under the
+  pipelined producer the fold runs on worker trackers, so `SeekTicks`/`SnapshotTicks` and the
+  tracker sub-tree read ~0 and nothing here brackets the fold. That is expected, not a regression.
+  `ProviderPollTicks`, `ProjectileScanTicks`, `PrecomputeTicks` and `PrecomputeAlloc` are legacy
+  sub-phases and are always zero.
