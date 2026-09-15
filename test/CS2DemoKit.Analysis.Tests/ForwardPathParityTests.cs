@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Yaml;
@@ -14,20 +15,23 @@ using CS2DemoKit.TestSupport;
 namespace CS2DemoKit.Analysis.Tests;
 
 /// <summary>
-///     The two paths must agree: the same graph evaluated over a forward reader that drops frames
-///     as it goes, and over the retained frame list with the up-front parallel digest, produce the
-///     same timeline, highlights, node values and configured tables. Player names are compared by
-///     slot: the reader resolves a name when the slot first materialises, the list resolves the
-///     final one, and a mid-match rename is the one place the two legitimately read differently.
+///     The two paths must agree: the same rules run over a forward reader that decodes only what
+///     the graph asked for and drops frames as it goes, and over the retained frame list with the
+///     up-front parallel digest, produce the same timeline, highlights, node values, materialised
+///     roster, per-slot teams and configured tables. Player names are compared by slot: the reader
+///     resolves a name when the slot first materialises, the list resolves the final one, and a
+///     mid-match rename is the one place the two legitimately read differently.
 /// </summary>
 [NotInParallel]
 [Category("Integration")]
 public class ForwardPathParityTests
 {
+    public static IEnumerable<string> CorpusDemos() => RulesOutputGoldenTests.CorpusDemos();
+
     [Test]
     [Arguments(false)]
     [Arguments(true)]
-    public async Task Evaluate_OverReader_MatchesEvaluate_OverParsedDemo(bool captureSnapshots)
+    public async Task Evaluate_OverAnUnnarrowedReader_MatchesEvaluate_OverParsedDemo(bool captureSnapshots)
     {
         string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
         byte[] bytes = await File.ReadAllBytesAsync(path);
@@ -52,13 +56,106 @@ public class ForwardPathParityTests
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(demo.Frames.Count);
         await Assert.That(streamed.Provenance.MessagesConsumed).IsEqualTo(list.Provenance.MessagesConsumed);
         await Assert.That(streamed.Provenance.SnapshotsCaptured).IsEqualTo(captureSnapshots);
+        await Assert.That(streamed.Provenance.DecodePlan!.DecodesEverything).IsTrue();
 
+        await AssertSameRun(list, streamed);
+        await Assert.That(streamed.Demo).IsEqualTo(list.Demo with { Players = streamed.Demo.Players });
+        await Assert.That(streamed.Demo.Players.Count).IsEqualTo(list.Demo.Players.Count);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task Run_OverAFile_MatchesRun_OverParsedDemo(bool captureSnapshots)
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+        AnalysisOptions options = new() { CaptureSnapshots = captureSnapshots };
+
+        AnalysisRun list = DemoAnalysis.Run(demo, rules.Rulesets, options);
+        AnalysisRun streamed = DemoAnalysis.Run(path, rules.Rulesets, options);
+
+        await Assert.That(streamed.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
+        await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Sequential);
+        await Assert.That(streamed.Provenance.SnapshotsCaptured).IsEqualTo(captureSnapshots);
+        await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(list.Provenance.FramesConsumed);
+        await Assert.That(streamed.Provenance.ProfileResolution).IsEqualTo(ProfileResolutionKind.HeaderAndVocabulary);
+        await Assert.That(streamed.Provenance.Profile.GetType()).IsEqualTo(list.Provenance.Profile.GetType());
+
+        // The narrowed plan is what the file path is for: no user commands, not everything.
+        DecodePlan plan = streamed.Provenance.DecodePlan!;
+        await Assert.That(plan.DecodesEverything).IsFalse();
+        await Assert.That(plan.Decodes(NetMessageCatalog.UserCmdsTypeId)).IsFalse();
+        await Assert.That(plan.Categories.HasFlag(MessageCategories.Entities)).IsTrue();
+        await Assert.That(streamed.Provenance.MessagesConsumed).IsLessThan(list.Provenance.MessagesConsumed);
+
+        await AssertSameRun(list, streamed);
+    }
+
+    [Test]
+    public async Task Run_DefaultsSnapshotsOffOverAStream_AndOnOverAParsedDemo()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+
+        AnalysisRun streamed = DemoAnalysis.Run(path, rules.Rulesets);
+        await Assert.That(streamed.Snapshots).IsNull();
+        await Assert.That(streamed.Provenance.SnapshotsCaptured).IsFalse();
+        await Assert.That(streamed.MaterializedPlayers.Count).IsGreaterThan(0);
+
+        AnalysisRun list = DemoAnalysis.Run(demo, rules.Rulesets);
+        await Assert.That(list.Snapshots).IsNotNull();
+        await Assert.That(list.Provenance.SnapshotsCaptured).IsTrue();
+
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        AnalysisRun fromBytes = DemoAnalysis.Run(bytes.AsMemory(), rules.Rulesets);
+        await Assert.That(RunDigest.Render(fromBytes)).IsEqualTo(RunDigest.Render(streamed));
+    }
+
+    [Test]
+    [Explicit]
+    [MethodDataSource(nameof(CorpusDemos))]
+    public async Task Corpus_RunOverAFile_MatchesRun_OverParsedDemo(string demoPath)
+    {
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+        AnalysisOptions options = new() { CaptureSnapshots = true };
+
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
+        AnalysisRun list = DemoAnalysis.Run(demo, rules.Rulesets, options);
+        AnalysisRun streamed = DemoAnalysis.Run(demoPath, rules.Rulesets, options);
+
+        await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(list.Provenance.FramesConsumed);
+        await Assert.That(streamed.Provenance.Profile.GetType()).IsEqualTo(list.Provenance.Profile.GetType());
+        await AssertSameRun(list, streamed);
+    }
+
+    private static async Task AssertSameRun(AnalysisRun list, AnalysisRun streamed)
+    {
         string expected = RunDigest.Render(list);
         string actual = RunDigest.Render(streamed);
         await Assert.That(actual).IsEqualTo(expected);
         await Assert.That(expected).Contains("[nodes]");
-        await Assert.That(streamed.Demo).IsEqualTo(list.Demo with { Players = streamed.Demo.Players });
-        await Assert.That(streamed.Demo.Players.Count).IsEqualTo(list.Demo.Players.Count);
+
+        // Materialisation order and the team each slot ended on, both seeded from entity state.
+        await Assert.That(streamed.MaterializedPlayers.Select(mp => mp.PlayerSlot).ToList())
+            .IsEquivalentTo(list.MaterializedPlayers.Select(mp => mp.PlayerSlot).ToList());
+        await Assert.That(TeamsBySlot(streamed.Build)).IsEqualTo(TeamsBySlot(list.Build));
+    }
+
+    private static string TeamsBySlot(BuildResult build)
+    {
+        StringBuilder sb = new();
+        for (int slot = 0; slot < 64; slot++)
+        {
+            if (build.PlayerContextIndex!.TryGet(slot, out PlayerContextIndex.PlayerContext? ctx))
+            {
+                sb.Append(slot).Append(':').Append(ctx!.Team).Append(' ');
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>

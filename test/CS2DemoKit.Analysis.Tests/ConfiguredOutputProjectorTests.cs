@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
+using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Parser;
 
 #endregion
@@ -368,7 +369,8 @@ public class ConfiguredOutputProjectorTests
     }
 
     private static readonly AnalysisProvenance _provenance =
-        new(AnalysisSourceKind.Materialised, DigestProducerKind.None, true, 0, 0);
+        new(AnalysisSourceKind.Materialised, DemoSourceProfileRegistry.DefaultFallback, ProfileResolutionKind.Explicit,
+            null, DigestProducerKind.None, true, 0, 0, default);
 
     /// <summary>A minimal concrete StateNode — the projector only uses reference identity + Name.</summary>
     private sealed class StubNode(string name) : StateNode

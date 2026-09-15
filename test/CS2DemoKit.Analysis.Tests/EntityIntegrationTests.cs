@@ -34,9 +34,7 @@ public class EntityIntegrationTests
         string path = DemoTestHelper.RequireDemo();
 
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
-        DemoContext ctx = DemoAnalyzer.BuildContext(parsed);
-
-        EntityStateLayer layer = ctx.CreateEntityLayer();
+        EntityStateLayer layer = new(parsed.Frames);
         layer.SeekToTick(parsed.TickCount / 2);
 
         ActiveWeaponProvider provider = new();
@@ -109,7 +107,7 @@ public class EntityIntegrationTests
         // Explicitly EMPTY provider registry → no ContextName can match → scanner stays null
         // even though gameplay_phase references entity.game.freeze_period in its triggers.
         EntityValueProviderRegistry emptyProviders = new();
-        RuleChainBuilder builder = new(registry, parsed,
+        RuleChainBuilder builder = new(registry, AnalysisTarget.From(parsed),
             entityProviders: emptyProviders);
         BuildResult build = builder.Build();
 
@@ -126,9 +124,7 @@ public class EntityIntegrationTests
         string path = DemoTestHelper.RequireDemo();
 
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
-        DemoContext ctx = DemoAnalyzer.BuildContext(parsed);
-
-        EntityStateLayer layer = ctx.CreateEntityLayer();
+        EntityStateLayer layer = new(parsed.Frames);
         layer.SeekToTick(parsed.TickCount / 2);
 
         FreezePeriodProvider provider = new();
@@ -156,7 +152,7 @@ public class EntityIntegrationTests
         EntityValueProviderRegistry entityProviders = EntityValueProviderRegistry.CreateDefault();
         // Empty user config — built-in contexts (incl. gameplay_phase + entity trigger) are
         // always built, so this exercises the full lazy-activation + dispatch + trigger flow.
-        RuleChainBuilder builder = new(registry, parsed,
+        RuleChainBuilder builder = new(registry, AnalysisTarget.From(parsed),
             entityProviders: entityProviders);
         BuildResult build = builder.Build();
 
@@ -223,7 +219,7 @@ public class EntityIntegrationTests
 
         EventRegistry registry = EventRegistry.Build();
         EntityValueProviderRegistry entityProviders = EntityValueProviderRegistry.CreateDefault();
-        RuleChainBuilder builder = new(registry, parsed, entityProviders: entityProviders);
+        RuleChainBuilder builder = new(registry, AnalysisTarget.From(parsed), entityProviders: entityProviders);
         BuildResult build = builder.Build();
 
         await Assert.That(build.EntityScanner).IsNotNull();
@@ -401,7 +397,7 @@ public class EntityIntegrationTests
         EventRegistry registry = EventRegistry.Build();
         EntityValueProviderRegistry entityProviders = EntityValueProviderRegistry.CreateDefault();
         PerPlayerEntityValueProviderRegistry perPlayerProviders = PerPlayerEntityValueProviderRegistry.CreateDefault();
-        RuleChainBuilder builder = new(registry, parsed,
+        RuleChainBuilder builder = new(registry, AnalysisTarget.From(parsed),
             entityProviders: entityProviders,
             perPlayerEntityProviders: perPlayerProviders);
         BuildResult build = builder.Build();
@@ -428,9 +424,7 @@ public class EntityIntegrationTests
         string path = DemoTestHelper.RequireDemo();
 
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
-        DemoContext ctx = DemoAnalyzer.BuildContext(parsed);
-
-        EntityStateLayer layer = ctx.CreateEntityLayer();
+        EntityStateLayer layer = new(parsed.Frames);
         layer.SeekToTick(parsed.TickCount / 2);
 
         PawnHealthProvider provider = new();

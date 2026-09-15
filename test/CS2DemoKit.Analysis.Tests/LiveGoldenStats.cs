@@ -96,7 +96,7 @@ internal static class LiveGoldenStats
         RulesetDoc playerStats = LoadDoc("player_stats.rules.yaml");
 
         RuleChainBuilder builder = new(
-            EventRegistry.Build(), demo,
+            EventRegistry.Build(), AnalysisTarget.From(demo),
             entityProviders: EntityValueProviderRegistry.CreateDefault(),
             perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault());
 

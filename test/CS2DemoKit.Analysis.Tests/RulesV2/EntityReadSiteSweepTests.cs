@@ -19,22 +19,20 @@ namespace CS2DemoKit.Analysis.Tests.RulesV2;
 ///     entity-provider compile seam across every expression site a v2 stat exposes — <c>where:</c>, the
 ///     value selector (<c>sum:</c>), <c>while:</c>, a <c>flag: when:</c>, and <c>compute:</c>?
 ///     <para>
-///         Pure resolve + no-demo materialize. In a no-demo build there is no
-///         <c>EntityChangeScanner</c>, so a read that DID route to
-///         <see cref="ExpressionCompiler.CompileEventCondition" /> /
-///         <c>CompileEventValueSelector</c> throws a specific "requires per-player entity providers and
-///         a player slot" error — the <b>PLUMBED</b> marker (it would resolve the subject's value with a
-///         demo; the demo-backed <see cref="WhileEntityGateSubjectBindingTests" /> proves the value read
-///         and subject binding). A site that never reaches the entity seam throws a <em>node-resolution</em>
-///         error instead (<b>BUILD_THROW</b>) — that is the confirmed structural gap.
+///         Pure resolve plus no-demo materialize. A build needs no demo to carry an
+///         <c>EntityChangeScanner</c>: an each_player ruleset gets one, and a read that routes to the
+///         entity-provider compile seam gates its provider into that scanner. So the <b>PLUMBED</b>
+///         marker is the scanner snapshotting <c>entity.pawn.health</c> once the template has
+///         materialised (the demo-backed <see cref="WhileEntityGateSubjectBindingTests" /> proves the
+///         value read and subject binding). A site that never reaches the entity seam either throws a
+///         node-resolution error (<b>BUILD_THROW</b>) or materialises with the provider ungated
+///         (<b>CLEAN</b>); both are the structural gap.
 ///     </para>
 ///     <para>
-///         Confirmed sweep (post-fix): where: PLUMBED, sum: PLUMBED, while: PLUMBED (fixed — folds the
-///         entity-bearing gate into the fire-time event condition), when: PLUMBED (fixed — the entity read
-///         is materialized as a subject-relative <see cref="Nodes.EntityValuePullNode" /> and gated through
-///         a multi-source edge), compute: PLUMBED (fixed — the same pull-node, remapped into the node-
-///         expression compiler). Both settle-site reads share the fire-time entity seam's no-demo marker,
-///         so a no-demo probe classifies them PLUMBED exactly as where:/sum:/while: do.
+///         Confirmed sweep: where:, sum:, while: (folds the entity-bearing gate into the fire-time
+///         event condition), when: (the entity read is materialized as a subject-relative
+///         <see cref="Nodes.EntityValuePullNode" /> and gated through a multi-source edge) and
+///         compute: (the same pull-node, remapped into the node-expression compiler) all report PLUMBED.
 ///     </para>
 /// </summary>
 [Category("Unit")]
@@ -147,11 +145,10 @@ public class EntityReadSiteSweepTests
     {
         (string outcome, string detail) = Probe(WhenSite);
         Console.WriteLine($"[sweep] when: player.health outcome={outcome} detail={detail}");
-        // FIXED (settle-site entity pull-node): a flag: when: entity read is now materialized as a
-        // subject-relative EntityValuePullNode (B6-style) and lowered to a MultiSourceConditionalEdge over
-        // it. In a no-demo build there is no EntityChangeScanner, so the pull-node materialization raises
-        // the SAME "requires per-player entity providers and a player slot" marker the fire-time where:
-        // seam raises = PLUMBED (the demo-backed WhenEntityGateTests proves the value read + gating).
+        // A flag: when: entity read is materialized as a subject-relative EntityValuePullNode and
+        // lowered to a MultiSourceConditionalEdge over it, which gates the provider into the scanner
+        // exactly as the fire-time where: seam does (the demo-backed WhenEntityGateTests proves the
+        // value read and gating).
         await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
     }
 
@@ -160,10 +157,9 @@ public class EntityReadSiteSweepTests
     {
         (string outcome, string detail) = Probe(ComputeSite);
         Console.WriteLine($"[sweep] compute: player.health outcome={outcome} detail={detail}");
-        // FIXED (settle-site entity pull-node): a compute: formula entity read now resolves through an
-        // EntityValuePullNode registered in localLookup under the read path, remapped into the node-
-        // expression compiler exactly as a sibling/context read is. In a no-demo build the pull-node
-        // materialization raises the SAME entity-seam marker as where: = PLUMBED (the demo-backed
+        // A compute: formula entity read resolves through an EntityValuePullNode registered in
+        // localLookup under the read path, remapped into the node-expression compiler exactly as a
+        // sibling/context read is, and gates the provider like where: does (the demo-backed
         // ComputeEntityReadTests proves the round-end value read).
         await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
     }
@@ -171,11 +167,10 @@ public class EntityReadSiteSweepTests
     [Test]
     public async Task RoleHandle_B5_Probe_PlumbsToVictimSlot()
     {
-        // B5 (FIXED): a non-subject role handle (victim.health on the kill view) now maps the role to its
-        // event slot-field and emits the event-subject entity grammar `UserId.entity.pawn.health` (no
-        // double "entity." prefix). It routes to the same entity seam a where: player.health read uses —
-        // the scanner GetPreFrameValue path, but keyed by the victim's per-fire slot — so in a no-demo
-        // build it hits the "requires per-player entity providers and a player slot" throw = PLUMBED.
+        // A non-subject role handle (victim.health on the kill view) maps the role to its event
+        // slot-field and emits the event-subject entity grammar `UserId.entity.pawn.health` (no double
+        // "entity." prefix). It routes to the same entity seam a where: player.health read uses, the
+        // scanner GetPreFrameValue path keyed by the victim's per-fire slot, so the provider is gated.
         (string outcome, string detail) = Probe(RoleHandleSite);
         Console.WriteLine($"[sweep] role-handle victim.health outcome={outcome} detail={detail}");
         await Assert.That(outcome).IsEqualTo("PLUMBED").Because(
@@ -184,9 +179,10 @@ public class EntityReadSiteSweepTests
 
     /// <summary>
     ///     Runs the full resolve + no-demo materialize pipeline (entity providers wired) and classifies
-    ///     the outcome: LOAD_ERROR, RESOLVE_ERROR (checker rejects), PLUMBED (the entity read reached the
-    ///     entity-provider compile seam — the no-demo "needs a scanner" throw), BUILD_THROW (any other
-    ///     materialize throw — a site that never reached the entity seam), or CLEAN.
+    ///     the outcome: LOAD_ERROR, RESOLVE_ERROR (checker rejects), PLUMBED (the build's scanner
+    ///     snapshots entity.pawn.health, so the read reached the entity-provider compile seam),
+    ///     BUILD_THROW (a materialize throw: a site that never reached the entity seam), or CLEAN (built
+    ///     and materialized without the provider ever being gated in).
     /// </summary>
     private static (string Outcome, string Detail) Probe(string yaml)
     {
@@ -202,26 +198,26 @@ public class EntityReadSiteSweepTests
             return ("RESOLVE_ERROR", string.Join("; ", resolved.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
         }
 
+        BuildResult build;
         try
         {
             RuleChainBuilder builder = new(
                 EventRegistry.Build(),
                 perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault());
-            BuildResult build = builder.Build([resolved.Ruleset!]);
+            build = builder.Build([resolved.Ruleset!]);
             foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
             {
-                _ = template.Materialize(0, 2, "sweep-probe", null);
+                _ = template.Materialize(0, 2, "sweep-probe");
             }
         }
         catch (Exception ex)
         {
-            string detail = $"{ex.GetType().Name}: {ex.Message}";
-            return ex.Message.Contains("requires per-player entity providers and a player slot",
-                StringComparison.Ordinal)
-                ? ("PLUMBED", detail)
-                : ("BUILD_THROW", detail);
+            return ("BUILD_THROW", $"{ex.GetType().Name}: {ex.Message}");
         }
 
-        return ("CLEAN", "resolved + materialized without throwing");
+        bool gated = build.EntityScanner?.PerPlayerProviders.Any(p => p.Name == "entity.pawn.health") ?? false;
+        return gated
+            ? ("PLUMBED", "resolved + materialized; the scanner snapshots entity.pawn.health")
+            : ("CLEAN", "resolved + materialized without gating entity.pawn.health into the scanner");
     }
 }

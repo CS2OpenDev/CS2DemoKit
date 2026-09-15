@@ -214,7 +214,7 @@ public class DeclaredReadsTopologyTests
         List<ConjunctionNode> materializedConjunctions = [];
 
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             GenericBoolNode primary = new($"primary_unread_p{slot}");
             GenericValueNode<int> extra = new($"additional_written_p{slot}");
@@ -244,7 +244,7 @@ public class DeclaredReadsTopologyTests
         List<DisjunctionNode> materializedDisjunctions = [];
 
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             GenericBoolNode primary = new($"dj_primary_unread_p{slot}");
             GenericValueNode<int> extra = new($"dj_additional_written_p{slot}");

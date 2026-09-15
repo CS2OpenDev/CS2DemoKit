@@ -36,7 +36,8 @@ namespace CS2DemoKit.Analysis.Building;
 /// </remarks>
 public sealed partial class RuleChainBuilder
 {
-    private readonly ParsedDemo? _demo;
+    // Folds duration literals; from the build target, never from a whole demo.
+    private readonly int _tickRate;
     private readonly EntityValueProviderRegistry? _entityProviders;
     private readonly LogicalEventResolver _logicalResolver;
     private readonly PerPlayerEntityValueProviderRegistry? _perPlayerEntityProviders;
@@ -81,8 +82,7 @@ public sealed partial class RuleChainBuilder
     private Dictionary<string, object>? _v2ConditionNodeOverlay;
 
     /// <param name="registry">Event / net-message registry used to resolve trigger names to CLR types.</param>
-    /// <param name="demo">Optional parsed demo — supplies the source profile and player roster.</param>
-    /// <param name="profile">Explicit source profile override; falls back to the demo's profile or the default.</param>
+    /// <param name="target">The tick rate and resolved profile the graph is built for; the defaults are 64 and the fallback profile.</param>
     /// <param name="entityProviders">Optional singleton-entity providers (game-rules etc.).</param>
     /// <param name="perPlayerEntityProviders">Optional per-player entity providers (pawn health, active weapon, etc.).</param>
     /// <param name="visibilityEngine">
@@ -95,8 +95,7 @@ public sealed partial class RuleChainBuilder
     /// </param>
     public RuleChainBuilder(
         EventRegistry registry,
-        ParsedDemo? demo = null,
-        DemoSourceProfile? profile = null,
+        AnalysisTarget? target = null,
         EntityValueProviderRegistry? entityProviders = null,
         PerPlayerEntityValueProviderRegistry? perPlayerEntityProviders = null,
         VisibilityEngine? visibilityEngine = null)
@@ -105,30 +104,8 @@ public sealed partial class RuleChainBuilder
         _entityProviders = entityProviders;
         _perPlayerEntityProviders = perPlayerEntityProviders;
         _visibilityEngine = visibilityEngine;
-        _demo = demo;
-
-        DemoSourceProfile resolved = profile
-                                     ?? (demo?.Profile is not null
-                                         ? DemoSourceProfileRegistry.Resolve(demo.Profile, ObservedEvents(demo))
-                                         : DemoSourceProfileRegistry.DefaultFallback);
-
-        _logicalResolver = new LogicalEventResolver(resolved);
-    }
-
-    /// <summary>
-    ///     The distinct game-event names this demo actually fires. The profile says what the SOURCE
-    ///     might emit; this says what THIS recording did — the only way to tell a Valve GOTV demo
-    ///     from a tournament-server one, which are identical in the header.
-    /// </summary>
-    private static HashSet<string> ObservedEvents(ParsedDemo demo)
-    {
-        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
-        foreach (GameEvent evt in demo.AllGameEvents)
-        {
-            names.Add(evt.Name);
-        }
-
-        return names;
+        _tickRate = target?.TickRate ?? 64;
+        _logicalResolver = new LogicalEventResolver(target?.Profile ?? DemoSourceProfileRegistry.DefaultFallback);
     }
 
     // The node lookup ExpressionCompiler binds condition/value identifiers against: the per-slot v2
@@ -181,7 +158,6 @@ public sealed partial class RuleChainBuilder
 
         // ── Build player-context index (consumed by CreateEnrichment below) ──
         PlayerContextIndex playerContextIndex = new();
-        PopulateInitialTeams(playerContextIndex);
         _playerContextIndex = playerContextIndex;
 
         List<RuleChainDef> builtinContexts = BuiltinContexts.GenerateContextRules();
@@ -354,7 +330,7 @@ public sealed partial class RuleChainBuilder
                         && ctx!.Connected && ctx.IsAlive
                     ? ctx.Team
                     : -1,
-                _demo?.TickRate ?? 64.0);
+                (double)_tickRate);
 
             if (emitSpotted)
             {
@@ -369,7 +345,10 @@ public sealed partial class RuleChainBuilder
             }
         }
 
-        if ((matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov) && _demo is not null)
+        // Per-player templates seed each slot's team from its controller entity, so an each_player
+        // ruleset needs the scanner even when it reads no entity value.
+        bool perPlayerRulesets = rulesets.Any(rs => rs.For == RulesetsV2.Model.RulesetScope.EachPlayer);
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || perPlayerRulesets)
         {
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
             List<(IEntityValueProvider, StateNode)> trackedForScanner = new(matched.Count);
@@ -439,13 +418,13 @@ public sealed partial class RuleChainBuilder
                 _perPlayerEntityProviders.Get("entity.pawn.punch_yaw")!,
                 vantageScanner,
                 transitionScanner,
-                _demo?.TickRate ?? 64.0);
+                (double)_tickRate);
         }
 
         BuiltinContexts.EnrichmentInfrastructure enrichment = BuiltinContexts.CreateEnrichment(
             graph.Root, playerContextIndex, _registry, _logicalResolver,
             entityScanner, pawnHealthProvider, activeWeaponProvider, aimShotSources,
-            _demo?.TickRate ?? 64.0);
+            (double)_tickRate);
         foreach ((string key, StateNode node) in enrichment.NodeLookup)
         {
             nodeLookup[key] = node;
@@ -518,7 +497,11 @@ public sealed partial class RuleChainBuilder
             edgeBacking.Count > 0 ? edgeBacking : null,
             gameNodesByRuleId.Count > 0 ? gameNodesByRuleId : null,
             v2Outputs.Count > 0 ? v2Outputs : null,
-            v2Coverage.Count > 0 ? v2Coverage : null);
+            v2Coverage.Count > 0 ? v2Coverage : null)
+        {
+            Profile = Profile,
+            Events = _registry
+        };
     }
 
     internal static string ResolveContextId(string contextPath)
@@ -1517,44 +1500,6 @@ public sealed partial class RuleChainBuilder
 
         throw new InvalidOperationException(
             $"Entity triggers support literal string/bool/int/float/double; got {valueType.Name}.");
-    }
-
-    /// <summary>
-    ///     Pre-scans the demo's <c>player_team</c> events to determine each slot's
-    ///     starting team_num. The first such event for a slot has <c>OldTeam</c>
-    ///     equal to the team the player was on prior to the swap; if no event ever
-    ///     fires for a slot, fall back to the final team in <c>demo.Players</c>.
-    /// </summary>
-    private void PopulateInitialTeams(PlayerContextIndex index)
-    {
-        if (_demo is null)
-        {
-            return;
-        }
-
-        HashSet<int> firstSeen = new();
-        foreach (GameEvent ev in _demo.AllGameEvents)
-        {
-            if (ev.Payload is not PlayerTeamEvent pt)
-            {
-                continue;
-            }
-
-            if (!firstSeen.Add(pt.UserId))
-            {
-                continue;
-            }
-
-            index.InitialTeamBySlot[pt.UserId] = pt.OldTeam;
-        }
-
-        foreach ((int slot, PlayerInfo info) in _demo.Players)
-        {
-            if (!index.InitialTeamBySlot.ContainsKey(slot))
-            {
-                index.InitialTeamBySlot[slot] = info.Team;
-            }
-        }
     }
 
     // ── Logical-event expansion ────────────────────────────────────────

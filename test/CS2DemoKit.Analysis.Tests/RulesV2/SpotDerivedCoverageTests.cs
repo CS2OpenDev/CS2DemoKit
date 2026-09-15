@@ -403,7 +403,7 @@ public class SpotDerivedCoverageTests
     {
         RuleChainBuilder builder = new(
             EventRegistry.Build(),
-            Demo(),
+            AnalysisTarget.From(Demo()),
             entityProviders: EntityValueProviderRegistry.CreateDefault(),
             perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault(),
             visibilityEngine: engine);

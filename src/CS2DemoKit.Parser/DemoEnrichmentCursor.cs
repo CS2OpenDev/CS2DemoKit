@@ -72,6 +72,9 @@ internal sealed class DemoEnrichmentCursor
     /// <summary>From <c>svc_ServerInfo</c>; the CS2 default until one is observed.</summary>
     public float TickInterval { get; private set; } = 1f / 64f;
 
+    /// <summary>True once <c>svc_ServerInfo</c> has supplied the tick interval.</summary>
+    public bool TickIntervalObserved { get; private set; }
+
     public RuntimeSchema? Schema { get; private set; }
 
     public bool HasGameEventSchema => _eventDecoder.HasSchema;
@@ -147,6 +150,7 @@ internal sealed class DemoEnrichmentCursor
 
                 case CSVCMsg_ServerInfo { TickInterval: > 0 } serverInfo:
                     TickInterval = serverInfo.TickInterval;
+                    TickIntervalObserved = true;
                     if (!string.IsNullOrEmpty(serverInfo.MapName) && string.IsNullOrEmpty(MapName))
                     {
                         MapName = serverInfo.MapName;

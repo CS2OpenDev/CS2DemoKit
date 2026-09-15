@@ -34,11 +34,9 @@ public sealed record ClipRound(int Number, int StartTickFrameClock);
 ///         clip lead-in floor rather than failing loudly.
 ///     </para>
 ///     <para>
-///         The absolute-clock variant is <c>DemoAnalyzer</c>'s internal round derivation, surfaced
-///         as <see cref="DemoContext.Rounds" /> (<c>RoundInfo</c>): it carries winner/reason and
-///         round CLOSE ticks, and its ticks are absolute engine <c>ServerTick</c>s. The two are
-///         deliberately separate — this one is smaller, opens a round per freeze-end unconditionally,
-///         and is the one whose numbers/ticks are persisted by clip consumers.
+///         This is deliberately smaller than the round tracking the evaluator keeps: it opens a
+///         round per freeze-end unconditionally, and it is the one whose numbers and ticks are
+///         persisted by clip consumers.
 ///     </para>
 /// </summary>
 public static class ClipRounds

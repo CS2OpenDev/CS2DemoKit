@@ -32,7 +32,6 @@ public sealed class StateGraphEvaluator
     // stamp attribution into RuleChainEvent; game-scoped chain nodes miss → null slot/name.
     private readonly Dictionary<StateNode, (int Slot, string Name)> _chainNodePlayers = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Type, List<ConjunctionNode>> _conjunctionIndex;
-    private readonly ParsedDemo? _demo;
     private readonly Dictionary<Type, List<DisjunctionNode>> _disjunctionIndex;
     private readonly Dictionary<Type, HashSet<StateNode>> _dispatchKeyToSources = [];
 
@@ -148,7 +147,6 @@ public sealed class StateGraphEvaluator
         EntityChangeScanner? entityScanner = null)
     {
         _graph = graph;
-        _demo = demo;
         _enrichment = demo?.AsFrameSource().Enrichment;
         _playerContextIndex = playerContextIndex;
         _entityScanner = entityScanner;
@@ -212,11 +210,6 @@ public sealed class StateGraphEvaluator
         RebuildLiveDispatchKeys();
         BuildLogicDependencyMap(graph.ConjunctionNodes, graph.DisjunctionNodes);
 
-        if (demo?.Players is not null && _perPlayerTemplates.Count > 0)
-        {
-            MaterializeKnownPlayers(demo);
-        }
-
         if (EvaluatorEventSource.Log.IsEnabled())
         {
             EmitRegistrationEvents(graph);
@@ -251,6 +244,12 @@ public sealed class StateGraphEvaluator
 
     /// <summary>Frames read by the most recent evaluation.</summary>
     public int FramesConsumed { get; private set; }
+
+    /// <summary><c>round_officially_ended</c> fires dispatched by the most recent evaluation.</summary>
+    public int RoundOfficiallyEndedSeen { get; private set; }
+
+    /// <summary><c>cs_pre_restart</c> fires dispatched by the most recent evaluation.</summary>
+    public int CsPreRestartSeen { get; private set; }
 
     /// <summary>Messages dispatched by the most recent evaluation, synthesized ones included.</summary>
     public int MessagesConsumed { get; private set; }
@@ -466,6 +465,8 @@ public sealed class StateGraphEvaluator
         // cancelled/failed run.
         _graph.HighlightSink.Clear();
         HighlightsFired = [];
+        RoundOfficiallyEndedSeen = 0;
+        CsPreRestartSeen = 0;
 
         bool logStart = _log.IsEnabled(LogLevel.Information);
         if (trace || logStart)
@@ -568,6 +569,10 @@ public sealed class StateGraphEvaluator
                     {
                         MaterializeNewPlayers(sgem.DecodedEvent);
                         snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                        if (sgem.DecodedEvent is PlayerTeamObservedEvent observedTeam)
+                        {
+                            SeedObservedTeam(observedTeam);
+                        }
                     }
 
                     Type sKey = GetDispatchKey(syntheticMsg);
@@ -605,6 +610,14 @@ public sealed class StateGraphEvaluator
                 else if (key == typeof(BeginNewMatchEvent))
                 {
                     ResetForMatchRestart(snap);
+                }
+                else if (key == typeof(RoundOfficiallyEndedEvent))
+                {
+                    RoundOfficiallyEndedSeen++;
+                }
+                else if (key == typeof(CsPreRestartEvent))
+                {
+                    CsPreRestartSeen++;
                 }
 
                 int edgesEvaluated = 0, edgesFired = 0, logicRecomputed = 0;
@@ -1163,6 +1176,13 @@ public sealed class StateGraphEvaluator
 
                 break;
 
+            // The entity-observed team: the forward-safe materialisation trigger for a player who
+            // has not yet fired an event, and the seed for their team.
+            case PlayerTeamObservedEvent observed:
+                yield return observed.PlayerSlot;
+
+                break;
+
             // Synthesized entity-derived events (work item 0.4b): a player whose first
             // qualifying activity is a molotov throw must materialize like anyone else —
             // mid-match-start demos otherwise silently drop their events.
@@ -1189,8 +1209,7 @@ public sealed class StateGraphEvaluator
     ///     <see cref="StateEdge.MessageType" /> as the PAYLOAD type (<c>PlayerDeathEvent</c>), so a game
     ///     event has to key on its payload too — every fire is now the same <see cref="GameEvent" />
     ///     envelope, and keying on the envelope's runtime type would match no edge at all. A synthesized
-    ///     event carries no payload and keys under its own subclass type, matching how
-    ///     <c>DemoAnalyzer.BuildTypeIndex</c> indexes the same events.
+    ///     event carries no payload and keys under its own subclass type.
     /// </summary>
     private static Type GetDispatchKey(NetMessage message) =>
         message switch
@@ -1270,41 +1289,6 @@ public sealed class StateGraphEvaluator
 
     // ── Per-player materialization ────────────────────────────────────────────
 
-    private void MaterializeKnownPlayers(ParsedDemo demo)
-    {
-        foreach ((int slot, PlayerInfo playerInfo) in demo.Players)
-        {
-            if (slot is < 0 or >= 64)
-            {
-                continue;
-            }
-
-            if (string.IsNullOrEmpty(playerInfo.Name))
-            {
-                continue;
-            }
-
-            if (playerInfo.Team < 2)
-            {
-                continue;
-            }
-
-            if (!_materializedSlots.Add(slot))
-            {
-                continue;
-            }
-
-            int initialTeam = playerInfo.Team;
-            if (_playerContextIndex is not null
-                && _playerContextIndex.InitialTeamBySlot.TryGetValue(slot, out int t))
-            {
-                initialTeam = t;
-            }
-
-            MaterializeSlot(slot, _materializedPlayerCount++, playerInfo.Name, initialTeam);
-        }
-    }
-
     private void MaterializeNewPlayers(GameEvent gameEvent)
     {
         if (_perPlayerTemplates.Count == 0)
@@ -1329,15 +1313,10 @@ public sealed class StateGraphEvaluator
                 continue;
             }
 
-            int playerTeam = 0;
-            if (_playerContextIndex is not null && _playerContextIndex.InitialTeamBySlot.TryGetValue(slot, out int initialTeam))
-            {
-                playerTeam = initialTeam;
-            }
-            else if (_enrichment is not null && _enrichment.Players.TryGetValue(slot, out PlayerInfo? pi))
-            {
-                playerTeam = pi.Team;
-            }
+            // The seed is the controller entity's team as the scanner last observed it. Nothing
+            // else is forward-safe: the roster's team is the last player_team event, which on a
+            // matchmaking demo is the halftime swap and so the wrong half for most of the match.
+            int playerTeam = _entityScanner is not null && _entityScanner.TryGetTeam(slot, out int observed) ? observed : 0;
 
             MaterializeSlot(slot, _materializedPlayerCount++, ResolvePlayerName(slot), playerTeam);
         }
@@ -1358,7 +1337,7 @@ public sealed class StateGraphEvaluator
 
         for (int tplIdx = 0; tplIdx < _perPlayerTemplates.Count; tplIdx++)
         {
-            PerPlayerNodeTemplate.MaterializedPlayer result = _perPlayerTemplates[tplIdx].Materialize(slot, playerIndex, playerName, _demo);
+            PerPlayerNodeTemplate.MaterializedPlayer result = _perPlayerTemplates[tplIdx].Materialize(slot, playerIndex, playerName);
             result = result with
             {
                 TemplateIndex = tplIdx
@@ -1870,6 +1849,18 @@ public sealed class StateGraphEvaluator
                 node.ResetToUnset();
             }
         };
+    }
+
+    // Fills a materialised player's team from the entity when no player_team event has set it.
+    // A team the events already set is left alone: the events keep ownership of later changes.
+    private void SeedObservedTeam(PlayerTeamObservedEvent observed)
+    {
+        if (_playerContextIndex is not null
+            && _playerContextIndex.TryGet(observed.PlayerSlot, out PlayerContextIndex.PlayerContext? ctx)
+            && ctx is { Team: < 2 })
+        {
+            ctx.Team = observed.Team;
+        }
     }
 
     private string ResolvePlayerName(int slot)

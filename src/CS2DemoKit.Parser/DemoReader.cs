@@ -66,6 +66,32 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
         _cursor = new DemoEnrichmentCursor(_diagnostics, _mask, profileOverride);
         _view = new View(this);
         _nextProgressAt = ProgressStride;
+        ProbeHeader();
+    }
+
+    private static readonly DecodeMask _headerProbeMask =
+        DecodeMask.Compile(new DecodePlan { Categories = MessageCategories.Header });
+
+    // Feeds the cursor the file header and the server info before the first read, so TickRate,
+    // MapName and Profile are known at build time. Nothing is consumed: the read starts at frame
+    // zero and observes the same frames again, which is idempotent for these fields.
+    private void ProbeHeader()
+    {
+        DemoParser.PartitionState scratch = new();
+        ParseDiagnostics scratchDiagnostics = new();
+        int pos = 16;
+        int frameNumber = 0;
+        while (!_cursor.TickIntervalObserved
+               && DemoParser.TryScanFrame(_data, ref pos, frameNumber, scratchDiagnostics, out DemoParser.FrameDescriptor d)
+               == DemoParser.FrameScanResult.Frame)
+        {
+            if (d.Command == EDemoCommands.DemPacket)
+            {
+                break;
+            }
+
+            _cursor.Observe(DemoParser.DecodeFrame(d, frameNumber++, scratch, _headerProbeMask, null, null), null);
+        }
     }
 
     /// <summary>Opens a reader over bytes the caller owns and keeps alive for the read.</summary>
@@ -130,7 +156,11 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
 
         _mask = ReferenceEquals(plan, DecodePlan.Everything) ? DecodeMask.Everything : DecodeMask.Compile(plan);
         _cursor = new DemoEnrichmentCursor(_diagnostics, _mask, _profileOverride);
+        ProbeHeader();
     }
+
+    /// <summary>True once a frame has been read or peeked; the before-first-read operations are then closed.</summary>
+    public bool Started => _started;
 
     /// <summary>
     ///     The distinct game-event names the demo fires, from a structure-only pass that decodes

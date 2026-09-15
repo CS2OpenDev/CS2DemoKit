@@ -98,7 +98,7 @@ public class RisingEdgeRoutingTests
         List<(GenericValueNode<int> A, GenericValueNode<int> B)> counters = [];
 
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             GenericValueNode<int> x = new($"x_p{slot}");
             GenericValueNode<int> counterA = new($"counter_a_p{slot}");

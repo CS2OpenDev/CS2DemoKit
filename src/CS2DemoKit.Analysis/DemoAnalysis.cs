@@ -7,12 +7,14 @@ using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Plugins;
+using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.GameEvents;
 
 #endregion
 
@@ -27,10 +29,15 @@ public sealed record AnalysisOptions
 {
     /// <summary>
     ///     Capture per-message <see cref="NodeSnapshot" /> rows for seek/inspect consumers (the UI path).
-    ///     When <c>false</c>, runs the cheaper bare evaluation that produces only the
-    ///     <see cref="RuleChainTimeline" /> (the bare, snapshot-free path).
+    ///     <c>false</c> runs the cheaper bare evaluation that produces only the
+    ///     <see cref="RuleChainTimeline" />. <c>null</c>, the default, captures over a
+    ///     <see cref="ParsedDemo" /> or any source with random access and does not over a stream:
+    ///     a snapshot run keeps one row and one <see cref="NetMessage" /> per dispatched message,
+    ///     so over a forward reader it retains what the reader was chosen to drop. Set it to
+    ///     <c>true</c> on a stream deliberately; the choice is visible as
+    ///     <see cref="AnalysisProvenance.SnapshotsCaptured" />.
     /// </summary>
-    public bool CaptureSnapshots { get; init; } = true;
+    public bool? CaptureSnapshots { get; init; }
 
     /// <summary>Per-frame evaluation progress in [0, 1]. Only reported in snapshot mode.</summary>
     public IProgress<double>? Progress { get; init; }
@@ -59,6 +66,22 @@ public sealed record AnalysisOptions
     ///     </para>
     /// </summary>
     public int? MaxDegreeOfParallelism { get; init; }
+
+    /// <summary>
+    ///     The source profile to build for. Set, it wins over every resolution step and the run
+    ///     reports <see cref="ProfileResolutionKind.Explicit" />. Unset, the profile is resolved from
+    ///     the demo's header and, where the source allows, the game-event vocabulary it fires.
+    /// </summary>
+    public DemoSourceProfile? Profile { get; init; }
+
+    /// <summary>
+    ///     Over a <see cref="DemoReader" /> that has not started, run the structure-only vocabulary
+    ///     probe so the round-end dialect is exact instead of guessed from the header: one extra
+    ///     pass over the file that decodes event ids and nothing else. Off, a stream resolves from
+    ///     the header alone and the run reports <see cref="ProfileResolutionKind.HeaderOnly" />.
+    ///     Ignored when <see cref="Profile" /> is set.
+    /// </summary>
+    public bool ProbeDialect { get; init; } = true;
 
     /// <summary>Event registrations; defaults to <see cref="EventRegistry.Build" />.</summary>
     public EventRegistry? Events { get; init; }
@@ -100,7 +123,7 @@ public sealed record AnalysisOptions
 /// <param name="Timeline">Every chain activation/deactivation, in both modes.</param>
 /// <param name="Snapshots">
 ///     The snapshot-mode result (per-message state rows, materialized players, applied-edge maps), or
-///     <c>null</c> when <see cref="AnalysisOptions.CaptureSnapshots" /> was <c>false</c>.
+///     <c>null</c> when snapshots were not captured (see <see cref="AnalysisOptions.CaptureSnapshots" />).
 /// </param>
 public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, EvaluationResult? Snapshots)
 {
@@ -118,7 +141,7 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     /// <summary>The demo's facts at the end of the run, detached from whichever source produced it.</summary>
     public required DemoDescriptor Demo { get; init; }
 
-    /// <summary>Which source and digest producer ran, and how much was consumed.</summary>
+    /// <summary>Which source, profile and digest producer ran, and how much was consumed.</summary>
     public required AnalysisProvenance Provenance { get; init; }
 
     /// <summary>Every player materialised during the run, in order. Populated in both capture modes.</summary>
@@ -159,8 +182,7 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     ///     omitted per row when null.
     /// </param>
     /// <exception cref="InvalidOperationException">
-    ///     The run was executed with <see cref="AnalysisOptions.CaptureSnapshots" /> disabled —
-    ///     projection reads the snapshot vectors.
+    ///     The run captured no snapshots. Projection reads the snapshot vectors.
     /// </exception>
     public IReadOnlyList<MetricTable> ProjectConfiguredOutputs(DemoDescriptor demo, string? matchId = null)
     {
@@ -196,7 +218,8 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 }
 
 /// <summary>
-///     The single entry point for running the analysis engine over a parsed demo.
+///     The single entry point for running the analysis engine over a demo, whether it is read
+///     forward once or held in memory.
 ///     <para>
 ///         Wraps the build/evaluate assembly that every consumer otherwise has to repeat — registry
 ///         creation, builder construction, and (the part that silently produces wrong results when
@@ -204,26 +227,63 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 ///         <see cref="BuildResult.EntityScanner" /> from the build into the evaluator.
 ///     </para>
 ///     <para>
-///         <see cref="Run" /> is the one-shot path. Consumers that need the compiled graph before
-///         evaluation (e.g. to render a skeleton while the multi-second eval runs) call
-///         <see cref="Build(ParsedDemo, IReadOnlyList{RulesetDoc}, AnalysisOptions?)" /> then
-///         <see cref="Evaluate(ParsedDemo,BuildResult,AnalysisOptions)" /> — <see cref="Evaluate(ParsedDemo,BuildResult,AnalysisOptions)" /> accepts only a
-///         <see cref="BuildResult" /> so the scanner/context threading cannot be bypassed.
+///         <see cref="Run(string, IReadOnlyList{RulesetDoc}, AnalysisOptions)" /> is the one-shot
+///         forward path: it opens a <see cref="DemoReader" />, resolves the profile, builds, narrows
+///         the reader's decode to what the graph consumes, and evaluates while frames are dropped
+///         behind the loop. <see cref="Run(ParsedDemo, IReadOnlyList{RulesetDoc}, AnalysisOptions)" />
+///         is the same evaluation over a retained demo, with snapshots on by default. Consumers that
+///         need the compiled graph before evaluation (e.g. to render a skeleton while the
+///         multi-second eval runs) call a <c>Build</c> overload then an <c>Evaluate</c> overload;
+///         <c>Evaluate</c> accepts only a <see cref="BuildResult" /> so the scanner/context threading
+///         cannot be bypassed.
 ///     </para>
 ///     <para>
 ///         <see cref="ValidateRulesets(IReadOnlyList{RulesetDoc})" /> is the one entry point here
-///         that touches no demo at all: it runs the same composition step <see cref="Build" /> does
-///         and reports what it found, for callers validating rule documents before storing them.
+///         that touches no demo at all: it runs the same composition step the <c>Build</c> overloads
+///         do and reports what it found, for callers validating rule documents before storing them.
 ///     </para>
 /// </summary>
 public static class DemoAnalysis
 {
+    // Consumed by the evaluator and its built-in edges whether or not a rule subscribes.
+    private static readonly string[] _intrinsicEventNames =
+    [
+        "round_freeze_end", "begin_new_match", "player_death", "player_hurt", "player_connect",
+        "player_team", "player_disconnect", "player_spawn", "round_officially_ended", "cs_pre_restart"
+    ];
+
+    private static Dictionary<string, List<int>>? _netIdsBySuffix;
+
     /// <summary>
-    ///     Builds the loaded v2 rulesets onto one graph. The v2 docs are composed against the
-    ///     demo's real tick rate and active source profile so D11a cross-ruleset
-    ///     (<c>use:</c>/<c>exports:</c>) reads resolve against the export graph — the same seam the
-    ///     the coverage path uses. An empty
-    ///     <paramref name="v2Docs" /> list builds the bare context/enrichment graph.
+    ///     The source profile a retained demo builds under: <see cref="AnalysisOptions.Profile" />
+    ///     when set, else the header classification refined by every game-event name the demo
+    ///     carries. The same answer for the same demo regardless of path.
+    /// </summary>
+    public static DemoSourceProfile ResolveProfile(ParsedDemo demo, AnalysisOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(demo);
+        return ResolveProfileCore(demo, options).Profile;
+    }
+
+    /// <summary>
+    ///     The source profile a frame source builds under: <see cref="AnalysisOptions.Profile" />
+    ///     when set; else, over a <see cref="DemoReader" /> that has not started and with
+    ///     <see cref="AnalysisOptions.ProbeDialect" /> on, the header refined by the vocabulary
+    ///     probe; else, over a source with random access, the header refined by the events its
+    ///     frames hold; else the header alone.
+    /// </summary>
+    public static DemoSourceProfile ResolveProfile(IDemoFrameSource source, AnalysisOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return ResolveProfileCore(source, options).Profile;
+    }
+
+    /// <summary>
+    ///     Builds the loaded v2 rulesets onto one graph for a known tick rate and profile, with no
+    ///     demo in hand. The v2 docs are composed against the target's tick rate and profile so
+    ///     D11a cross-ruleset (<c>use:</c>/<c>exports:</c>) reads resolve against the export graph,
+    ///     the same seam the coverage path uses. An empty <paramref name="v2Docs" /> list builds the
+    ///     bare context/enrichment graph.
     ///     <para>
     ///         Composition is <b>tolerant</b>: a document that fails cross-reference validation,
     ///         resolution, or a cycle check is dropped and the remaining rulesets still build. What
@@ -234,27 +294,89 @@ public static class DemoAnalysis
     ///         <see cref="ValidateRulesets(IReadOnlyList{RulesetDoc})" />.
     ///     </para>
     /// </summary>
-    /// <param name="demo">The parsed demo (its tick rate + profile drive v2 composition).</param>
+    /// <param name="target">The tick rate and profile the graph is built for.</param>
     /// <param name="v2Docs">The loaded v2 ruleset documents (<c>RuleConfigLoadResult.Rulesets</c>).</param>
     /// <param name="options">Registry overrides.</param>
-    public static BuildResult Build(ParsedDemo demo,
-        IReadOnlyList<RulesetDoc> v2Docs, AnalysisOptions? options = null)
+    public static BuildResult Build(AnalysisTarget target, IReadOnlyList<RulesetDoc> v2Docs,
+        AnalysisOptions? options = null)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        return BuildCore(target, ProfileResolutionKind.Explicit, v2Docs, options ?? new AnalysisOptions());
+    }
+
+    /// <summary>
+    ///     Builds for a retained demo: its tick rate, and its profile as
+    ///     <see cref="ResolveProfile(ParsedDemo, AnalysisOptions)" /> resolves it.
+    /// </summary>
+    public static BuildResult Build(ParsedDemo demo, IReadOnlyList<RulesetDoc> v2Docs,
+        AnalysisOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(demo);
         options ??= new AnalysisOptions();
-        RuleChainBuilder builder = CreateBuilder(demo, options);
-        if (v2Docs.Count == 0)
+        (DemoSourceProfile profile, ProfileResolutionKind resolution) = ResolveProfileCore(demo, options);
+        return BuildCore(new AnalysisTarget(demo.TickRate, profile), resolution, v2Docs, options);
+    }
+
+    /// <summary>
+    ///     Builds for any frame source: the tick rate its enrichment reports, and its profile as
+    ///     <see cref="ResolveProfile(IDemoFrameSource, AnalysisOptions)" /> resolves it. A
+    ///     <see cref="DemoReader" /> knows both before its first frame is read.
+    /// </summary>
+    public static BuildResult Build(IDemoFrameSource source, IReadOnlyList<RulesetDoc> v2Docs,
+        AnalysisOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        options ??= new AnalysisOptions();
+        (DemoSourceProfile profile, ProfileResolutionKind resolution) = ResolveProfileCore(source, options);
+        return BuildCore(new AnalysisTarget(source.Enrichment.TickRate, profile), resolution, v2Docs, options);
+    }
+
+    /// <summary>
+    ///     The narrowest decode plan that still feeds <paramref name="build" /> everything its graph
+    ///     dispatches: the header and string tables always, every game event an edge or the
+    ///     evaluator consumes, and the schema, entities and retained signon prefix only when the
+    ///     build has an entity scanner. A net message an edge subscribes to is included by wire
+    ///     id; one the catalog cannot place widens the plan to every
+    ///     <see cref="MessageCategories.Other" /> message rather than dropping it.
+    /// </summary>
+    public static DecodePlan PlanDecode(BuildResult build)
+    {
+        ArgumentNullException.ThrowIfNull(build);
+        EventRegistry registry = build.Events ?? EventRegistry.Build();
+        HashSet<string> eventNames = new(_intrinsicEventNames, StringComparer.OrdinalIgnoreCase);
+        HashSet<int> netIds = [];
+        MessageCategories categories =
+            MessageCategories.Header | MessageCategories.StringTables | MessageCategories.GameEvents;
+
+        foreach (Type type in build.RelevantMessageTypes.Concat(build.Graph.Edges.Select(e => e.MessageType)))
         {
-            return builder.Build();
+            if (!registry.TryGetName(type, out string name, out bool isNetMessage))
+            {
+                continue; // synthesized, or never on the wire
+            }
+
+            if (!isNetMessage)
+            {
+                eventNames.Add(name);
+            }
+            else if (!TryPlaceNetPayload(type, netIds, ref categories))
+            {
+                categories |= MessageCategories.Other;
+            }
         }
 
-        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
-        RulesetComposition.Result composed =
-            RulesetComposition.Compose(v2Docs, adapter, demo.TickRate, builder.Profile.GetType().Name);
-        BuildResult build = builder.Build([.. composed.Rulesets]);
-        return build with
+        bool scanner = build.EntityScanner is not null;
+        if (scanner)
         {
-            RulesetDiagnostics = composed.AttributedDiagnostics,
-            ExcludedRulesets = composed.Excluded
+            categories |= MessageCategories.Schema | MessageCategories.Entities;
+        }
+
+        return new DecodePlan
+        {
+            Categories = categories,
+            IncludeMessageTypes = netIds.Count > 0 ? netIds : null,
+            GameEventNames = eventNames,
+            RetainSignonPrefix = scanner
         };
     }
 
@@ -340,14 +462,7 @@ public static class DemoAnalysis
         };
     }
 
-    private static RuleChainBuilder CreateBuilder(ParsedDemo demo, AnalysisOptions options) => new(
-        options.Events ?? EventRegistry.Build(),
-        demo,
-        entityProviders: options.EntityProviders ?? EntityValueProviderRegistry.CreateDefault(),
-        perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault(),
-        visibilityEngine: options.VisibilityEngine);
-
-    /// <summary>Evaluates a compiled graph over the demo's frames.</summary>
+    /// <summary>Evaluates a compiled graph over a retained demo. Snapshots are captured unless turned off.</summary>
     public static AnalysisRun Evaluate(ParsedDemo demo, BuildResult build, AnalysisOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(demo);
@@ -356,8 +471,10 @@ public static class DemoAnalysis
 
     /// <summary>
     ///     Evaluates a compiled graph over any frame source. Over a forward reader the frames are
-    ///     consumed and dropped, and entity state is decoded in step with the loop; over a
-    ///     retained demo this is the same evaluation the <see cref="ParsedDemo" /> overload runs.
+    ///     consumed and dropped, entity state is decoded in step with the loop, and snapshots are
+    ///     off unless asked for; over a retained demo this is the same evaluation the
+    ///     <see cref="ParsedDemo" /> overload runs. The source must decode at least what
+    ///     <see cref="PlanDecode" /> asks for; a narrower reader silently starves the graph.
     /// </summary>
     public static AnalysisRun Evaluate(IDemoFrameSource source, BuildResult build, AnalysisOptions? options = null)
     {
@@ -365,15 +482,149 @@ public static class DemoAnalysis
         return EvaluateCore(source, build, options ?? new AnalysisOptions(), null);
     }
 
+    /// <summary>Builds and evaluates a retained demo in one call.</summary>
+    public static AnalysisRun Run(ParsedDemo demo, IReadOnlyList<RulesetDoc> v2Docs,
+        AnalysisOptions? options = null)
+        => Evaluate(demo, Build(demo, v2Docs, options), options);
+
+    /// <summary>
+    ///     Builds and evaluates over any frame source. A <see cref="DemoReader" /> that has not
+    ///     started and still decodes everything is narrowed to <see cref="PlanDecode" /> first; a
+    ///     reader the caller already configured is left on its own plan.
+    /// </summary>
+    public static AnalysisRun Run(IDemoFrameSource source, IReadOnlyList<RulesetDoc> v2Docs,
+        AnalysisOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        BuildResult build = Build(source, v2Docs, options);
+        if (source is DemoReader { Started: false } reader && reader.Plan.DecodesEverything)
+        {
+            reader.Configure(PlanDecode(build));
+        }
+
+        return Evaluate(source, build, options);
+    }
+
+    /// <summary>
+    ///     The forward path over a file: open, resolve the profile, build, narrow the decode to
+    ///     what the graph consumes, evaluate, close. Nothing but the run's outputs and the
+    ///     signon prefix outlives the loop.
+    /// </summary>
+    public static AnalysisRun Run(string path, IReadOnlyList<RulesetDoc> v2Docs, AnalysisOptions? options = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        using DemoReader reader = DemoReader.OpenFile(path, ReaderOptions(options));
+        return Run(reader, v2Docs, options);
+    }
+
+    /// <summary>The forward path over a demo already in memory; see <see cref="Run(string, IReadOnlyList{RulesetDoc}, AnalysisOptions)" />.</summary>
+    public static AnalysisRun Run(ReadOnlyMemory<byte> bytes, IReadOnlyList<RulesetDoc> v2Docs,
+        AnalysisOptions? options = null)
+    {
+        using DemoReader reader = DemoReader.Open(bytes, ReaderOptions(options));
+        return Run(reader, v2Docs, options);
+    }
+
+    private static ParseOptions ReaderOptions(AnalysisOptions? options) => new()
+    {
+        MaxDegreeOfParallelism = options?.MaxDegreeOfParallelism,
+        CancellationToken = options?.CancellationToken ?? default
+    };
+
+    private static BuildResult BuildCore(AnalysisTarget target, ProfileResolutionKind resolution,
+        IReadOnlyList<RulesetDoc> v2Docs, AnalysisOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(v2Docs);
+        RuleChainBuilder builder = CreateBuilder(target, options);
+        if (v2Docs.Count == 0)
+        {
+            return builder.Build() with
+            {
+                ProfileResolution = resolution
+            };
+        }
+
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        RulesetComposition.Result composed =
+            RulesetComposition.Compose(v2Docs, adapter, target.TickRate, builder.Profile.GetType().Name);
+        BuildResult build = builder.Build([.. composed.Rulesets]);
+        return build with
+        {
+            RulesetDiagnostics = composed.AttributedDiagnostics,
+            ExcludedRulesets = composed.Excluded,
+            ProfileResolution = resolution
+        };
+    }
+
+    private static RuleChainBuilder CreateBuilder(AnalysisTarget target, AnalysisOptions options) => new(
+        options.Events ?? EventRegistry.Build(),
+        target,
+        entityProviders: options.EntityProviders ?? EntityValueProviderRegistry.CreateDefault(),
+        perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault(),
+        visibilityEngine: options.VisibilityEngine);
+
+    private static (DemoSourceProfile Profile, ProfileResolutionKind Resolution) ResolveProfileCore(
+        ParsedDemo demo, AnalysisOptions? options)
+    {
+        if (options?.Profile is { } explicitProfile)
+        {
+            return (explicitProfile, ProfileResolutionKind.Explicit);
+        }
+
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        foreach (GameEvent evt in demo.AllGameEvents)
+        {
+            names.Add(evt.Name);
+        }
+
+        return (DemoSourceProfileRegistry.Resolve(demo.Profile, names), ProfileResolutionKind.HeaderAndVocabulary);
+    }
+
+    private static (DemoSourceProfile Profile, ProfileResolutionKind Resolution) ResolveProfileCore(
+        IDemoFrameSource source, AnalysisOptions? options)
+    {
+        if (options?.Profile is { } explicitProfile)
+        {
+            return (explicitProfile, ProfileResolutionKind.Explicit);
+        }
+
+        DemoProfile header = source.Enrichment.Profile;
+        if (source is DemoReader { Started: false } reader && (options?.ProbeDialect ?? true))
+        {
+            IReadOnlySet<string> probed = reader.ProbeGameEventNames(options?.CancellationToken ?? default);
+            return (DemoSourceProfileRegistry.Resolve(header, probed), ProfileResolutionKind.HeaderAndVocabulary);
+        }
+
+        if (source.Frames is { } frames)
+        {
+            HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+            foreach (DemoFrame frame in frames)
+            {
+                foreach (NetMessage msg in frame.DecodedMessages)
+                {
+                    if (msg is GameEventMessage gem)
+                    {
+                        names.Add(gem.DecodedEvent.Name);
+                    }
+                }
+            }
+
+            return (DemoSourceProfileRegistry.Resolve(header, names), ProfileResolutionKind.HeaderAndVocabulary);
+        }
+
+        return (DemoSourceProfileRegistry.Resolve(header), ProfileResolutionKind.HeaderOnly);
+    }
+
     private static AnalysisRun EvaluateCore(IDemoFrameSource source, BuildResult build, AnalysisOptions options,
         ParsedDemo? demo)
     {
         ArgumentNullException.ThrowIfNull(build);
         StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner);
+        bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;
 
         RuleChainTimeline timeline;
         EvaluationResult? result = null;
-        if (!options.CaptureSnapshots)
+        if (!capture)
         {
             timeline = evaluator.Evaluate(source, options.MaxDegreeOfParallelism, options.CancellationToken);
         }
@@ -393,15 +644,87 @@ public static class DemoAnalysis
             MaterializedNodes = evaluator.MaterializedNodes,
             Provenance = new AnalysisProvenance(
                 source.SupportsRandomAccess ? AnalysisSourceKind.Materialised : AnalysisSourceKind.Stream,
+                build.Profile,
+                build.ProfileResolution,
+                source is DemoReader reader ? reader.Plan : demo?.Plan,
                 build.EntityScanner?.ProducerKind ?? DigestProducerKind.None,
                 result is not null,
                 evaluator.FramesConsumed,
-                evaluator.MessagesConsumed)
+                evaluator.MessagesConsumed,
+                CheckDialect(build.Profile, evaluator.RoundOfficiallyEndedSeen, evaluator.CsPreRestartSeen))
         };
     }
 
-    /// <summary>Builds and evaluates in one call.</summary>
-    public static AnalysisRun Run(ParsedDemo demo, IReadOnlyList<RulesetDoc> v2Docs,
-        AnalysisOptions? options = null)
-        => Evaluate(demo, Build(demo, v2Docs, options), options);
+    private static DialectCheck CheckDialect(DemoSourceProfile profile, int officiallyEnded, int preRestart)
+    {
+        IReadOnlyList<string> bound = profile.RoundEnd?.ConcreteEventNames ?? [];
+        bool bindsOfficial = bound.Contains("round_officially_ended", StringComparer.OrdinalIgnoreCase);
+        bool bindsPreRestart = bound.Contains("cs_pre_restart", StringComparer.OrdinalIgnoreCase);
+        bool neverSeen = (bindsOfficial && officiallyEnded == 0 && preRestart > 0)
+                         || (bindsPreRestart && preRestart == 0 && officiallyEnded > 0);
+        return new DialectCheck(officiallyEnded, preRestart, neverSeen);
+    }
+
+    // Registrations name a payload class (CNETMsg_Tick, CDemoFileHeader); the catalog names the
+    // wire enum member (net_Tick, DEM_FileHeader). The part after the first underscore is shared.
+    private static bool TryPlaceNetPayload(Type payloadType, HashSet<int> netIds, ref MessageCategories categories)
+    {
+        string className = payloadType.Name;
+        if (className.StartsWith("CDemo", StringComparison.Ordinal))
+        {
+            string commandName = "DEM_" + className["CDemo".Length..];
+            foreach ((int id, string name) in NetMessageCatalog.DemoCommandNames)
+            {
+                if (string.Equals(name, commandName, StringComparison.OrdinalIgnoreCase))
+                {
+                    categories |= NetMessageCatalog.CategoryOf((EDemoCommands)id);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        int underscore = className.IndexOf('_');
+        if (underscore < 0)
+        {
+            return false;
+        }
+
+        _netIdsBySuffix ??= BuildNetIdsBySuffix();
+        if (!_netIdsBySuffix.TryGetValue(className[(underscore + 1)..], out List<int>? ids))
+        {
+            return false;
+        }
+
+        foreach (int id in ids)
+        {
+            netIds.Add(id);
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, List<int>> BuildNetIdsBySuffix()
+    {
+        Dictionary<string, List<int>> map = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((int id, string name) in NetMessageCatalog.Names)
+        {
+            int underscore = name.IndexOf('_');
+            if (underscore < 0)
+            {
+                continue;
+            }
+
+            string suffix = name[(underscore + 1)..];
+            if (!map.TryGetValue(suffix, out List<int>? ids))
+            {
+                map[suffix] = ids = [];
+            }
+
+            ids.Add(id);
+        }
+
+        return map;
+    }
 }

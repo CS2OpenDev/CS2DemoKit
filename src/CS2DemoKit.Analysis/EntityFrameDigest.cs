@@ -66,6 +66,12 @@ internal sealed class EntityFrameDigest
     /// </summary>
     public bool DecodeCompromised;
 
+    /// <summary>
+    ///     Each slot's controller team as networked this frame, or -1 when the controller is absent
+    ///     or has not received the field; null when no controller was live at all.
+    /// </summary>
+    public int[]? ControllerTeams;
+
     /// <summary>Live CMolotovProjectiles this frame: (entity index, serial, resolved thrower slot or -1).</summary>
     public ReadOnlySpan<(int Index, int Serial, int ThrowerSlot)> Molotovs =>
         _molotovs is null ? default : CollectionsMarshal.AsSpan(_molotovs);

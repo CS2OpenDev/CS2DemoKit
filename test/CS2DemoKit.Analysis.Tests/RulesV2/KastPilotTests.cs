@@ -232,7 +232,7 @@ public class KastPilotTests
 
         RuleChainBuilder builder = new(
             EventRegistry.Build(),
-            demo,
+            AnalysisTarget.From(demo),
             entityProviders: EntityValueProviderRegistry.CreateDefault(),
             perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault());
 

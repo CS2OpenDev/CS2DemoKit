@@ -138,7 +138,7 @@ public class EdgeFireCounterTests
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
         EventRegistry registry = EventRegistry.Build();
-        RuleChainBuilder builder = new(registry, parsed);
+        RuleChainBuilder builder = new(registry, AnalysisTarget.From(parsed));
         BuildResult build = builder.Build();
 
         StateGraphEvaluator evaluator = new(build.Graph, parsed, build.PlayerContextIndex, build.EntityScanner);
@@ -169,7 +169,7 @@ public class EdgeFireCounterTests
         ParsedDemo parsed = DemoTestHelper.GetOrParse(path);
 
         EventRegistry registry = EventRegistry.Build();
-        RuleChainBuilder builder = new(registry, parsed);
+        RuleChainBuilder builder = new(registry, AnalysisTarget.From(parsed));
         BuildResult build = builder.Build();
 
         StateGraphEvaluator evaluator = new(build.Graph, parsed, build.PlayerContextIndex, build.EntityScanner);

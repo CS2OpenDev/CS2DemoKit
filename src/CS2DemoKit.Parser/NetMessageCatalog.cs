@@ -23,6 +23,7 @@ public static class NetMessageCatalog
 
     private static readonly FrozenDictionary<int, string> _netNames = BuildNetNames();
     private static readonly FrozenDictionary<int, string> _commandNames = BuildNameCache<EDemoCommands>();
+    private static readonly FrozenDictionary<string, int> _netIdsByName = BuildNetIdsByName();
 
     /// <summary>Every known net message type id and its proto name.</summary>
     public static IReadOnlyDictionary<int, string> Names => _netNames;
@@ -51,6 +52,20 @@ public static class NetMessageCatalog
 
     /// <summary>True when the parser has a decoder for <paramref name="typeId" />.</summary>
     public static bool IsKnown(int typeId) => _netNames.ContainsKey(typeId);
+
+    /// <summary>The type id a proto name resolves to, matched case-insensitively.</summary>
+    public static bool TryGetTypeId(string name, out int typeId) => _netIdsByName.TryGetValue(name, out typeId);
+
+    private static FrozenDictionary<string, int> BuildNetIdsByName()
+    {
+        Dictionary<string, int> result = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((int id, string name) in _netNames)
+        {
+            result.TryAdd(name, id);
+        }
+
+        return result.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>The proto name for <paramref name="command" />, or <c>DEM_Unknown(N)</c>.</summary>
     public static string DemoCommandName(EDemoCommands command) =>

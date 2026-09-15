@@ -53,10 +53,10 @@ Start reading at [`DemoParser.cs`](../src/CS2DemoKit.Parser/DemoParser.cs), at
                                        ▼
    ┌──────────────────────────┐   ┌──────────────────────────────────┐
    │ CS2DemoKit.Analysis      │   │ Any other consumer               │
-   │ DemoAnalyzer →           │   │ — iterates Frames / InnerMessages│
-   │   DemoContext            │   │ — reads AllGameEvents            │
-   │   StateGraphEvaluator    │   │ — drives EntityTracker itself    │
-   │   rulesets (YAML)        │   │ — hex/byte views via             │
+   │ DemoAnalysis.Run         │   │ - iterates Frames / InnerMessages│
+   │   IDemoFrameSource       │   │ - reads AllGameEvents            │
+   │   StateGraphEvaluator    │   │ - drives EntityTracker itself    │
+   │   rulesets (YAML)        │   │ - hex/byte views via             │
    │   EntityChangeScanner    │   │   DownstreamUtilities            │
    └──────────────────────────┘   └──────────────────────────────────┘
 ```
@@ -504,9 +504,9 @@ and feed it the frames.
    the previous state of the entity) and CPU-intensive (each entity carries
    tens to hundreds of bit-level fields per tick). Forcing it into the parse
    path would block parallel decode of independent frames.
-2. **Consumer choice.** The analysis engine sometimes needs it
-   (`DemoAnalyzer.BuildContext`) and sometimes doesn't
-   (`BuildEventContext`, the fast path for event-only rules). An interactive
+2. **Consumer choice.** The analysis engine needs it only when a rule reads
+   entity state: `BuildResult.EntityScanner` is null otherwise, and
+   `DemoAnalysis.PlanDecode` then leaves `svc_PacketEntities` undecoded. An interactive
    viewer only needs it for the frame it is showing; a batch tool that only
    wants game events never needs it at all.
 3. **Fragility isolation.** Entity decoding is the part that can go wrong on
@@ -571,7 +571,7 @@ State held:
 
 | Method | Behaviour | Use case |
 |---|---|---|
-| `Replay(frames)` | Process every frame in order. | Full-replay stats build (`DemoAnalyzer.BuildContext`). |
+| `Replay(frames)` | Process every frame in order. | Full replay over a retained demo (`new EntityStateLayer(frames)`). |
 | `ReplayTo(targetTick, frames)` | Process all frames with `tick <= targetTick`. | Tick-keyed seeking (rare; can hit multiple frames sharing a tick). |
 | `ReplayToIndex(frameIndex, frames)` | Process frames `[0..frameIndex]` inclusive. | Frame-accurate seeking — preferred over `ReplayTo` because DEM_FullPacket frames can share ticks. |
 | `AdvanceOneFrame(frame)` | Process exactly one frame. | Forward walks that already own the cursor. |
@@ -934,34 +934,23 @@ presentation.
 
 ### The Analysis engine
 
-Entry point: [`DemoAnalyzer.cs`](../src/CS2DemoKit.Analysis/DemoAnalyzer.cs).
-Builds a [`DemoContext`](../src/CS2DemoKit.Analysis/DemoContext.cs)
-from a `ParsedDemo`.
+Entry point: [`DemoAnalysis.cs`](../src/CS2DemoKit.Analysis/DemoAnalysis.cs).
+One evaluator, two ways to feed it:
 
-Three construction modes:
-
-| Method | Replays entities? | Use case |
+| Call | Frames retained? | Use case |
 |---|---|---|
-| `DemoAnalyzer.BuildContext(demo)` | Yes — full `EntityTracker.Replay` | Stat rules that need entity-state reads. |
-| `DemoAnalyzer.BuildEventContext(demo)` | No — empty tracker | Event-only rules (much faster). |
-| `DemoAnalyzer.BuildContextAsync(demo)` | Yes, on the thread pool | Async callers that must not block. |
+| `DemoAnalysis.Run(path, rules)` | No. A `DemoReader` decodes only what the graph consumes and drops each frame behind the loop. | Batch stats, services, anything that never seeks. |
+| `DemoAnalysis.Run(parsedDemo, rules)` | Yes. The retained `ParsedDemo`, with per-message snapshots on by default. | Interactive tools that seek and inspect after the run. |
 
-`DemoContext` carries:
-- `Demo` — the original `ParsedDemo`,
-- `Rounds` — derived from `RoundFreezeEndEvent` / `RoundOfficiallyEndedEvent` /
-  `RoundEndEvent`,
-- `EntityState` — the `EntityTracker` (empty on the event-only path),
-- A type-keyed event index (`EventsOfType<T>()` → `IReadOnlyList<T>`,
-  O(1) per type-key with caching),
-- `EventsInRange(fromTick, toTick)` — binary-search slice.
-- `CreateEntityLayer()` — returns a fresh `EntityStateLayer` so each
-  parallel rule branch can seek independently (see below).
+Both go through the same `Build` then `Evaluate` over an `IDemoFrameSource`, and
+both produce the same `AnalysisRun`. `AnalysisRun.Provenance` records which
+source, profile, decode plan and digest producer actually ran.
 
 [`EntityStateLayer`](../src/CS2DemoKit.Analysis/Abstractions/EntityStateLayer.cs)
-wraps an `EntityTracker` for **incremental forward-only** seeking. Each
-parallel rule branch calls `CreateEntityLayer()` to get its own
-single-threaded layer (the underlying tracker is not thread-safe). Seeking
-backward is a no-op; `Reset()` rebuilds the tracker from frame 0.
+wraps an `EntityTracker` for **incremental forward-only** state. Over a stream
+it applies each frame as the evaluator reads it; over a retained frame list it
+also seeks (`SeekToTick`, `SeekBeforeFrame`) and can start over with `Reset()`.
+The tracker is not thread-safe, so one layer serves one evaluator.
 
 [`EntityChangeScanner`](../src/CS2DemoKit.Analysis/EntityChangeScanner.cs)
 runs per-evaluator and synthesises `EntityChangeMessage` events (a `NetMessage`
@@ -1083,8 +1072,7 @@ Key architectural differences:
    doesn't know the event either.
 2. Read the payload off the envelope — `gem.DecodedEvent.Payload is TheNewEvent`
    over `frame.InnerMessages.OfType<GameEventMessage>()`, or
-   `DemoContext.EventsOfType<TheNewEvent>()`, which takes the **payload** type
-   and hands back the `GameEvent` envelopes carrying it.
+   `demo.AllGameEvents` filtered on `e.Payload is TheNewEvent`.
 3. Field names are the SDK's property names, reachable from rules as
    `event.<Property>`. `src/CS2DemoKit.Analysis/Rules/catalog.json` is
    generated by reflecting over those records, so it is the authoritative

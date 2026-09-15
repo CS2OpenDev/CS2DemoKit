@@ -164,7 +164,7 @@ public class EnrichmentProviderGateTests
         PerPlayerEntityValueProviderRegistry providers = PerPlayerEntityValueProviderRegistry.CreateDefault();
         RuleChainBuilder builder = new(
             EventRegistry.Build(),
-            Demo(),
+            AnalysisTarget.From(Demo()),
             entityProviders: EntityValueProviderRegistry.CreateDefault(),
             perPlayerEntityProviders: providers);
 

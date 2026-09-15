@@ -41,7 +41,7 @@ public class MaterializationGuardTests
     {
         List<int> materialized = [];
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             materialized.Add(slot);
             return new PerPlayerNodeTemplate.MaterializedPlayer(slot, name, [], [], [], []);

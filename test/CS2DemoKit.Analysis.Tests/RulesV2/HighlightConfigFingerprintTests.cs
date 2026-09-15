@@ -90,7 +90,7 @@ public class HighlightConfigFingerprintTests
         BuildResult build = builder.Build(composed.Rulesets);
         foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
         {
-            template.Materialize(0, 0, "golden", null);
+            template.Materialize(0, 0, "golden");
         }
 
         IReadOnlyDictionary<string, ReadOnlyMemory<byte>>? builderHashes = builder.LastMaterializedV2StatHashes;

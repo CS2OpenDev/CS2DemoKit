@@ -29,8 +29,7 @@ namespace CS2DemoKit.Analysis;
 ///     </para>
 ///     <para>
 ///         Each scanner instance is single-threaded. Parallel rule-chain evaluators each get
-///         their own scanner via <see cref="IDemoContext.CreateEntityLayer" /> (one layer = one
-///         scanner). The scanner also writes the provider's <see cref="ValueNode{T}" /> on every
+///         their own scanner and layer (one layer = one scanner). The scanner also writes the provider's <see cref="ValueNode{T}" /> on every
 ///         observed change regardless of <see cref="IEntityValueProvider.EmitOn" /> direction,
 ///         so condition expressions referencing the context name see the live value even when no
 ///         edge is synthesized.
@@ -76,6 +75,10 @@ public sealed class EntityChangeScanner
     private readonly List<DemoFrame> _pendingFrames = [];
     private bool _runDriven;
     private bool _layerAdvanced;
+
+    // Each slot's controller team as last observed in a digest, -1 until seen. The evaluator seeds
+    // a materialising player from it and a change to a real team synthesizes PlayerTeamObservedEvent.
+    private readonly int[] _lastTeam = new int[64];
 
     // Decode-integrity latch (hardening that landed with the EnemyDmg-overcount investigation, but
     // NOT that fix — the fix lives in HurtTeamEnrichmentEdge's same-frame guard): once ANY consumed
@@ -321,6 +324,9 @@ public sealed class EntityChangeScanner
     /// <summary>How this evaluation's digests are being produced; <see cref="DigestProducerKind.None" /> before one starts.</summary>
     public DigestProducerKind ProducerKind { get; private set; }
 
+    /// <summary>The per-player providers this scanner snapshots, in gate order.</summary>
+    internal IReadOnlyList<IPerPlayerEntityValueProvider> PerPlayerProviders => _perPlayerProviders;
+
     /// <summary>
     ///     Starts an evaluation: clears every per-evaluation accumulator (the previous digest, the
     ///     pre-frame snapshot, the delta memory, the molotov de-dup set, the singleton last-values,
@@ -338,6 +344,7 @@ public sealed class EntityChangeScanner
         _lastCompatibleLayout = null;
         _pendingFrames.Clear();
         _runDriven = false;
+        Array.Fill(_lastTeam, -1);
         _delta = new PerPawnDeltaState(_layout);
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
         Span<TrackedProvider> tracked = CollectionsMarshal.AsSpan(_tracked);
@@ -717,6 +724,7 @@ public sealed class EntityChangeScanner
         MergePreFrameSnapshot(_prevDigest);
 
         ConsumeSingletons(digest, tick);
+        ConsumeControllerTeams(digest, tick);
         if (_emitMolotovThrows)
         {
             ConsumeMolotovs(digest, tick);
@@ -726,6 +734,38 @@ public sealed class EntityChangeScanner
 
         _prevDigest = digest;
         return _scratch;
+    }
+
+    /// <summary>The team <paramref name="slot" />'s controller last showed in a digest, when one has.</summary>
+    public bool TryGetTeam(int slot, out int team)
+    {
+        team = slot is >= 0 and < 64 ? _lastTeam[slot] : -1;
+        return team >= 0;
+    }
+
+    private void ConsumeControllerTeams(EntityFrameDigest digest, int tick)
+    {
+        if (digest.ControllerTeams is not { } teams)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < teams.Length; slot++)
+        {
+            int observed = teams[slot];
+            if (observed < 0 || observed == _lastTeam[slot])
+            {
+                continue;
+            }
+
+            int previous = _lastTeam[slot];
+            _lastTeam[slot] = observed;
+            if (observed >= 2)
+            {
+                _scratch.Add(GameEventMessage.ForSynthesizedEvent(
+                    new PlayerTeamObservedEvent(tick, tick, tick, slot, previous, observed)));
+            }
+        }
     }
 
     /// <summary>

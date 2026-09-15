@@ -88,6 +88,8 @@ internal static class EntityDigestExtractor
             d.Singletons[i] = singletonProviders[i].Read(layer);
         }
 
+        d.ControllerTeams = ReadControllerTeams(tracker);
+
         if (emitMolotovThrows || captureSmokes)
         {
             if (projectiles is null)
@@ -114,6 +116,33 @@ internal static class EntityDigestExtractor
         }
 
         return d;
+    }
+
+    private const string ControllerClass = "CCSPlayerController";
+    private const int MaxSlots = 64;
+
+    // Controllers occupy entity indices 1..64, one per slot. Sixty-four indexed reads, no walk.
+    private static int[]? ReadControllerTeams(EntityTracker tracker)
+    {
+        int[]? teams = null;
+        EntitySet entities = tracker.CurrentEntities;
+        for (int slot = 0; slot < MaxSlots; slot++)
+        {
+            if (entities[slot + 1] is not { } controller || controller.ClassName != ControllerClass)
+            {
+                continue;
+            }
+
+            if (teams is null)
+            {
+                teams = new int[MaxSlots];
+                Array.Fill(teams, -1);
+            }
+
+            teams[slot] = controller.TryGet<int>("m_iTeamNum") ?? -1;
+        }
+
+        return teams;
     }
 
     // The per-entity half of the projectile visit, shared by the walk and the indexed read so the

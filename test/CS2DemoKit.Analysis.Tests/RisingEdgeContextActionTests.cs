@@ -128,7 +128,7 @@ public class RisingEdgeContextActionTests
         List<GenericValueNode<int>> plainCounters = [];
 
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             GenericValueNode<int> x = new($"x_p{slot}");
             GenericValueNode<int> plainCounter = new($"plain_p{slot}");

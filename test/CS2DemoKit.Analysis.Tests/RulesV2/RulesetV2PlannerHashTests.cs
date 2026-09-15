@@ -274,7 +274,7 @@ public class RulesetV2PlannerHashTests
         Dictionary<string, StateNode> merged = new(StringComparer.OrdinalIgnoreCase);
         foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
         {
-            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test", null);
+            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test");
             if (player.NodesByRuleId is { } byId)
             {
                 foreach ((string key, StateNode node) in byId)
