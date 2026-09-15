@@ -57,7 +57,7 @@ public sealed class PlayerRoundStatsProjector : IOutputProjector
     public string? MatchId { get; init; }
 
     /// <inheritdoc />
-    public IReadOnlyList<MetricTable> Project(EvaluationResult result, ParsedDemo demo)
+    public IReadOnlyList<MetricTable> Project(EvaluationResult result, DemoDescriptor demo)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(demo);

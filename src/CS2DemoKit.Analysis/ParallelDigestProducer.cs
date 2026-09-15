@@ -19,7 +19,7 @@ namespace CS2DemoKit.Analysis;
 ///     worker can start there with no prior deltas). Every worker drives the SAME
 ///     <see cref="EntityStateLayer.SeekToTick" /> mechanism + the SAME <see cref="EntityDigestExtractor" />
 ///     the sequential scanner uses, just pre-positioned at its chunk's checkpoint via
-///     <see cref="EntityStateLayer.PrimeFromCheckpoint" />, so the digest stream folds to the same
+///     <see cref="EntityStateLayer.PrimeFromCheckpoint(int,int)" />, so the digest stream folds to the same
 ///     per-pawn snapshot a sequential decode produces, with singletons and molotovs identical frame for
 ///     frame (proven by <c>ParallelDigestEquivalenceTests</c>; sequential→golden is proven by Step 1, so
 ///     parallel→golden follows by composition). Per-pawn rows are deltas and each worker re-emits every
@@ -262,7 +262,7 @@ internal static class ParallelDigestProducer
     ///     is no usable split point, so the whole demo is one from-scratch chunk.
     ///     <para>
     ///         A full packet with a same-tick successor is never chosen: see
-    ///         <see cref="EntityStateLayer.PrimeFromCheckpoint" />, which cannot represent that position.
+    ///         <see cref="EntityStateLayer.PrimeFromCheckpoint(int,int)" />, which cannot represent that position.
     ///         Skipping one only widens the chunk that would have started there, which is the same
     ///         coarsening the paragraph below already relies on.
     ///     </para>

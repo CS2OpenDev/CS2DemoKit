@@ -135,6 +135,10 @@ public sealed class StateGraphEvaluator
     private int _nextEdgeId;
     private int _nextNodeId;
 
+    // The roster and names the evaluation resolves against: the source's view once an
+    // evaluation starts, the constructor demo's before then.
+    private IDemoEnrichmentView? _enrichment;
+
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
     /// <param name="playerContextIndex">Optional cross-player state index for enrichment edges.</param>
@@ -145,6 +149,7 @@ public sealed class StateGraphEvaluator
     {
         _graph = graph;
         _demo = demo;
+        _enrichment = demo?.AsFrameSource().Enrichment;
         _playerContextIndex = playerContextIndex;
         _entityScanner = entityScanner;
         _edgeIndex = BuildEdgeIndex(graph.Edges);
@@ -232,11 +237,23 @@ public sealed class StateGraphEvaluator
     /// <summary>
     ///     Every <see cref="HighlightFired" /> record emitted by the current or most recent
     ///     evaluation, in firing order (A1 rich highlight emission). Populated in BOTH modes —
-    ///     bare <see cref="Evaluate" /> included (that is the point: the Highlights pipeline's
+    ///     bare <see cref="Evaluate(IDemoFrameSource,int?,CancellationToken)" /> included (that is the point: the Highlights pipeline's
     ///     scan mode is snapshot-free). Empty when the graph carries no v2 highlights. Reset at
     ///     the start of each evaluation.
     /// </summary>
     public IReadOnlyList<HighlightFired> HighlightsFired { get; private set; } = [];
+
+    /// <summary>Every node materialised for a player so far, in materialisation order. Both modes.</summary>
+    public IReadOnlyList<StateNode> MaterializedNodes => _materializedNodeList;
+
+    /// <summary>Every player materialised so far, in order. Both modes.</summary>
+    public IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> MaterializedPlayers => _materializedPlayers;
+
+    /// <summary>Frames read by the most recent evaluation.</summary>
+    public int FramesConsumed { get; private set; }
+
+    /// <summary>Messages dispatched by the most recent evaluation, synthesized ones included.</summary>
+    public int MessagesConsumed { get; private set; }
 
     /// <summary>
     ///     Per-live-compute recompute counts for the current or most recent evaluation.
@@ -277,7 +294,7 @@ public sealed class StateGraphEvaluator
     /// <summary>
     ///     Runs the evaluator over the demo frames and returns a timeline of every chain
     ///     activation/deactivation. Does not capture per-message snapshots — use
-    ///     <see cref="EvaluateWithSnapshots" /> when seek/inspect is needed.
+    ///     <see cref="EvaluateWithSnapshots(IDemoFrameSource,IReadOnlyList{StateNode},IProgress{double},int?,CancellationToken)" /> when seek/inspect is needed.
     /// </summary>
     /// <param name="frames">The demo's frame list.</param>
     /// <param name="maxDegreeOfParallelism">
@@ -287,10 +304,20 @@ public sealed class StateGraphEvaluator
     /// <param name="cancellationToken">Checked once per frame; a canceled run throws and returns nothing.</param>
     public RuleChainTimeline Evaluate(IReadOnlyList<DemoFrame> frames,
         int? maxDegreeOfParallelism = null,
+        CancellationToken cancellationToken = default) =>
+        Evaluate(new FrameListSource(frames, _enrichment), maxDegreeOfParallelism, cancellationToken);
+
+    /// <summary>
+    ///     Evaluates over any frame source, forward. A source with random access gets the up-front
+    ///     parallel entity decode; a stream is decoded in step with the loop and never retained.
+    /// </summary>
+    public RuleChainTimeline Evaluate(IDemoFrameSource source,
+        int? maxDegreeOfParallelism = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(source);
         List<RuleChainEvent> events = new();
-        EvaluateCore(frames, null, null, events, maxDegreeOfParallelism, cancellationToken);
+        EvaluateCore(source, null, null, events, maxDegreeOfParallelism, cancellationToken);
         return new RuleChainTimeline(events);
     }
 
@@ -312,18 +339,37 @@ public sealed class StateGraphEvaluator
         IReadOnlyList<StateNode> staticTrackedNodes,
         IProgress<double>? progress = null,
         int? maxDegreeOfParallelism = null,
+        CancellationToken cancellationToken = default) =>
+        EvaluateWithSnapshots(new FrameListSource(frames, _enrichment), staticTrackedNodes, progress,
+            maxDegreeOfParallelism, cancellationToken);
+
+    /// <summary>
+    ///     <see cref="Evaluate(IDemoFrameSource,int?,CancellationToken)" /> with per-message node
+    ///     snapshots. One row and one message reference per dispatched message on every source,
+    ///     so over a stream this retains O(messages) where the bare evaluation retains nothing.
+    /// </summary>
+    public EvaluationResult EvaluateWithSnapshots(
+        IDemoFrameSource source,
+        IReadOnlyList<StateNode> staticTrackedNodes,
+        IProgress<double>? progress = null,
+        int? maxDegreeOfParallelism = null,
         CancellationToken cancellationToken = default)
     {
-        int totalMessageCapacity = 0;
-        for (int f = 0; f < frames.Count; f++)
+        ArgumentNullException.ThrowIfNull(source);
+        int totalMessageCapacity = 4096;
+        if (source.Frames is { } frames)
         {
-            totalMessageCapacity += frames[f].DecodedMessages.Count;
+            totalMessageCapacity = 0;
+            for (int f = 0; f < frames.Count; f++)
+            {
+                totalMessageCapacity += frames[f].DecodedMessages.Count;
+            }
         }
 
         List<RuleChainEvent> events = new();
         SnapshotState snap = new(staticTrackedNodes, totalMessageCapacity);
 
-        EvaluateCore(frames, snap, progress, events, maxDegreeOfParallelism, cancellationToken);
+        EvaluateCore(source, snap, progress, events, maxDegreeOfParallelism, cancellationToken);
 
         // Late-materialized players appended tracked nodes mid-run, so earlier chunk rows cover
         // fewer columns than the final node count. There is no padding pass: the SnapshotTable
@@ -387,7 +433,7 @@ public sealed class StateGraphEvaluator
     ///     hot path.
     /// </summary>
     private void EvaluateCore(
-        IReadOnlyList<DemoFrame> frames,
+        IDemoFrameSource source,
         SnapshotState? snap,
         IProgress<double>? progress,
         List<RuleChainEvent> events,
@@ -395,6 +441,8 @@ public sealed class StateGraphEvaluator
         CancellationToken cancellationToken)
     {
         using Activity? evalSpan = AnalysisDiagnostics.ActivitySource.StartActivity("analysis.eval");
+        _enrichment = source.Enrichment;
+        int? frameCount = source.FrameCount;
         // One timestamp per analysis run (not per frame) — negligible, used only for the completion log line.
         long runStart = Stopwatch.GetTimestamp();
         bool trace = EvaluatorEventSource.Log.IsEnabled();
@@ -428,43 +476,56 @@ public sealed class StateGraphEvaluator
             int nodeCount = snap?.TrackedNodes.Count ?? 0;
             if (trace)
             {
-                EvaluatorEventSource.Log.EvaluationStarted(frames.Count, edgeCount, nodeCount);
+                EvaluatorEventSource.Log.EvaluationStarted(frameCount ?? -1, edgeCount, nodeCount);
             }
 
             if (logStart)
             {
-                EvaluatorLog.EvaluationStarted(_log, frames.Count, edgeCount, nodeCount);
+                EvaluatorLog.EvaluationStarted(_log, frameCount ?? -1, edgeCount, nodeCount);
             }
         }
 
-        // Decode the entity stream in parallel up front so the per-frame
-        // AdvanceAndPollAt below consumes a precomputed digest instead of driving the layer
-        // sequentially. Golden-preserving (digests proven element-wise identical to the sequential
-        // ones). This moved the bulk of the eval cost ahead of the loop, so it OWNS the first
-        // PrecomputeShare of the progress bar (reporting per chunk) — otherwise the bar would sit
-        // at 0% for the whole parallel decode then race to 100%.
-        _entityScanner?.PrecomputeParallelDigests(frames,
+        // The scanner picks this source's digest producer and resets its per-evaluation state:
+        // the parallel up-front decode over a list (golden-preserving, proven element-wise
+        // identical to the sequential digests), or one layer driven in step with the loop over a
+        // stream. The up-front decode OWNS the first PrecomputeShare of the progress bar.
+        _entityScanner?.BeginEvaluation(source,
             progress is null ? null : p => progress.Report(p * PrecomputeShare),
             maxDegreeOfParallelism,
             cancellationToken);
 
-        for (int frameIdx = 0; frameIdx < frames.Count; frameIdx++)
+        // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
+        // producer applies the whole run before any frame in it is polled, which is what a
+        // tick-gated seek over a list did, so every frame of a run reads the same entity state.
+        int frameIdx = 0;
+        int runPos = 0;
+        List<DemoFrame> run = new(4);
+        while (true)
         {
+            if (runPos >= run.Count)
+            {
+                if (!ReadTickRun(source, run))
+                {
+                    break;
+                }
+
+                runPos = 0;
+                _entityScanner?.BeginTickRun(run);
+            }
+
             // Frame granularity is the cancellation quantum: cheap (one volatile read per ~dozens
             // of messages) and bounds cancel latency to a single frame's work.
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Determinate-progress feedback for the UI. Report ~every 2048 frames so the
-            // background eval shows a moving bar instead of an indeterminate spinner; frameIdx is a
-            // good linear proxy because the per-frame consume cost is roughly uniform. The loop owns
-            // the tail [PrecomputeShare, 1] (the parallel decode owned the head). Progress<T>.Report
-            // marshals to the UI thread; ~73 posts is negligible. Null on headless/bare → zero cost.
+            // Determinate-progress feedback for the UI, ~every 2048 frames. The loop owns the
+            // tail [PrecomputeShare, 1] of the bar; a stream reports by bytes consumed.
             if (progress is not null && (frameIdx & 2047) == 0)
             {
-                progress.Report(PrecomputeShare + (1.0 - PrecomputeShare) * frameIdx / frames.Count);
+                double fraction = frameCount is { } total ? (double)frameIdx / total : source.Progress ?? 0.0;
+                progress.Report(PrecomputeShare + (1.0 - PrecomputeShare) * fraction);
             }
 
-            DemoFrame frame = frames[frameIdx];
+            DemoFrame frame = run[runPos++];
             long frameStart = timeFrame ? Stopwatch.GetTimestamp() : 0;
             int frameMessageCount = 0;
 
@@ -472,6 +533,7 @@ public sealed class StateGraphEvaluator
             // post-message snapshot row + message record.
             void FinishMessage(NetMessage message, int evaluated, int fired, int logic)
             {
+                int ordinal = frameMessageCount;
                 totalEdgesFired += fired;
                 frameMessageCount++;
                 totalMessages++;
@@ -484,7 +546,7 @@ public sealed class StateGraphEvaluator
                     EvaluatorMetrics.LogicNodesRecomputed.Add(logic);
                 }
 
-                snap?.CaptureAfterMessage(frame, message, fired > 0);
+                snap?.CaptureAfterMessage(frameIdx, frame.ServerTick, ordinal, message, fired > 0);
             }
 
             // ── Synthesize entity-state change events (lazy: scanner is null when no rule
@@ -576,7 +638,12 @@ public sealed class StateGraphEvaluator
                         (double)frameTicks / Stopwatch.Frequency * 1000.0);
                 }
             }
+
+            frameIdx++;
         }
+
+        FramesConsumed = frameIdx;
+        MessagesConsumed = totalMessages;
 
         // A1: snapshot the collected highlight firings for this evaluation (copy — the graph's
         // sink is cleared by the NEXT evaluation over this graph, ours must stay stable).
@@ -1267,7 +1334,7 @@ public sealed class StateGraphEvaluator
             {
                 playerTeam = initialTeam;
             }
-            else if (_demo is not null && _demo.Players.TryGetValue(slot, out PlayerInfo? pi))
+            else if (_enrichment is not null && _enrichment.Players.TryGetValue(slot, out PlayerInfo? pi))
             {
                 playerTeam = pi.Team;
             }
@@ -1807,12 +1874,31 @@ public sealed class StateGraphEvaluator
 
     private string ResolvePlayerName(int slot)
     {
-        if (_demo?.Players.TryGetValue(slot, out PlayerInfo? info) == true && info.Name.Length > 0)
+        if (_enrichment?.Players.TryGetValue(slot, out PlayerInfo? info) == true && info.Name.Length > 0)
         {
             return info.Name;
         }
 
         return $"Player {slot}";
+    }
+
+    /// <summary>One tick run: the next frame and every immediately following frame at the same tick.</summary>
+    private static bool ReadTickRun(IDemoFrameSource source, List<DemoFrame> run)
+    {
+        run.Clear();
+        if (!source.TryReadNext(out DemoFrame? first))
+        {
+            return false;
+        }
+
+        run.Add(first);
+        while (source.TryPeekNext(out DemoFrame? next) && next.ServerTick == first.ServerTick
+                                                        && source.TryReadNext(out next))
+        {
+            run.Add(next);
+        }
+
+        return true;
     }
 
     private void ResortAllSlots()
@@ -2077,7 +2163,7 @@ public sealed class StateGraphEvaluator
             _staticCount = staticTrackedNodes.Count;
             TrackedNodes = new List<StateNode>(staticTrackedNodes);
             Snapshots = new List<NodeSnapshot[]?[]>(messageCapacity);
-            Messages = new List<(DemoFrame, NetMessage)>(messageCapacity);
+            Messages = new List<MessageRef>(messageCapacity);
 
             NodeToIndex = new Dictionary<StateNode, int>(ReferenceEqualityComparer.Instance);
             for (int i = 0; i < staticTrackedNodes.Count; i++)
@@ -2109,8 +2195,8 @@ public sealed class StateGraphEvaluator
         /// </summary>
         public List<NodeSnapshot[]?[]> Snapshots { get; }
 
-        /// <summary>The (frame, message) pair for each snapshot row.</summary>
-        public List<(DemoFrame, NetMessage)> Messages { get; }
+        /// <summary>The message behind each snapshot row, with its frame index and tick.</summary>
+        public List<MessageRef> Messages { get; }
 
         /// <summary>Per-edge fired message indices (graph-breakpoint support).</summary>
         public Dictionary<StateEdge, List<int>> AppliedByEdge { get; } =
@@ -2200,7 +2286,7 @@ public sealed class StateGraphEvaluator
         ///     dirty columns. The old form cloned the full tracked width per dirty message — that
         ///     was the dominant eval allocation once per-player highlight nodes tripled the width.
         /// </summary>
-        public void CaptureAfterMessage(DemoFrame frame, NetMessage message, bool anyEdgeFired)
+        public void CaptureAfterMessage(int frameIndex, int tick, int ordinal, NetMessage message, bool anyEdgeFired)
         {
             if (anyEdgeFired)
             {
@@ -2269,16 +2355,16 @@ public sealed class StateGraphEvaluator
             }
 
             _anyDirty = false;
-            Messages.Add((frame, message));
+            Messages.Add(new MessageRef(frameIndex, tick, ordinal, message));
         }
     }
 }
 
-/// <summary>Full result from <see cref="StateGraphEvaluator.EvaluateWithSnapshots" />.</summary>
+/// <summary>Full result from <see cref="StateGraphEvaluator.EvaluateWithSnapshots(IDemoFrameSource,IReadOnlyList{StateNode},IProgress{double},int?,CancellationToken)" />.</summary>
 public sealed record EvaluationResult(
     RuleChainTimeline Timeline,
     SnapshotTable MessageSnapshots,
-    IReadOnlyList<(DemoFrame Frame, NetMessage Message)> Messages,
+    IReadOnlyList<MessageRef> Messages,
     IReadOnlyList<StateNode> FinalTrackedNodes,
     IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> MaterializedPlayers,
     IReadOnlyList<GraphEdgeDescriptor> MaterializedEdgeDescriptors,

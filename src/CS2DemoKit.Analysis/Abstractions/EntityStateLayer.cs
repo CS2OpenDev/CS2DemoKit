@@ -1,10 +1,9 @@
 #region
 
 using System.Collections;
-using CS2DemoKit.Parser.Entities;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.Entities;
 using CS2DemoKit.Parser.EntityTracking;
-
 using CS2OpenSchema.Protos;
 
 #endregion
@@ -12,67 +11,55 @@ using CS2OpenSchema.Protos;
 namespace CS2DemoKit.Analysis.Abstractions;
 
 /// <summary>
-///     Wraps an <see cref="EntityTracker" /> together with the demo's frame list to provide
-///     incremental, forward-only tick-indexed entity state access.
-///     <para>
-///         Seeking is O(k) where k is the number of frames advanced — not O(n) from the start.
-///         Each call to <see cref="SeekToTick" /> processes only the frames that lie between the
-///         previous position and the requested tick.
-///     </para>
-///     <para>
-///         <b>Thread safety:</b> not thread-safe. Each parallel rule branch should call
-///         <see cref="IDemoContext.CreateEntityLayer" /> to obtain its own private instance.
-///     </para>
-///     <para>
-///         <b>Forward-only:</b> seeking backwards is a no-op. Use <see cref="Reset" /> to start
-///         from tick 0.
-///     </para>
+///     One curated <see cref="EntityTracker" /> advanced forward. Built over a frame list it seeks
+///     by tick or frame index, replaying only the frames between where it is and where it is asked
+///     to be; built without one it is fed frames by its owner through <see cref="Apply" />, which
+///     is what a forward reader drives. Backward seeking is a no-op either way; <see cref="Reset" />
+///     rebuilds the tracker from nothing.
 /// </summary>
-/// <remarks>
-///     Creates a new layer over <paramref name="frames" />, positioned at tick 0.
-/// </remarks>
-public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
+public sealed class EntityStateLayer
 {
+    private readonly IReadOnlyList<DemoFrame>? _frames;
     private int _nextFrameIndex;
 
-    /// <summary>Tick of the most recently processed frame (0 before any seek).</summary>
+    /// <summary>A layer that seeks over <paramref name="frames" />.</summary>
+    public EntityStateLayer(IReadOnlyList<DemoFrame> frames)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+        _frames = frames;
+    }
+
+    /// <summary>A layer with no frames of its own; its owner applies them.</summary>
+    public EntityStateLayer()
+    {
+    }
+
+    /// <summary>True when the layer can seek on its own.</summary>
+    public bool HasFrames => _frames is not null;
+
     public int CurrentTick => Tracker.CurrentTick;
 
-    /// <summary>Current entity state, reflecting all frames processed so far.</summary>
     public EntityTracker Tracker { get; private set; } = BootstrapTracker();
 
-    /// <summary>
-    ///     Resets the layer to tick 0 by discarding the current <see cref="Tracker" /> and
-    ///     creating a fresh one. After this call, <see cref="SeekToTick" /> will replay from
-    ///     the beginning of the demo.
-    /// </summary>
     public void Reset()
     {
         Tracker = BootstrapTracker();
         _nextFrameIndex = 0;
     }
 
-    /// <summary>
-    ///     Constructs a fresh <see cref="EntityTracker" /> with the Schema Lens resolver
-    ///     bound (the lane-mapping step whose omission silently degrades typed reads).
-    ///     Typed wrappers are the SDK-emitted set since the SDK cutover: providers bind
-    ///     them per entity via <c>SdkEntityWorlds.Wrap</c>, which also registers the SDK
-    ///     factories on this tracker on first use.
-    /// </summary>
     private static EntityTracker BootstrapTracker() => EntityTrackerFactory.CreateCurated();
 
+    /// <summary>Applies one frame. The caller guarantees recording order.</summary>
+    public void Apply(DemoFrame frame) => Tracker.AdvanceOneFrame(frame);
+
     /// <summary>
-    ///     Advances the entity state to include all frames with
-    ///     <c>tick &lt;= <paramref name="targetTick" /></c>.
-    ///     If <paramref name="targetTick" /> is before or equal to <see cref="CurrentTick" />,
-    ///     this is a no-op and the current <see cref="Tracker" /> is returned unchanged.
+    ///     Advances through every not-yet-applied frame whose tick is at most
+    ///     <paramref name="targetTick" />. A target at or behind the current tick applies nothing.
     /// </summary>
-    /// <returns>
-    ///     The <see cref="EntityTracker" /> at the requested tick (same instance as
-    ///     <see cref="Tracker" />).
-    /// </returns>
+    /// <exception cref="InvalidOperationException">The layer was built without frames.</exception>
     public EntityTracker SeekToTick(int targetTick)
     {
+        IReadOnlyList<DemoFrame> frames = RequireFrames();
         if (Tracker.CurrentTick >= targetTick)
         {
             return Tracker;
@@ -94,18 +81,11 @@ public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
         return Tracker;
     }
 
-    /// <summary>
-    ///     Advances so every frame with index <c>&lt; <paramref name="frameIndex" /></c> is applied and the
-    ///     current state is the PRE-frame state for <paramref name="frameIndex" /> — i.e. the entity state
-    ///     just before that frame's packet-entities update. This is the frame-accurate analogue of the
-    ///     scanner's pre-frame capture (which happens at the start of <c>AdvanceAndPoll</c>, before its
-    ///     tick seek); unlike <see cref="SeekToTick" /> it is exact even when consecutive frames share a
-    ///     <c>ServerTick</c>. Forward-only: a <paramref name="frameIndex" /> at or before the current
-    ///     position is a no-op (use <see cref="Reset" /> to rewind).
-    /// </summary>
-    /// <returns>The <see cref="EntityTracker" /> positioned before <paramref name="frameIndex" />.</returns>
+    /// <summary>Advances through every not-yet-applied frame before <paramref name="frameIndex" />.</summary>
+    /// <exception cref="InvalidOperationException">The layer was built without frames.</exception>
     public EntityTracker SeekBeforeFrame(int frameIndex)
     {
+        IReadOnlyList<DemoFrame> frames = RequireFrames();
         int end = Math.Min(frameIndex, frames.Count); // exclusive: apply frames [_nextFrameIndex, frameIndex)
         if (end > _nextFrameIndex)
         {
@@ -117,57 +97,24 @@ public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
     }
 
     /// <summary>
-    ///     Pre-positions this layer at a <c>DEM_FullPacket</c> checkpoint so a parallel chunk worker can
-    ///     drive the SAME <see cref="SeekToTick" /> mechanism as the sequential scanner, just starting
-    ///     from the checkpoint instead of from tick 0. Serves the parallel entity decode.
-    ///     <para>
-    ///         Mechanism: replay the schema prefix <c>[0, schemaPrefixEnd)</c> — the signon frames that
-    ///         load SendTables / ClassInfo / the initial string tables — via the un-gated
-    ///         <see cref="EntityTracker.Replay" /> (NOT <see cref="SeekToTick" />, whose tick gate would
-    ///         skip the <c>tick == -1</c> signon frames), then drop the entities that prefix created
-    ///         (<see cref="EntityTracker.ResetEntitiesKeepSchema" />), seed the per-class instancebaseline
-    ///         table from the most recent full packet that carries it
-    ///         (<see cref="EntityTracker.LoadInstanceBaselineSnapshot" /> — needed so entities CREATED after
-    ///         the checkpoint decode with their baseline fields), and seed the full entity set from the
-    ///         checkpoint's own snapshot (<see cref="EntityTracker.ProcessFullPacketCheckpoint" /> — its
-    ///         bundled string-table snapshot + full <c>PacketEntities</c>). After this call the layer is
-    ///         positioned exactly as a sequential layer would be just before
-    ///         <c>checkpointFrameIndex + 1</c>: <see cref="CurrentTick" /> is the checkpoint's tick and the
-    ///         next frame <see cref="SeekToTick" /> will apply is the one after the checkpoint.
-    ///     </para>
-    ///     <para>
-    ///         <b>Invariant (asserted loudly):</b> the checkpoint frame must have no same-tick SUCCESSOR (a
-    ///         later frame sharing its <c>ServerTick</c>). <see cref="SeekToTick" /> folds every frame with
-    ///         <c>tick &lt;= target</c> into one advance, so a sequential decode applies that successor at
-    ///         the checkpoint frame itself, while a worker primed here leaves <see cref="CurrentTick" /> at
-    ///         the checkpoint tick, early-returns on it, and stays diverged until the next tick resyncs.
-    ///         <c>ParallelDigestProducer.PlanChunks</c> is what upholds the invariant: it never selects a
-    ///         full packet with a same-tick successor. The throw below is the backstop for a caller that
-    ///         picks its own checkpoint frame.
-    ///     </para>
+    ///     Seeds the layer from a <c>DEM_FullPacket</c> checkpoint in the frame list: the schema
+    ///     prefix <c>[0, schemaPrefixEnd)</c> is replayed ungated, the entities it created are
+    ///     dropped, the most recent full packet at or before the checkpoint that carries the
+    ///     <c>instancebaseline</c> table is loaded, then the checkpoint's own snapshot.
     /// </summary>
-    /// <param name="checkpointFrameIndex">Index of the <c>DEM_FullPacket</c> frame to start from.</param>
-    /// <param name="schemaPrefixEnd">
-    ///     Exclusive end of the schema-loading prefix (the first gameplay <c>DEM_Packet</c> index);
-    ///     replayed in full to load the serializer before the entities are reset.
-    /// </param>
+    /// <exception cref="InvalidOperationException">The layer was built without frames, or the checkpoint has a same-tick successor.</exception>
     public void PrimeFromCheckpoint(int checkpointFrameIndex, int schemaPrefixEnd)
     {
-        // 1. Load the schema (serializer / class info / initial string tables) without the tick gate.
+        IReadOnlyList<DemoFrame> frames = RequireFrames();
         if (schemaPrefixEnd > 0)
         {
             Tracker.Replay(new FrameSlice(frames, 0, schemaPrefixEnd));
         }
 
-        // 2. Drop the entities the prefix created; keep the schema.
         Tracker.ResetEntitiesKeepSchema();
 
-        // 2b. Seed the instancebaseline table so entities CREATED after the checkpoint (a mid-chunk
-        //     ENTERPVS) decode with their per-class baseline fields. The full-packet string-table dump is
-        //     INCREMENTAL — a full packet carries the instancebaseline table only when it changed since the
-        //     previous one (and when present it is COMPLETE), so walk back from the checkpoint to the most
-        //     recent full packet that carries it (the table was unchanged in between). Without this, a
-        //     baseline-sourced field such as a projectile's m_hThrower stays unset on mid-chunk creates.
+        // The full-packet string-table dump is incremental: a full packet carries the
+        // instancebaseline table only when it changed since the previous one, and then completely.
         for (int i = checkpointFrameIndex; i >= 0; i--)
         {
             if (frames[i].CommandKind == EDemoCommands.DemFullPacket && Tracker.LoadInstanceBaselineSnapshot(frames[i]))
@@ -176,38 +123,64 @@ public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
             }
         }
 
-        // 3. Seed the full entity set from the checkpoint snapshot (sets CurrentTick to the checkpoint tick).
         DemoFrame checkpoint = frames[checkpointFrameIndex];
-        Tracker.ProcessFullPacketCheckpoint(checkpoint);
-
-        // 4. Enforce the no-same-tick-successor invariant (see remarks). Loud, never silently handled.
         int next = checkpointFrameIndex + 1;
-        if (next < frames.Count && frames[next].ServerTick == checkpoint.ServerTick)
-        {
-            throw new InvalidOperationException(
-                $"PrimeFromCheckpoint: full-packet frame {checkpointFrameIndex} (tick {checkpoint.ServerTick}) " +
-                $"has a same-tick successor at frame {next}; the checkpoint snapshot would miss its delta. " +
-                "The parallel chunked decode assumes full packets have no same-tick successor.");
-        }
-
-        // 5. The next frame the worker's SeekToTick should apply is the one after the checkpoint.
+        SeedCheckpoint(checkpoint, next < frames.Count ? frames[next] : null);
         _nextFrameIndex = next;
     }
 
+    /// <summary>
+    ///     The same priming from frames a forward source hands over: the retained signon prefix,
+    ///     the most recent instancebaseline-carrying full packet seen before the checkpoint, the
+    ///     checkpoint, and its successor when known. What a chunk worker over a stream uses.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The checkpoint has a same-tick successor.</exception>
+    public void PrimeFromCheckpoint(IReadOnlyList<DemoFrame> signonPrefix, DemoFrame? instanceBaselineFullPacket,
+        DemoFrame checkpoint, DemoFrame? successor)
+    {
+        ArgumentNullException.ThrowIfNull(signonPrefix);
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        foreach (DemoFrame frame in signonPrefix)
+        {
+            Tracker.AdvanceOneFrame(frame);
+        }
+
+        Tracker.ResetEntitiesKeepSchema();
+        if (instanceBaselineFullPacket is not null)
+        {
+            Tracker.LoadInstanceBaselineSnapshot(instanceBaselineFullPacket);
+        }
+
+        SeedCheckpoint(checkpoint, successor);
+        _nextFrameIndex = checkpoint.FrameNumber + 1;
+    }
+
+    private void SeedCheckpoint(DemoFrame checkpoint, DemoFrame? successor)
+    {
+        Tracker.ProcessFullPacketCheckpoint(checkpoint);
+
+        // A same-tick successor's delta would be skipped by the first tick-gated seek, while a
+        // sequential decode folds it into the same frame. Loud, never silently handled.
+        if (successor is not null && successor.ServerTick == checkpoint.ServerTick)
+        {
+            throw new InvalidOperationException(
+                $"PrimeFromCheckpoint: full-packet frame {checkpoint.FrameNumber} (tick {checkpoint.ServerTick}) " +
+                $"has a same-tick successor at frame {successor.FrameNumber}; the checkpoint snapshot would miss its delta. " +
+                "The chunked decode assumes full packets have no same-tick successor.");
+        }
+    }
+
+    private IReadOnlyList<DemoFrame> RequireFrames() =>
+        _frames ?? throw new InvalidOperationException(
+            "This layer was built without frames; feed it through Apply, or build it over a frame list to seek.");
+
     // ── Zero-allocation frame slice ───────────────────────────────────────────
 
-    /// <summary>
-    ///     A lightweight, zero-copy window over a contiguous sub-range of
-    ///     <paramref name="source" /> passed to <see cref="EntityTracker.Replay" />.
-    ///     No elements are copied — the wrapper is the only allocation.
-    /// </summary>
     private sealed class FrameSlice(IReadOnlyList<DemoFrame> source, int start, int count)
         : IReadOnlyList<DemoFrame>
     {
-        /// <inheritdoc />
         public int Count => count;
 
-        /// <inheritdoc />
         public IEnumerator<DemoFrame> GetEnumerator()
         {
             for (int i = 0; i < count; i++)
@@ -218,7 +191,6 @@ public sealed class EntityStateLayer(IReadOnlyList<DemoFrame> frames)
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        /// <inheritdoc />
         public DemoFrame this[int index] => source[start + index];
     }
 }

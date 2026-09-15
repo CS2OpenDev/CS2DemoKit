@@ -384,7 +384,7 @@ public sealed partial class RuleChainBuilder
             }
 
             entityScanner = new EntityChangeScanner(
-                new EntityStateLayer(_demo.Frames),
+                new EntityStateLayer(),
                 trackedForScanner,
                 perPlayerList,
                 emitMolotov,

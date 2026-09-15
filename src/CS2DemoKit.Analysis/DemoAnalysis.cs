@@ -115,6 +115,37 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     /// </summary>
     public IReadOnlyList<HighlightFired> Highlights { get; init; } = [];
 
+    /// <summary>The demo's facts at the end of the run, detached from whichever source produced it.</summary>
+    public required DemoDescriptor Demo { get; init; }
+
+    /// <summary>Which source and digest producer ran, and how much was consumed.</summary>
+    public required AnalysisProvenance Provenance { get; init; }
+
+    /// <summary>Every player materialised during the run, in order. Populated in both capture modes.</summary>
+    public IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> MaterializedPlayers { get; init; } = [];
+
+    /// <summary>Every per-player node materialised during the run. Populated in both capture modes.</summary>
+    public IReadOnlyList<StateNode> MaterializedNodes { get; init; } = [];
+
+    /// <summary>
+    ///     The graph's static nodes followed by the materialised per-player nodes the snapshot table
+    ///     would track. The same list in both capture modes, which is what lets a bare run be
+    ///     compared with a snapshot run node for node.
+    /// </summary>
+    public IReadOnlyList<StateNode> FinalNodes =>
+        [.. Build.Nodes, .. MaterializedNodes.Where(n => n is not ISnapshotExcludedNode)];
+
+    /// <summary>Projects the configured outputs against <see cref="Demo" />.</summary>
+    public IReadOnlyList<MetricTable> ProjectConfiguredOutputs(string? matchId = null) =>
+        ProjectConfiguredOutputs(Demo, matchId);
+
+    /// <summary>Projects the configured outputs against a retained demo's final facts.</summary>
+    public IReadOnlyList<MetricTable> ProjectConfiguredOutputs(ParsedDemo demo, string? matchId = null)
+    {
+        ArgumentNullException.ThrowIfNull(demo);
+        return ProjectConfiguredOutputs(DemoDescriptor.From(demo), matchId);
+    }
+
     /// <summary>
     ///     Projects every configured output (the YAML <c>outputs:</c> declarations the build carried
     ///     through <see cref="Graphs.BuildResult.Outputs" />) into its <see cref="MetricTable" />, in
@@ -122,7 +153,7 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     ///     tables are not included here — callers combine this list with the built-in projectors'
     ///     output. Empty when the config declared no outputs.
     /// </summary>
-    /// <param name="demo">The parsed demo the run evaluated (dimension context: map, players).</param>
+    /// <param name="demo">The demo facts to project against (dimension context: map, players).</param>
     /// <param name="matchId">
     ///     Optional match identifier for the <c>match_id</c> dimension (typically the demo filename);
     ///     omitted per row when null.
@@ -131,7 +162,7 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     ///     The run was executed with <see cref="AnalysisOptions.CaptureSnapshots" /> disabled —
     ///     projection reads the snapshot vectors.
     /// </exception>
-    public IReadOnlyList<MetricTable> ProjectConfiguredOutputs(ParsedDemo demo, string? matchId = null)
+    public IReadOnlyList<MetricTable> ProjectConfiguredOutputs(DemoDescriptor demo, string? matchId = null)
     {
         ArgumentNullException.ThrowIfNull(demo);
         if (Build.Outputs is not { Count: > 0 } outputs)
@@ -176,7 +207,7 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 ///         <see cref="Run" /> is the one-shot path. Consumers that need the compiled graph before
 ///         evaluation (e.g. to render a skeleton while the multi-second eval runs) call
 ///         <see cref="Build(ParsedDemo, IReadOnlyList{RulesetDoc}, AnalysisOptions?)" /> then
-///         <see cref="Evaluate" /> — <see cref="Evaluate" /> accepts only a
+///         <see cref="Evaluate(ParsedDemo,BuildResult,AnalysisOptions)" /> — <see cref="Evaluate(ParsedDemo,BuildResult,AnalysisOptions)" /> accepts only a
 ///         <see cref="BuildResult" /> so the scanner/context threading cannot be bypassed.
 ///     </para>
 ///     <para>
@@ -319,25 +350,53 @@ public static class DemoAnalysis
     /// <summary>Evaluates a compiled graph over the demo's frames.</summary>
     public static AnalysisRun Evaluate(ParsedDemo demo, BuildResult build, AnalysisOptions? options = null)
     {
-        options ??= new AnalysisOptions();
+        ArgumentNullException.ThrowIfNull(demo);
+        return EvaluateCore(demo.AsFrameSource(), build, options ?? new AnalysisOptions(), demo);
+    }
+
+    /// <summary>
+    ///     Evaluates a compiled graph over any frame source. Over a forward reader the frames are
+    ///     consumed and dropped, and entity state is decoded in step with the loop; over a
+    ///     retained demo this is the same evaluation the <see cref="ParsedDemo" /> overload runs.
+    /// </summary>
+    public static AnalysisRun Evaluate(IDemoFrameSource source, BuildResult build, AnalysisOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return EvaluateCore(source, build, options ?? new AnalysisOptions(), null);
+    }
+
+    private static AnalysisRun EvaluateCore(IDemoFrameSource source, BuildResult build, AnalysisOptions options,
+        ParsedDemo? demo)
+    {
+        ArgumentNullException.ThrowIfNull(build);
         StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner);
 
+        RuleChainTimeline timeline;
+        EvaluationResult? result = null;
         if (!options.CaptureSnapshots)
         {
-            RuleChainTimeline timeline = evaluator.Evaluate(
-                demo.Frames, options.MaxDegreeOfParallelism, options.CancellationToken);
-            return new AnalysisRun(build, timeline, null)
-            {
-                Highlights = evaluator.HighlightsFired
-            };
+            timeline = evaluator.Evaluate(source, options.MaxDegreeOfParallelism, options.CancellationToken);
+        }
+        else
+        {
+            result = evaluator.EvaluateWithSnapshots(
+                source, build.Nodes, options.Progress, options.MaxDegreeOfParallelism,
+                options.CancellationToken);
+            timeline = result.Timeline;
         }
 
-        EvaluationResult result = evaluator.EvaluateWithSnapshots(
-            demo.Frames, build.Nodes, options.Progress, options.MaxDegreeOfParallelism,
-            options.CancellationToken);
-        return new AnalysisRun(build, result.Timeline, result)
+        return new AnalysisRun(build, timeline, result)
         {
-            Highlights = evaluator.HighlightsFired
+            Highlights = evaluator.HighlightsFired,
+            Demo = source.Enrichment.Snapshot(),
+            MaterializedPlayers = evaluator.MaterializedPlayers,
+            MaterializedNodes = evaluator.MaterializedNodes,
+            Provenance = new AnalysisProvenance(
+                source.SupportsRandomAccess ? AnalysisSourceKind.Materialised : AnalysisSourceKind.Stream,
+                build.EntityScanner?.ProducerKind ?? DigestProducerKind.None,
+                result is not null,
+                evaluator.FramesConsumed,
+                evaluator.MessagesConsumed)
         };
     }
 

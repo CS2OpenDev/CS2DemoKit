@@ -63,12 +63,19 @@ public sealed class EntityChangeScanner
     // it. A digest from a parallel worker carries its own layout instance over provider clones;
     // MergePreFrameSnapshot checks it is compatible (same kinds, same names) before folding.
     private readonly DigestColumnLayout _layout;
-    private readonly PreFrameSnapshot _preFrameSnapshot;
+    private PreFrameSnapshot _preFrameSnapshot;
     private DigestColumnLayout? _lastCompatibleLayout;
 
     // This scanner's own cell memory, used only on the sequential fallback path. The parallel path
     // never reaches BuildDigest, so each chunk worker keeps its own instead.
-    private readonly PerPawnDeltaState _delta;
+    private PerPawnDeltaState _delta;
+
+    // Sequential path driven by the evaluator's tick runs. Frames whose tick is not past the
+    // layer's current tick are held back and applied with the first run that is, which is the
+    // tick-gated seek's behaviour over a list; the signon prefix is the case that needs it.
+    private readonly List<DemoFrame> _pendingFrames = [];
+    private bool _runDriven;
+    private bool _layerAdvanced;
 
     // Decode-integrity latch (hardening that landed with the EnemyDmg-overcount investigation, but
     // NOT that fix — the fix lives in HurtTeamEnrichmentEdge's same-frame guard): once ANY consumed
@@ -288,7 +295,13 @@ public sealed class EntityChangeScanner
             seekStartA = GC.GetAllocatedBytesForCurrentThread();
         }
 
-        Layer.SeekToTick(tick);
+        // A run-driven evaluation already applied this frame's tick run in BeginTickRun.
+        if (!_runDriven)
+        {
+            Layer.SeekToTick(tick);
+            _layerAdvanced = true;
+        }
+
         if (prof)
         {
             _profSeekTicks += Stopwatch.GetTimestamp() - seekStart;
@@ -303,6 +316,98 @@ public sealed class EntityChangeScanner
         }
 
         return Consume(BuildDigest(), tick);
+    }
+
+    /// <summary>How this evaluation's digests are being produced; <see cref="DigestProducerKind.None" /> before one starts.</summary>
+    public DigestProducerKind ProducerKind { get; private set; }
+
+    /// <summary>
+    ///     Starts an evaluation: clears every per-evaluation accumulator (the previous digest, the
+    ///     pre-frame snapshot, the delta memory, the molotov de-dup set, the singleton last-values,
+    ///     the decode-compromise latch, a layer the sequential path advanced), then chooses the
+    ///     producer. A source with random access gets the up-front parallel decode; a stream is
+    ///     driven sequentially by <see cref="BeginTickRun" />. Without this a second evaluation over
+    ///     one <c>BuildResult</c> would start from the prior run's terminal values.
+    /// </summary>
+    internal void BeginEvaluation(IDemoFrameSource source, Action<double>? onProgress,
+        int? maxDegreeOfParallelism, CancellationToken cancellationToken)
+    {
+        _prevDigest = null;
+        _seenMolotovs.Clear();
+        _preFrameSnapshotFrozen = false;
+        _lastCompatibleLayout = null;
+        _pendingFrames.Clear();
+        _runDriven = false;
+        _delta = new PerPawnDeltaState(_layout);
+        _preFrameSnapshot = new PreFrameSnapshot(_layout);
+        Span<TrackedProvider> tracked = CollectionsMarshal.AsSpan(_tracked);
+        for (int i = 0; i < tracked.Length; i++)
+        {
+            tracked[i].LastValue = tracked[i].Provider.DefaultValue;
+        }
+
+        if (_layerAdvanced)
+        {
+            Layer.Reset();
+            _layerAdvanced = false;
+        }
+
+        if (source.SupportsRandomAccess && source.Frames is { } frames)
+        {
+            PrecomputeParallelDigests(frames, onProgress, maxDegreeOfParallelism, cancellationToken);
+            ProducerKind = PrecomputedDigests is not null ? DigestProducerKind.ParallelUpFront : DigestProducerKind.Sequential;
+            return;
+        }
+
+        ProducerKind = DigestProducerKind.Sequential;
+    }
+
+    /// <summary>
+    ///     Hands the evaluator's next tick run (a frame plus its same-tick successors) to the
+    ///     sequential producer, which applies it before any frame in the run is polled. A run whose
+    ///     tick is not past the layer's current tick is held back, exactly as the tick-gated seek
+    ///     over a list would skip it, and applied with the first run that is. A no-op while digests
+    ///     are precomputed.
+    /// </summary>
+    internal void BeginTickRun(IReadOnlyList<DemoFrame> run)
+    {
+        if (PrecomputedDigests is not null || run.Count == 0)
+        {
+            return;
+        }
+
+        _runDriven = true;
+        if (Layer.CurrentTick >= run[0].ServerTick)
+        {
+            _pendingFrames.AddRange(run);
+            return;
+        }
+
+        bool prof = Profiling.Enabled;
+        long seekStart = 0, seekStartA = 0;
+        if (prof)
+        {
+            seekStart = Stopwatch.GetTimestamp();
+            seekStartA = GC.GetAllocatedBytesForCurrentThread();
+        }
+
+        for (int i = 0; i < _pendingFrames.Count; i++)
+        {
+            Layer.Apply(_pendingFrames[i]);
+        }
+
+        _pendingFrames.Clear();
+        for (int i = 0; i < run.Count; i++)
+        {
+            Layer.Apply(run[i]);
+        }
+
+        _layerAdvanced = true;
+        if (prof)
+        {
+            _profSeekTicks += Stopwatch.GetTimestamp() - seekStart;
+            _profSeekAlloc += GC.GetAllocatedBytesForCurrentThread() - seekStartA;
+        }
     }
 
     /// <summary>
