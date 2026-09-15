@@ -384,6 +384,87 @@ memory and returns nothing, and the window helps only when the read is on its ow
 On another machine the count moves with the core count; the knobs are the option and, for a
 caller building its own `DemoReader`, `ParseOptions.ReadAheadFrames`.
 
+### After the allocation pass
+
+    runs      30 sampled + 30 live (1 round x 15 demos x 2 arms), zero failures, zero digest mismatches
+    rows      paths-alloc.csv, paths-alloc-live.csv (CS2DEMOKIT_PATHS_LIVE=1)
+
+Six commits driven by an allocation-by-type profile of the forward run
+(`CS2DEMOKIT_PATHS_ALLOCTICK=1` on a `path-measure` child prints the top types from the
+runtime's allocation-tick events), each gated on identical digests across paths, the goldens
+and the corpus parity arm. The 280 MB demo (...410), forward run, allocation after each step:
+
+| step | commit | allocated | what went |
+|---|---|---|---|
+| tuned defaults (the section above) | d0fb392 | 799 MB | |
+| zero-copy payload reads, fallback store off, one schema shared across trackers | b662eb2 | 452 MB | a byte[] copy per entity and string-table message, a dictionary entry and a box per unlensed field, two of three schema parses |
+| typed Vector3 lane | 24e15d2 | 384 MB | 77 MB of boxed vectors and angles |
+| pawn slot index | 55ebd7b | 364 MB | a walk over every live entity per frame |
+| typed ulong lane, handles typed, enums to int | 383d999 | 349 MB | 23 MB of boxed ulong |
+| array element cache grows from eight | cf90c98 | 330 MB | 24 MB of 1024-slot descriptor arrays, held for the run |
+
+What is left is the parser's: 125 MB of byte[] is protobuf's copy of every message payload,
+15 MB of `CSVCMsg_PacketEntities` and 12 MB of `ByteString` are the messages, 8 MB of
+`SnappyDecompressor` is one per call, 8 MB of strings are decoded and dropped. The ring buffer
+for entity bytes in the refinement is what would move the byte[] figure; it is on hold.
+
+Same five demos as above, single runs, the default collector:
+
+| demo | size | retained wall | forward wall | forward / retained | retained peak heap | forward live peak | forward sampled peak |
+|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 0.9 s | 0.8 s | 0.84x | 271 MB | 91 MB | 144 MB |
+| ...0748090338_404 | 204 MB | 2.2 s | 1.8 s | 0.85x | 906 MB | 115 MB | 186 MB |
+| ...1163782782_410 | 280 MB | 2.5 s | 1.9 s | 0.77x | 1028 MB | 127 MB | 239 MB |
+| ...0449092279_123 | 432 MB | 3.0 s | 2.3 s | 0.78x | 1536 MB | 129 MB | 203 MB |
+| ...1522348072_129 | 524 MB | 3.3 s | 4.0 s | 1.20x | 1791 MB | 150 MB | 262 MB |
+
+**Wall-clock.** A median 0.89x of the retained parse over the corpus, 0.66x to 1.27x on single
+runs. The retained parse shares the tracker and got faster too, a median 0.86x of its own time
+in the previous section, so the ratio held while both moved. The spread is the collector: the
+same demo measured 3.2 s and 1.8 s on consecutive single runs under the default settings, which
+is the bimodality the closing section warns about and what the next section is for.
+
+**Memory.** Live peak 91 to 150 MB across the corpus, from 154 to 274 MB in the previous
+section, against 271 to 1791 MB retained. A forward run allocates 124 to 551 MB in total; the
+retained parse 221 to 1706 MB.
+
+### GC configuration
+
+    runs      15 demos x 1 round x scoreboard-stream per configuration
+    rows      paths-gc-default.csv, paths-gc-nonconc.csv, paths-gc-gen0-64m.csv, paths-gc-nonconc-gen0.csv, paths-gc-batch.csv, paths-gc-batch-gen0.csv
+
+Measured last on purpose: a collector setting flatters whichever allocation profile it is
+measured against, so it waited until the profile stopped moving. Workstation GC throughout (the
+bench sets `DOTNET_gcServer=0`). Totals over the 15 demos, forward run, one round each:
+
+| configuration | set by | total wall | total pause | gen0 per run, 40 MB to 524 MB demo | faster than the default |
+|---|---|---|---|---|---|
+| default: concurrent workstation | | 35.2 s | 3.26 s | 16 to 74 | |
+| non-concurrent | `DOTNET_gcConcurrent=0` at startup | 29.7 s | 1.07 s | 4 to 9 | 11 of 15 |
+| gen0 budget 64 MB | `DOTNET_GCgen0size=4000000` at startup | 29.2 s | 1.48 s | 3 to 11 | 12 of 15 |
+| both | | 26.7 s | 1.05 s | 3 to 7 | 15 of 15 |
+| `GCLatencyMode.Batch` set by the engine for the run | `GCSettings.LatencyMode` at run time | 36.7 s | 3.14 s | 12 to 63 | 6 of 15 |
+| the same plus the gen0 budget | | 35.0 s | 1.24 s | 3 to 9 | 7 of 15 |
+
+Why the startup knobs work: concurrent workstation GC caps the gen0 budget at a few MB so that
+its background collections stay short, and a forward run allocates 100 to 500 MB of short-lived
+frames, so that is a gen0 collection every few frames, each suspending the reader thread and
+three digest workers. Non-concurrent GC lifts the cap and drops the background collections; the
+gen0 knob lifts the cap on its own.
+
+**Decision.** The engine leaves the collector alone. The configuration that wins everywhere is
+two startup settings, and a library cannot apply either: the runtime reads `gcConcurrent` and
+`GCgen0size` before any managed code runs, and the one collector knob that can be flipped at run
+time, `GCSettings.LatencyMode`, was measured in both combinations above and is a wash: on its
+own it stops the background collections but keeps the small gen0 budget, so the collections stay
+as frequent and become blocking, and with the budget lifted alongside it it still measured no
+better than the default, which the numbers do not explain. A host that runs the forward path as
+a batch job sets `DOTNET_gcConcurrent=0`
+or `<ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>` in its project, and
+`DOTNET_GCgen0size=4000000` (hex bytes, 64 MB) in its environment, and gets the 24%. A host with
+a UI thread keeps concurrent GC and takes the gen0 knob alone, which was worth 12 of 15 on its
+own. `src/CS2DemoKit.Analysis/README.md` says the same in fewer words.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An

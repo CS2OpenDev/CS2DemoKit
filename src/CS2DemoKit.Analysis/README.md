@@ -113,6 +113,19 @@ full `EntityTracker`. `null`/≤0 means unbounded (the default). Still gate the 
 *concurrent demos* with your own `SemaphoreSlim`, sized with the parse-side memory multiplier
 in mind.
 
+## Garbage collection
+
+The forward path allocates 100 to 500 MB of short-lived frames per demo, and under the default
+concurrent workstation collector that is a gen0 collection every few frames, each one suspending
+the reader thread and the digest workers. Two startup settings on the host process are worth a
+quarter of the wall-clock over the corpus (measured in `docs/perf/baseline.md`, "GC
+configuration"): `DOTNET_gcConcurrent=0`, or `<ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>`
+in the host's project file, and `DOTNET_GCgen0size=4000000` (hex bytes: a 64 MB gen0 budget).
+Both are read when the process starts. Nothing the engine can set at run time reproduces them;
+`GCSettings.LatencyMode` was measured and is a wash, so the engine leaves the collector alone.
+A host with a UI thread should weigh the first one, since it trades background collections for
+blocking ones.
+
 ## Pawn position
 
 Rules read a pawn's world position as `player.pos_x`, `player.pos_y`, `player.pos_z` (floats).
