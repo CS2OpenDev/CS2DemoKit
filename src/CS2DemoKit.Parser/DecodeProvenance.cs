@@ -3,7 +3,10 @@ namespace CS2DemoKit.Parser;
 /// <summary>Which entry point produced a result.</summary>
 public enum DecodeSource
 {
-    /// <summary><see cref="DemoParser.Parse(ReadOnlyMemory{byte},DemoProfile)" /> and its options overload.</summary>
+    /// <summary>
+    ///     The whole-file parse: <see cref="DemoParser.Parse(ReadOnlyMemory{byte},DemoProfile)" />, its
+    ///     options overload, and <see cref="DemoReader.Materialize" />, which is what they run.
+    /// </summary>
     DemoParserParse,
 
     /// <summary>The forward reader.</summary>

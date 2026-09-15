@@ -334,8 +334,9 @@ internal static class PathMeasurement
         return new ArmResult(frames, after - before, digest);
     }
 
-    // The whole-file parse as a consumer calls it: three passes over the file's bytes, every
-    // frame retained. Digested afterwards, so the digest walk costs the same on both loops.
+    // The whole-file parse as a consumer calls it: the reader's window decode with one window
+    // over the file's bytes, every frame retained. Digested afterwards, so the digest walk costs
+    // the same on both arms.
     private static ArmResult RunParse(string demoPath)
     {
         ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory(), new ParseOptions());
@@ -344,8 +345,8 @@ internal static class PathMeasurement
         return result;
     }
 
-    // The reader's windowed loop with one window over the whole file, every frame retained.
-    // Materialize() as shipped delegates to DemoParser.Parse, so the reader itself is walked.
+    // The same loop pulled through ReadFrames with one window over the whole file, every frame
+    // retained: what the parse arm costs when the frames are handed out instead of kept.
     private static ArmResult RunMaterialise(string demoPath)
     {
         int window = ReadAhead > 0 ? ReadAhead : WholeFileWindow;
