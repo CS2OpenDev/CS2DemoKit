@@ -41,10 +41,46 @@ public sealed class EntityStateLayer
 
     public EntityTracker Tracker { get; private set; } = BootstrapTracker();
 
+    private bool _storeUnlensedFields = true;
+    private EntityStateLayer? _template;
+
+    /// <summary>
+    ///     Forwarded to <see cref="EntityTracker.StoreUnlensedFields" /> on the current tracker and
+    ///     every one <see cref="Reset" /> builds. The analysis engine turns it off: its providers
+    ///     read lensed lanes only, and the fallback store is a dictionary and a box per write.
+    /// </summary>
+    public bool StoreUnlensedFields
+    {
+        get => _storeUnlensedFields;
+        set
+        {
+            _storeUnlensedFields = value;
+            Tracker.StoreUnlensedFields = value;
+        }
+    }
+
     public void Reset()
     {
         Tracker = BootstrapTracker();
+        Tracker.StoreUnlensedFields = _storeUnlensedFields;
+        if (_template is not null)
+        {
+            Tracker.AdoptSchemaState(_template.Tracker);
+        }
+
         _nextFrameIndex = 0;
+    }
+
+    /// <summary>
+    ///     Takes the schema state of <paramref name="template" />, a layer that has applied the signon
+    ///     prefix, instead of replaying that prefix: the schema is parsed once per demo and shared.
+    ///     A prime after this skips the prefix. Survives <see cref="Reset" />.
+    /// </summary>
+    public void AdoptSchema(EntityStateLayer template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        _template = template;
+        Tracker.AdoptSchemaState(template.Tracker);
     }
 
     private static EntityTracker BootstrapTracker() => EntityTrackerFactory.CreateCurated();
@@ -106,7 +142,7 @@ public sealed class EntityStateLayer
     public void PrimeFromCheckpoint(int checkpointFrameIndex, int schemaPrefixEnd)
     {
         IReadOnlyList<DemoFrame> frames = RequireFrames();
-        if (schemaPrefixEnd > 0)
+        if (schemaPrefixEnd > 0 && _template is null)
         {
             Tracker.Replay(new FrameSlice(frames, 0, schemaPrefixEnd));
         }
@@ -140,9 +176,12 @@ public sealed class EntityStateLayer
     {
         ArgumentNullException.ThrowIfNull(signonPrefix);
         ArgumentNullException.ThrowIfNull(checkpoint);
-        foreach (DemoFrame frame in signonPrefix)
+        if (_template is null)
         {
-            Tracker.AdvanceOneFrame(frame);
+            foreach (DemoFrame frame in signonPrefix)
+            {
+                Tracker.AdvanceOneFrame(frame);
+            }
         }
 
         Tracker.ResetEntitiesKeepSchema();

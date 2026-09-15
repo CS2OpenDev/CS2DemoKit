@@ -363,7 +363,7 @@ public sealed partial class RuleChainBuilder
             }
 
             entityScanner = new EntityChangeScanner(
-                new EntityStateLayer(),
+                new EntityStateLayer { StoreUnlensedFields = false },
                 trackedForScanner,
                 perPlayerList,
                 emitMolotov,

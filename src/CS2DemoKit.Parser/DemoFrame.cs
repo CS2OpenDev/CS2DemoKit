@@ -105,8 +105,19 @@ public sealed class DemoFrame
     ///     decoded frame weighs. Offsets, structure headers and stored user commands are untouched.
     /// </summary>
     /// <returns>How many messages were dropped.</returns>
-    public int Release(MessageCategories categories) =>
-        categories == MessageCategories.None ? 0 : MessageList.RemoveAll(m => (CategoryOf(m.Payload) & categories) != 0);
+    public int Release(MessageCategories categories) => categories switch
+    {
+        MessageCategories.None => 0,
+        MessageCategories.Entities => MessageList.RemoveAll(_entities),
+        MessageCategories.Entities | MessageCategories.StringTables => MessageList.RemoveAll(_entitiesAndStringTables),
+        _ => MessageList.RemoveAll(m => (CategoryOf(m.Payload) & categories) != 0)
+    };
+
+    // The two masks a fold releases, so a per-frame release allocates no closure.
+    private static readonly Predicate<NetMessage> _entities = m => CategoryOf(m.Payload) == MessageCategories.Entities;
+
+    private static readonly Predicate<NetMessage> _entitiesAndStringTables =
+        m => (CategoryOf(m.Payload) & (MessageCategories.Entities | MessageCategories.StringTables)) != 0;
 
     private static MessageCategories CategoryOf(IMessage payload) => payload switch
     {

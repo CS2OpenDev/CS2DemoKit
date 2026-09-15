@@ -1,5 +1,6 @@
 #region
 
+using System.Collections.Concurrent;
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
@@ -63,7 +64,9 @@ public sealed class EntityTracker
     // by BuildFieldDescs the first time we walk a serializer. Bound to every
     // EntityState that flows through ReadEntityFields so lane-indexed writes
     // can happen in O(1) without consulting any name lookup on the hot path.
-    private readonly Dictionary<string, ClassShape> _classShapes = new();
+    // Shared by reference between trackers that adopted one schema state, so concurrent reads
+    // are lock-free and the miss path below builds under a lock.
+    private ConcurrentDictionary<string, ClassShape> _classShapes = new();
 
     // ── Entity wrapper factory registry ──────────────────────────────────────
     //
@@ -77,7 +80,7 @@ public sealed class EntityTracker
 
     // (serializerName) → flat list of (dotted path string, FieldDecoder)
     // Built lazily on first entity create for that class.
-    private readonly Dictionary<string, List<FieldDescriptor>> _fieldDescs = new();
+    private ConcurrentDictionary<string, List<FieldDescriptor>> _fieldDescs = new();
 
     // Reusable field-path scratch for the hot Replay decode path (ReadEntityFields). Single-threaded
     // per tracker and only used by ProcessPacketEntitiesCore — PeekEntityUpdates passes its own list,
@@ -97,7 +100,9 @@ public sealed class EntityTracker
     // ── Instance baselines ────────────────────────────────────────────────────
 
     // classId → byte[] baseline snapshot
-    private readonly Dictionary<int, byte[]> _instanceBaselines = new();
+    // Baseline bytes are held by reference: a parsed message already owns one copy of each blob
+    // and a baseline outlives no message it was read from except by that reference.
+    private readonly Dictionary<int, ReadOnlyMemory<byte>> _instanceBaselines = new();
 
     // ── Decode trace ──────────────────────────────────────────────────────────
     //
@@ -250,6 +255,16 @@ public sealed class EntityTracker
     ///     that reads only specific classes to skip the per-field storage cost for the rest.
     /// </summary>
     public IReadOnlySet<string>? StoreClassFilter { get; set; }
+
+    /// <summary>
+    ///     Whether a decoded field outside the bound lens shape (an unlensed path, or an array
+    ///     element) is stored at all. On, the default, it lands in the entity's per-path fallback
+    ///     dictionary, boxed, and is readable through <see cref="EntityState.Fields" /> and the
+    ///     string-keyed accessors. Off, it is decoded and dropped: a consumer that reads only
+    ///     lensed lanes, which is what the analysis engine's providers do, saves the dictionary and
+    ///     the box per write. Lane writes are unaffected either way.
+    /// </summary>
+    public bool StoreUnlensedFields { get; set; } = true;
 
     /// <summary>
     ///     Returns the entity-decode profiling accumulators captured so far. Returns <c>default</c>
@@ -470,7 +485,7 @@ public sealed class EntityTracker
 
         try
         {
-            BitBuffer buf = new(msg.EntityData.ToByteArray());
+            BitBuffer buf = new(msg.EntityData.Span);
             int entityIndex = -1;
 
             for (int i = 0; i < msg.UpdatedEntries; i++)
@@ -511,9 +526,9 @@ public sealed class EntityTracker
 
                     EntityState temp = new(className, (int)serialNum);
 
-                    if (_instanceBaselines.TryGetValue((int)classId, out byte[]? baseline))
+                    if (_instanceBaselines.TryGetValue((int)classId, out ReadOnlyMemory<byte> baseline))
                     {
-                        BitBuffer baselineBuf = new(baseline);
+                        BitBuffer baselineBuf = new(baseline.Span);
                         ReadEntityFields(ref baselineBuf, temp, peekScratch);
                     }
 
@@ -572,6 +587,52 @@ public sealed class EntityTracker
         foreach (DemoFrame frame in frames)
         {
             ProcessFrame(frame);
+        }
+    }
+
+    /// <summary>
+    ///     Takes over the schema-derived state of <paramref name="template" />, a tracker that has
+    ///     replayed the demo's signon prefix: the parsed schema, the class registry, the server
+    ///     class-bit width, the lens, the string-table ids and the instance baselines as the
+    ///     prefix left them, and the per-class descriptors and shapes, which are then shared by
+    ///     reference. What a checkpoint worker gets from replaying the prefix itself, without the
+    ///     parse. Only for a tracker that has processed no frame; the caller then primes from a
+    ///     checkpoint as usual.
+    /// </summary>
+    public void AdoptSchemaState(EntityTracker template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        Schema = template.Schema;
+        _serverClassBits = template._serverClassBits;
+        _lensResolver = template._lensResolver;
+        _fieldDescs = template._fieldDescs;
+        _classShapes = template._classShapes;
+        _stringTableCreateCount = template._stringTableCreateCount;
+        _ibTableId = template._ibTableId;
+        _ibInitialized = template._ibInitialized;
+        _ibUserDataFixedSize = template._ibUserDataFixedSize;
+        _ibUserDataSizeBits = template._ibUserDataSizeBits;
+        _ibUsingVarintBitcounts = template._ibUsingVarintBitcounts;
+        _ibFlags = template._ibFlags;
+
+        // Position-dependent, so copied rather than shared: a later full packet moves them.
+        _classIdToName.Clear();
+        foreach ((int id, string name) in template._classIdToName)
+        {
+            _classIdToName[id] = name;
+        }
+
+        _instanceBaselines.Clear();
+        foreach ((int id, ReadOnlyMemory<byte> baseline) in template._instanceBaselines)
+        {
+            _instanceBaselines[id] = baseline;
+        }
+
+        _ibEntries.Clear();
+        _ibEntries.AddRange(template._ibEntries);
+        foreach ((string name, Func<EntityState, EntityTracker, object> factory) in template._entityFactories)
+        {
+            _entityFactories[name] = factory;
         }
     }
 
@@ -653,7 +714,7 @@ public sealed class EntityTracker
                     // "classId:altBaseline", Baseline 0 only.
                     if (int.TryParse(item.Str.Split(':')[0], out int classId))
                     {
-                        _instanceBaselines[classId] = item.Data.ToByteArray();
+                        _instanceBaselines[classId] = item.Data.Memory;
                     }
                 }
             }
@@ -1353,7 +1414,20 @@ public sealed class EntityTracker
             return null;
         }
 
-        RuntimeSerializer? ser = Schema.GetSerializer(className);
+        lock (_fieldDescs)
+        {
+            if (_fieldDescs.TryGetValue(className, out cached))
+            {
+                return cached;
+            }
+
+            return BuildClassDescriptors(className);
+        }
+    }
+
+    private List<FieldDescriptor>? BuildClassDescriptors(string className)
+    {
+        RuntimeSerializer? ser = Schema!.GetSerializer(className);
         if (ser is null)
         {
             _fieldDescs[className] = [];
@@ -1392,8 +1466,11 @@ public sealed class EntityTracker
         }
 
         List<FieldDescriptor> descs = BuildFieldDescs(ser, "", shapeBuilder, _lensResolver, className);
-        _fieldDescs[className] = descs;
+
+        // Shape first: a reader on another tracker gates on the descriptors being present and
+        // then binds the shape, so the shape must be there by the time the descriptors are.
         _classShapes[className] = shapeBuilder.Build();
+        _fieldDescs[className] = descs;
         if (prof)
         {
             _profDescriptorBuildTicks += Stopwatch.GetTimestamp() - dbStart;
@@ -1919,14 +1996,14 @@ public sealed class EntityTracker
     ///         </list>
     ///     </para>
     /// </summary>
-    private void ReadInstanceBaselineUpdate(byte[] data, int entries, bool compressed = false)
+    private void ReadInstanceBaselineUpdate(ReadOnlySpan<byte> data, int entries, bool compressed = false)
     {
         try
         {
             // Decompressing inside the try is the point: the create path used to do it at the call
             // site, so a bomb or a corrupt stream escaped this method's swallow and, since neither
             // ProcessNetMessage call site catches, left the tracker entirely.
-            BitBuffer buf = new(compressed ? DecompressBounded(data) : data);
+            BitBuffer buf = compressed ? new BitBuffer(DecompressBounded(data)) : new BitBuffer(data);
 
             // entries is attacker-controlled and sizes the history array below. Bits present is a
             // hard structural ceiling on how many entries the message can actually carry.
@@ -2094,7 +2171,7 @@ public sealed class EntityTracker
                     _ibUsingVarintBitcounts = createTable.UsingVarintBitcounts;
                     _ibFlags = createTable.Flags;
                     ReadInstanceBaselineUpdate(
-                        createTable.StringData.ToByteArray(), createTable.NumEntries, createTable.DataCompressed);
+                        createTable.StringData.Span, createTable.NumEntries, createTable.DataCompressed);
                 }
 
                 break;
@@ -2102,7 +2179,7 @@ public sealed class EntityTracker
             case CSVCMsg_UpdateStringTable updateTable:
                 if (_ibInitialized && updateTable.TableId == _ibTableId && !updateTable.StringData.IsEmpty)
                 {
-                    ReadInstanceBaselineUpdate(updateTable.StringData.ToByteArray(), updateTable.NumChangedEntries);
+                    ReadInstanceBaselineUpdate(updateTable.StringData.Span, updateTable.NumChangedEntries);
                 }
 
                 break;
@@ -2206,7 +2283,7 @@ public sealed class EntityTracker
 
     private void ProcessPacketEntitiesCore(CSVCMsg_PacketEntities msg)
     {
-        BitBuffer entityBuf = new(msg.EntityData.ToByteArray());
+        BitBuffer entityBuf = new(msg.EntityData.Span);
         int entityIndex = -1;
         bool prof = Profiling.Enabled;
         long peStart = 0, peAlloc = 0;
@@ -2304,9 +2381,9 @@ public sealed class EntityTracker
                 }
 
                 // Apply instance baseline if available
-                if (_instanceBaselines.TryGetValue((int)classId, out byte[]? baseline))
+                if (_instanceBaselines.TryGetValue((int)classId, out ReadOnlyMemory<byte> baseline))
                 {
-                    BitBuffer baselineBuf = new(baseline);
+                    BitBuffer baselineBuf = new(baseline.Span);
                     _curUpdateKind = "Baseline";
                     ReadEntityFields(ref baselineBuf, state, _fieldPathScratch);
                 }
@@ -2385,10 +2462,12 @@ public sealed class EntityTracker
             return;
         }
 
-        // CDemoSendTables.data = [uvarint size][CSVCMsg_FlattenedSerializer bytes]
-        BitBuffer buf = new(msg.Data.ToByteArray());
+        // CDemoSendTables.data = [uvarint size][CSVCMsg_FlattenedSerializer bytes]; the varint is
+        // whole bytes, so the serializer starts on a byte boundary and parses in place.
+        ReadOnlySpan<byte> data = msg.Data.Span;
+        BitBuffer buf = new(data);
         int size = (int)buf.ReadUVarInt32();
-        byte[] raw = buf.ReadBytes(size);
+        ReadOnlySpan<byte> raw = data.Slice(data.Length - buf.RemainingBytes, size);
 
         CSVCMsg_FlattenedSerializer? flatSer = CSVCMsg_FlattenedSerializer.Parser.ParseFrom(raw);
         Schema ??= RuntimeSchema.Parse(flatSer);
@@ -2436,7 +2515,11 @@ public sealed class EntityTracker
                             state.SetObjectSlot(desc.SlotAddr.Slot, boxed);
                             break;
                         default:
-                            state.SetFallback(desc.Path, Boxes.Int(iv));
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, Boxes.Int(iv));
+                            }
+
                             break;
                     }
 
@@ -2461,7 +2544,11 @@ public sealed class EntityTracker
                             state.SetObjectSlot(desc.SlotAddr.Slot, fv);
                             break;
                         default:
-                            state.SetFallback(desc.Path, fv);
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, fv);
+                            }
+
                             break;
                     }
 
@@ -2492,7 +2579,11 @@ public sealed class EntityTracker
                                 state.SetFloatSlot(desc.SlotAddr.Slot, CoerceToFloat(ov));
                                 break;
                             default:
-                                state.SetFallback(desc.Path, ov);
+                                if (StoreUnlensedFields)
+                                {
+                                    state.SetFallback(desc.Path, ov);
+                                }
+
                                 break;
                         }
                     }

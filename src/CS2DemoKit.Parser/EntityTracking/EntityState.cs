@@ -263,14 +263,15 @@ public sealed class EntityState
                 case LaneKind.Int when typeof(T) == typeof(int):
                     if (IsSeen(_intSeen, addr.Slot))
                     {
-                        return (T)(object)_intLane![addr.Slot];
+                        // Same size and layout by the guard above; the cast through object boxed.
+                        return Unsafe.As<int, T>(ref _intLane![addr.Slot]);
                     }
 
                     break;
                 case LaneKind.Float when typeof(T) == typeof(float):
                     if (IsSeen(_floatSeen, addr.Slot))
                     {
-                        return (T)(object)_floatLane![addr.Slot];
+                        return Unsafe.As<float, T>(ref _floatLane![addr.Slot]);
                     }
 
                     break;

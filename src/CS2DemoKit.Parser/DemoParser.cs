@@ -966,10 +966,10 @@ public static class DemoParser
 
         try
         {
-            BitBuffer buf = new(sendTables.Data.ToByteArray());
+            ReadOnlySpan<byte> data = sendTables.Data.Span;
+            BitBuffer buf = new(data);
             int size = (int)buf.ReadUVarInt32();
-            byte[] raw = buf.ReadBytes(size);
-            return RuntimeSchema.Parse(CSVCMsg_FlattenedSerializer.Parser.ParseFrom(raw));
+            return RuntimeSchema.Parse(CSVCMsg_FlattenedSerializer.Parser.ParseFrom(data.Slice(data.Length - buf.RemainingBytes, size)));
         }
         catch
         {

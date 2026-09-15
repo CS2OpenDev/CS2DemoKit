@@ -92,11 +92,13 @@ internal static class PathMeasurement
         TimeSpan pauseBefore = GC.GetTotalPauseDuration();
         int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
 
+        using AllocationTicks? ticks = AllocationTicks.StartIfRequested();
         MemorySampler sampler = MemorySampler.Start();
         long t = Stopwatch.GetTimestamp();
         ArmResult result = body(demoPath);
         double wallMs = (Stopwatch.GetTimestamp() - t) * 1000.0 / Stopwatch.Frequency;
         sampler.Stop();
+        ticks?.Report(Console.Error);
 
         double pauseMs = (GC.GetTotalPauseDuration() - pauseBefore).TotalMilliseconds;
         long alloc = GC.GetTotalAllocatedBytes() - allocBefore;
@@ -193,12 +195,17 @@ internal static class PathMeasurement
     {
         using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.EntityReplay, ReadAheadFrames = ReadAhead });
         EntityTracker tracker = EntityTrackerFactory.CreateCurated();
+        bool track = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_NOTRACK") != "1";
         long frames = 0, packets = 0;
         ulong digest = FnvOffset;
         foreach (DemoFrame frame in reader.ReadFrames())
         {
             frames++;
-            tracker.AdvanceOneFrame(frame);
+            if (track)
+            {
+                tracker.AdvanceOneFrame(frame);
+            }
+
             if (frame.CommandKind == EDemoCommands.DemFullPacket)
             {
                 packets++;

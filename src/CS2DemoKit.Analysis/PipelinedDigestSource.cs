@@ -56,6 +56,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly CancellationToken _token;
     private readonly ConcurrentBag<Worker> _pool = [];
     private readonly List<DemoFrame> _signonPrefix = [];
+    private EntityStateLayer? _template;
     private readonly IReadOnlyDictionary<int, PlayerInfo> _initialPlayers;
     private readonly View _view;
 
@@ -419,9 +420,18 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         }
 
         // Before the fold starts, while the frames are whole and the consumer is still waiting.
+        // The template parses the schema once; every later worker adopts it instead.
         if (chunk.Checkpoint is null)
         {
             _onFirstChunk?.Invoke(chunk.Frames);
+            EntityStateLayer template = new() { StoreUnlensedFields = false };
+            foreach (DemoFrame frame in _signonPrefix)
+            {
+                template.Apply(frame);
+            }
+
+            template.Tracker.ResetEntitiesKeepSchema();
+            _template = template;
         }
 
         chunk.Digests = Task.Run(() => Fold(chunk), _token);
@@ -485,9 +495,15 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 at++;
             }
 
-            // The schema comes from the signon prefix once; a re-primed tracker keeps it and only
-            // needs its entities cleared and the checkpoint state loaded.
-            layer.PrimeFromCheckpoint(worker.SchemaLoaded ? [] : _signonPrefix, chunk.InstanceBaseline, chunk.Checkpoint,
+            // A fresh worker takes the template's schema state rather than parsing its own; a
+            // re-primed one keeps it. Either way the prime only clears entities and loads the
+            // checkpoint.
+            if (!worker.SchemaLoaded)
+            {
+                layer.AdoptSchema(_template!);
+            }
+
+            layer.PrimeFromCheckpoint([], chunk.InstanceBaseline, chunk.Checkpoint,
                 at + 1 < frames.Count ? frames[at + 1] : null);
             next = at + 1;
 
@@ -586,7 +602,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     // the checkpoint's creates are inserted as they fire.
     private sealed class Worker
     {
-        public readonly EntityStateLayer Layer = new();
+        public readonly EntityStateLayer Layer = new() { StoreUnlensedFields = false };
         public readonly ProjectileSlotIndex Projectiles = new();
         public bool SchemaLoaded;
     }

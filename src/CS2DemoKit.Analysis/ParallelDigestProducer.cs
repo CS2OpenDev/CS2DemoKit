@@ -140,10 +140,19 @@ internal static class ParallelDigestProducer
 
         // Bootstrap each worker's layer single-threaded before fan-out — the layer ctor runs BootstrapTracker
         // (lens registry + entity-factory registry). Priming and the per-frame decode then run in parallel.
+        // One schema parse per decode: the template replays the prefix once and every checkpoint
+        // worker adopts its state instead of replaying the prefix itself.
+        EntityStateLayer template = new(frames) { StoreUnlensedFields = false };
+        template.SeekBeforeFrame(schemaPrefixEnd);
+        template.Tracker.ResetEntitiesKeepSchema();
         EntityStateLayer[] layers = new EntityStateLayer[chunks.Count];
         for (int i = 0; i < chunks.Count; i++)
         {
-            layers[i] = new EntityStateLayer(frames);
+            layers[i] = new EntityStateLayer(frames) { StoreUnlensedFields = false };
+            if (chunks[i].CheckpointFrameIndex >= 0)
+            {
+                layers[i].AdoptSchema(template);
+            }
         }
 
         ParallelOptions options = BuildParallelOptions(maxDegreeOfParallelism, cancellationToken);
