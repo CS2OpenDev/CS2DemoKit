@@ -13,9 +13,9 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     The data-driven provider migration gate: the shipped hand-written entity providers
 ///     re-expressed as <see cref="ProviderSpec" /> data must produce IDENTICAL entity digests on a
-///     real demo. Both sides run through the same delta-encoded producer with the same chunking, so
-///     a row-for-row comparison still holds: any divergence is the providers disagreeing, not the
-///     encoding. The parallel-decode clone path also exercises the
+///     real demo. Both sides run through the same delta-encoded pipelined producer with the same
+///     chunking, so a row-for-row comparison still holds: any divergence is the providers
+///     disagreeing, not the encoding. The per-worker clone path also exercises the
 ///     <see cref="IWorkerCloneable{T}" /> hook (spec-constructed providers have no parameterless
 ///     ctor for the Activator fallback).
 ///     <para>
@@ -77,7 +77,7 @@ public class ProviderDigestParityTests
     ];
 
     /// <summary>
-    ///     Precomputes the full digest stream twice over the same demo, hand-written registry
+    ///     Produces the full digest stream twice over the same demo, hand-written registry
     ///     vs generic-spec registry, and compares element-wise: per-frame pawn slots, every
     ///     per-player provider cell, every singleton value, and the molotov list.
     /// </summary>
@@ -89,12 +89,12 @@ public class ProviderDigestParityTests
 
         List<IPerPlayerEntityValueProvider> handWrittenProviders =
             PerPlayerEntityValueProviderRegistry.CreateDefault().All.ToList();
-        EntityFrameDigest?[] handWritten = Precompute(
+        EntityFrameDigest[] handWritten = Produce(
             parsed,
             handWrittenProviders,
             new FreezePeriodProvider());
 
-        EntityFrameDigest?[] generic = Precompute(
+        EntityFrameDigest[] generic = Produce(
             parsed,
             BuiltinProviderSpecs.CreateGenericPerPlayerProviders(),
             BuiltinProviderSpecs.CreateGenericFreezePeriodProvider());
@@ -116,8 +116,8 @@ public class ProviderDigestParityTests
 
         for (int f = 0; f < handWritten.Length; f++)
         {
-            EntityFrameDigest a = handWritten[f]!;
-            EntityFrameDigest b = generic[f]!;
+            EntityFrameDigest a = handWritten[f];
+            EntityFrameDigest b = generic[f];
             PerPawnColumns rowsA = a.PerPawn;
             PerPawnColumns rowsB = b.PerPawn;
 
@@ -193,18 +193,17 @@ public class ProviderDigestParityTests
         }
     }
 
-    private static EntityFrameDigest?[] Precompute(
+    // Through the scanner, so each worker's providers are the scanner's clones of these.
+    private static EntityFrameDigest[] Produce(
         ParsedDemo parsed,
         List<IPerPlayerEntityValueProvider> perPlayer,
         IEntityValueProvider singleton)
     {
         EntityChangeScanner scanner = new(
-            new EntityStateLayer(parsed.Frames),
+            new EntityStateLayer(),
             [(singleton, new GenericBoolNode(singleton.ContextName))],
             perPlayer,
             true);
-        scanner.PrecomputeParallelDigests(parsed.Frames);
-        return scanner.PrecomputedDigests
-               ?? throw new InvalidOperationException("digest precompute returned null");
+        return PipelinedDigests.Produce(scanner, parsed.AsFrameSource());
     }
 }
