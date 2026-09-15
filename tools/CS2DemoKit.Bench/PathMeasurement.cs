@@ -240,12 +240,13 @@ internal static class PathMeasurement
         return new ArmResult(demo.Frames.Count, packets, digest);
     }
 
-    // The shipped rulesets over a retained demo, snapshots on: what a viewer does today.
+    // The shipped rulesets over a retained demo, snapshots on: what a viewer does today. The
+    // parse takes no cap, so the DOP knob moves only the digest workers.
     private static ArmResult RunScoreboardMaterialised(string demoPath)
     {
         RuleConfigLoadResult rules = LoadRules();
         ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
-        AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets);
+        AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets, new AnalysisOptions { MaxDegreeOfParallelism = Dop });
         ArmResult result = new(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
         GC.KeepAlive(demo);
         return result;
@@ -258,7 +259,7 @@ internal static class PathMeasurement
         RuleConfigLoadResult rules = LoadRules();
         AnalysisOptions options = new()
         {
-            MaxDegreeOfParallelism = int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null,
+            MaxDegreeOfParallelism = Dop,
             ProbeDialect = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_PROBE") != "0"
         };
         AnalysisRun run;
@@ -324,6 +325,8 @@ internal static class PathMeasurement
     }
 
     private static int ReadAhead => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_READAHEAD"), out int n) ? n : 0;
+
+    private static int? Dop => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null;
 
     private static RuleConfigLoadResult LoadRules()
     {
