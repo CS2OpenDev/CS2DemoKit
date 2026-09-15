@@ -227,6 +227,80 @@ directory into a failing one, which is not visible in a version number.
   and highlight in that file, not just the offending one. Fix the stat, or gate it, and the rest of
   the file comes back.
 
+### `DemoFrame.CommandKind` is required and `Command` is computed (0.12.0)
+
+A hand-built frame must set `CommandKind` (an `EDemoCommands`); `Command` is now
+`NetMessageCatalog.DemoCommandName(CommandKind)` and has no setter. Compare on `CommandKind`. A
+string comparison against `Command` still works and pays a lookup per call.
+
+### `RuleChainBuilder` and `StateGraphEvaluator` build without a demo (0.12.0)
+
+`RuleChainBuilder(registry, demo, profile, ...)` is `RuleChainBuilder(registry, AnalysisTarget?
+target, ...)`: pass `AnalysisTarget.From(demo)` where the demo went, or `new AnalysisTarget(tickRate,
+profile)` with no demo at all. The `profile` parameter is gone; the target carries the resolved
+profile. `RuleChainBuilder.ObservedEvents` and `PlayerContextIndex.InitialTeamBySlot` are gone with
+it. `StateGraphEvaluator.Evaluate` and `EvaluateWithSnapshots` take an `IDemoFrameSource`
+(`demo.AsFrameSource()`); the frame-list overloads remain. No per-player node exists at
+construction any more: they materialise during the run and come back as
+`AnalysisRun.MaterializedPlayers` and `FinalNodes`, in both capture modes.
+
+### Team is seeded from the controller entity, not the first `player_team` (0.12.0)
+
+A slot's team used to be the `OldTeam` of its first `player_team` event, read in a build-time
+pre-scan over the whole demo. It is now read off `CCSPlayerController.m_iTeamNum` as the entity
+scanner observes it, delivered as the synthesized `player_team_observed` event. On the corpus the
+two agree (matchmaking demos carry one `player_team` per player, the halftime swap, whose
+`OldTeam` is the signon team), so no golden moved; a slot with no `player_team` event at all now
+gets its real team instead of 0. The consequence for a caller: any `for: each_player` ruleset now
+builds the entity scanner, so a build that used to run without one decodes entities.
+
+### `PerPlayerNodeTemplate.Materialize` lost its `ParsedDemo` parameter (0.12.0)
+
+The factory is `Func<int, int, string, MaterializedPlayer>` and the call is
+`Materialize(playerSlot, playerIndex, playerName)`. Drop the trailing argument.
+
+### `EvaluationResult.Messages` holds `MessageRef` (0.12.0)
+
+Was a `(DemoFrame, NetMessage)` pair per dispatched message; is `MessageRef(FrameIndex, Tick,
+Ordinal, Message)`, so a snapshot no longer pins the frame. Over a retained demo the frame is
+`demo.Frames[m.FrameIndex]`. `IOutputProjector.Project` takes a `DemoDescriptor` in place of the
+`ParsedDemo`; the `ParsedDemo` form is an extension method and still compiles.
+
+### `EntityStateLayer` no longer pins the demo's frames (0.12.0)
+
+`new EntityStateLayer(frames)` seeks as before; `new EntityStateLayer()` is fed by `Apply` and
+throws on `SeekToTick`. `BuildResult.EntityScanner.Layer` is the latter now, so a caller that
+seeked the scanner's layer must build its own over `demo.Frames`. `PrimeFromCheckpoint` gained a
+frame-based overload for stream priming.
+
+### `DemoAnalyzer`, `DemoContext`, `IDemoContext` and `RoundInfo` are gone (0.12.0)
+
+Nothing in this repository called them. `BuildContext`'s eagerly replayed tracker is
+`new EntityStateLayer(demo.Frames).SeekToTick(tick)`; `EventsOfType<T>()` is
+`demo.AllGameEvents` filtered on `e.Payload is T`; `EventsInRange` is the same list sliced on
+`ServerTick`.
+
+### `AnalysisOptions.CaptureSnapshots` is `bool?` and the default depends on the source (0.12.0)
+
+Null, the default, captures over a `ParsedDemo` and not over a stream. Code that read the
+option as a `bool` no longer compiles; `options.CaptureSnapshots ?? true` restores the old
+reading. `AnalysisOptions` also gained `Profile` and `ProbeDialect`, and `AnalysisProvenance`
+is a nine-parameter record (source, profile, resolution, plan, digest producer, snapshots,
+frames, messages, dialect check); `AnalysisRun.Demo` and `Provenance` are required.
+
+### `ParsedDemo`'s constructor is public and carries the plan (0.12.0)
+
+The constructor a test bound by reflection is public, with three optional parameters after the
+seventeen positional ones: `DecodePlan? plan`, `DecodeProvenance? provenance`,
+`IReadOnlyList<ParseWarning>? warnings`. Bind it directly. `ParseDiagnostics` is an instance
+threaded through the parse rather than a thread-static channel, and `StringTableProcessor`
+takes one.
+
+### `DemoFrame.GameTick` is set at construction (0.12.0)
+
+It was filled by a post-pass after the header decoded. It is set when the frame is built, so a
+frame read forward carries it too. A hand-built frame that relied on the post-pass must set it.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

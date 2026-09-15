@@ -932,6 +932,43 @@ this library looks like:
 The library supplies every byte offset such a tool needs and none of the
 presentation.
 
+### Reading forward
+
+`DemoParser.Parse` and `DemoReader` share one scan body (`TryScanFrame`), one decode body
+(`DecodeFrame`, the pass-2 loop's inner function) and one enrichment cursor
+(`DemoEnrichmentCursor`, the old pass 3 taken one frame at a time). The parse runs the scan
+over the whole file, decodes every frame with `Parallel.For`, then drives the cursor over the
+result; the reader scans and decodes as the consumer pulls and drives the cursor as it yields.
+Both honour a `DecodePlan`, compiled once into a `DecodeMask`: an unplanned inner message is
+skipped in the bit stream with `BitBuffer.SkipBytes` and never reaches protobuf, the outer
+packet is sliced with `FindBytesField` so a structure-only plan never parses a proto at all, and
+user commands reach the arena only when planned. `DemoFrame.InnerMessageHeaders`, filled when
+the plan records structure, is how a caller counts what a frame held without decoding it.
+
+What the reader keeps is bounded: the enrichment state, the current frame and whatever the
+caller holds, the signon prefix when the plan retains it, the most recent full packet carrying
+the `instancebaseline` table (the dump is incremental, so a checkpoint primer needs that one,
+not the latest), one grow-only decompression buffer and at most two user-command arena blocks.
+With `ParseOptions.ReadAheadFrames` set it also holds one window of decoded frames and one
+decode partition per worker: the window's headers are scanned in order, its frames decoded
+with `Parallel.For` over pooled partitions, then yielded in order, and a scan failure ends the
+window early and the stream once the window drains, with the same end reason and warnings a
+sequential read reports.
+
+The reader probes the header and server info at `Open`, so tick rate, map and profile are known
+before a frame is read; `ProbeGameEventNames` is a structure-only pass that reports the demo's
+event vocabulary, the one fact that separates a tournament recording from a matchmaking one.
+Both, and `Configure(plan)`, are rewinds and allowed only before the first read.
+`ParseDiagnostics` is an instance threaded through the scan, the decode and the cursor rather
+than a thread-static channel, which is what lets a reader and a parse run side by side in one
+process.
+
+| Method | Retains | Use case |
+|---|---|---|
+| `DemoParser.Parse(bytes)` | Every decoded frame for the demo's lifetime. | Seeking, inspection, anything that reads the same frame twice. |
+| `DemoReader.Open(bytes)` / `OpenFile(path)` | The current frame and the bounded state above. | One forward pass: statistics, scans, services. |
+| `reader.Materialize()` | Same as `Parse`, under the reader's plan. | A caller that decided to keep everything after probing. |
+
 ### The Analysis engine
 
 Entry point: [`DemoAnalysis.cs`](../src/CS2DemoKit.Analysis/DemoAnalysis.cs).
