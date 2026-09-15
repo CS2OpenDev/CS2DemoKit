@@ -67,9 +67,18 @@ internal sealed class MemorySampler
         Sample(p);
     }
 
+    // CS2DEMOKIT_PATHS_LIVE=1 forces a compacting collection before every sample, so the peak is
+    // the live set rather than live plus garbage. Slow, and it perturbs the arm; diagnosis only.
+    private static readonly bool _live = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_LIVE") == "1";
+
     private void Sample(Process p)
     {
         Samples++;
+        if (_live)
+        {
+            GC.Collect(2, GCCollectionMode.Forced, true, true);
+        }
+
         PeakHeap = Math.Max(PeakHeap, GC.GetTotalMemory(false));
         PeakCommitted = Math.Max(PeakCommitted, GC.GetGCMemoryInfo().TotalCommittedBytes);
         p.Refresh();

@@ -152,7 +152,27 @@ public sealed class EntityStateLayer
         }
 
         SeedCheckpoint(checkpoint, successor);
-        _nextFrameIndex = checkpoint.FrameNumber + 1;
+        _nextFrameIndex = IndexAfter(checkpoint);
+    }
+
+    // A list-backed layer seeks on past the checkpoint within its own list; one fed by its owner
+    // only records where the stream stands.
+    private int IndexAfter(DemoFrame checkpoint)
+    {
+        if (_frames is null)
+        {
+            return checkpoint.FrameNumber + 1;
+        }
+
+        for (int i = 0; i < _frames.Count; i++)
+        {
+            if (ReferenceEquals(_frames[i], checkpoint))
+            {
+                return i + 1;
+            }
+        }
+
+        throw new InvalidOperationException("PrimeFromCheckpoint: the checkpoint is not in this layer's frame list.");
     }
 
     private void SeedCheckpoint(DemoFrame checkpoint, DemoFrame? successor)

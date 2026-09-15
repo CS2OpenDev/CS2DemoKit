@@ -525,6 +525,8 @@ public static class DemoAnalysis
         return Run(reader, v2Docs, options);
     }
 
+    // No read-ahead window: a run is bound by the entity fold, which the pipelined producer
+    // parallelises, and a window of decoded frames would only sit in memory ahead of it.
     private static ParseOptions ReaderOptions(AnalysisOptions? options) => new()
     {
         MaxDegreeOfParallelism = options?.MaxDegreeOfParallelism,

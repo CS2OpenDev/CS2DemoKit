@@ -25,11 +25,40 @@ public class DemoReaderPolicyTests
         return file;
     }
 
-    private static (List<DemoFrame> Frames, ReadEndReason? End, IReadOnlyList<ParseWarning> Warnings, ParseHealth Health) Drain(byte[] file)
+    private static (List<DemoFrame> Frames, ReadEndReason? End, IReadOnlyList<ParseWarning> Warnings, ParseHealth Health) Drain(byte[] file, int readAhead = 0)
     {
-        using DemoReader reader = DemoReader.Open(file.AsMemory());
+        using DemoReader reader = DemoReader.Open(file.AsMemory(), new ParseOptions { ReadAheadFrames = readAhead });
         List<DemoFrame> frames = [.. reader.ReadFrames()];
         return (frames, reader.EndReason, reader.Enrichment.Warnings, reader.Enrichment.Health);
+    }
+
+    /// <summary>A window ends the stream exactly as the sequential read does, once it is drained.</summary>
+    [Test]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x07 })]
+    public async Task WindowedReadAhead_EndsTheStreamTheSameWay(byte[] body)
+    {
+        (List<DemoFrame> sequential, ReadEndReason? seqEnd, IReadOnlyList<ParseWarning> seqWarnings, ParseHealth seqHealth) =
+            Drain(DemoWith(body));
+        foreach (int readAhead in new[] { 1, 2, 64 })
+        {
+            (List<DemoFrame> windowed, ReadEndReason? end, IReadOnlyList<ParseWarning> warnings, ParseHealth health) =
+                Drain(DemoWith(body), readAhead);
+            await Assert.That(windowed.Count).IsEqualTo(sequential.Count).Because($"readAhead={readAhead}");
+            for (int i = 0; i < sequential.Count; i++)
+            {
+                await Assert.That(windowed[i].FrameNumber).IsEqualTo(sequential[i].FrameNumber);
+                await Assert.That(windowed[i].CommandKind).IsEqualTo(sequential[i].CommandKind);
+                await Assert.That(windowed[i].ServerTick).IsEqualTo(sequential[i].ServerTick);
+            }
+
+            await Assert.That(end).IsEqualTo(seqEnd).Because($"readAhead={readAhead}");
+            await Assert.That(string.Join("|", warnings.Select(w => $"{w.Code}:{w.Count}")))
+                .IsEqualTo(string.Join("|", seqWarnings.Select(w => $"{w.Code}:{w.Count}")));
+            await Assert.That(health).IsEqualTo(seqHealth);
+        }
     }
 
     [Test]

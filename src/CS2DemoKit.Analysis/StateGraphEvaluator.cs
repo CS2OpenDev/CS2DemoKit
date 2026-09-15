@@ -488,12 +488,18 @@ public sealed class StateGraphEvaluator
 
         // The scanner picks this source's digest producer and resets its per-evaluation state:
         // the parallel up-front decode over a list (golden-preserving, proven element-wise
-        // identical to the sequential digests), or one layer driven in step with the loop over a
-        // stream. The up-front decode OWNS the first PrecomputeShare of the progress bar.
-        _entityScanner?.BeginEvaluation(source,
-            progress is null ? null : p => progress.Report(p * PrecomputeShare),
-            maxDegreeOfParallelism,
-            cancellationToken);
+        // identical to the sequential digests), the pipelined producer over a stream, which
+        // reads ahead and is what the loop then reads from, or one layer driven in step with the
+        // loop. The up-front decode OWNS the first PrecomputeShare of the progress bar.
+        IDemoFrameSource frames = source;
+        if (_entityScanner is not null)
+        {
+            frames = _entityScanner.BeginEvaluation(source,
+                progress is null ? null : p => progress.Report(p * PrecomputeShare),
+                maxDegreeOfParallelism,
+                cancellationToken);
+            _enrichment = frames.Enrichment;
+        }
 
         // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
         // producer applies the whole run before any frame in it is polled, which is what a
@@ -501,11 +507,13 @@ public sealed class StateGraphEvaluator
         int frameIdx = 0;
         int runPos = 0;
         List<DemoFrame> run = new(4);
+        try
+        {
         while (true)
         {
             if (runPos >= run.Count)
             {
-                if (!ReadTickRun(source, run))
+                if (!ReadTickRun(frames, run))
                 {
                     break;
                 }
@@ -522,7 +530,7 @@ public sealed class StateGraphEvaluator
             // tail [PrecomputeShare, 1] of the bar; a stream reports by bytes consumed.
             if (progress is not null && (frameIdx & 2047) == 0)
             {
-                double fraction = frameCount is { } total ? (double)frameIdx / total : source.Progress ?? 0.0;
+                double fraction = frameCount is { } total ? (double)frameIdx / total : frames.Progress ?? 0.0;
                 progress.Report(PrecomputeShare + (1.0 - PrecomputeShare) * fraction);
             }
 
@@ -653,6 +661,11 @@ public sealed class StateGraphEvaluator
             }
 
             frameIdx++;
+        }
+        }
+        finally
+        {
+            _entityScanner?.EndEvaluation();
         }
 
         FramesConsumed = frameIdx;

@@ -267,6 +267,11 @@ public sealed class EntityChangeScanner
             _profFramesPolled++;
         }
 
+        if (_pipeline is not null)
+        {
+            return Consume(_pipeline.Take(frameIndex), tick);
+        }
+
         if (PrecomputedDigests is not null)
         {
             EntityFrameDigest? precomputed = PrecomputedDigests[frameIndex];
@@ -324,6 +329,16 @@ public sealed class EntityChangeScanner
     /// <summary>How this evaluation's digests are being produced; <see cref="DigestProducerKind.None" /> before one starts.</summary>
     public DigestProducerKind ProducerKind { get; private set; }
 
+    // Workers the pipelined producer runs when the caller expresses no cap. Each one holds a
+    // tracker and a chunk of frames ahead of the loop, about 35 MB live on a full match, and
+    // the third and fourth buy a few percent of wall-clock: the read and the dispatch stay
+    // serial. So this bounds memory as much as it bounds parallelism.
+    internal const int DefaultPipelineWorkers = 2;
+
+    private PipelinedDigestSource? _pipeline;
+    private bool _releaseFolded;
+    private bool _pastSignonPrefix;
+
     /// <summary>The per-player providers this scanner snapshots, in gate order.</summary>
     internal IReadOnlyList<IPerPlayerEntityValueProvider> PerPlayerProviders => _perPlayerProviders;
 
@@ -331,13 +346,20 @@ public sealed class EntityChangeScanner
     ///     Starts an evaluation: clears every per-evaluation accumulator (the previous digest, the
     ///     pre-frame snapshot, the delta memory, the molotov de-dup set, the singleton last-values,
     ///     the decode-compromise latch, a layer the sequential path advanced), then chooses the
-    ///     producer. A source with random access gets the up-front parallel decode; a stream is
-    ///     driven sequentially by <see cref="BeginTickRun" />. Without this a second evaluation over
-    ///     one <c>BuildResult</c> would start from the prior run's terminal values.
+    ///     producer. A source with random access gets the up-front parallel decode; a stream gets
+    ///     the pipelined checkpoint-parallel producer, which reads ahead on the evaluator's behalf and
+    ///     is what the evaluator must then read from, or one layer driven in step with the loop
+    ///     by <see cref="BeginTickRun" /> when the parallelism cap is one. Without this a second
+    ///     evaluation over one <c>BuildResult</c> would start from the prior run's terminal values.
     /// </summary>
-    internal void BeginEvaluation(IDemoFrameSource source, Action<double>? onProgress,
+    /// <returns>The source the evaluator reads frames from for this evaluation.</returns>
+    internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, Action<double>? onProgress,
         int? maxDegreeOfParallelism, CancellationToken cancellationToken)
     {
+        _pipeline?.Close();
+        _pipeline = null;
+        _releaseFolded = !source.SupportsRandomAccess;
+        _pastSignonPrefix = false;
         _prevDigest = null;
         _seenMolotovs.Clear();
         _preFrameSnapshotFrozen = false;
@@ -363,10 +385,53 @@ public sealed class EntityChangeScanner
         {
             PrecomputeParallelDigests(frames, onProgress, maxDegreeOfParallelism, cancellationToken);
             ProducerKind = PrecomputedDigests is not null ? DigestProducerKind.ParallelUpFront : DigestProducerKind.Sequential;
+            return source;
+        }
+
+        int workers = maxDegreeOfParallelism is int dop and > 0
+            ? dop
+            : Math.Min(Environment.ProcessorCount, DefaultPipelineWorkers);
+        if (workers <= 1)
+        {
+            ProducerKind = DigestProducerKind.Sequential;
+            return source;
+        }
+
+        _pipeline = new PipelinedDigestSource(
+            source,
+            () => _perPlayerProviders.Select(CloneProvider).ToList(),
+            () => _singletonProviders.Select(CloneProvider).ToList(),
+            _emitMolotovThrows,
+            _transitionScanner is not null,
+            workers,
+            ValidateSchemaOnFirstChunk,
+            cancellationToken);
+        ProducerKind = DigestProducerKind.Pipelined;
+        return _pipeline;
+    }
+
+    /// <summary>Releases the pipelined producer, cancelling any chunk still decoding ahead.</summary>
+    internal void EndEvaluation()
+    {
+        _pipeline?.Close();
+        _pipeline = null;
+    }
+
+    // The pipelined path never advances this scanner's own layer, so the schema is judged on a
+    // throwaway layer over the first chunk, as the up-front producer does over the first frames.
+    private void ValidateSchemaOnFirstChunk(IReadOnlyList<DemoFrame> frames)
+    {
+        if (_schemaValidated || frames.Count == 0)
+        {
             return;
         }
 
-        ProducerKind = DigestProducerKind.Sequential;
+        EntityStateLayer probe = new(frames);
+        for (int f = 32; f <= Math.Min(frames.Count, 608) && !_schemaValidated; f += 96)
+        {
+            probe.SeekBeforeFrame(f);
+            TryValidateProviderSchema(probe.Tracker);
+        }
     }
 
     /// <summary>
@@ -378,7 +443,7 @@ public sealed class EntityChangeScanner
     /// </summary>
     internal void BeginTickRun(IReadOnlyList<DemoFrame> run)
     {
-        if (PrecomputedDigests is not null || run.Count == 0)
+        if (PrecomputedDigests is not null || _pipeline is not null || run.Count == 0)
         {
             return;
         }
@@ -400,13 +465,13 @@ public sealed class EntityChangeScanner
 
         for (int i = 0; i < _pendingFrames.Count; i++)
         {
-            Layer.Apply(_pendingFrames[i]);
+            ApplyToLayer(_pendingFrames[i]);
         }
 
         _pendingFrames.Clear();
         for (int i = 0; i < run.Count; i++)
         {
-            Layer.Apply(run[i]);
+            ApplyToLayer(run[i]);
         }
 
         _layerAdvanced = true;
@@ -414,6 +479,19 @@ public sealed class EntityChangeScanner
         {
             _profSeekTicks += Stopwatch.GetTimestamp() - seekStart;
             _profSeekAlloc += GC.GetAllocatedBytesForCurrentThread() - seekStartA;
+        }
+    }
+
+    // Over a stream the frame is nobody's but the evaluator's once applied, and the evaluator
+    // dispatches no entity message, so the payload goes with the fold. The signon prefix is
+    // kept, as the pipelined producer keeps it, so the two dispatch the same messages.
+    private void ApplyToLayer(DemoFrame frame)
+    {
+        Layer.Apply(frame);
+        _pastSignonPrefix |= frame.CommandKind == EDemoCommands.DemPacket;
+        if (_releaseFolded && _pastSignonPrefix)
+        {
+            frame.Release(PipelinedDigestSource.FoldedCategories(frame));
         }
     }
 

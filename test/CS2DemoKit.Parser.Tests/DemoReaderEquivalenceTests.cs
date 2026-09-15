@@ -17,13 +17,19 @@ namespace CS2DemoKit.Parser.Tests;
 public class DemoReaderEquivalenceTests
 {
     [Test]
-    public async Task Reader_YieldsTheSameFramesAsParse()
+    [Arguments(0, null)]
+    [Arguments(1, null)]
+    [Arguments(7, 1)]
+    [Arguments(7, 2)]
+    [Arguments(4096, null)]
+    public async Task Reader_YieldsTheSameFramesAsParse(int readAhead, int? maxDegreeOfParallelism)
     {
         string path = DemoTestHelper.RequireDemo();
         byte[] bytes = await File.ReadAllBytesAsync(path);
         ParsedDemo full = DemoTestHelper.GetOrParse(path);
 
-        using DemoReader reader = DemoReader.Open(bytes.AsMemory());
+        using DemoReader reader = DemoReader.Open(bytes.AsMemory(),
+            new ParseOptions { ReadAheadFrames = readAhead, MaxDegreeOfParallelism = maxDegreeOfParallelism });
         await Assert.That(reader.FrameCount).IsNull();
         await Assert.That(reader.SupportsRandomAccess).IsFalse();
         await Assert.That(reader.Frames).IsNull();
@@ -109,7 +115,8 @@ public class DemoReaderEquivalenceTests
         DecodeProvenance p1 = reader.Provenance;
         DecodeProvenance p2 = full.Provenance;
         await Assert.That(p1.Source).IsEqualTo(DecodeSource.DemoReader);
-        await Assert.That(p1.Mode).IsEqualTo(DecodeMode.Sequential);
+        await Assert.That(p1.Mode).IsEqualTo(readAhead > 0 && maxDegreeOfParallelism != 1 ? DecodeMode.WindowedParallel : DecodeMode.Sequential);
+        await Assert.That(p1.ReadAheadFrames).IsEqualTo(readAhead > 0 && maxDegreeOfParallelism != 1 ? readAhead : 0);
         await Assert.That(p1.FramesRead).IsEqualTo(p2.FramesRead);
         await Assert.That(p1.MessagesDecoded).IsEqualTo(p2.MessagesDecoded);
         await Assert.That(p1.MessagesSkipped).IsEqualTo(p2.MessagesSkipped);

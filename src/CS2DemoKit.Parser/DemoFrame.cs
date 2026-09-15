@@ -1,5 +1,6 @@
 #region
 
+using Google.Protobuf;
 using CS2OpenSchema.Protos;
 
 #endregion
@@ -96,6 +97,27 @@ public sealed class DemoFrame
     ///     </para>
     /// </summary>
     public IReadOnlyList<NetMessage> DecodedMessages => MessageList;
+
+    /// <summary>
+    ///     Drops the decoded messages in <paramref name="categories" /> from <see cref="DecodedMessages" />,
+    ///     for a forward consumer that has finished with them: an entity fold that has applied the
+    ///     frame has no further use for its <c>svc_PacketEntities</c> bytes, which are most of what a
+    ///     decoded frame weighs. Offsets, structure headers and stored user commands are untouched.
+    /// </summary>
+    /// <returns>How many messages were dropped.</returns>
+    public int Release(MessageCategories categories) =>
+        categories == MessageCategories.None ? 0 : MessageList.RemoveAll(m => (CategoryOf(m.Payload) & categories) != 0);
+
+    private static MessageCategories CategoryOf(IMessage payload) => payload switch
+    {
+        CSVCMsg_PacketEntities => MessageCategories.Entities,
+        CSVCMsg_CreateStringTable or CSVCMsg_UpdateStringTable or CSVCMsg_ClearAllStringTables or CDemoStringTables =>
+            MessageCategories.StringTables,
+        CMsgSource1LegacyGameEventList or CMsgSource1LegacyGameEvent => MessageCategories.GameEvents,
+        CSVCMsg_FlattenedSerializer or CSVCMsg_ClassInfo or CDemoSendTables or CDemoClassInfo => MessageCategories.Schema,
+        CDemoFileHeader or CDemoFileInfo or CSVCMsg_ServerInfo => MessageCategories.Header,
+        _ => MessageCategories.Other
+    };
 
     /// <summary>
     ///     This frame's <c>svc_UserCmds</c> payloads, held in shared blocks rather than as one

@@ -79,4 +79,14 @@ public sealed record ParseOptions
     ///     <see cref="DecodePlan.RecordStructure" /> each packet frame still records what it held.
     /// </summary>
     public DecodePlan Plan { get; init; } = DecodePlan.Everything;
+
+    /// <summary>
+    ///     Frames a <see cref="DemoReader" /> decodes ahead of its consumer, in parallel, per window.
+    ///     Zero, the default, decodes one frame at a time on the reading thread. A window is scanned
+    ///     sequentially, decoded with <c>Parallel.For</c> under <see cref="MaxDegreeOfParallelism" />,
+    ///     and yielded in order; the frames of one window are the only ones held beyond what the
+    ///     caller keeps. Ignored by the whole-file parse and when <see cref="MaxDegreeOfParallelism" />
+    ///     is 1.
+    /// </summary>
+    public int ReadAheadFrames { get; init; }
 }

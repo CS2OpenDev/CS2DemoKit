@@ -51,10 +51,11 @@ public class ForwardPathParityTests
         await Assert.That(list.Provenance.Source).IsEqualTo(AnalysisSourceKind.Materialised);
         await Assert.That(streamed.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
         await Assert.That(list.Provenance.Digest).IsEqualTo(DigestProducerKind.ParallelUpFront);
-        await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Sequential);
+        await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(list.Provenance.FramesConsumed);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(demo.Frames.Count);
-        await Assert.That(streamed.Provenance.MessagesConsumed).IsEqualTo(list.Provenance.MessagesConsumed);
+        // A stream releases a frame's entity payload once folded, so those are never dispatched.
+        await Assert.That(streamed.Provenance.MessagesConsumed).IsLessThan(list.Provenance.MessagesConsumed);
         await Assert.That(streamed.Provenance.SnapshotsCaptured).IsEqualTo(captureSnapshots);
         await Assert.That(streamed.Provenance.DecodePlan!.DecodesEverything).IsTrue();
 
@@ -77,7 +78,7 @@ public class ForwardPathParityTests
         AnalysisRun streamed = DemoAnalysis.Run(path, rules.Rulesets, options);
 
         await Assert.That(streamed.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
-        await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Sequential);
+        await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
         await Assert.That(streamed.Provenance.SnapshotsCaptured).IsEqualTo(captureSnapshots);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(list.Provenance.FramesConsumed);
         await Assert.That(streamed.Provenance.ProfileResolution).IsEqualTo(ProfileResolutionKind.HeaderAndVocabulary);
@@ -91,6 +92,30 @@ public class ForwardPathParityTests
         await Assert.That(streamed.Provenance.MessagesConsumed).IsLessThan(list.Provenance.MessagesConsumed);
 
         await AssertSameRun(list, streamed);
+    }
+
+    /// <summary>
+    ///     The pipelined producer and the sequential one must agree to the byte, names included: the
+    ///     pipeline pins the roster view to the frame the evaluator has read or peeked, exactly as
+    ///     the sequential reader exposes it, so a materialisation reads the same name on both.
+    /// </summary>
+    [Test]
+    public async Task Run_Pipelined_MatchesRun_Sequential_NamesIncluded()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+
+        AnalysisRun pipelined = DemoAnalysis.Run(path, rules.Rulesets);
+        AnalysisRun sequential = DemoAnalysis.Run(path, rules.Rulesets, new AnalysisOptions { MaxDegreeOfParallelism = 1 });
+
+        await Assert.That(pipelined.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
+        await Assert.That(sequential.Provenance.Digest).IsEqualTo(DigestProducerKind.Sequential);
+        await Assert.That(pipelined.Provenance.DecodePlan).IsNotNull();
+        await Assert.That(pipelined.Provenance.FramesConsumed).IsEqualTo(sequential.Provenance.FramesConsumed);
+        await Assert.That(pipelined.Provenance.MessagesConsumed).IsEqualTo(sequential.Provenance.MessagesConsumed);
+        await Assert.That(RunDigest.Render(pipelined, false)).IsEqualTo(RunDigest.Render(sequential, false));
+        await Assert.That(pipelined.MaterializedPlayers.Select(mp => mp.PlayerName).ToList())
+            .IsEquivalentTo(sequential.MaterializedPlayers.Select(mp => mp.PlayerName).ToList());
     }
 
     [Test]
@@ -165,10 +190,10 @@ public class ForwardPathParityTests
     /// </summary>
     internal static class RunDigest
     {
-        public static string Render(AnalysisRun run)
+        public static string Render(AnalysisRun run, bool normaliseNames = true)
         {
             List<(string Name, string Token)> names = run.MaterializedPlayers
-                .Where(mp => !string.IsNullOrEmpty(mp.PlayerName))
+                .Where(mp => normaliseNames && !string.IsNullOrEmpty(mp.PlayerName))
                 .Select(mp => (mp.PlayerName, $"<slot{mp.PlayerSlot}>"))
                 .OrderByDescending(n => n.PlayerName.Length)
                 .ToList();

@@ -36,6 +36,68 @@ foreach (GameEvent evt in demo.AllGameEvents)
 for its slot-shaped fields (`VictimSlot`, `KillerSlot`, …) — join through it to get `PlayerInfo`
 (`SteamId64`, `Name`, `Team`, …).
 
+## Reading forward
+
+`DemoReader` walks a demo front to back, decoding what its plan asks for and keeping nothing the
+caller has let go of. It is the path for anything that never seeks: batch statistics, a service,
+a scan that only wants to count message types.
+
+```csharp
+using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.GameEvents;
+
+using DemoReader reader = DemoReader.OpenFile(path, new ParseOptions { Plan = DecodePlan.GameEventsOnly });
+foreach (DemoFrame frame in reader.ReadFrames())
+{
+    foreach (NetMessage msg in frame.DecodedMessages)
+    {
+        if (msg is GameEventMessage evt)
+        {
+            Console.WriteLine($"{evt.DecodedEvent.GameTick} {evt.DecodedEvent.Name}");
+        }
+    }
+}
+
+Console.WriteLine($"{reader.Provenance.FramesRead} frames, {reader.Provenance.MessagesSkipped} messages never decoded");
+```
+
+`DecodePlan` is the declaration of what a parse needs. `Categories` picks message families
+(header, schema, string tables, game events, entities, user commands, other); `GameEventNames`
+keeps only the named events, dropped after the cheap id decode; `IncludeMessageTypes` and
+`ExcludeMessageTypes` adjust by wire type id; `RecordStructure` fills
+`DemoFrame.InnerMessageHeaders` with every inner message's type id and length whether or not it
+was decoded, which is how `StructureOnly` counts a demo without materialising a payload. The
+presets are `Everything` (the default and the options-less parse), `StructureOnly`,
+`GameEventsOnly` and `EntityReplay` (what a curated `EntityTracker` needs and nothing more). The
+plan applies to `DemoParser.Parse` as well through `ParseOptions.Plan`; a `ParsedDemo` reports
+the plan it was decoded under as `Plan` and the counters as `Provenance`.
+
+What a reader knows before its first frame: the header and server info are probed at `Open`, so
+`Enrichment.TickRate`, `MapName` and `Profile` are valid immediately. `ProbeGameEventNames()` is a
+structure-only pass over the file that reports which game events it fires, the one thing that
+tells a tournament recording from a matchmaking one when the header cannot. `Configure(plan)`
+replaces the plan; both are allowed only before the first read, as is `Materialize()`, which runs
+the parallel whole-file parse under the reader's plan instead of a forward read.
+
+`Enrichment` is live: `Players`, `TickCount` and `Warnings` reflect the frames read so far and
+settle on what a whole-file parse reports once the stream ends. `EndReason` says how it ended
+(`Stop`, `EndOfData`, `Truncated`, `Corrupt`); damage mid-stream warns and ends the stream exactly
+as `Parse` does, and only a bad magic throws, at `Open`. A yielded frame holds offsets, decoded
+messages and arena blocks, never a slice of the input, so it stays valid after `Dispose`.
+
+`ParseOptions.ReadAheadFrames` decodes a window of frames in parallel ahead of the consumer, in
+order, under `MaxDegreeOfParallelism`; one window of decoded frames is all the reader then holds
+beyond what the caller keeps. It pays off when the decode is the bottleneck (an event scan runs
+about 2.7x faster with a 2048-frame window) and not when the consumer is; `Provenance.Mode` says
+`Sequential` or `WindowedParallel`. A consumer that has finished with part of a frame can drop
+it: `frame.Release(MessageCategories.Entities)` removes the decoded entity messages and keeps the
+rest, which is how the analysis engine holds several folded chunks without their payloads.
+
+`IDemoFrameSource` is the contract both a reader and a retained `ParsedDemo`
+(`demo.AsFrameSource()`) satisfy: `TryReadNext`, `TryPeekNext`, the enrichment view, and
+`SupportsRandomAccess` with `Frames` for the retained case. Code written against it runs over
+either.
+
 ## Tick clocks — read this before touching ticks
 
 | Property | Clock | Notes |
@@ -51,8 +113,8 @@ needs that conversion.
 
 ## Input: buffer vs. file path
 
-`DemoParser.Parse(ReadOnlyMemory<byte> data, DemoProfile? profileOverride = null)` is the parser's
-one entry point. `MemoryMappedDemoSource` wraps a local file as a `ReadOnlyMemory<byte>` without
+`DemoParser.Parse(ReadOnlyMemory<byte> data, DemoProfile? profileOverride = null)` is the whole-file
+parse; `DemoReader` above is the forward read over the same input. `MemoryMappedDemoSource` wraps a local file as a `ReadOnlyMemory<byte>` without
 materializing it as a managed array; `MemoryMappedDemoSource.ParseFile(path)` is the one-line
 convenience over `Open` + `Parse`.
 

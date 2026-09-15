@@ -43,10 +43,11 @@ internal static class PathMeasurement
     public const string MaterialisedReplay = "materialised-replay";
     public const string ScoreboardMaterialised = "scoreboard-materialised";
     public const string ScoreboardStream = "scoreboard-stream";
+    public const string TrackerPrime = "tracker-prime";
 
     public static readonly IReadOnlyList<string> AllArms =
     [
-        FileRead, MessageScan, GameEvents, EntityReplay, MaterialisedReplay, ScoreboardMaterialised, ScoreboardStream
+        FileRead, MessageScan, GameEvents, EntityReplay, MaterialisedReplay, ScoreboardMaterialised, ScoreboardStream, TrackerPrime
     ];
 
     /// <summary>Arm pairs that must produce the same digest on the same demo.</summary>
@@ -77,6 +78,7 @@ internal static class PathMeasurement
             MaterialisedReplay => RunMaterialisedReplay,
             ScoreboardMaterialised => RunScoreboardMaterialised,
             ScoreboardStream => RunScoreboardStream,
+            TrackerPrime => RunTrackerPrime,
             _ => throw new ArgumentException($"unknown arm {arm}", nameof(arm))
         };
 
@@ -138,7 +140,7 @@ internal static class PathMeasurement
     // per-type-id message count, which is the question a structure pass exists to answer.
     private static ArmResult RunMessageScan(string demoPath)
     {
-        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.StructureOnly });
+        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.StructureOnly, ReadAheadFrames = ReadAhead });
         Dictionary<int, long> counts = [];
         long frames = 0, messages = 0;
         foreach (DemoFrame frame in reader.ReadFrames())
@@ -165,7 +167,7 @@ internal static class PathMeasurement
     // Typed game events only, in order, digested by tick and name.
     private static ArmResult RunGameEvents(string demoPath)
     {
-        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.GameEventsOnly });
+        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.GameEventsOnly, ReadAheadFrames = ReadAhead });
         long frames = 0, events = 0;
         ulong digest = FnvOffset;
         foreach (DemoFrame frame in reader.ReadFrames())
@@ -189,7 +191,7 @@ internal static class PathMeasurement
     // packet and at the end. Nothing but the tracker and the current frame is alive.
     private static ArmResult RunEntityReplay(string demoPath)
     {
-        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.EntityReplay });
+        using DemoReader reader = DemoReader.OpenFile(demoPath, new ParseOptions { Plan = DecodePlan.EntityReplay, ReadAheadFrames = ReadAhead });
         EntityTracker tracker = EntityTrackerFactory.CreateCurated();
         long frames = 0, packets = 0;
         ulong digest = FnvOffset;
@@ -242,13 +244,67 @@ internal static class PathMeasurement
         return result;
     }
 
-    // The shipped rulesets straight off the file, snapshots off: the forward path.
+    // The shipped rulesets straight off the file, snapshots off: the forward path. The
+    // parallelism cap is the one knob worth sweeping here, so the environment may set it.
     private static ArmResult RunScoreboardStream(string demoPath)
     {
         RuleConfigLoadResult rules = LoadRules();
-        AnalysisRun run = DemoAnalysis.Run(demoPath, rules.Rulesets);
+        AnalysisOptions options = new()
+        {
+            MaxDegreeOfParallelism = int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null
+        };
+        AnalysisRun run = DemoAnalysis.Run(demoPath, rules.Rulesets, options);
         return new ArmResult(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
     }
+
+    // One digest worker's fixed cost: a curated tracker primed from the signon prefix and the
+    // first checkpoint. Reports the live bytes it holds afterwards in the messages column.
+    private static ArmResult RunTrackerPrime(string demoPath)
+    {
+        using DemoReader reader = DemoReader.OpenFile(demoPath,
+            new ParseOptions { Plan = DecodePlan.EntityReplay with { RetainSignonPrefix = true } });
+        DemoFrame? checkpoint = null, successor = null, instanceBaseline = null;
+        bool seenFirst = false;
+        long frames = 0;
+        foreach (DemoFrame frame in reader.ReadFrames())
+        {
+            frames++;
+            if (checkpoint is not null)
+            {
+                successor = frame;
+                break;
+            }
+
+            if (frame.CommandKind == EDemoCommands.DemFullPacket)
+            {
+                if (seenFirst)
+                {
+                    checkpoint = frame;
+                    instanceBaseline = reader.LastInstanceBaselineFullPacket;
+                }
+
+                seenFirst = true;
+            }
+        }
+
+        if (checkpoint is null)
+        {
+            throw new InvalidOperationException("no checkpoint full packet in the demo");
+        }
+
+        GC.Collect(2, GCCollectionMode.Forced, true, true);
+        long before = GC.GetTotalMemory(true);
+        EntityStateLayer layer = new();
+        layer.PrimeFromCheckpoint(reader.SignonPrefix, instanceBaseline, checkpoint,
+            successor is not null && successor.ServerTick == checkpoint.ServerTick ? null : successor);
+        GC.Collect(2, GCCollectionMode.Forced, true, true);
+        long after = GC.GetTotalMemory(true);
+        ulong digest = EntitySetDigest.Compute(layer.Tracker.CurrentEntities);
+        GC.KeepAlive(layer);
+        return new ArmResult(frames, after - before, digest);
+    }
+
+    private static int ReadAhead => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_READAHEAD"), out int n) ? n : 0;
 
     private static RuleConfigLoadResult LoadRules()
     {

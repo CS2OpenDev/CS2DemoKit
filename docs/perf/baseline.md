@@ -307,6 +307,44 @@ tracker does not read. The stream scoreboard's gap is the cost the windowed read
 pipelined digest producer exist to take back; re-run `paths` after them and put the two
 scoreboard columns side by side.
 
+### After the pipelined digest producer
+
+    runs      60 sampled + 30 live (1 round x 15 demos), zero failures, zero digest mismatches
+    rows      paths-pipelined.csv, paths-pipelined-live.csv (CS2DEMOKIT_PATHS_LIVE=1)
+
+The stream scoreboard now folds entity digests two chunks ahead of the loop on pooled trackers
+and releases a frame's entity and string-table payloads once folded. Same five demos, the
+stream arm before and after, the retained parse for scale:
+
+| demo | size | stream wall before | stream wall after | materialised wall | stream live peak | stream sampled peak | one tracker |
+|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 2.1 s | 1.3 s | 1.3 s | 98 MB | 155 MB | 12.3 MB |
+| ...0748090338_404 | 204 MB | 3.7 s | 3.5 s | 2.9 s | 132 MB | 247 MB | 12.6 MB |
+| ...1163782782_410 | 280 MB | 4.8 s | 4.2 s | 3.7 s | 144 MB | 301 MB | 17.2 MB |
+| ...0449092279_123 | 432 MB | 5.2 s | 4.5 s | 3.6 s | 135 MB | 296 MB | 12.9 MB |
+| ...1522348072_129 | 524 MB | 7.8 s | 5.7 s | 4.5 s | 164 MB | 377 MB | 16.2 MB |
+
+**Wall-clock.** Across the corpus the stream scoreboard runs at 1.0 to 1.35x the materialised
+one, down from 1.3 to 2.0x. What remains is serial: the reader decodes one frame at a time and
+the evaluator dispatches one message at a time, so a third and fourth worker were measured to
+buy a few percent more for about 35 MB each and the default stays at two.
+`AnalysisOptions.MaxDegreeOfParallelism` raises it; one selects the sequential producer.
+
+**Memory, two figures.** The sampled peak (`GC.GetTotalMemory(false)` every 20 ms) is live
+data plus garbage the collector has not got to yet, and with two workers allocating in
+parallel the garbage is most of it: 155 to 377 MB against a live peak of 98 to 164 MB. The live
+column is the one to hold against demo size, and it holds: a 13x larger file costs 1.7x the
+live heap, which is the longer match's larger entity set and more players seen, not the file.
+What a worker costs is the `tracker-prime` arm: one curated tracker primed from the signon
+prefix and a checkpoint holds 11 to 19 MB, mostly its own copy of the parsed schema, which is
+why the trackers are pooled and re-primed rather than built per chunk, and why sharing one
+parsed schema between trackers is the next thing worth taking from this number.
+
+**The window is a reader feature, not a run feature.** `ParseOptions.ReadAheadFrames` makes the
+event scan about 2.7x faster on a full match (0.70 s to 0.26 s on the 280 MB demo, a decode-bound
+read) and does nothing for the entity walk or the scoreboard, which are bound by the fold. So
+`DemoAnalysis.Run` leaves it off, and the reader arms above were taken without it.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An

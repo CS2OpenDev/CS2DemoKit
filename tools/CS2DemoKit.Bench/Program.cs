@@ -105,6 +105,10 @@ static int Help()
           allocation, collector cost and the process's sampled memory high-water mark, plus a
           digest of what it produced; the two replay arms and the two scoreboard arms must agree
           per demo or neither row is written. No warm-up, so wall-clock includes JIT.
+          CS2DEMOKIT_PATHS_LIVE=1 forces a compacting collection before every memory sample,
+          so the peak is the live set instead of live plus garbage; it perturbs the arm, so
+          take wall-clock from a run without it. CS2DEMOKIT_PATHS_DOP caps the stream
+          scoreboard's parallelism and CS2DEMOKIT_PATHS_READAHEAD sets the reader arms' window.
 
         The ray path (the enemy_spotted transition scan) is measured only when
         CS2DEMOKIT_COLLISION_DIR names a directory of per-map bakes (<dir>/<map>/collision.tris
