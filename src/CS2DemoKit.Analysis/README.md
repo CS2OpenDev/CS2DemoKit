@@ -57,9 +57,10 @@ populated in both modes. `DemoAnalysis.Build` + `DemoAnalysis.Evaluate` split th
 callers that need the compiled graph before the (multi-second) evaluation runs, e.g. to render a
 skeleton UI. Over a stream, a player's name is the one the roster carried when the slot first
 materialised; the final names are in `run.Demo.Players`. Over a stream the entity digests are
-folded a chunk ahead of the loop by two workers (`AnalysisOptions.MaxDegreeOfParallelism` sets
-the count, one means in step with the loop), and a frame's entity and string-table payloads are
-released once folded, so snapshot rows over a stream carry no entries for them.
+folded a chunk ahead of the loop by three workers (`AnalysisOptions.MaxDegreeOfParallelism` sets
+the count, one means in step with the loop), the file is read and decoded on its own thread, and
+a frame's entity and string-table payloads are released once folded, so snapshot rows over a
+stream carry no entries for them.
 To customize or fork the shipped rules, extract them to disk with
 `YamlConfigLoader.ExtractShippedTo(dir)`, edit the copies, and load your directory back with
 `YamlConfigLoader.TryLoadDirectory(dir)` or layer it over the shipped tier with

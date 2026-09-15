@@ -345,6 +345,45 @@ event scan about 2.7x faster on a full match (0.70 s to 0.26 s on the 280 MB dem
 read) and does nothing for the entity walk or the scoreboard, which are bound by the fold. So
 `DemoAnalysis.Run` leaves it off, and the reader arms above were taken without it.
 
+### After the probe stop, the reader thread and the tuned defaults
+
+    runs      120 sampled + 15 live (1 round x 15 demos), zero failures, zero digest mismatches
+    rows      paths-tuned.csv, paths-tuned-live.csv (CS2DEMOKIT_PATHS_LIVE=1)
+
+Three changes since the table above, in the order the numbers asked for them. The dialect
+probe stops once the first round has decided the dialect instead of reading the whole file,
+which was 0.7 s on a full match. The stream is read and decoded on its own thread into a
+bounded queue of chunks, so decoding overlaps the evaluator's dispatch instead of taking turns
+with it. And with the decode now the thread that bounds a run, `DemoAnalysis.Run` gives the
+reader a 1024-frame window and the producer three workers, the point at which the fold
+disappears behind the read and the dispatch on this machine. Same five demos:
+
+| demo | size | retained wall | forward wall | forward / retained | retained peak heap | forward live peak | forward sampled peak |
+|---|---|---|---|---|---|---|---|
+| ...1164257366_406 | 40 MB | 1.1 s | 0.9 s | 0.85x | 437 MB | 154 MB | 244 MB |
+| ...0748090338_404 | 204 MB | 2.6 s | 2.6 s | 1.02x | 911 MB | 202 MB | 346 MB |
+| ...1163782782_410 | 280 MB | 3.2 s | 2.7 s | 0.83x | 1179 MB | 231 MB | 486 MB |
+| ...0449092279_123 | 432 MB | 3.1 s | 4.0 s | 1.28x | 1621 MB | 222 MB | 484 MB |
+| ...1522348072_129 | 524 MB | 4.0 s | 4.2 s | 1.05x | 1975 MB | 274 MB | 485 MB |
+
+**Wall-clock.** Over the corpus the forward path now takes a median 0.88x of the retained
+parse's time, from 0.69x to 1.28x on single runs, where it started this series at 1.3 to 2.0x.
+Its floor is the larger of decode and dispatch rather than their sum, and the fold is hidden
+behind both. The two demos it still loses on are single-round outliers of the kind the
+`load1` column exists to explain; re-measure before reading anything into them.
+
+**Memory.** The forward path's live peak is 154 to 274 MB across the 13x range of file size,
+against 437 to 1975 MB retained. The rise from the previous section's 98 to 164 MB is the third
+worker (one tracker and one chunk, about 20 MB) and the decode window with its partitions
+(about 40 MB), which is what the wall-clock above was bought with. `MaxDegreeOfParallelism`
+lowers it: one worker is the sequential producer at about 80 MB live on the same demo, two
+workers without a window about 150 MB.
+
+**What the sweet spot looks like.** Each worker beyond the count that hides the fold costs
+memory and returns nothing, and the window helps only when the read is on its own thread.
+On another machine the count moves with the core count; the knobs are the option and, for a
+caller building its own `DemoReader`, `ParseOptions.ReadAheadFrames`.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An

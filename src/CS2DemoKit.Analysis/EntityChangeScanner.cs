@@ -330,10 +330,11 @@ public sealed class EntityChangeScanner
     public DigestProducerKind ProducerKind { get; private set; }
 
     // Workers the pipelined producer runs when the caller expresses no cap. Each one holds a
-    // tracker and a chunk of frames ahead of the loop, about 35 MB live on a full match, and
-    // the third and fourth buy a few percent of wall-clock: the read and the dispatch stay
-    // serial. So this bounds memory as much as it bounds parallelism.
-    internal const int DefaultPipelineWorkers = 2;
+    // tracker and a chunk of frames ahead of the loop, about 20 MB live on a full match, so
+    // this bounds memory as much as it bounds parallelism. Three is where the fold disappears
+    // behind the read and the dispatch on a ten-core machine; a fourth was measured to buy
+    // nothing.
+    internal const int DefaultPipelineWorkers = 3;
 
     private PipelinedDigestSource? _pipeline;
     private bool _releaseFolded;

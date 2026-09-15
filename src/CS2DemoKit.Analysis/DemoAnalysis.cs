@@ -526,12 +526,18 @@ public static class DemoAnalysis
         return Run(reader, v2Docs, options);
     }
 
-    // No read-ahead window: a run is bound by the entity fold, which the pipelined producer
-    // parallelises, and a window of decoded frames would only sit in memory ahead of it.
+    // The decode window on the reader thread. With the fold parallelised and the read on its
+    // own thread, the decode is the thread that bounds a run, and one window of frames in
+    // flight (about 40 MB live with its decode partitions on a full match) is what lets it
+    // keep up. Off when the caller asked for one thread, which selects the sequential
+    // producer.
+    private const int DefaultReadAheadFrames = 1024;
+
     private static ParseOptions ReaderOptions(AnalysisOptions? options) => new()
     {
         MaxDegreeOfParallelism = options?.MaxDegreeOfParallelism,
-        CancellationToken = options?.CancellationToken ?? default
+        CancellationToken = options?.CancellationToken ?? default,
+        ReadAheadFrames = options?.MaxDegreeOfParallelism == 1 ? 0 : DefaultReadAheadFrames
     };
 
     private static BuildResult BuildCore(AnalysisTarget target, ProfileResolutionKind resolution,
