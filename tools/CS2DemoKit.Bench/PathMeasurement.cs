@@ -254,7 +254,18 @@ internal static class PathMeasurement
             MaxDegreeOfParallelism = int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null,
             ProbeDialect = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_PROBE") != "0"
         };
-        AnalysisRun run = DemoAnalysis.Run(demoPath, rules.Rulesets, options);
+        AnalysisRun run;
+        if (ReadAhead > 0)
+        {
+            using DemoReader reader = DemoReader.OpenFile(demoPath,
+                new ParseOptions { ReadAheadFrames = ReadAhead, MaxDegreeOfParallelism = options.MaxDegreeOfParallelism });
+            run = DemoAnalysis.Run(reader, rules.Rulesets, options);
+        }
+        else
+        {
+            run = DemoAnalysis.Run(demoPath, rules.Rulesets, options);
+        }
+
         return new ArmResult(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
     }
 

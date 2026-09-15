@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.ExceptionServices;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
@@ -14,19 +15,27 @@ namespace CS2DemoKit.Analysis;
 
 /// <summary>
 ///     The checkpoint-parallel digest producer for a stream. Sits between a forward source and the
-///     evaluator: reads frames ahead in chunks that start at a <c>DEM_FullPacket</c>, hands each
-///     chunk to a worker that primes its own tracker from that checkpoint and folds the chunk's
-///     digests, and yields the frames to the evaluator in order while the workers run ahead. What
-///     <see cref="ParallelDigestProducer" /> does up front over a retained list, done over a
-///     bounded window of a stream: the same prime, the same tick-gated seek, the same extractor,
-///     so the digests fold to the same values.
+///     evaluator: a reader thread pulls frames from the source into chunks that start at a
+///     <c>DEM_FullPacket</c>, hands each chunk to a worker that primes its own tracker from that
+///     checkpoint and folds the chunk's digests, and queues the chunk for the evaluator, which
+///     takes them in order. What <see cref="ParallelDigestProducer" /> does up front over a
+///     retained list, done over a bounded window of a stream: the same prime, the same tick-gated
+///     seek, the same extractor, so the digests fold to the same values. The read runs on its own
+///     thread so decoding overlaps the evaluator's dispatch instead of taking turns with it.
 ///     <para>
 ///         Live memory is the unconsumed part of the current chunk plus up to the worker count of
-///         chunks decoded ahead, and one tracker per worker. A tracker is primed with the schema
-///         once and re-primed from each later checkpoint with its entities cleared, which is what
-///         keeps a chunk small enough to hold several. The consumer's roster view is pinned to
-///         the frame it has read, or the one it has peeked, exactly as the sequential reader
-///         exposes it, so a materialisation reads the same name on both producers.
+///         chunks queued ahead, the chunk being assembled, and one tracker per worker. A tracker is
+///         primed with the schema once and re-primed from each later checkpoint with its entities
+///         cleared, which is what keeps a chunk small enough to hold several. The consumer's
+///         roster view is pinned to the frame it has read, or the one it has peeked, exactly as
+///         the sequential reader exposes it, so a materialisation reads the same name on both
+///         producers.
+///     </para>
+///     <para>
+///         Threads: the inner source is touched by the reader thread alone once reading starts;
+///         the queue is guarded by one lock; chunk contents are published to the consumer through
+///         that lock and to the fold worker through the task start; a fold releases only frames
+///         the consumer has not reached, which the queue order guarantees.
 ///     </para>
 /// </summary>
 internal sealed class PipelinedDigestSource : IDemoFrameSource
@@ -45,19 +54,29 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly Action<IReadOnlyList<DemoFrame>>? _onFirstChunk;
     private readonly CancellationTokenSource _cts;
     private readonly CancellationToken _token;
-    private readonly Queue<Chunk> _ahead = new();
     private readonly ConcurrentBag<Worker> _pool = [];
     private readonly List<DemoFrame> _signonPrefix = [];
+    private readonly IReadOnlyDictionary<int, PlayerInfo> _initialPlayers;
     private readonly View _view;
+
+    // Consumer thread only.
     private Chunk? _current;
-    private Chunk? _pending;
     private int _currentPos;
-    private int _nextReadIndex;
     private int _yieldedIndex = -1;
     private int _peekedIndex = -1;
-    private bool _innerDone;
+
+    // Reader thread only.
+    private Chunk? _pending;
+    private int _nextReadIndex;
     private bool _prefixDone;
     private bool _firstFullPacketSeen;
+
+    // Shared, under _gate.
+    private readonly object _gate = new();
+    private readonly Queue<Chunk> _ahead = new();
+    private Thread? _reader;
+    private bool _readerDone;
+    private ExceptionDispatchInfo? _readerError;
     private bool _disposed;
 
     /// <param name="inner">The stream to read; consumed by this source alone from here on.</param>
@@ -65,8 +84,8 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     /// <param name="singletonFactory">Fresh singleton providers for one worker, in the same order contract.</param>
     /// <param name="emitMolotov">Whether digests carry live molotov projectiles.</param>
     /// <param name="captureSmokes">Whether digests carry the frame's active smoke clouds.</param>
-    /// <param name="workers">Chunks decoded ahead of the consumer, and the worker count.</param>
-    /// <param name="onFirstChunk">Runs on the consumer's thread with the first chunk's frames once it closes.</param>
+    /// <param name="workers">Chunks queued ahead of the consumer, and the worker count.</param>
+    /// <param name="onFirstChunk">Runs on the reader thread with the first chunk's frames once it closes, before its fold starts.</param>
     /// <param name="cancellationToken">Cancels the read-ahead and every worker.</param>
     public PipelinedDigestSource(
         IDemoFrameSource inner,
@@ -87,6 +106,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         _onFirstChunk = onFirstChunk;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _token = _cts.Token;
+        _initialPlayers = inner.Enrichment.Players;
         _view = new View(this);
 
         // Bootstrapped here, on the consumer's thread, as the list producer does before it fans
@@ -115,13 +135,18 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     public bool TryReadNext([NotNullWhen(true)] out DemoFrame? frame)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if ((_current is null || _currentPos >= _current.Frames.Count) && !Advance())
+        if (_current is null || _currentPos >= _current.Frames.Count)
         {
-            frame = null;
-            return false;
+            _current = TakeChunk();
+            _currentPos = 0;
+            if (_current is null)
+            {
+                frame = null;
+                return false;
+            }
         }
 
-        frame = _current!.Frames[_currentPos];
+        frame = _current.Frames[_currentPos];
         _yieldedIndex = _current.FirstFrameIndex + _currentPos;
         _currentPos++;
         _peekedIndex = -1;
@@ -138,14 +163,13 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             return true;
         }
 
-        EnsureAhead();
-        if (_ahead.Count == 0)
+        Chunk? next = PeekChunk();
+        if (next is null)
         {
             frame = null;
             return false;
         }
 
-        Chunk next = _ahead.Peek();
         frame = next.Frames[0];
         _peekedIndex = next.FirstFrameIndex;
         return true;
@@ -172,23 +196,35 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         return digest;
     }
 
-    /// <summary>Stops reading ahead and cancels every chunk still decoding. Not reusable.</summary>
+    /// <summary>Stops the reader thread, cancels every chunk still decoding, and joins. Not reusable.</summary>
     public void Close()
     {
-        if (_disposed)
+        Thread? reader;
+        lock (_gate)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            reader = _reader;
+            Monitor.PulseAll(_gate);
         }
 
-        _disposed = true;
         _cts.Cancel();
-        foreach (Chunk chunk in _ahead)
+        reader?.Join();
+        lock (_gate)
         {
-            Observe(chunk.Digests);
+            foreach (Chunk chunk in _ahead)
+            {
+                Observe(chunk.Digests);
+            }
+
+            _ahead.Clear();
         }
 
         Observe(_current?.Digests);
-        _ahead.Clear();
         _current = null;
         _pending = null;
     }
@@ -196,39 +232,121 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private static void Observe(Task? task) =>
         task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
 
-    private bool Advance()
+    // The reader thread starts on the first read, so a source built and never read costs no thread.
+    private void EnsureReading()
     {
-        EnsureAhead();
-        if (_ahead.Count == 0)
+        lock (_gate)
         {
-            return false;
-        }
+            if (_reader is not null || _readerDone)
+            {
+                return;
+            }
 
-        _current = _ahead.Dequeue();
-        _currentPos = 0;
-        EnsureAhead();
-        return true;
-    }
-
-    // Keeps the worker count of chunks decoding ahead of the one being consumed.
-    private void EnsureAhead()
-    {
-        while (!_innerDone && _ahead.Count < _workers + (_current is null ? 1 : 0))
-        {
-            ReadChunk();
+            _reader = new Thread(ReadAll) { IsBackground = true, Name = "cs2demokit-pipeline-reader" };
+            _reader.Start();
         }
     }
 
-    private void ReadChunk()
+    private void ReadAll()
+    {
+        try
+        {
+            while (true)
+            {
+                Chunk? chunk = ReadChunk(out bool more);
+                if (chunk is not null)
+                {
+                    lock (_gate)
+                    {
+                        while (_ahead.Count >= _workers && !_disposed)
+                        {
+                            Monitor.Wait(_gate);
+                        }
+
+                        if (_disposed)
+                        {
+                            Observe(chunk.Digests);
+                            return;
+                        }
+
+                        _ahead.Enqueue(chunk);
+                        Monitor.PulseAll(_gate);
+                    }
+                }
+
+                if (!more)
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            lock (_gate)
+            {
+                _readerError = ExceptionDispatchInfo.Capture(e);
+            }
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _readerDone = true;
+                Monitor.PulseAll(_gate);
+            }
+        }
+    }
+
+    private Chunk? TakeChunk()
+    {
+        EnsureReading();
+        lock (_gate)
+        {
+            while (_ahead.Count == 0 && !_readerDone)
+            {
+                Monitor.Wait(_gate);
+            }
+
+            _readerError?.Throw();
+            if (_ahead.Count == 0)
+            {
+                return null;
+            }
+
+            Chunk chunk = _ahead.Dequeue();
+            Monitor.PulseAll(_gate);
+            return chunk;
+        }
+    }
+
+    private Chunk? PeekChunk()
+    {
+        EnsureReading();
+        lock (_gate)
+        {
+            while (_ahead.Count == 0 && !_readerDone)
+            {
+                Monitor.Wait(_gate);
+            }
+
+            _readerError?.Throw();
+            return _ahead.Count == 0 ? null : _ahead.Peek();
+        }
+    }
+
+    // Assembles the next chunk from the inner source. Returns null with more=false when the
+    // source is exhausted and nothing was assembled.
+    private Chunk? ReadChunk(out bool more)
     {
         Chunk chunk = _pending ?? new Chunk { FirstFrameIndex = _nextReadIndex };
         _pending = null;
+        more = true;
         while (true)
         {
             _token.ThrowIfCancellationRequested();
             if (!_inner.TryReadNext(out DemoFrame? frame))
             {
-                _innerDone = true;
+                more = false;
                 break;
             }
 
@@ -297,16 +415,17 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
 
         if (chunk.Frames.Count == 0)
         {
-            return;
+            return null;
         }
 
+        // Before the fold starts, while the frames are whole and the consumer is still waiting.
         if (chunk.Checkpoint is null)
         {
             _onFirstChunk?.Invoke(chunk.Frames);
         }
 
         chunk.Digests = Task.Run(() => Fold(chunk), _token);
-        _ahead.Enqueue(chunk);
+        return chunk;
     }
 
     private EntityFrameDigest[] Fold(Chunk chunk)
@@ -421,11 +540,12 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             ? MessageCategories.None
             : MessageCategories.Entities | MessageCategories.StringTables;
 
+    // Never the inner view itself: the reader thread is moving it.
     private IReadOnlyDictionary<int, PlayerInfo> PlayersAt(int index)
     {
         if (index < 0)
         {
-            return _inner.Enrichment.Players;
+            return _initialPlayers;
         }
 
         if (_current is { } current && Holds(current, index))
@@ -433,15 +553,18 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             return current.PlayersAfter[index - current.FirstFrameIndex];
         }
 
-        foreach (Chunk chunk in _ahead)
+        lock (_gate)
         {
-            if (Holds(chunk, index))
+            foreach (Chunk chunk in _ahead)
             {
-                return chunk.PlayersAfter[index - chunk.FirstFrameIndex];
+                if (Holds(chunk, index))
+                {
+                    return chunk.PlayersAfter[index - chunk.FirstFrameIndex];
+                }
             }
         }
 
-        return _inner.Enrichment.Players;
+        return _current is { } last && last.PlayersAfter.Count > 0 ? last.PlayersAfter[^1] : _initialPlayers;
     }
 
     private static bool Holds(Chunk chunk, int index) =>
