@@ -139,7 +139,7 @@ public sealed class EntityChangeScanner
     // Provider schema validation: latched once every provider's target class has
     // descriptors and every declared type matched the wire schema. Loud on drift — see
     // TryValidateProviderSchema.
-    private bool _schemaValidated;
+    private volatile bool _schemaValidated;
 
     // Visibility rising edges. Both are null unless a rule actually subscribes to enemy_spotted AND
     // the caller supplied map geometry, so the per-frame consume pays nothing by default. They are
@@ -317,25 +317,24 @@ public sealed class EntityChangeScanner
             _profSeekAlloc += GC.GetAllocatedBytesForCurrentThread() - seekStartA;
         }
 
-        // Sequential-path schema validation — latches once all provider classes
-        // have descriptors (first FullPacket); throws on drift. Zero cost once latched.
-        if (!_schemaValidated)
-        {
-            TryValidateProviderSchema(Layer.Tracker);
-        }
-
+        ValidateSchema(Layer.Tracker);
         return Consume(BuildDigest(), tick);
     }
 
     /// <summary>How this evaluation's digests are being produced; <see cref="DigestProducerKind.None" /> before one starts.</summary>
     public DigestProducerKind ProducerKind { get; private set; }
 
-    // Workers the pipelined producer runs when the caller expresses no cap. Each one holds a
-    // tracker and a chunk of frames ahead of the loop, about 20 MB live on a full match, so
-    // this bounds memory as much as it bounds parallelism. Three is where the fold disappears
-    // behind the read and the dispatch on a ten-core machine; a fourth was measured to buy
-    // nothing.
+    // Workers the pipelined producer runs over a stream when the caller expresses no cap. Each
+    // one holds a tracker and a chunk of frames ahead of the loop, about 20 MB live on a full
+    // match, so this bounds memory as much as it bounds parallelism. Three is where the fold
+    // disappears behind the read and the dispatch on a ten-core machine; a fourth was measured
+    // to buy nothing.
     internal const int DefaultPipelineWorkers = 3;
+
+    // Over a retained list the walk is free and the frames are already resident, so the fold is
+    // the only thing left to hide and memory is not what bounds the count. Measured in
+    // docs/perf/baseline.md, "One producer".
+    internal static int DefaultListWorkers => Math.Max(DefaultPipelineWorkers, Environment.ProcessorCount - 2);
 
     private PipelinedDigestSource? _pipeline;
     private bool _releaseFolded;
@@ -345,18 +344,29 @@ public sealed class EntityChangeScanner
     internal IReadOnlyList<IPerPlayerEntityValueProvider> PerPlayerProviders => _perPlayerProviders;
 
     /// <summary>
+    ///     The digest workers an evaluation runs: the caller's cap when it is positive, else the
+    ///     default for the source kind. One selects the sequential producer. Zero and negatives
+    ///     are treated as no cap rather than thrown on, since the knob rides an options record a
+    ///     service may fill from config.
+    /// </summary>
+    internal static int ResolveWorkers(int? maxDegreeOfParallelism, bool randomAccess) =>
+        maxDegreeOfParallelism is int dop and > 0
+            ? dop
+            : Math.Min(Environment.ProcessorCount, randomAccess ? DefaultListWorkers : DefaultPipelineWorkers);
+
+    /// <summary>
     ///     Starts an evaluation: clears every per-evaluation accumulator (the previous digest, the
     ///     pre-frame snapshot, the delta memory, the molotov de-dup set, the singleton last-values,
     ///     the decode-compromise latch, a layer the sequential path advanced), then chooses the
-    ///     producer. A source with random access gets the up-front parallel decode; a stream gets
-    ///     the pipelined checkpoint-parallel producer, which reads ahead on the evaluator's behalf and
-    ///     is what the evaluator must then read from, or one layer driven in step with the loop
-    ///     by <see cref="BeginTickRun" /> when the parallelism cap is one. Without this a second
-    ///     evaluation over one <c>BuildResult</c> would start from the prior run's terminal values.
+    ///     producer: the pipelined checkpoint-parallel producer, which reads ahead on the
+    ///     evaluator's behalf and is what the evaluator must then read from, or one layer driven
+    ///     in step with the loop by <see cref="BeginTickRun" /> when the parallelism cap is one.
+    ///     Without this a second evaluation over one <c>BuildResult</c> would start from the prior
+    ///     run's terminal values.
     /// </summary>
     /// <returns>The source the evaluator reads frames from for this evaluation.</returns>
-    internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, Action<double>? onProgress,
-        int? maxDegreeOfParallelism, CancellationToken cancellationToken)
+    internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, int? maxDegreeOfParallelism,
+        CancellationToken cancellationToken)
     {
         _pipeline?.Close();
         _pipeline = null;
@@ -383,16 +393,14 @@ public sealed class EntityChangeScanner
             _layerAdvanced = false;
         }
 
-        if (source.SupportsRandomAccess && source.Frames is { } frames)
+        // A test's hand-built digests stand in for a producer.
+        if (PrecomputedDigests is not null)
         {
-            PrecomputeParallelDigests(frames, onProgress, maxDegreeOfParallelism, cancellationToken);
-            ProducerKind = PrecomputedDigests is not null ? DigestProducerKind.ParallelUpFront : DigestProducerKind.Sequential;
+            ProducerKind = DigestProducerKind.Sequential;
             return source;
         }
 
-        int workers = maxDegreeOfParallelism is int dop and > 0
-            ? dop
-            : Math.Min(Environment.ProcessorCount, DefaultPipelineWorkers);
+        int workers = ResolveWorkers(maxDegreeOfParallelism, source.SupportsRandomAccess);
         if (workers <= 1)
         {
             ProducerKind = DigestProducerKind.Sequential;
@@ -406,11 +414,22 @@ public sealed class EntityChangeScanner
             _emitMolotovThrows,
             _transitionScanner is not null,
             workers,
-            ValidateSchemaOnFirstChunk,
-            cancellationToken);
+            _releaseFolded,
+            ValidateSchema,
+            cancellationToken,
+            MinChunkFrames(source.FrameCount, workers));
         ProducerKind = DigestProducerKind.Pipelined;
         return _pipeline;
     }
+
+    // Over a stream a chunk is memory held ahead of the loop, so it stays at the producer's
+    // minimum. Over a list the frames are resident either way and every chunk costs a checkpoint
+    // prime, so the chunks are sized to about twice the worker count. Measured in
+    // docs/perf/baseline.md, "One producer".
+    internal static int MinChunkFrames(int? frameCount, int workers) =>
+        frameCount is int frames
+            ? Math.Max(PipelinedDigestSource.MinChunkFrames, frames / (2 * Math.Max(1, workers)))
+            : PipelinedDigestSource.MinChunkFrames;
 
     /// <summary>Releases the pipelined producer, cancelling any chunk still decoding ahead.</summary>
     internal void EndEvaluation()
@@ -419,20 +438,14 @@ public sealed class EntityChangeScanner
         _pipeline = null;
     }
 
-    // The pipelined path never advances this scanner's own layer, so the schema is judged on a
-    // throwaway layer over the first chunk, as the up-front producer does over the first frames.
-    private void ValidateSchemaOnFirstChunk(IReadOnlyList<DemoFrame> frames)
+    // Runs on whichever thread applied the frame: the loop's on the sequential path, a fold
+    // worker's on the pipelined one. The latch is idempotent, so two workers judging the same
+    // schema at once reach the same answer.
+    private void ValidateSchema(EntityTracker tracker)
     {
-        if (_schemaValidated || frames.Count == 0)
+        if (!_schemaValidated)
         {
-            return;
-        }
-
-        EntityStateLayer probe = new(frames);
-        for (int f = 32; f <= Math.Min(frames.Count, 608) && !_schemaValidated; f += 96)
-        {
-            probe.SeekBeforeFrame(f);
-            TryValidateProviderSchema(probe.Tracker);
+            TryValidateProviderSchema(tracker);
         }
     }
 

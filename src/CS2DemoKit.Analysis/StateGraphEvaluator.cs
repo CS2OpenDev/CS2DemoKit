@@ -22,11 +22,6 @@ namespace CS2DemoKit.Analysis;
 /// </summary>
 public sealed class StateGraphEvaluator
 {
-    // The up-front parallel decode is ~70% of eval wall-time, so it drives the first 70% of
-    // the determinate progress bar and the per-frame consume loop drives the rest. Approximate (the
-    // decode/loop split varies by machine + GC mode) but enough for a smooth bar instead of a 0%-then-race.
-    private const double PrecomputeShare = 0.7;
-
     // Per-player chain-satisfaction nodes ("_chain_{id}") → owning player, registered at
     // materialization (the only place node→player is known). Consulted once per rising edge to
     // stamp attribution into RuleChainEvent; game-scoped chain nodes miss → null slot/name.
@@ -487,17 +482,12 @@ public sealed class StateGraphEvaluator
         }
 
         // The scanner picks this source's digest producer and resets its per-evaluation state:
-        // the parallel up-front decode over a list (golden-preserving, proven element-wise
-        // identical to the sequential digests), the pipelined producer over a stream, which
-        // reads ahead and is what the loop then reads from, or one layer driven in step with the
-        // loop. The up-front decode OWNS the first PrecomputeShare of the progress bar.
+        // the pipelined producer, which reads ahead and is what the loop then reads from, or one
+        // layer driven in step with the loop.
         IDemoFrameSource frames = source;
         if (_entityScanner is not null)
         {
-            frames = _entityScanner.BeginEvaluation(source,
-                progress is null ? null : p => progress.Report(p * PrecomputeShare),
-                maxDegreeOfParallelism,
-                cancellationToken);
+            frames = _entityScanner.BeginEvaluation(source, maxDegreeOfParallelism, cancellationToken);
             _enrichment = frames.Enrichment;
         }
 
@@ -526,12 +516,11 @@ public sealed class StateGraphEvaluator
             // of messages) and bounds cancel latency to a single frame's work.
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Determinate-progress feedback for the UI, ~every 2048 frames. The loop owns the
-            // tail [PrecomputeShare, 1] of the bar; a stream reports by bytes consumed.
+            // Determinate-progress feedback for the UI, ~every 2048 frames: by frame over a
+            // list, by bytes consumed over a stream.
             if (progress is not null && (frameIdx & 2047) == 0)
             {
-                double fraction = frameCount is { } total ? (double)frameIdx / total : frames.Progress ?? 0.0;
-                progress.Report(PrecomputeShare + (1.0 - PrecomputeShare) * fraction);
+                progress.Report(frameCount is { } total ? (double)frameIdx / total : frames.Progress ?? 0.0);
             }
 
             DemoFrame frame = run[runPos++];

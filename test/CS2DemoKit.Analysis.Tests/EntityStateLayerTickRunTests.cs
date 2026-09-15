@@ -93,7 +93,7 @@ public class EntityStateLayerTickRunTests
         // Under test: the frame-free layer driven by runs, through the scanner's own rule.
         EntityStateLayer driven = new();
         EntityChangeScanner scanner = new(driven, []);
-        scanner.BeginEvaluation(new FrameListSourceForTest(frames), null, 1, CancellationToken.None);
+        scanner.BeginEvaluation(new FrameListSourceForTest(frames), 1, CancellationToken.None);
         List<(int Tick, int Index)> runTrace = [];
         foreach (List<DemoFrame> run in TickRuns(frames))
         {

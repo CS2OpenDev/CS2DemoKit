@@ -7,6 +7,7 @@ using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.Entities;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2OpenSchema.Protos;
 
 #endregion
@@ -14,13 +15,13 @@ using CS2OpenSchema.Protos;
 namespace CS2DemoKit.Analysis;
 
 /// <summary>
-///     The checkpoint-parallel digest producer for a stream. Sits between a forward source and the
-///     evaluator: a reader thread pulls frames from the source into chunks that start at a
+///     The checkpoint-parallel digest producer. Sits between a frame source and the evaluator: a
+///     reader thread pulls frames from the source into chunks that start at a
 ///     <c>DEM_FullPacket</c>, hands each chunk to a worker that primes its own tracker from that
 ///     checkpoint and folds the chunk's digests, and queues the chunk for the evaluator, which
-///     takes them in order. What <see cref="ParallelDigestProducer" /> does up front over a
-///     retained list, done over a bounded window of a stream: the same prime, the same tick-gated
-///     seek, the same extractor, so the digests fold to the same values. The read runs on its own
+///     takes them in order. The same producer serves a forward reader and a retained frame list:
+///     over a reader the walk is the decode and folded payloads are released behind the loop;
+///     over a list the walk is free and the list keeps its frames. The read runs on its own
 ///     thread so decoding overlaps the evaluator's dispatch instead of taking turns with it.
 ///     <para>
 ///         Live memory is the unconsumed part of the current chunk plus up to the worker count of
@@ -51,7 +52,9 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly bool _emitMolotov;
     private readonly bool _captureSmokes;
     private readonly int _workers;
-    private readonly Action<IReadOnlyList<DemoFrame>>? _onFirstChunk;
+    private readonly bool _releaseFolded;
+    private readonly Action<EntityTracker>? _schemaCheck;
+    private readonly int _minChunkFrames;
     private readonly CancellationTokenSource _cts;
     private readonly CancellationToken _token;
     private readonly ConcurrentBag<Worker> _pool = [];
@@ -75,19 +78,34 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     // Shared, under _gate.
     private readonly object _gate = new();
     private readonly Queue<Chunk> _ahead = new();
+    private readonly List<ChunkSpan> _spans = [];
     private Thread? _reader;
     private bool _readerDone;
     private ExceptionDispatchInfo? _readerError;
     private bool _disposed;
 
-    /// <param name="inner">The stream to read; consumed by this source alone from here on.</param>
+    /// <param name="inner">The source to read; consumed by this producer alone from here on.</param>
     /// <param name="perPlayerFactory">Fresh per-player providers for one worker, in the layout's order.</param>
     /// <param name="singletonFactory">Fresh singleton providers for one worker, in the same order contract.</param>
     /// <param name="emitMolotov">Whether digests carry live molotov projectiles.</param>
     /// <param name="captureSmokes">Whether digests carry the frame's active smoke clouds.</param>
     /// <param name="workers">Chunks queued ahead of the consumer, and the worker count.</param>
-    /// <param name="onFirstChunk">Runs on the reader thread with the first chunk's frames once it closes, before its fold starts.</param>
+    /// <param name="releaseFolded">
+    ///     Whether a frame's entity and string-table payloads are dropped once folded. On for a
+    ///     forward reader, whose frames are nobody's but the evaluator's; off over a list, which
+    ///     owns its frames.
+    /// </param>
+    /// <param name="schemaCheck">
+    ///     Runs on a fold worker after each frame is applied, against that worker's tracker, until
+    ///     the caller stops caring; a throw fails the chunk and reaches the consumer from
+    ///     <see cref="Take" />.
+    /// </param>
     /// <param name="cancellationToken">Cancels the read-ahead and every worker.</param>
+    /// <param name="minChunkFrames">
+    ///     Frames a chunk holds before the next candidate full packet closes it. The gates pass a
+    ///     value to move the chunk boundaries, which is the one position a checkpoint
+    ///     reconstruction can diverge at; production takes <see cref="MinChunkFrames" />.
+    /// </param>
     public PipelinedDigestSource(
         IDemoFrameSource inner,
         Func<IReadOnlyList<IPerPlayerEntityValueProvider>> perPlayerFactory,
@@ -95,8 +113,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         bool emitMolotov,
         bool captureSmokes,
         int workers,
-        Action<IReadOnlyList<DemoFrame>>? onFirstChunk,
-        CancellationToken cancellationToken)
+        bool releaseFolded,
+        Action<EntityTracker>? schemaCheck,
+        CancellationToken cancellationToken,
+        int minChunkFrames = MinChunkFrames)
     {
         _inner = inner;
         _perPlayerFactory = perPlayerFactory;
@@ -104,15 +124,16 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         _emitMolotov = emitMolotov;
         _captureSmokes = captureSmokes;
         _workers = Math.Max(1, workers);
-        _onFirstChunk = onFirstChunk;
+        _releaseFolded = releaseFolded;
+        _schemaCheck = schemaCheck;
+        _minChunkFrames = Math.Max(1, minChunkFrames);
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _token = _cts.Token;
         _initialPlayers = inner.Enrichment.Players;
         _view = new View(this);
 
-        // Bootstrapped here, on the consumer's thread, as the list producer does before it fans
-        // out. A fold that finds the pool empty makes its own; the registries are initialised
-        // by then.
+        // Bootstrapped here, on the consumer's thread, before any fold runs. A fold that finds
+        // the pool empty makes its own; the registries are initialised by then.
         for (int i = 0; i < _workers; i++)
         {
             _pool.Add(new Worker());
@@ -132,6 +153,21 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     public IReadOnlyList<DemoFrame> SignonPrefix => _signonPrefix;
 
     public DemoFrame? LastInstanceBaselineFullPacket => _inner.LastInstanceBaselineFullPacket;
+
+    /// <summary>
+    ///     Every chunk the reader has closed so far, in order. Test seam: the chunk boundaries are
+    ///     the one position a checkpoint reconstruction can diverge at.
+    /// </summary>
+    internal IReadOnlyList<ChunkSpan> Spans
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _spans];
+            }
+        }
+    }
 
     public bool TryReadNext([NotNullWhen(true)] out DemoFrame? frame)
     {
@@ -378,7 +414,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 {
                     _firstFullPacketSeen = true;
                 }
-                else if (_prefixDone && chunk.Frames.Count >= MinChunkFrames
+                else if (_prefixDone && chunk.Frames.Count >= _minChunkFrames
                          && !(_inner.TryPeekNext(out DemoFrame? next) && next.ServerTick == frame.ServerTick))
                 {
                     // The new chunk opens at the start of the checkpoint's tick run, so no run
@@ -394,6 +430,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                     {
                         FirstFrameIndex = index - (chunk.Frames.Count - runStart),
                         Checkpoint = frame,
+                        CheckpointPos = chunk.Frames.Count - runStart,
                         InstanceBaseline = instanceBaseline
                     };
                     for (int i = runStart; i < chunk.Frames.Count; i++)
@@ -419,11 +456,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             return null;
         }
 
-        // Before the fold starts, while the frames are whole and the consumer is still waiting.
-        // The template parses the schema once; every later worker adopts it instead.
+        // The template parses the schema once, from the prefix the first chunk has just
+        // retained; every later worker adopts it instead.
         if (chunk.Checkpoint is null)
         {
-            _onFirstChunk?.Invoke(chunk.Frames);
             EntityStateLayer template = new() { StoreUnlensedFields = false };
             foreach (DemoFrame frame in _signonPrefix)
             {
@@ -432,6 +468,12 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
 
             template.Tracker.ResetEntitiesKeepSchema();
             _template = template;
+        }
+
+        lock (_gate)
+        {
+            _spans.Add(new ChunkSpan(chunk.FirstFrameIndex, chunk.Frames.Count,
+                chunk.Checkpoint is null ? -1 : chunk.FirstFrameIndex + chunk.CheckpointPos));
         }
 
         chunk.Digests = Task.Run(() => Fold(chunk), _token);
@@ -489,11 +531,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         int next = 0;
         if (chunk.Checkpoint is not null)
         {
-            int at = 0;
-            while (!ReferenceEquals(frames[at], chunk.Checkpoint))
-            {
-                at++;
-            }
+            int at = chunk.CheckpointPos;
 
             // A fresh worker takes the template's schema state rather than parsing its own; a
             // re-primed one keeps it. Either way the prime only clears entities and loads the
@@ -509,11 +547,13 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
 
             // The run's frames before the checkpoint are covered by its snapshot and never applied
             // here; the sequential producer applies and releases them, so release them too.
-            for (int i = 0; i < at; i++)
+            if (_releaseFolded)
             {
-                frames[i].Release(FoldedCategories(frames[i]));
+                for (int i = 0; i < at; i++)
+                {
+                    frames[i].Release(FoldedCategories(frames[i]));
+                }
             }
-
         }
 
         worker.SchemaLoaded = true;
@@ -533,7 +573,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                     // messages: the signon prefix, which later workers prime from, and a frame
                     // the tick gate deferred past its own position, which the sequential producer
                     // dispatches before it has folded it.
-                    if (next >= chunk.PrefixFrames && next >= n)
+                    if (_releaseFolded && next >= chunk.PrefixFrames && next >= n)
                     {
                         applied.Release(FoldedCategories(applied));
                     }
@@ -542,6 +582,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 }
             }
 
+            _schemaCheck?.Invoke(layer.Tracker);
             digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, _emitMolotov, _captureSmokes, worker.Projectiles, worker.Pawns);
         }
 
@@ -586,11 +627,18 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private static bool Holds(Chunk chunk, int index) =>
         index >= chunk.FirstFrameIndex && index < chunk.FirstFrameIndex + chunk.Frames.Count;
 
+    /// <summary>
+    ///     One chunk as the reader closed it: its first frame index, its frame count, and the
+    ///     frame index of the full packet its worker primes from, or -1 for the from-scratch chunk.
+    /// </summary>
+    internal readonly record struct ChunkSpan(int FirstFrameIndex, int FrameCount, int CheckpointFrameIndex);
+
     private sealed class Chunk
     {
         public readonly List<DemoFrame> Frames = [];
         public readonly List<IReadOnlyDictionary<int, PlayerInfo>> PlayersAfter = [];
         public DemoFrame? Checkpoint;
+        public int CheckpointPos;
         public DemoFrame? InstanceBaseline;
         public int FirstFrameIndex;
         public int PrefixFrames;

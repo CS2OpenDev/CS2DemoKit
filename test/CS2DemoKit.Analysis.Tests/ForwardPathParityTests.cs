@@ -50,7 +50,7 @@ public class ForwardPathParityTests
 
         await Assert.That(list.Provenance.Source).IsEqualTo(AnalysisSourceKind.Materialised);
         await Assert.That(streamed.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
-        await Assert.That(list.Provenance.Digest).IsEqualTo(DigestProducerKind.ParallelUpFront);
+        await Assert.That(list.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
         await Assert.That(streamed.Provenance.Digest).IsEqualTo(DigestProducerKind.Pipelined);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(list.Provenance.FramesConsumed);
         await Assert.That(streamed.Provenance.FramesConsumed).IsEqualTo(demo.Frames.Count);
