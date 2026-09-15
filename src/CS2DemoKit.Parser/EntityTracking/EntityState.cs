@@ -1,5 +1,6 @@
 #region
 
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 #endregion
@@ -44,6 +45,8 @@ public sealed class EntityState
     private ulong[]? _intSeen;
     private object?[]? _objectLane;
     private ulong[]? _objectSeen;
+    private Vector3[]? _vectorLane;
+    private ulong[]? _vectorSeen;
 
     // Bound per-class shape. Null in all-fallback mode; populated when
     // EntityTracker calls BindShape after slot-map construction.
@@ -75,7 +78,7 @@ public sealed class EntityState
         {
             int fallbackCount = _fallback?.Count ?? 0;
             int laneCapacityHint = Shape is { } shape
-                ? shape.IntSlotPaths.Length + shape.FloatSlotPaths.Length + shape.ObjectSlotPaths.Length
+                ? shape.IntSlotPaths.Length + shape.FloatSlotPaths.Length + shape.ObjectSlotPaths.Length + shape.VectorSlotPaths.Length
                 : 0;
             Dictionary<string, object?> merged = new(fallbackCount + laneCapacityHint);
 
@@ -99,6 +102,7 @@ public sealed class EntityState
                 ProjectLane(merged, s.ObjectSlotPaths, _objectLane, _objectSeen);
                 ProjectIntLane(merged, s.IntSlotPaths, _intLane, _intSeen);
                 ProjectFloatLane(merged, s.FloatSlotPaths, _floatLane, _floatSeen);
+                ProjectVectorLane(merged, s.VectorSlotPaths, _vectorLane, _vectorSeen);
             }
 
             return merged;
@@ -151,6 +155,13 @@ public sealed class EntityState
                         if (IsSeen(_objectSeen, addr.Slot))
                         {
                             return _objectLane![addr.Slot];
+                        }
+
+                        break;
+                    case LaneKind.Vector:
+                        if (IsSeen(_vectorSeen, addr.Slot))
+                        {
+                            return _vectorLane![addr.Slot];
                         }
 
                         break;
@@ -213,6 +224,14 @@ public sealed class EntityState
                     }
 
                     break;
+                case LaneKind.Vector:
+                    if (IsSeen(_vectorSeen, addr.Slot))
+                    {
+                        value = _vectorLane![addr.Slot];
+                        return true;
+                    }
+
+                    break;
             }
         }
 
@@ -247,6 +266,8 @@ public sealed class EntityState
             _intSeen = _intSeen is { } isn ? (ulong[])isn.Clone() : null,
             _floatSeen = _floatSeen is { } fsn ? (ulong[])fsn.Clone() : null,
             _objectSeen = _objectSeen is { } osn ? (ulong[])osn.Clone() : null,
+            _vectorLane = _vectorLane is { } vl ? (Vector3[])vl.Clone() : null,
+            _vectorSeen = _vectorSeen is { } vsn ? (ulong[])vsn.Clone() : null,
             _fallback = _fallback is { } fb ? new Dictionary<string, object?>(fb) : null
         };
 
@@ -282,6 +303,13 @@ public sealed class EntityState
                     }
 
                     break;
+                case LaneKind.Vector when typeof(T) == typeof(Vector3):
+                    if (IsSeen(_vectorSeen, addr.Slot))
+                    {
+                        return Unsafe.As<Vector3, T>(ref _vectorLane![addr.Slot]);
+                    }
+
+                    break;
             }
         }
 
@@ -305,14 +333,14 @@ public sealed class EntityState
                 case LaneKind.Int when typeof(T) == typeof(int):
                     if (IsSeen(_intSeen, addr.Slot))
                     {
-                        return (T)(object)_intLane![addr.Slot];
+                        return Unsafe.As<int, T>(ref _intLane![addr.Slot]);
                     }
 
                     return null;
                 case LaneKind.Float when typeof(T) == typeof(float):
                     if (IsSeen(_floatSeen, addr.Slot))
                     {
-                        return (T)(object)_floatLane![addr.Slot];
+                        return Unsafe.As<float, T>(ref _floatLane![addr.Slot]);
                     }
 
                     return null;
@@ -320,6 +348,13 @@ public sealed class EntityState
                     if (IsSeen(_objectSeen, addr.Slot))
                     {
                         return (T?)_objectLane![addr.Slot];
+                    }
+
+                    return null;
+                case LaneKind.Vector when typeof(T) == typeof(Vector3):
+                    if (IsSeen(_vectorSeen, addr.Slot))
+                    {
+                        return Unsafe.As<Vector3, T>(ref _vectorLane![addr.Slot]);
                     }
 
                     return null;
@@ -357,9 +392,11 @@ public sealed class EntityState
         _intLane = shape.IntSlotPaths.Length > 0 ? new int[shape.IntSlotPaths.Length] : null;
         _floatLane = shape.FloatSlotPaths.Length > 0 ? new float[shape.FloatSlotPaths.Length] : null;
         _objectLane = shape.ObjectSlotPaths.Length > 0 ? new object?[shape.ObjectSlotPaths.Length] : null;
+        _vectorLane = shape.VectorSlotPaths.Length > 0 ? new Vector3[shape.VectorSlotPaths.Length] : null;
         _intSeen = AllocSeen(shape.IntSlotPaths.Length);
         _floatSeen = AllocSeen(shape.FloatSlotPaths.Length);
         _objectSeen = AllocSeen(shape.ObjectSlotPaths.Length);
+        _vectorSeen = AllocSeen(shape.VectorSlotPaths.Length);
     }
 
     /// <summary>
@@ -382,6 +419,16 @@ public sealed class EntityState
         if (_objectLane is { } ol)
         {
             Array.Clear(ol);
+        }
+
+        if (_vectorLane is { } vl)
+        {
+            Array.Clear(vl);
+        }
+
+        if (_vectorSeen is { } vsn)
+        {
+            Array.Clear(vsn);
         }
 
         if (_intSeen is { } isn)
@@ -443,6 +490,30 @@ public sealed class EntityState
     /// <summary>Reads the raw boxed value from the lane (no <c>_seen</c> check; caller is responsible).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal object? GetObjectSlot(int slot) => _objectLane![slot];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void SetVectorSlot(int slot, Vector3 value)
+    {
+        _vectorLane![slot] = value;
+        MarkSeen(_vectorSeen!, slot);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal Vector3 GetVectorSlot(int slot) => _vectorLane![slot];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryGetVectorSlot(int slot, out Vector3 value)
+    {
+        Vector3[]? lane = _vectorLane;
+        if (lane is not null && (uint)slot < (uint)lane.Length && IsSeen(_vectorSeen, slot))
+        {
+            value = lane[slot];
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
 
     // ── Seen-aware lane reads ─────────────────────────────────────────────────
     //
@@ -588,6 +659,22 @@ public sealed class EntityState
     }
 
     private static void ProjectIntLane(Dictionary<string, object?> merged, string[] paths, int[]? lane, ulong[]? seen)
+    {
+        if (lane is null || seen is null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < paths.Length; i++)
+        {
+            if ((seen[i >>> 6] & 1UL << (i & 63)) != 0)
+            {
+                merged[paths[i]] = lane[i];
+            }
+        }
+    }
+
+    private static void ProjectVectorLane(Dictionary<string, object?> merged, string[] paths, Vector3[]? lane, ulong[]? seen)
     {
         if (lane is null || seen is null)
         {

@@ -24,7 +24,7 @@ public static class GeneratedLensRegistry
     ///     it matches — a mismatch means the emitted literals drifted from the
     ///     derivation (re-run codegen against the pinned SDK release).
     /// </summary>
-    public const string LensHash = "sha256:0799d9ea632962b78a86d9058ec3a5eef1de43cf96a4fbbfbca796ac2319da66";
+    public const string LensHash = "sha256:7a3c750ccb63187a33e67a41a2b61549719b61750078ff762840b961d60f1f5a";
 
     /// <summary>
     ///     Constructs and returns the <see cref="LensState" /> encoded at codegen time.
@@ -140,9 +140,9 @@ public static class GeneratedLensRegistry
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
         };
         state.Fields["CBasePlayerWeapon"] = new()
         {
@@ -201,8 +201,8 @@ public static class GeneratedLensRegistry
             ["m_pGameRules.m_nCTsAliveAtFreezetimeEnd"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 13),
             ["m_pGameRules.m_nTerroristsAliveAtFreezetimeEnd"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 14),
             ["m_pGameRules.m_totalRoundsPlayed"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 15),
-            ["m_pGameRules.m_vMinimapMaxs"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
-            ["m_pGameRules.m_vMinimapMins"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 2),
+            ["m_pGameRules.m_vMinimapMaxs"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_pGameRules.m_vMinimapMins"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CCSPlayerController"] = new()
         {
@@ -248,7 +248,7 @@ public static class GeneratedLensRegistry
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecX"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecY"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 1),
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecZ"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 2),
-            ["m_angEyeAngles"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_angEyeAngles"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
             ["m_bInBombZone"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_bInBuyZone"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_bIsDefusing"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
@@ -260,9 +260,9 @@ public static class GeneratedLensRegistry
             ["m_flDeathTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 5),
             ["m_flFlashDuration"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 6),
             ["m_flFlashMaxAlpha"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 7),
-            ["m_hController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hOriginalController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 4),
+            ["m_hController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hOriginalController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
             ["m_iDeathFlags"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 10),
             ["m_iHealth"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 11),
             ["m_iMaxHealth"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 12),
@@ -274,18 +274,18 @@ public static class GeneratedLensRegistry
             ["m_pItemServices.m_bHasHelmet"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 18),
             ["m_pMovementServices.m_flDuckAmount"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 8),
             ["m_pMovementServices.m_flStamina"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 9),
-            ["m_pMovementServices.m_nButtons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_pObserverServices.m_hObserverTarget"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 6),
+            ["m_pMovementServices.m_nButtons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
+            ["m_pObserverServices.m_hObserverTarget"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 5),
             ["m_pObserverServices.m_iObserverMode"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 19),
-            ["m_pWeaponServices.m_hActiveWeapon"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 7),
-            ["m_pWeaponServices.m_hLastWeapon"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 8),
-            ["m_pWeaponServices.m_hMyWeapons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 9),
-            ["m_szLastPlaceName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 10),
+            ["m_pWeaponServices.m_hActiveWeapon"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 6),
+            ["m_pWeaponServices.m_hLastWeapon"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 7),
+            ["m_pWeaponServices.m_hMyWeapons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 8),
+            ["m_szLastPlaceName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 9),
             ["m_unCurrentEquipmentValue"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 20),
             ["m_unFreezetimeEndEquipmentValue"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 21),
             ["m_unRoundStartEquipmentValue"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 22),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 11),
-            ["v_angle"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 12),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 10),
+            ["v_angle"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CCSPlayerPawnBase"] = new()
         {
@@ -373,9 +373,9 @@ public static class GeneratedLensRegistry
             ["m_nDecoyShotTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
             ["m_shotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 9),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
         };
         state.Fields["CFlashbang"] = new()
         {
@@ -408,9 +408,9 @@ public static class GeneratedLensRegistry
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_numOpponentsHit"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_numTeammatesHit"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
         };
         state.Fields["CHEGrenade"] = new()
         {
@@ -440,9 +440,9 @@ public static class GeneratedLensRegistry
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
         };
         state.Fields["CIncendiaryGrenade"] = new()
         {
@@ -500,9 +500,9 @@ public static class GeneratedLensRegistry
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
         };
         state.Fields["CPlantedC4"] = new()
         {
@@ -557,11 +557,11 @@ public static class GeneratedLensRegistry
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 9),
             ["m_nSmokeEffectTickBegin"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 10),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vSmokeColor"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
-            ["m_vSmokeDetonationPos"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 7),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 8),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vSmokeColor"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 2),
+            ["m_vSmokeDetonationPos"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 3),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
         };
         state.Fields["CWeaponAWP"] = new()
         {

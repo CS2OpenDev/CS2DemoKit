@@ -1,5 +1,6 @@
 #region
 
+using System.Numerics;
 using System.Collections.Concurrent;
 using System.Collections;
 using System.Diagnostics;
@@ -946,10 +947,12 @@ public sealed class EntityTracker
                 // mask, etc.).
                 IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(field);
                 FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(field) : null;
+                Vector3Decoder? vecDec = intDec is null && floatDec is null ? FieldDecoderFactory.TryCreateVector3(field) : null;
 
                 // Classify the natural decoder lane from the factory output.
                 LaneKind naturalLane = intDec is not null ? LaneKind.Int
                     : floatDec is not null ? LaneKind.Float
+                    : vecDec is not null ? LaneKind.Vector
                     : LaneKind.Object;
 
                 // Consult the Lens resolver to override the natural lane with the
@@ -992,14 +995,14 @@ public sealed class EntityTracker
                 if (targetLane != LaneKind.Fallback && shapeBuilder is not null)
                 {
                     SlotAddr addr = shapeBuilder.Allocate(targetLane, path, transform, fallbackDefault, lensSlot);
-                    AddLeafDescriptor(result, field, path, intDec, floatDec, naturalLane, addr, transform);
+                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, naturalLane, addr, transform);
                 }
                 else
                 {
                     // No shape builder (we're inside an array element walk) — emit a fallback
                     // descriptor and let the lane-write site route to _fallback.
                     SlotAddr addr = SlotAddr.Fallback;
-                    AddLeafDescriptor(result, field, path, intDec, floatDec, naturalLane, addr, transform);
+                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, naturalLane, addr, transform);
                 }
             }
         }
@@ -1024,11 +1027,21 @@ public sealed class EntityTracker
         string path,
         IntDecoder? intDec,
         FloatDecoder? floatDec,
+        Vector3Decoder? vecDec,
         LaneKind naturalLane,
         SlotAddr addr,
         LensTransform transform)
     {
-        if (intDec is not null)
+        if (vecDec is not null)
+        {
+            result.Add(new FieldDescriptor(path, vecDec, null)
+            {
+                Field = field,
+                SlotAddr = addr,
+                Transform = transform
+            });
+        }
+        else if (intDec is not null)
         {
             result.Add(new FieldDescriptor(path, intDec, null)
             {
@@ -1552,8 +1565,10 @@ public sealed class EntityTracker
 
             IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(field);
             FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(field) : null;
+            bool isVector = intDec is null && floatDec is null && FieldDecoderFactory.TryCreateVector3(field) is not null;
             LaneKind naturalLane = intDec is not null ? LaneKind.Int
                 : floatDec is not null ? LaneKind.Float
+                : isVector ? LaneKind.Vector
                 : LaneKind.Object;
 
             LensSlotRule r = rule.Value;
@@ -2553,6 +2568,31 @@ public sealed class EntityTracker
                     }
 
                     break;
+                case DecoderKind.Vector3 when desc.VectorDecoder is { } vd:
+                    Vector3 vv = vd(ref buf);
+                    if (_suppressFieldStore)
+                    {
+                        break;
+                    }
+
+                    switch (desc.SlotAddr.Lane)
+                    {
+                        case LaneKind.Vector:
+                            state.SetVectorSlot(desc.SlotAddr.Slot, vv);
+                            break;
+                        case LaneKind.Object:
+                            state.SetObjectSlot(desc.SlotAddr.Slot, vv);
+                            break;
+                        default:
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, vv);
+                            }
+
+                            break;
+                    }
+
+                    break;
                 default:
                     if (desc.Decoder is not null)
                     {
@@ -2566,6 +2606,9 @@ public sealed class EntityTracker
                         {
                             case LaneKind.Object:
                                 state.SetObjectSlot(desc.SlotAddr.Slot, ov);
+                                break;
+                            case LaneKind.Vector when ov is Vector3 v3:
+                                state.SetVectorSlot(desc.SlotAddr.Slot, v3);
                                 break;
                             case LaneKind.Int:
                                 // Lens drift: object wire (uint64/etc.), int Lens lane.
@@ -2926,7 +2969,8 @@ public sealed class EntityTracker
     {
         Object,
         Int,
-        Float
+        Float,
+        Vector3
     }
 
     /// <summary>
@@ -3008,6 +3052,16 @@ public sealed class EntityTracker
             ChildDescs = childDescs;
             Kind = DecoderKind.Float;
         }
+
+        public FieldDescriptor(string path, Vector3Decoder vectorDecoder, IReadOnlyList<FieldDescriptor>? childDescs)
+        {
+            Path = path;
+            VectorDecoder = vectorDecoder;
+            ChildDescs = childDescs;
+            Kind = DecoderKind.Vector3;
+        }
+
+        public Vector3Decoder? VectorDecoder { get; }
 
         /// <summary>Child descs.</summary>
         public IReadOnlyList<FieldDescriptor>? ChildDescs { get; }

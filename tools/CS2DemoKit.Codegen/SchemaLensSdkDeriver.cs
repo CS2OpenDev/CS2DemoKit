@@ -129,7 +129,9 @@ public static class SchemaLensSdkDeriver
                 return (WireType.FloatLane, LensTransform.None);
             case "uint64" or "CInButtonState": // wide 64-bit values are boxed on the object lane
                 return (WireType.ObjectLane, LensTransform.None);
-            case "CUtlString" or "Vector" or "VectorWS" or "QAngle"
+            case "Vector" or "VectorWS" or "QAngle": // three components, decoded typed onto the vector lane
+                return (WireType.VectorLane, LensTransform.None);
+            case "CUtlString"
                 or "CNetworkOriginCellCoordQuantizedVector" or "CNetworkVelocityVector":
                 return (WireType.ObjectLane, LensTransform.None);
         }

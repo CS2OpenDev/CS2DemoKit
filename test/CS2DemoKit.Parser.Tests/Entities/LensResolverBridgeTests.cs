@@ -107,6 +107,7 @@ public class LensResolverBridgeTests
                     WireType.IntLane => LaneKind.Int,
                     WireType.FloatLane => LaneKind.Float,
                     WireType.ObjectLane => LaneKind.Object,
+                    WireType.VectorLane => LaneKind.Vector,
                     _ => LaneKind.Fallback
                 };
                 await Assert.That(resolved!.Value.Lane).IsEqualTo(expectedLane);

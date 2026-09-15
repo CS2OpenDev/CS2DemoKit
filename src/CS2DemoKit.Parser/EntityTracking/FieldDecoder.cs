@@ -11,3 +11,6 @@ internal delegate int IntDecoder(ref BitBuffer buffer);
 
 /// <summary>Typed decoder for dominant float scalar fields — avoids boxing on the hot entity-decode path.</summary>
 internal delegate float FloatDecoder(ref BitBuffer buffer);
+
+/// <summary>A typed decoder for the three-component vector and angle types; nothing on its path boxes.</summary>
+internal delegate System.Numerics.Vector3 Vector3Decoder(ref BitBuffer buffer);

@@ -348,6 +348,12 @@ internal static class FieldDecoderFactory
 
     private static FieldDecoder QAngle(FieldEncodingInfo enc)
     {
+        Vector3Decoder typed = QAngleTyped(enc);
+        return (ref b) => typed(ref b);
+    }
+
+    private static Vector3Decoder QAngleTyped(FieldEncodingInfo enc)
+    {
         // qangle_pitch_yaw: 2 components with BitCount bits each
         if (enc.VarEncoder == "qangle_pitch_yaw")
         {
@@ -572,17 +578,38 @@ internal static class FieldDecoderFactory
 
     private static FieldDecoder Vec3(FieldEncodingInfo enc)
     {
+        Vector3Decoder typed = Vec3Typed(enc);
+        return (ref b) => typed(ref b);
+    }
+
+    /// <summary>
+    ///     A typed decoder for the three-component vector and angle types, or null for any other
+    ///     type. What the vector lane stores; the boxing decoders above wrap the same code.
+    /// </summary>
+    public static Vector3Decoder? TryCreateVector3(RuntimeField field)
+    {
+        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
+        return StripTemplateArgs(field.TypeName) switch
+        {
+            "Vector" or "VectorWS" => Vec3Typed(enc),
+            "QAngle" => QAngleTyped(enc),
+            _ => null
+        };
+    }
+
+    private static Vector3Decoder Vec3Typed(FieldEncodingInfo enc)
+    {
         if (enc.VarEncoder == "normal")
         {
-            return (ref b) => { return b.Read3BitNormal(); };
+            return (ref b) => b.Read3BitNormal();
         }
 
-        FieldDecoder fd = Float(enc);
+        FloatDecoder fd = BuildFloatDecoder(enc);
         return (ref b) =>
         {
-            float x = (float)fd(ref b)!;
-            float y = (float)fd(ref b)!;
-            float z = (float)fd(ref b)!;
+            float x = fd(ref b);
+            float y = fd(ref b);
+            float z = fd(ref b);
             return new Vector3(x, y, z);
         };
     }

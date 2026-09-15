@@ -200,6 +200,13 @@ public sealed class LensBoundReader : IEntityFieldReader
     /// <inheritdoc />
     public bool TryReadVector3(int ordinal, out Vector3 value)
     {
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Vector
+            && _state.TryGetVectorSlot(addr.Slot, out value))
+        {
+            return true;
+        }
+
         if (TryReadRaw(ordinal, out object? raw) && raw is Vector3 v)
         {
             value = v;
@@ -213,6 +220,15 @@ public sealed class LensBoundReader : IEntityFieldReader
     /// <inheritdoc />
     public bool TryReadQAngle(int ordinal, out QAngle value)
     {
+        // The angle decoders produce Vector3(pitch, yaw, roll): a component reinterpretation.
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Vector
+            && _state.TryGetVectorSlot(addr.Slot, out Vector3 typed))
+        {
+            value = new QAngle(typed.X, typed.Y, typed.Z);
+            return true;
+        }
+
         if (TryReadRaw(ordinal, out object? raw))
         {
             switch (raw)
@@ -296,6 +312,14 @@ public sealed class LensBoundReader : IEntityFieldReader
             case LaneKind.Object:
                 if (_state.TryGetObjectSlot(addr.Slot, out value))
                 {
+                    return true;
+                }
+
+                break;
+            case LaneKind.Vector:
+                if (_state.TryGetVectorSlot(addr.Slot, out Vector3 vec))
+                {
+                    value = vec;
                     return true;
                 }
 

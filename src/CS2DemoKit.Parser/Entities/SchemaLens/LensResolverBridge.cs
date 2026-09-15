@@ -64,6 +64,7 @@ public static class LensResolverBridge
                 WireType.IntLane => LaneKind.Int,
                 WireType.FloatLane => LaneKind.Float,
                 WireType.ObjectLane => LaneKind.Object,
+                WireType.VectorLane => LaneKind.Vector,
                 _ => LaneKind.Fallback
             };
 
