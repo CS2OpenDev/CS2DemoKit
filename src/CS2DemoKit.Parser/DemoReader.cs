@@ -1,9 +1,11 @@
 #region
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using CS2DemoKit.Parser.Entities;
+using CS2DemoKit.Parser.GameEvents;
 using CS2OpenSchema.Protos;
 
 #endregion
@@ -30,6 +32,12 @@ namespace CS2DemoKit.Parser;
 ///         frames and one decode partition per worker on top. Nothing scales with the frames
 ///         already read.
 ///     </para>
+///     <para>
+///         <see cref="Materialize" /> is the whole-file parse: the same scan, the same parallel
+///         window decode and the same enrichment, with one window over every frame and every frame
+///         kept. <see cref="DemoParser.Parse(ReadOnlyMemory{byte},DemoProfile)" /> is that call over
+///         a reader it opens and disposes.
+///     </para>
 /// </summary>
 public sealed class DemoReader : IDemoFrameSource, IDisposable
 {
@@ -43,10 +51,10 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
     private readonly List<DemoFrame> _signonPrefix = [];
     private readonly View _view;
     private readonly int _readAhead;
-    private readonly ParallelOptions? _windowOptions;
+    private readonly ParallelOptions _windowOptions;
     private readonly ConcurrentBag<Partition> _partitions = [];
     private readonly DemoFrame?[] _window;
-    private readonly DemoParser.FrameDescriptor[] _descriptors;
+    private DemoParser.FrameDescriptor[] _descriptors;
     private int _windowPos;
     private int _windowCount;
     private DemoParser.FrameScanResult _windowEnd = DemoParser.FrameScanResult.Frame;
@@ -58,6 +66,7 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
     private int _nextProgressAt;
     private DemoFrame? _peeked;
     private bool _started;
+    private bool _materialized;
     private bool _prefixDone;
     private bool _disposed;
 
@@ -84,9 +93,7 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
         _readAhead = _options.ReadAheadFrames > 0 && dop != 1 ? _options.ReadAheadFrames : 0;
         _window = _readAhead > 0 ? new DemoFrame?[_readAhead] : [];
         _descriptors = _readAhead > 0 ? new DemoParser.FrameDescriptor[_readAhead] : [];
-        _windowOptions = _readAhead > 0
-            ? new ParallelOptions { CancellationToken = _options.CancellationToken, MaxDegreeOfParallelism = dop }
-            : null;
+        _windowOptions = new ParallelOptions { CancellationToken = _options.CancellationToken, MaxDegreeOfParallelism = dop };
         ProbeHeader();
     }
 
@@ -142,7 +149,10 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
 
     public DecodePlan Plan => _mask.Plan;
 
-    /// <summary>A fresh snapshot of the counters so far. Frames are counted as they are handed out.</summary>
+    /// <summary>
+    ///     A fresh snapshot of the counters so far. Frames are counted as they are handed out; after
+    ///     <see cref="Materialize" /> this is the whole-file parse's provenance.
+    /// </summary>
     public DecodeProvenance Provenance
     {
         get
@@ -157,10 +167,13 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
                 bytes += p.State.BytesDecompressed;
             }
 
-            return new DecodeProvenance(DecodeSource.DemoReader,
-                _readAhead > 0 ? DecodeMode.WindowedParallel : DecodeMode.Sequential, _readAhead,
-                _options.MaxDegreeOfParallelism is > 0 ? _options.MaxDegreeOfParallelism : null,
-                _framesRead, decoded, skipped, stored, bytes);
+            int? cap = _options.MaxDegreeOfParallelism is > 0 ? _options.MaxDegreeOfParallelism : null;
+            return _materialized
+                ? new DecodeProvenance(DecodeSource.DemoParserParse, DecodeMode.ParallelWholeFile, 0, cap,
+                    _framesRead, decoded, skipped, stored, bytes)
+                : new DecodeProvenance(DecodeSource.DemoReader,
+                    _readAhead > 0 ? DecodeMode.WindowedParallel : DecodeMode.Sequential, _readAhead, cap,
+                    _framesRead, decoded, skipped, stored, bytes);
         }
     }
 
@@ -302,10 +315,18 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
     }
 
     /// <summary>
-    ///     Decodes the whole file into a <see cref="ParsedDemo" /> under the reader's plan, using the
-    ///     parallel whole-file parse. Allowed only before the first read; the reader is spent after.
+    ///     Decodes the whole file into a <see cref="ParsedDemo" /> under the reader's plan: every
+    ///     header scanned, every frame decoded in one parallel window under
+    ///     <see cref="ParseOptions.MaxDegreeOfParallelism" />, then enriched in order.
+    ///     <see cref="ParseOptions.ReadAheadFrames" /> is ignored, and
+    ///     <see cref="ParseOptions.Progress" /> is the decoded fraction, reported from the workers.
+    ///     Allowed only before the first read; the reader is spent after, with
+    ///     <see cref="Enrichment" />, <see cref="EndReason" /> and <see cref="Provenance" /> final.
     /// </summary>
     /// <exception cref="InvalidOperationException">A frame has already been read or peeked.</exception>
+    /// <exception cref="OperationCanceledException">
+    ///     <see cref="ParseOptions.CancellationToken" /> was cancelled; no partial demo is returned.
+    /// </exception>
     public ParsedDemo Materialize()
     {
         ThrowIfDisposed();
@@ -315,7 +336,69 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
         }
 
         _started = true;
-        return DemoParser.Parse(_data, _options with { Plan = _mask.Plan }, _profileOverride);
+        _materialized = true;
+        CancellationToken cancellationToken = _options.CancellationToken;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        bool prof = Profiling.Enabled;
+        ParseProfiler.Reset(prof);
+        long ticks = prof ? Stopwatch.GetTimestamp() : 0;
+        long alloc = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
+
+        // One descriptor per 250 bytes is denser than any demo in the corpus, so the scan seldom grows it.
+        int estimate = Math.Max(64, _data.Length / 250);
+        if (_descriptors.Length < estimate)
+        {
+            _descriptors = new DemoParser.FrameDescriptor[estimate];
+        }
+
+        int count = ScanWindow(int.MaxValue);
+        if (prof)
+        {
+            ParseProfiler.AddPass1(Stopwatch.GetTimestamp() - ticks, GC.GetAllocatedBytesForCurrentThread() - alloc);
+            int compressed = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (_descriptors[i].IsCompressed)
+                {
+                    compressed++;
+                }
+            }
+
+            ParseProfiler.SetCounts(count, compressed);
+            ticks = Stopwatch.GetTimestamp();
+        }
+
+        DemoFrame[] frames = new DemoFrame[count];
+        DecodeWindow(frames, count, _options.Progress is null ? 0 : Math.Max(1, count / 200));
+        _descriptors = [];
+        if (prof)
+        {
+            ParseProfiler.SetPass2Ticks(Stopwatch.GetTimestamp() - ticks);
+            ticks = Stopwatch.GetTimestamp();
+            alloc = GC.GetAllocatedBytesForCurrentThread();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        List<GameEvent> events = [];
+        foreach (DemoFrame frame in frames)
+        {
+            Observe(frame, events);
+        }
+
+        Finish(_windowEnd);
+        if (prof)
+        {
+            ParseProfiler.AddPass3(Stopwatch.GetTimestamp() - ticks, GC.GetAllocatedBytesForCurrentThread() - alloc);
+        }
+
+        return new ParsedDemo(
+            frames, events, _cursor.Players, _cursor.Schema,
+            _cursor.MapName, _cursor.TickCount, _cursor.TickInterval,
+            _cursor.ServerName, _cursor.ClientName, _cursor.GameDirectory,
+            _cursor.BuildNumber, _cursor.ServerStartTick,
+            _cursor.PatchVersion, _cursor.DemoVersionName, _cursor.DemoVersionGuid, _cursor.Addons,
+            _cursor.Profile, _mask.Plan, Provenance, _diagnostics.Snapshot());
     }
 
     public void Dispose()
@@ -348,8 +431,22 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
             return null;
         }
 
+        Observe(frame, null);
+
+        if (_options.Progress is { } progress && _pos >= _nextProgressAt)
+        {
+            _nextProgressAt = _pos + ProgressStride;
+            progress.Report(Math.Min(1.0, (double)_pos / _data.Length));
+        }
+
+        return frame;
+    }
+
+    // Frames must reach the cursor in recording order, whichever path decoded them.
+    private void Observe(DemoFrame frame, List<GameEvent>? events)
+    {
         _framesRead++;
-        _cursor.Observe(frame, null);
+        _cursor.Observe(frame, events);
 
         if (!_prefixDone)
         {
@@ -362,14 +459,6 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
                 _signonPrefix.Add(frame);
             }
         }
-
-        if (_options.Progress is { } progress && _pos >= _nextProgressAt)
-        {
-            _nextProgressAt = _pos + ProgressStride;
-            progress.Report(Math.Min(1.0, (double)_pos / _data.Length));
-        }
-
-        return frame;
     }
 
     private DemoFrame? DecodeSequential()
@@ -410,12 +499,22 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
         return frame;
     }
 
-    // Scan the window's headers in order, decode them in parallel, then hand them out in order.
-    // A scan failure ends the window early and the stream once the window is drained.
     private void FillWindow()
     {
+        _windowPos = 0;
+        _windowCount = ScanWindow(_readAhead);
+        if (_windowCount > 0)
+        {
+            DecodeWindow(_window, _windowCount, 0);
+        }
+    }
+
+    // Scans up to limit headers from the current position into _descriptors, in order. A scan
+    // failure ends the window early and, once the window is drained, the stream.
+    private int ScanWindow(int limit)
+    {
         int count = 0;
-        while (count < _readAhead)
+        while (count < limit)
         {
             DemoParser.FrameScanResult scan = DemoParser.TryScanFrame(_data, ref _pos, _frameNumber + count, _diagnostics,
                 out DemoParser.FrameDescriptor descriptor);
@@ -425,25 +524,46 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
                 break;
             }
 
+            if (count == _descriptors.Length)
+            {
+                Array.Resize(ref _descriptors, _descriptors.Length * 2);
+            }
+
             _descriptors[count++] = descriptor;
         }
 
-        _windowPos = 0;
-        _windowCount = count;
-        if (count == 0)
-        {
-            return;
-        }
+        return count;
+    }
 
+    // Decodes the scanned headers into `into` in scan order, on partitions pooled across windows.
+    // The body throws cancellation with the loop's own token, which is what makes it surface as
+    // OperationCanceledException rather than an AggregateException. A positive progressStride
+    // reports the decoded fraction from the workers, below 1.0; Finish reports the end.
+    private void DecodeWindow(DemoFrame?[] into, int count, int progressStride)
+    {
         int first = _frameNumber;
         bool countDrops = _dropCounts is not null;
+        CancellationToken cancellationToken = _options.CancellationToken;
+        Action<UnknownMessageInfo>? onUnknownMessage = _options.OnUnknownMessage;
+        IProgress<double>? progress = _options.Progress;
+        int done = 0;
         try
         {
-            Parallel.For(0, count, _windowOptions!,
+            Parallel.For(0, count, _windowOptions,
                 () => _partitions.TryTake(out Partition? p) ? p : new Partition(countDrops),
                 (i, _, p) =>
                 {
-                    _window[i] = DemoParser.DecodeFrame(_descriptors[i], first + i, p.State, _mask, _options.OnUnknownMessage, p.Drops);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    into[i] = DemoParser.DecodeFrame(_descriptors[i], first + i, p.State, _mask, onUnknownMessage, p.Drops);
+                    if (progressStride > 0)
+                    {
+                        int n = Interlocked.Increment(ref done);
+                        if (n % progressStride == 0 && n < count)
+                        {
+                            progress!.Report((double)n / count);
+                        }
+                    }
+
                     return p;
                 },
                 p => _partitions.Add(p));

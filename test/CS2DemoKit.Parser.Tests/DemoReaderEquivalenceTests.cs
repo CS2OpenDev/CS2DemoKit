@@ -191,6 +191,54 @@ public class DemoReaderEquivalenceTests
         await Assert.That(reader.TryPeekNext(out _)).IsFalse();
     }
 
+    /// <summary>
+    ///     Materialize is the whole-file parse under the reader's options: the read-ahead window is
+    ///     a streaming knob and is ignored, the worker cap is honoured, and the reader reports the
+    ///     parse's provenance and a final enrichment view once it returns.
+    /// </summary>
+    [Test]
+    public async Task Materialize_IsTheWholeFileParse_UnderTheReaderOptions()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        ParsedDemo full = DemoTestHelper.GetOrParse(path);
+
+        using DemoReader reader = DemoReader.Open(bytes.AsMemory(),
+            new ParseOptions { ReadAheadFrames = 7, MaxDegreeOfParallelism = 2, Plan = DecodePlan.EntityReplay });
+        ParsedDemo demo = reader.Materialize();
+
+        await Assert.That(demo.Frames.Count).IsEqualTo(full.Frames.Count);
+        await Assert.That(demo.Plan).IsSameReferenceAs(DecodePlan.EntityReplay);
+        await Assert.That(demo.Provenance.Source).IsEqualTo(DecodeSource.DemoParserParse);
+        await Assert.That(demo.Provenance.Mode).IsEqualTo(DecodeMode.ParallelWholeFile);
+        await Assert.That(demo.Provenance.ReadAheadFrames).IsEqualTo(0);
+        await Assert.That(demo.Provenance.MaxDegreeOfParallelism).IsEqualTo(2);
+        await Assert.That(demo.Provenance.FramesRead).IsEqualTo((long)full.Frames.Count);
+        await Assert.That(demo.Provenance.MessagesDecoded).IsLessThan(full.Provenance.MessagesDecoded);
+        await Assert.That(reader.Provenance).IsEqualTo(demo.Provenance);
+
+        await Assert.That(reader.EndReason).IsEqualTo(ReadEndReason.Stop);
+        await Assert.That(reader.Progress!.Value).IsEqualTo(1.0).Within(0.001);
+        await Assert.That(reader.Enrichment.TickCountIsFinal).IsTrue();
+        DemoDescriptor snapshot = reader.Enrichment.Snapshot();
+        await Assert.That(snapshot).IsEqualTo(DemoDescriptor.From(demo) with { Players = snapshot.Players });
+        await Assert.That(string.Join("\n", reader.Enrichment.Warnings.Select(w => $"{w.Code}|{w.Message}|{w.Count}")))
+            .IsEqualTo(string.Join("\n", demo.Warnings.Select(w => $"{w.Code}|{w.Message}|{w.Count}")));
+
+        IDemoFrameSource list = demo.AsFrameSource();
+        await Assert.That(reader.SignonPrefix.Select(f => f.FrameNumber).ToArray())
+            .IsEquivalentTo(list.SignonPrefix.Select(f => f.FrameNumber).ToArray());
+        await Assert.That(reader.SignonPrefix.Count).IsGreaterThan(0);
+        while (list.TryReadNext(out _))
+        {
+        }
+
+        await Assert.That(reader.LastInstanceBaselineFullPacket?.FrameNumber)
+            .IsEqualTo(list.LastInstanceBaselineFullPacket?.FrameNumber);
+        await Assert.That(reader.LastInstanceBaselineFullPacket).IsNotNull();
+        await Assert.That(reader.TryReadNext(out _)).IsFalse();
+    }
+
     [Test]
     public async Task Probe_ReportsTheVocabularyTheParseSaw()
     {

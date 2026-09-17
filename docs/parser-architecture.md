@@ -8,14 +8,16 @@ downstream consumer.
 
 `DemoParser.Parse(ReadOnlyMemory<byte>)` consumes a CS2 demo file and returns a
 `ParsedDemo`: a flat list of `DemoFrame`s plus enriched indexes (game events,
-players, schema, server metadata, demo profile). The parser runs three passes
-(sequential header scan, parallel proto parse, sequential enrichment), is
-zero-allocation on the per-frame hot path for uncompressed payloads, and is
-entity-state-agnostic — `svc_PacketEntities.entity_data` is left as opaque
-bytes. Entity replay is a separate opt-in layer (`EntityTracker`) on top.
+players, schema, server metadata, demo profile). The parse is
+`DemoReader.Materialize()`: a sequential header scan, one parallel decode over
+every frame, then sequential enrichment. It is zero-allocation on the per-frame
+hot path for uncompressed payloads, and entity-state-agnostic:
+`svc_PacketEntities.entity_data` is left as opaque bytes. Entity replay is a
+separate opt-in layer (`EntityTracker`) on top.
 
-Start reading at [`DemoParser.cs`](../src/CS2DemoKit.Parser/DemoParser.cs), at
-`Parse` / `ParseCore`.
+Start reading at [`DemoReader.cs`](../src/CS2DemoKit.Parser/DemoReader.cs), at
+`Materialize`, then [`DemoParser.cs`](../src/CS2DemoKit.Parser/DemoParser.cs)
+for the per-frame scan and decode.
 
 ---
 
@@ -93,10 +95,12 @@ game events never pays for replay.
 
 ## 2. The parse pipeline
 
-Both `DemoParser.Parse` overloads funnel into `ParseCore`
-([DemoParser.cs](../src/CS2DemoKit.Parser/DemoParser.cs)), which runs three
-passes. The pass naming is taken verbatim from that method's own comment
-banners.
+Both `DemoParser.Parse` overloads open a `DemoReader` over the bytes and call
+`Materialize()` ([DemoReader.cs](../src/CS2DemoKit.Parser/DemoReader.cs)),
+which runs the three stages below as one scan, one window decode and one
+enrichment walk; the per-frame bodies (`TryScanFrame`, `DecodeFrame`) are in
+[DemoParser.cs](../src/CS2DemoKit.Parser/DemoParser.cs). The pass names are
+kept for the profiler's slots (`ParseProfilingSnapshot`).
 
 ### Pass 1 — sequential header scan
 
@@ -934,11 +938,12 @@ presentation.
 
 ### Reading forward
 
-`DemoParser.Parse` and `DemoReader` share one scan body (`TryScanFrame`), one decode body
-(`DecodeFrame`, the pass-2 loop's inner function) and one enrichment cursor
-(`DemoEnrichmentCursor`, the old pass 3 taken one frame at a time). The parse runs the scan
-over the whole file, decodes every frame with `Parallel.For`, then drives the cursor over the
-result; the reader scans and decodes as the consumer pulls and drives the cursor as it yields.
+`DemoParser.Parse` is `DemoReader.Materialize()` over a reader it opens and disposes, so one
+scan loop (`ScanWindow` over `TryScanFrame`), one `Parallel.For` (`DecodeWindow` over
+`DecodeFrame`) and one enrichment cursor (`DemoEnrichmentCursor`) serve both. The parse scans
+every header, decodes the file as one window and drives the cursor over the result; a read
+scans and decodes a window, or one frame, as the consumer pulls and drives the cursor as it
+yields.
 Both honour a `DecodePlan`, compiled once into a `DecodeMask`: an unplanned inner message is
 skipped in the bit stream with `BitBuffer.SkipBytes` and never reaches protobuf, the outer
 packet is sliced with `FindBytesField` so a structure-only plan never parses a proto at all, and

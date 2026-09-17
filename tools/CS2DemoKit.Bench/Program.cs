@@ -100,11 +100,13 @@ static int Help()
           one child per (round, demo, arm), demos smallest first. Arms: file-read, message-scan
           (structure only), game-events, entity-replay (curated tracker off the reader),
           materialised-replay (the same walk over a retained parse), scoreboard-materialised
-          (shipped rulesets over a retained parse, snapshots on) and scoreboard-stream (the same
-          rulesets straight off the file, snapshots off). Each row carries the arm's wall-clock,
-          allocation, collector cost and the process's sampled memory high-water mark, plus a
-          digest of what it produced; the two replay arms and the two scoreboard arms must agree
-          per demo or neither row is written. No warm-up, so wall-clock includes JIT.
+          (shipped rulesets over a retained parse, snapshots on), scoreboard-stream (the same
+          rulesets straight off the file, snapshots off), parse (the whole-file parse, every
+          frame retained) and materialise (the reader's windowed loop with one window over the
+          whole file, every frame retained). Each row carries the arm's wall-clock, allocation,
+          collector cost and the process's sampled memory high-water mark, plus a digest of what
+          it produced; the two replay arms, the two scoreboard arms and the two decode arms must
+          agree per demo or neither row is written. No warm-up, so wall-clock includes JIT.
           CS2DEMOKIT_PATHS_LIVE=1 forces a compacting collection before every memory sample,
           so the peak is the live set instead of live plus garbage; it perturbs the arm, so
           take wall-clock from a run without it. CS2DEMOKIT_PATHS_DOP caps the stream

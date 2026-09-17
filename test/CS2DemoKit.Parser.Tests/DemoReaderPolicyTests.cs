@@ -61,6 +61,65 @@ public class DemoReaderPolicyTests
         }
     }
 
+    /// <summary>
+    ///     The whole-file parse ends on damage exactly as the read does, with the same warnings and
+    ///     health, and the reader is final once it returns.
+    /// </summary>
+    [Test]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x07 })]
+    [Arguments(new byte[] { 0x03, 0x00, 0x00, 0x01, 0x00, 0x80, 0x80, 0x80, 0x80, 0x08 })]
+    public async Task Materialize_EndsOnDamageTheSameWay_AndLeavesTheReaderFinal(byte[] body)
+    {
+        (List<DemoFrame> sequential, ReadEndReason? seqEnd, IReadOnlyList<ParseWarning> seqWarnings, ParseHealth seqHealth) =
+            Drain(DemoWith(body));
+
+        using DemoReader reader = DemoReader.Open(DemoWith(body).AsMemory(), new ParseOptions { ReadAheadFrames = 2 });
+        ParsedDemo demo = reader.Materialize();
+
+        await Assert.That(demo.Frames.Count).IsEqualTo(sequential.Count);
+        for (int i = 0; i < sequential.Count; i++)
+        {
+            await Assert.That(demo.Frames[i].FrameNumber).IsEqualTo(sequential[i].FrameNumber);
+            await Assert.That(demo.Frames[i].CommandKind).IsEqualTo(sequential[i].CommandKind);
+            await Assert.That(demo.Frames[i].ServerTick).IsEqualTo(sequential[i].ServerTick);
+        }
+
+        await Assert.That(reader.EndReason).IsEqualTo(seqEnd);
+        await Assert.That(string.Join("|", demo.Warnings.Select(w => $"{w.Code}:{w.Count}")))
+            .IsEqualTo(string.Join("|", seqWarnings.Select(w => $"{w.Code}:{w.Count}")));
+        await Assert.That(demo.Health).IsEqualTo(seqHealth);
+        await Assert.That(reader.Enrichment.Health).IsEqualTo(seqHealth);
+
+        await Assert.That(demo.Provenance.Source).IsEqualTo(DecodeSource.DemoParserParse);
+        await Assert.That(demo.Provenance.Mode).IsEqualTo(DecodeMode.ParallelWholeFile);
+        await Assert.That(demo.Provenance.ReadAheadFrames).IsEqualTo(0);
+        await Assert.That(demo.Provenance.FramesRead).IsEqualTo((long)sequential.Count);
+        await Assert.That(reader.Provenance).IsEqualTo(demo.Provenance);
+        await Assert.That(reader.Started).IsTrue();
+        Assert.Throws<InvalidOperationException>(() => reader.Materialize());
+        await Assert.That(reader.TryReadNext(out _)).IsFalse();
+    }
+
+    [Test]
+    public async Task Materialize_RunsInsteadOfARead_AndHonoursTheToken()
+    {
+        byte[] file = DemoWith(0x03, 0x00, 0x00, 0x03, 0x01, 0x00);
+        using (DemoReader read = DemoReader.Open(file.AsMemory()))
+        {
+            await Assert.That(read.TryReadNext(out _)).IsTrue();
+            Assert.Throws<InvalidOperationException>(() => read.Materialize());
+        }
+
+        using CancellationTokenSource cts = new();
+        await cts.CancelAsync();
+        using DemoReader cancelled = DemoReader.Open(file.AsMemory(), new ParseOptions { CancellationToken = cts.Token });
+        Assert.Throws<OperationCanceledException>(() => cancelled.Materialize());
+        await Assert.That(cancelled.EndReason).IsNull();
+    }
+
     [Test]
     public async Task Open_NotADemo_Throws()
     {

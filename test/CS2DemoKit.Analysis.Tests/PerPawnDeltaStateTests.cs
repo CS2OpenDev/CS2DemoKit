@@ -255,7 +255,7 @@ public class PerPawnDeltaStateTests
 
         // The previous frame's digest is what gets folded, so the incompatible one is consumed at
         // frame 0 and rejected when frame 1 folds it.
-        scanner.SetPrecomputedDigests([noRows, noRows, wrongLayout, noRows]);
+        scanner.InjectDigests([noRows, noRows, wrongLayout, noRows]);
         scanner.AdvanceAndPollAt(0, 10);
         scanner.AdvanceAndPollAt(1, 20);
         scanner.AdvanceAndPollAt(2, 30);

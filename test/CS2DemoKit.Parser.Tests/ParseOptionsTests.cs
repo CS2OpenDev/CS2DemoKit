@@ -192,7 +192,7 @@ public class ParseOptionsTests
 
     /// <summary>
     ///     The cap constrains the real pass-2 fan-out. <c>DemoParser</c> exposes no per-worker
-    ///     factory seam (unlike <c>ParallelDigestProducer</c>), so the probe rides the one hook
+    ///     factory seam, so the probe rides the one hook
     ///     <see cref="ParseOptions" /> gives into the loop body: <see cref="ParseOptions.Progress" />
     ///     is reported from the pass-2 worker threads, so holding briefly inside it makes concurrent
     ///     workers observably overlap.

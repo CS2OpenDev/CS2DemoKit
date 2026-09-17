@@ -43,26 +43,25 @@ public sealed record AnalysisOptions
     public IProgress<double>? Progress { get; init; }
 
     /// <summary>
-    ///     Cancels the evaluation (checked once per frame and inside the parallel entity decode).
+    ///     Cancels the evaluation (checked once per frame and inside every digest worker).
     ///     A canceled run throws <see cref="OperationCanceledException" /> — partial results are
     ///     discarded, never returned.
     /// </summary>
     public CancellationToken CancellationToken { get; init; }
 
     /// <summary>
-    ///     Caps the worker count of the up-front parallel entity decode — the one phase of an
-    ///     evaluation that fans out (the per-frame evaluation loop itself is sequential). <c>null</c>
-    ///     (the default) leaves it unbounded, which is what the desktop app wants: one demo, all
-    ///     cores. Set it when several demos are evaluated concurrently in one process — a batch
-    ///     service otherwise multiplies (concurrent demos × ~<see cref="Environment.ProcessorCount" />)
-    ///     decode workers onto the same cores, and the resulting oversubscription costs both latency
-    ///     and peak memory (each worker owns a full <c>EntityTracker</c> + entity set).
+    ///     The entity digest workers an evaluation runs: the one phase that fans out (the per-frame
+    ///     evaluation loop itself is sequential). Each worker holds a tracker and a chunk of frames
+    ///     decoded ahead of the loop. <c>null</c> (the default) takes the source's default: three
+    ///     over a forward reader, where the read bounds the run and each worker is memory the run
+    ///     would otherwise not hold, and two fewer than the core count over a retained demo, where
+    ///     the frames are already resident and the fold is the only thing left to hide. One selects
+    ///     the sequential producer: a single layer advanced in step with the loop. Set it when
+    ///     several demos are evaluated concurrently in one process, so they do not each fan out to
+    ///     every core.
     ///     <para>
-    ///         Values <c>&lt;= 0</c> are ignored (treated as unbounded) rather than throwing, matching
-    ///         <see cref="ParallelOptions.MaxDegreeOfParallelism" />'s "-1 means unlimited" convention
-    ///         without exposing the sentinel. The cap bounds concurrency, not chunking: the decode is
-    ///         still partitioned into ~<see cref="Environment.ProcessorCount" /> chunks, so a low cap
-    ///         serializes chunks rather than making them bigger.
+    ///         Values <c>&lt;= 0</c> are ignored (treated as the default) rather than throwing, so a
+    ///         misconfigured integer in a service's options cannot cost it an evaluation.
     ///     </para>
     /// </summary>
     public int? MaxDegreeOfParallelism { get; init; }

@@ -301,6 +301,29 @@ takes one.
 It was filled by a post-pass after the header decoded. It is set when the frame is built, so a
 frame read forward carries it too. A hand-built frame that relied on the post-pass must set it.
 
+### One digest producer serves both frame sources (0.12.0)
+
+The up-front parallel producer that decoded a retained demo's entity digests before the first
+frame was evaluated is gone; the pipelined checkpoint-parallel producer that served a forward
+reader now serves a `ParsedDemo` too. `DigestProducerKind.ParallelUpFront` is removed, so a
+`switch` over the enum that named it no longer compiles and a retained run reports
+`Pipelined`. `EntityChangeScanner.AdvanceAndPoll(int)` is removed: the evaluator drives the
+scanner by frame index. `AdvanceAndPollAt` called outside an evaluation still seeks a list-backed
+layer itself, one tick-gated seek per call, so a host that walks a scanner frame by frame gets what
+`AdvanceAndPoll` gave it; over a layer built without frames it throws, since nothing else can
+advance one. `PrecomputeParallelDigests` keeps its signature and now runs the pipelined
+producer over the frames to completion, holding one digest per frame for the next evaluation over
+them, which starts no producer of its own and reports `Pipelined`; a second evaluation folds live
+again. It is no longer idempotent: every call folds, so a benchmark that calls it per iteration
+measures every iteration. `ScannerProfilingSnapshot.FoldTicks` and `FoldAlloc` are the producer's
+fold cost, worker time and allocation summed over its workers, on either path: under the evaluation
+or up front in that call; `PrecomputeTicks` and `PrecomputeAlloc` read the same numbers under their
+earlier name. `analysis.precompute` is emitted around the up-front call alone. `EntityStateLayer.PrimeFromCheckpoint(int, int)` is removed; the frame-based
+overload is the one priming. `SeekToTick` and `SeekBeforeFrame` over a list-backed layer remain for
+consumers that seek. `AnalysisOptions.MaxDegreeOfParallelism` is the digest worker count on either
+source: unset, three over a reader and two fewer than the core count over a retained demo; one is
+the sequential producer.
+
 ### Entity values live on five typed lanes (0.12.0)
 
 `LaneKind` gained `Vector` and `Long`, `WireType` gained `VectorLane` and `LongLane`, and the
