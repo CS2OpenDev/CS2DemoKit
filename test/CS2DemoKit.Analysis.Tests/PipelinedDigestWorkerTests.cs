@@ -121,13 +121,13 @@ public class PipelinedDigestWorkerTests
     }
 
     /// <summary>
-    ///     The worker count bounds the fold. Runs the pipeline over a short prefix of a real demo
-    ///     (enough <c>DEM_FullPacket</c>s to plan several chunks) with a probe provider factory that
-    ///     holds briefly while recording peak concurrency. What the count bounds is the queue: up to
-    ///     that many chunks are folded ahead of the consumer, plus the chunk the reader has just
-    ///     closed and the one the consumer is reading, so folds in flight never exceed the count by
-    ///     more than two, and every chunk still folds exactly once (the count changes scheduling,
-    ///     never output).
+    ///     The worker count bounds the fold exactly. Runs the pipeline over a short prefix of a real
+    ///     demo (enough <c>DEM_FullPacket</c>s to plan several chunks) with a probe provider factory
+    ///     that holds briefly while recording peak concurrency: a count of one folds one chunk at a
+    ///     time, on a multi-core runner where five chunks each holding 40 ms would never serialise
+    ///     by accident; a count of two never has three in flight; and every chunk still folds
+    ///     exactly once (the count changes scheduling, never output). The tracker count rides the
+    ///     same run: a fold that found the pool dry would throw rather than build a tracker.
     /// </summary>
     [Test]
     [Category("Integration")]
@@ -159,7 +159,7 @@ public class PipelinedDigestWorkerTests
                 throw new SkipTestException($"needs >= {MinChunksForBoundToBind} chunks (got {spans.Count})");
             }
 
-            await Assert.That(probe.PeakConcurrency).IsLessThanOrEqualTo(workers + 2);
+            await Assert.That(probe.PeakConcurrency).IsLessThanOrEqualTo(workers);
             await Assert.That(probe.PeakConcurrency).IsGreaterThan(0);
             await Assert.That(probe.Invocations).IsEqualTo(spans.Count); // every chunk folded once
             await Assert.That(digests.Length).IsEqualTo(prefix.Count);

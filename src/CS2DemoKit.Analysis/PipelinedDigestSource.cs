@@ -97,7 +97,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     /// <param name="singletonFactory">Fresh singleton providers for one worker, in the same order contract.</param>
     /// <param name="emitMolotov">Whether digests carry live molotov projectiles.</param>
     /// <param name="captureSmokes">Whether digests carry the frame's active smoke clouds.</param>
-    /// <param name="workers">Chunks queued ahead of the consumer, and the worker count.</param>
+    /// <param name="workers">
+    ///     Folds in flight at once, trackers held, and chunks queued ahead of the consumer: the
+    ///     reader starts no fold while that many are running.
+    /// </param>
     /// <param name="releaseFolded">
     ///     Whether a frame's entity and string-table payloads are dropped once folded. On for a
     ///     forward reader, whose frames are nobody's but the evaluator's; off over a list, which
@@ -140,8 +143,8 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         _initialPlayers = inner.Enrichment.Players;
         _view = new View(this);
 
-        // Bootstrapped here, on the consumer's thread, before any fold runs. A fold that finds
-        // the pool empty makes its own; the registries are initialised by then.
+        // Bootstrapped here, on the consumer's thread, before any fold runs. The pool never
+        // grows: a fold starts only when fewer than _workers are running.
         for (int i = 0; i < _workers; i++)
         {
             _pool.Add(new Worker());
@@ -312,6 +315,11 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 Chunk? chunk = ReadChunk(out bool more);
                 if (chunk is not null)
                 {
+                    if (!StartFold(chunk))
+                    {
+                        return;
+                    }
+
                     lock (_gate)
                     {
                         while (_ahead.Count >= _workers && !_disposed)
@@ -494,8 +502,25 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 chunk.Checkpoint is null ? -1 : chunk.FirstFrameIndex + chunk.CheckpointPos));
         }
 
+        return chunk;
+    }
+
+    // At most _workers folds run at once, one per pooled tracker: the reader waits for a slot
+    // before starting the next. False when the source was closed while it waited.
+    private bool StartFold(Chunk chunk)
+    {
         lock (_gate)
         {
+            while (_foldsInFlight >= _workers && !_disposed)
+            {
+                Monitor.Wait(_gate);
+            }
+
+            if (_disposed)
+            {
+                return false;
+            }
+
             _foldsInFlight++;
         }
 
@@ -504,7 +529,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         Task<EntityFrameDigest[]> fold = Task.Run(() => Fold(chunk));
         fold.ContinueWith(FoldEnded, TaskContinuationOptions.ExecuteSynchronously);
         chunk.Digests = fold;
-        return chunk;
+        return true;
     }
 
     // Observes a fault so a chunk nobody takes never raises the unobserved-exception event, and
@@ -553,7 +578,8 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     }
 
     // Chunk 0 folds the signon prefix as ordinary frames, so it needs a tracker that has never
-    // loaded a schema; every other chunk takes whichever worker is free.
+    // loaded a schema; it is the first fold started, so every tracker is. Every other chunk
+    // takes whichever worker is free, and one is: folds in flight never exceed the pool.
     private Worker TakeWorker(bool fresh)
     {
         List<Worker> passed = [];
@@ -574,7 +600,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             _pool.Add(w);
         }
 
-        return taken ?? new Worker();
+        return taken ?? throw new InvalidOperationException("no free fold worker: the pool is bounded by the fold count");
     }
 
     // The tick-gated seek a list-backed layer runs, over the chunk's own frames: every frame
