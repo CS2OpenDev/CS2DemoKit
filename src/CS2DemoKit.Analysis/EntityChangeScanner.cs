@@ -135,10 +135,11 @@ public sealed class EntityChangeScanner
     private long _profSnapshotAlloc;
     private long _profSnapshotTicks;
 
-    // PrecomputeParallelDigests: wall time on the calling thread, allocation summed over the fold
-    // workers, since the calling thread's counter sees none of theirs.
-    private long _profPrecomputeTicks;
-    private long _profPrecomputeAlloc;
+    // The pipelined producer's fold, summed over its workers when it closes: worker time and
+    // allocation, since the calling thread's counter sees none of theirs. Under the evaluation
+    // or up front in PrecomputeParallelDigests alike.
+    private long _profFoldTicks;
+    private long _profFoldAlloc;
 
     // Provider schema validation: latched once every provider's target class has
     // descriptors and every declared type matched the wire schema. Loud on drift — see
@@ -347,8 +348,7 @@ public sealed class EntityChangeScanner
     internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, int? maxDegreeOfParallelism,
         CancellationToken cancellationToken)
     {
-        _pipeline?.Close();
-        _pipeline = null;
+        ClosePipeline();
         _releaseFolded = !source.SupportsRandomAccess;
         _pastSignonPrefix = false;
         _prevDigest = null;
@@ -434,14 +434,6 @@ public sealed class EntityChangeScanner
     {
         ArgumentNullException.ThrowIfNull(frames);
         using Activity? span = AnalysisDiagnostics.ActivitySource.StartActivity("analysis.precompute");
-        bool prof = Profiling.Enabled;
-        long start = 0;
-        if (prof)
-        {
-            _profiled = true;
-            start = Stopwatch.GetTimestamp();
-        }
-
         int workers = ResolveWorkers(maxDegreeOfParallelism, randomAccess: true);
         PipelinedDigestSource pipeline = StartPipeline(new FrameListSource(frames, null), workers, false, cancellationToken);
         EntityFrameDigest?[] digests = new EntityFrameDigest?[frames.Count];
@@ -458,16 +450,11 @@ public sealed class EntityChangeScanner
         }
         finally
         {
-            pipeline.Close();
+            ClosePipeline(pipeline);
         }
 
         _precomputed = digests;
         onProgress?.Invoke(1.0);
-        if (prof)
-        {
-            _profPrecomputeTicks += Stopwatch.GetTimestamp() - start;
-            _profPrecomputeAlloc += pipeline.FoldAllocBytes;
-        }
     }
 
     // Over a stream a chunk is memory held ahead of the loop, so it stays at the producer's
@@ -485,10 +472,30 @@ public sealed class EntityChangeScanner
     /// </summary>
     internal void EndEvaluation()
     {
-        _pipeline?.Close();
-        _pipeline = null;
+        ClosePipeline();
         _precomputed = null;
         _runDriven = false;
+    }
+
+    private void ClosePipeline()
+    {
+        if (_pipeline is { } pipeline)
+        {
+            _pipeline = null;
+            ClosePipeline(pipeline);
+        }
+    }
+
+    // Close joins every fold, so the counters are final once it returns.
+    private void ClosePipeline(PipelinedDigestSource pipeline)
+    {
+        pipeline.Close();
+        if (Profiling.Enabled)
+        {
+            _profiled = true;
+            _profFoldTicks += pipeline.FoldTicks;
+            _profFoldAlloc += pipeline.FoldAllocBytes;
+        }
     }
 
     // Runs on whichever thread applied the frame: the loop's on the sequential path, a fold
@@ -1063,12 +1070,11 @@ public sealed class EntityChangeScanner
     /// </summary>
     public ScannerProfilingSnapshot GetProfilingSnapshot() =>
         // ProviderPoll/ProjectileScan phases were folded into the snapshot/digest build at the Track-4
-        // seam (always 0 now). Precompute brackets PrecomputeParallelDigests alone: an evaluation's
-        // own pipelined fold runs on worker threads and is not bracketed here.
+        // seam (always 0 now).
         _profiled
             ? new ScannerProfilingSnapshot(true, _profSeekTicks, 0L, 0L,
                 _profSnapshotTicks, _profSeekAlloc, 0L, 0L,
-                _profSnapshotAlloc, _profFramesPolled, _profPrecomputeTicks, _profPrecomputeAlloc)
+                _profSnapshotAlloc, _profFramesPolled, _profFoldTicks, _profFoldAlloc)
             : default;
 
     /// <summary>

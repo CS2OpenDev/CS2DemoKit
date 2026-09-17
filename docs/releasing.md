@@ -315,9 +315,10 @@ advance one. `PrecomputeParallelDigests` keeps its signature and now runs the pi
 producer over the frames to completion, holding one digest per frame for the next evaluation over
 them, which starts no producer of its own and reports `Pipelined`; a second evaluation folds live
 again. It is no longer idempotent: every call folds, so a benchmark that calls it per iteration
-measures every iteration. `ScannerProfilingSnapshot.PrecomputeTicks` and `PrecomputeAlloc` bracket
-that call alone and read zero when the evaluation folded on its own producer; `analysis.precompute`
-is emitted around it. `EntityStateLayer.PrimeFromCheckpoint(int, int)` is removed; the frame-based
+measures every iteration. `ScannerProfilingSnapshot.FoldTicks` and `FoldAlloc` are the producer's
+fold cost, worker time and allocation summed over its workers, on either path: under the evaluation
+or up front in that call; `PrecomputeTicks` and `PrecomputeAlloc` read the same numbers under their
+earlier name. `analysis.precompute` is emitted around the up-front call alone. `EntityStateLayer.PrimeFromCheckpoint(int, int)` is removed; the frame-based
 overload is the one priming. `SeekToTick` and `SeekBeforeFrame` over a list-backed layer remain for
 consumers that seek. `AnalysisOptions.MaxDegreeOfParallelism` is the digest worker count on either
 source: unset, three over a reader and two fewer than the core count over a retained demo; one is

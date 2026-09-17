@@ -1,6 +1,7 @@
 #region
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using CS2DemoKit.Analysis.Abstractions;
@@ -64,8 +65,9 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly IReadOnlyDictionary<int, PlayerInfo> _initialPlayers;
     private readonly View _view;
 
-    // Summed over the fold workers while Profiling.Enabled; the consumer's own thread counter
-    // sees none of what they allocate.
+    // Summed over the fold workers while Profiling.Enabled: worker time from taking a tracker to
+    // returning it, and what the worker allocated, which the consumer's thread counter never sees.
+    private long _foldTicks;
     private long _foldAllocBytes;
 
     // Consumer thread only.
@@ -517,6 +519,13 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         }
     }
 
+    /// <summary>
+    ///     Stopwatch ticks the fold workers spent so far, summed over the workers and counted only
+    ///     while profiling was on. Worker time, not wall time: with three workers it can read three
+    ///     times the wall the fold took.
+    /// </summary>
+    internal long FoldTicks => Interlocked.Read(ref _foldTicks);
+
     /// <summary>Bytes the fold workers allocated so far, counted only while profiling was on.</summary>
     internal long FoldAllocBytes => Interlocked.Read(ref _foldAllocBytes);
 
@@ -525,6 +534,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         _token.ThrowIfCancellationRequested();
         Worker worker = TakeWorker(fresh: chunk.Checkpoint is null);
         bool prof = Profiling.Enabled;
+        long start = prof ? Stopwatch.GetTimestamp() : 0;
         long allocStart = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
         try
         {
@@ -534,6 +544,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         {
             if (prof)
             {
+                Interlocked.Add(ref _foldTicks, Stopwatch.GetTimestamp() - start);
                 Interlocked.Add(ref _foldAllocBytes, GC.GetAllocatedBytesForCurrentThread() - allocStart);
             }
 

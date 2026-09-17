@@ -147,8 +147,10 @@ Reading the trees correctly:
   frame and transitively contains the tracker-internal decode that `EntityProfilingSnapshot` reports
   separately. Only the sequential producer (`MaxDegreeOfParallelism = 1`) drives it: under the
   pipelined producer the fold runs on worker trackers, so `SeekTicks`/`SnapshotTicks` and the
-  tracker sub-tree read ~0 and nothing here brackets the fold. That is expected, not a regression.
-  `PrecomputeTicks` and `PrecomputeAlloc` bracket `EntityChangeScanner.PrecomputeParallelDigests`
-  alone (wall time, and the fold workers' allocation summed); a run whose evaluation folded on its
-  own producer reads zero in both. `ProviderPollTicks` and `ProjectileScanTicks` are legacy
+  tracker sub-tree read ~0. That is expected, not a regression: the fold lands in `FoldTicks` and
+  `FoldAlloc`, the producer's worker time and allocation summed over its workers, whether it folded
+  under the evaluation or up front in `EntityChangeScanner.PrecomputeParallelDigests`. Worker time,
+  not wall: three workers can read three times the wall the fold took, and under an evaluation it
+  overlaps `analysis.eval` rather than adding to it. `PrecomputeTicks` and `PrecomputeAlloc` are the
+  same two numbers under their earlier name. `ProviderPollTicks` and `ProjectileScanTicks` are legacy
   sub-phases and are always zero.

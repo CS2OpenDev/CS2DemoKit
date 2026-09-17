@@ -16,10 +16,13 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     <see cref="EntityChangeScanner.PrecomputeParallelDigests" /> is the public seam a host uses
 ///     to run the digest fold apart from the evaluation loop: DemoViewer.NET's micro-bench times
-///     it, and its diagnostics read <see cref="ScannerProfilingSnapshot.PrecomputeTicks" />,
-///     <see cref="ScannerProfilingSnapshot.PrecomputeAlloc" /> and the <c>analysis.precompute</c>
+///     it, and its diagnostics read <see cref="ScannerProfilingSnapshot.FoldTicks" />,
+///     <see cref="ScannerProfilingSnapshot.FoldAlloc" /> (and the same numbers under
+///     <see cref="ScannerProfilingSnapshot.PrecomputeTicks" /> and
+///     <see cref="ScannerProfilingSnapshot.PrecomputeAlloc" />) and the <c>analysis.precompute</c>
 ///     span. The fold runs on the pipelined producer, so an evaluation over what it held must
-///     match one the producer served live, and the seam must be bracketed the way the host reads it.
+///     match one the producer served live, and the fold slots must fill on either path: up front
+///     here, or under an evaluation the producer served live.
 /// </summary>
 [NotInParallel]
 [Category("Integration")]
@@ -89,10 +92,51 @@ public class PrecomputedDigestTests
 
         ScannerProfilingSnapshot snapshot = scanner.GetProfilingSnapshot();
         await Assert.That(snapshot.Enabled).IsTrue();
-        await Assert.That(snapshot.PrecomputeTicks).IsGreaterThan(0L);
-        await Assert.That(snapshot.PrecomputeAlloc).IsGreaterThan(0L)
+        await Assert.That(snapshot.FoldTicks).IsGreaterThan(0L);
+        await Assert.That(snapshot.FoldAlloc).IsGreaterThan(0L)
             .Because("the fold allocates on worker threads, which the calling thread's counter never sees");
+        await Assert.That(snapshot.PrecomputeTicks).IsEqualTo(snapshot.FoldTicks);
+        await Assert.That(snapshot.PrecomputeAlloc).IsEqualTo(snapshot.FoldAlloc);
         await Assert.That(spans).Contains("analysis.precompute");
+    }
+
+    /// <summary>
+    ///     An evaluation the pipelined producer serves live fills the same slots when it ends: the
+    ///     fold runs on worker threads under the loop, so nothing on the calling thread brackets it,
+    ///     and before this the slots read zero for every such run.
+    /// </summary>
+    [Test]
+    public async Task PipelinedEvaluation_AccountsItsFold_InTheFoldSlots()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        EntityChangeScanner scanner = MinimalScanner(new PawnHealthProvider());
+
+        bool wasProfiling = Profiling.Enabled;
+        try
+        {
+            Profiling.Enabled = true;
+            IDemoFrameSource source = scanner.BeginEvaluation(demo.AsFrameSource(), null, CancellationToken.None);
+            await Assert.That(scanner.ProducerKind).IsEqualTo(DigestProducerKind.Pipelined);
+            for (int i = 0; source.TryReadNext(out DemoFrame? frame); i++)
+            {
+                scanner.AdvanceAndPollAt(i, frame.ServerTick);
+            }
+
+            await Assert.That(scanner.GetProfilingSnapshot().FoldTicks).IsEqualTo(0L)
+                .Because("the producer's counters are read when it closes, once every fold has ended");
+            scanner.EndEvaluation();
+        }
+        finally
+        {
+            Profiling.Enabled = wasProfiling;
+        }
+
+        ScannerProfilingSnapshot snapshot = scanner.GetProfilingSnapshot();
+        await Assert.That(snapshot.Enabled).IsTrue();
+        await Assert.That(snapshot.FoldTicks).IsGreaterThan(0L);
+        await Assert.That(snapshot.FoldAlloc).IsGreaterThan(0L);
+        await Assert.That(snapshot.SeekTicks).IsEqualTo(0L)
+            .Because("the scanner's own layer never advances under the pipelined producer");
     }
 
     [Test]
