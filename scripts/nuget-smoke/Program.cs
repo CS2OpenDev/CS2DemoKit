@@ -45,5 +45,14 @@ if (!ids.SequenceEqual(expected))
 AnalysisRun run = DemoAnalysis.Run(demo, loaded.Rulesets);
 Console.WriteLine($"analysis ran: {run.Timeline.Events.Count} rule-chain events");
 
+// The forward path is the quick start since 0.12.0 and must agree with the retained run.
+AnalysisRun forward = DemoAnalysis.Run(args[0], loaded.Rulesets);
+Console.WriteLine($"forward path ran: {forward.Timeline.Events.Count} rule-chain events");
+if (forward.Timeline.Events.Count != run.Timeline.Events.Count)
+{
+    Console.Error.WriteLine("forward and retained runs disagree on the rule-chain event count");
+    return 1;
+}
+
 Console.WriteLine("smoke: OK");
 return 0;
