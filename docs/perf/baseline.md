@@ -310,7 +310,7 @@ scoreboard columns side by side.
 ### After the pipelined digest producer
 
     runs      60 sampled + 30 live (1 round x 15 demos), zero failures, zero digest mismatches
-    rows      paths-pipelined.csv, paths-pipelined-live.csv (CS2DEMOKIT_PATHS_LIVE=1)
+    rows      not kept; superseded by paths-alloc.csv and paths-alloc-live.csv below
 
 The stream scoreboard now folds entity digests two chunks ahead of the loop on pooled trackers
 and releases a frame's entity and string-table payloads once folded. Same five demos, the
@@ -348,7 +348,7 @@ read) and does nothing for the entity walk or the scoreboard, which are bound by
 ### After the probe stop, the reader thread and the tuned defaults
 
     runs      120 sampled + 15 live (1 round x 15 demos), zero failures, zero digest mismatches
-    rows      paths-tuned.csv, paths-tuned-live.csv (CS2DEMOKIT_PATHS_LIVE=1)
+    rows      not kept; superseded by paths-alloc.csv and paths-alloc-live.csv below
 
 Three changes since the table above, in the order the numbers asked for them. The dialect
 probe stops once the first round has decided the dialect instead of reading the whole file,
@@ -431,7 +431,7 @@ retained parse 221 to 1706 MB.
 ### GC configuration
 
     runs      15 demos x 1 round x scoreboard-stream per configuration
-    rows      paths-gc-default.csv, paths-gc-nonconc.csv, paths-gc-gen0-64m.csv, paths-gc-nonconc-gen0.csv, paths-gc-batch.csv, paths-gc-batch-gen0.csv
+    rows      paths-gc.csv; the variant column names the configuration
 
 Measured last on purpose: a collector setting flatters whichever allocation profile it is
 measured against, so it waited until the profile stopped moving. Workstation GC throughout (the
@@ -506,7 +506,7 @@ on the reader thread, is gone, and the check runs on the fold worker's own track
 ### Two decode loops
 
     runs      30 sampled (3 rounds x 5 demos x 2 arms) and 10 live (1 round), zero failures, zero digest mismatches
-    rows      paths-decode-loops.csv (sampled), paths-decode-loops-live.csv (live)
+    rows      not kept; paths-one-loop-base.csv below re-measures the same build as the control
     load      2.6 to 4.9 throughout
 
 `DemoParser.Parse` decodes in three passes over the whole file: a sequential header scan, a
