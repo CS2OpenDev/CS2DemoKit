@@ -13,14 +13,21 @@ namespace CS2DemoKit.Analysis;
 ///         <see cref="SeekTicks" /> is the outer cost of advancing the entity layer one frame;
 ///         it transitively contains the EntityTracker-internal decode reported separately by
 ///         <c>EntityTracker.GetProfilingSnapshot()</c>. The other three are sibling per-frame
-///         sub-phases of <see cref="EntityChangeScanner.AdvanceAndPoll" />.
+///         sub-phases of <see cref="EntityChangeScanner.AdvanceAndPollAt" />.
 ///     </para>
 ///     <para>
-///         <see cref="PrecomputeTicks" /> is the Track-4 Step-3 up-front parallel decode
-///         (<c>PrecomputeParallelDigests</c>). When digests are precomputed the per-frame
-///         <see cref="SeekTicks" />/<see cref="SnapshotTicks" /> stay near zero and the decode cost lands
-///         here instead; <see cref="ProviderPollTicks" />/<see cref="ProjectileScanTicks" /> are legacy
-///         sub-phases folded into the snapshot/digest build since the Track-4 seam and now always zero.
+///         Only the sequential producer drives those. Under the pipelined producer the fold runs
+///         on worker threads and the per-frame <see cref="SeekTicks" />/<see cref="SnapshotTicks" />
+///         stay near zero; the fold's cost lands in <see cref="FoldTicks" /> and
+///         <see cref="FoldAlloc" /> instead: the digest producer's worker time and allocation,
+///         summed over its workers, whether the fold ran under the evaluation or up front in
+///         <see cref="EntityChangeScanner.PrecomputeParallelDigests" />. Worker time, not wall:
+///         with three workers it can read three times the wall the fold took, and it overlaps the
+///         evaluation's own time rather than adding to it. <see cref="PrecomputeTicks" /> and
+///         <see cref="PrecomputeAlloc" /> are the same two numbers under the name a host read
+///         before the fold moved onto the evaluation. <see cref="ProviderPollTicks" />/<see cref="ProjectileScanTicks" />
+///         are legacy sub-phases folded into the snapshot/digest build since the Track-4 seam and
+///         always zero.
 ///     </para>
 /// </summary>
 public readonly record struct ScannerProfilingSnapshot(
@@ -34,5 +41,12 @@ public readonly record struct ScannerProfilingSnapshot(
     long ProjectileScanAlloc,
     long SnapshotAlloc,
     int FramesPolled,
-    long PrecomputeTicks = 0,
-    long PrecomputeAlloc = 0);
+    long FoldTicks = 0,
+    long FoldAlloc = 0)
+{
+    /// <summary><see cref="FoldTicks" /> under its earlier name: the producer's fold cost on either path, not only the up-front one.</summary>
+    public long PrecomputeTicks => FoldTicks;
+
+    /// <summary><see cref="FoldAlloc" /> under its earlier name.</summary>
+    public long PrecomputeAlloc => FoldAlloc;
+}

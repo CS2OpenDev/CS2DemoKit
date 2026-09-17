@@ -193,6 +193,11 @@ public sealed class PawnReadContext
         // Only the object-lane hit is served from the slot. Every other case (int or float lane,
         // unmapped path, no shape) is handed to TryGet so its exact fall-through rules apply.
         SlotAddr addr = _eyeAngleCursor.Resolve(Pawn, SchemaNames.CCSPlayerPawn.EyeAngles);
+        if (addr.Lane == LaneKind.Vector)
+        {
+            return Pawn.TryGetVectorSlot(addr.Slot, out Vector3 typed) ? typed : null;
+        }
+
         if (addr.Lane == LaneKind.Object)
         {
             return Pawn.TryGetObjectSlot(addr.Slot, out object? boxed) ? (Vector3?)boxed : null;
@@ -278,8 +283,55 @@ internal static class PawnCellCoercion
                 return entity.TryGetFloatSlot(addr.Slot, out floatValue) ? LaneHit.Float : LaneHit.Miss;
             case LaneKind.Object:
                 return entity.TryGetObjectSlot(addr.Slot, out objectValue) ? LaneHit.Object : LaneHit.Miss;
+            case LaneKind.Vector:
+                // Served boxed, as the object lane served it; nothing on this path reads a vector
+                // per frame.
+                if (entity.TryGetVectorSlot(addr.Slot, out Vector3 vec))
+                {
+                    objectValue = vec;
+                    return LaneHit.Object;
+                }
+
+                return LaneHit.Miss;
+            case LaneKind.Long:
+                if (entity.TryGetLongSlot(addr.Slot, out ulong wide))
+                {
+                    objectValue = wide;
+                    return LaneHit.Object;
+                }
+
+                return LaneHit.Miss;
             default:
                 return LaneHit.Miss;
+        }
+    }
+
+    /// <summary>
+    ///     <see cref="Probe" /> for a handle path, folded to the 32-bit wire handle the way
+    ///     <see cref="PawnLookup.TryUnboxHandle" /> folds a boxed read, and never boxing to get there.
+    ///     A seen non-integral lane folds to zero, as the boxed read would. False is a miss.
+    /// </summary>
+    public static bool TryProbeHandle(EntityState entity, string path, LaneCursor cursor, out uint handle)
+    {
+        SlotAddr addr = cursor.Resolve(entity, path);
+        switch (addr.Lane)
+        {
+            case LaneKind.Long when entity.TryGetLongSlot(addr.Slot, out ulong wide):
+                handle = unchecked((uint)wide);
+                return true;
+            case LaneKind.Int when entity.TryGetIntSlot(addr.Slot, out int narrow):
+                handle = unchecked((uint)narrow);
+                return true;
+            case LaneKind.Object when entity.TryGetObjectSlot(addr.Slot, out object? boxed):
+                handle = PawnLookup.TryUnboxHandle(boxed);
+                return true;
+            case LaneKind.Float when entity.TryGetFloatSlot(addr.Slot, out _):
+            case LaneKind.Vector when entity.TryGetVectorSlot(addr.Slot, out _):
+                handle = 0;
+                return true;
+            default:
+                handle = 0;
+                return false;
         }
     }
 

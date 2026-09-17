@@ -9,6 +9,8 @@ using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 using CS2OpenSchema.Events;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -48,7 +50,7 @@ public class HurtEnrichmentDecodeCompromiseTests
     }
 
     /// <summary>
-    ///     Scanner over an empty frame list (the precomputed-digest path never drives the layer),
+    ///     Scanner over an empty frame list (the injected-digest path never drives the layer),
     ///     with one registered health provider and the given hand-built digest stream.
     /// </summary>
     private static (EntityChangeScanner Scanner, PawnHealthProvider Health) BuildScanner(
@@ -59,7 +61,7 @@ public class HurtEnrichmentDecodeCompromiseTests
             new EntityStateLayer([]),
             providers: [],
             perPlayerProviders: [health]);
-        scanner.SetPrecomputedDigests(digests);
+        scanner.InjectDigests(digests);
         return (scanner, health);
     }
 
@@ -186,7 +188,7 @@ public class HurtEnrichmentDecodeCompromiseTests
         GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(hurt);
         DemoFrame frame = new()
         {
-            Command = "DEM_Packet",
+            CommandKind = EDemoCommands.DemPacket,
             FrameNumber = frameNumber,
             ServerTick = 0,
             RawStart = 0,

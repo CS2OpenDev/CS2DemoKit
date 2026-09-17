@@ -28,14 +28,6 @@ public sealed class PlayerContextIndex
     /// <summary>Bomb state for the current round — set by enrichment edges.</summary>
     public bool BombPlanted { get; set; }
 
-    /// <summary>
-    ///     Per-slot starting team_num — derived from <c>OldTeam</c> of the first
-    ///     <c>player_team</c> event for that slot (or demo.Players final team if no
-    ///     event ever fires). Used at materialization to seed PlayerContext.Team
-    ///     with the team the player was on BEFORE the halftime swap.
-    /// </summary>
-    public Dictionary<int, int> InitialTeamBySlot { get; } = [];
-
     /// <summary>Current round number (1-based), set by HealthResetEdge on round_freeze_end.</summary>
     public int RoundNumber { get; set; }
 

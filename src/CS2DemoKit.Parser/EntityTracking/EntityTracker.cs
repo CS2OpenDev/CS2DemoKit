@@ -1,5 +1,7 @@
 #region
 
+using System.Numerics;
+using System.Collections.Concurrent;
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
@@ -63,7 +65,9 @@ public sealed class EntityTracker
     // by BuildFieldDescs the first time we walk a serializer. Bound to every
     // EntityState that flows through ReadEntityFields so lane-indexed writes
     // can happen in O(1) without consulting any name lookup on the hot path.
-    private readonly Dictionary<string, ClassShape> _classShapes = new();
+    // Shared by reference between trackers that adopted one schema state, so concurrent reads
+    // are lock-free and the miss path below builds under a lock.
+    private ConcurrentDictionary<string, ClassShape> _classShapes = new();
 
     // ── Entity wrapper factory registry ──────────────────────────────────────
     //
@@ -77,7 +81,7 @@ public sealed class EntityTracker
 
     // (serializerName) → flat list of (dotted path string, FieldDecoder)
     // Built lazily on first entity create for that class.
-    private readonly Dictionary<string, List<FieldDescriptor>> _fieldDescs = new();
+    private ConcurrentDictionary<string, List<FieldDescriptor>> _fieldDescs = new();
 
     // Reusable field-path scratch for the hot Replay decode path (ReadEntityFields). Single-threaded
     // per tracker and only used by ProcessPacketEntitiesCore — PeekEntityUpdates passes its own list,
@@ -97,7 +101,9 @@ public sealed class EntityTracker
     // ── Instance baselines ────────────────────────────────────────────────────
 
     // classId → byte[] baseline snapshot
-    private readonly Dictionary<int, byte[]> _instanceBaselines = new();
+    // Baseline bytes are held by reference: a parsed message already owns one copy of each blob
+    // and a baseline outlives no message it was read from except by that reference.
+    private readonly Dictionary<int, ReadOnlyMemory<byte>> _instanceBaselines = new();
 
     // ── Decode trace ──────────────────────────────────────────────────────────
     //
@@ -250,6 +256,16 @@ public sealed class EntityTracker
     ///     that reads only specific classes to skip the per-field storage cost for the rest.
     /// </summary>
     public IReadOnlySet<string>? StoreClassFilter { get; set; }
+
+    /// <summary>
+    ///     Whether a decoded field outside the bound lens shape (an unlensed path, or an array
+    ///     element) is stored at all. On, the default, it lands in the entity's per-path fallback
+    ///     dictionary, boxed, and is readable through <see cref="EntityState.Fields" /> and the
+    ///     string-keyed accessors. Off, it is decoded and dropped: a consumer that reads only
+    ///     lensed lanes, which is what the analysis engine's providers do, saves the dictionary and
+    ///     the box per write. Lane writes are unaffected either way.
+    /// </summary>
+    public bool StoreUnlensedFields { get; set; } = true;
 
     /// <summary>
     ///     Returns the entity-decode profiling accumulators captured so far. Returns <c>default</c>
@@ -470,7 +486,7 @@ public sealed class EntityTracker
 
         try
         {
-            BitBuffer buf = new(msg.EntityData.ToByteArray());
+            BitBuffer buf = new(msg.EntityData.Span);
             int entityIndex = -1;
 
             for (int i = 0; i < msg.UpdatedEntries; i++)
@@ -511,9 +527,9 @@ public sealed class EntityTracker
 
                     EntityState temp = new(className, (int)serialNum);
 
-                    if (_instanceBaselines.TryGetValue((int)classId, out byte[]? baseline))
+                    if (_instanceBaselines.TryGetValue((int)classId, out ReadOnlyMemory<byte> baseline))
                     {
-                        BitBuffer baselineBuf = new(baseline);
+                        BitBuffer baselineBuf = new(baseline.Span);
                         ReadEntityFields(ref baselineBuf, temp, peekScratch);
                     }
 
@@ -572,6 +588,52 @@ public sealed class EntityTracker
         foreach (DemoFrame frame in frames)
         {
             ProcessFrame(frame);
+        }
+    }
+
+    /// <summary>
+    ///     Takes over the schema-derived state of <paramref name="template" />, a tracker that has
+    ///     replayed the demo's signon prefix: the parsed schema, the class registry, the server
+    ///     class-bit width, the lens, the string-table ids and the instance baselines as the
+    ///     prefix left them, and the per-class descriptors and shapes, which are then shared by
+    ///     reference. What a checkpoint worker gets from replaying the prefix itself, without the
+    ///     parse. Only for a tracker that has processed no frame; the caller then primes from a
+    ///     checkpoint as usual.
+    /// </summary>
+    public void AdoptSchemaState(EntityTracker template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        Schema = template.Schema;
+        _serverClassBits = template._serverClassBits;
+        _lensResolver = template._lensResolver;
+        _fieldDescs = template._fieldDescs;
+        _classShapes = template._classShapes;
+        _stringTableCreateCount = template._stringTableCreateCount;
+        _ibTableId = template._ibTableId;
+        _ibInitialized = template._ibInitialized;
+        _ibUserDataFixedSize = template._ibUserDataFixedSize;
+        _ibUserDataSizeBits = template._ibUserDataSizeBits;
+        _ibUsingVarintBitcounts = template._ibUsingVarintBitcounts;
+        _ibFlags = template._ibFlags;
+
+        // Position-dependent, so copied rather than shared: a later full packet moves them.
+        _classIdToName.Clear();
+        foreach ((int id, string name) in template._classIdToName)
+        {
+            _classIdToName[id] = name;
+        }
+
+        _instanceBaselines.Clear();
+        foreach ((int id, ReadOnlyMemory<byte> baseline) in template._instanceBaselines)
+        {
+            _instanceBaselines[id] = baseline;
+        }
+
+        _ibEntries.Clear();
+        _ibEntries.AddRange(template._ibEntries);
+        foreach ((string name, Func<EntityState, EntityTracker, object> factory) in template._entityFactories)
+        {
+            _entityFactories[name] = factory;
         }
     }
 
@@ -653,7 +715,7 @@ public sealed class EntityTracker
                     // "classId:altBaseline", Baseline 0 only.
                     if (int.TryParse(item.Str.Split(':')[0], out int classId))
                     {
-                        _instanceBaselines[classId] = item.Data.ToByteArray();
+                        _instanceBaselines[classId] = item.Data.Memory;
                     }
                 }
             }
@@ -821,7 +883,17 @@ public sealed class EntityTracker
                 RuntimeField elemField = CloneAsElementField(field, GetArrayElementType(field.TypeName));
                 IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(elemField);
                 FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(elemField) : null;
-                if (intDec is not null)
+                UInt64Decoder? longDec = intDec is null && floatDec is null ? FieldDecoderFactory.TryCreateUInt64(elemField) : null;
+                if (longDec is not null)
+                {
+                    // Element values go nowhere a lane could hold them, but a typed decoder consumes
+                    // the bits without a box each.
+                    result.Add(new FieldDescriptor(path, lengthOneDecoder, BuildTypedLongArrayDescs(path, longDec, elemField))
+                    {
+                        Field = field
+                    });
+                }
+                else if (intDec is not null)
                 {
                     result.Add(new FieldDescriptor(path, lengthOneDecoder, BuildTypedIntArrayDescs(path, intDec, elemField))
                     {
@@ -885,10 +957,14 @@ public sealed class EntityTracker
                 // mask, etc.).
                 IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(field);
                 FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(field) : null;
+                Vector3Decoder? vecDec = intDec is null && floatDec is null ? FieldDecoderFactory.TryCreateVector3(field) : null;
+                UInt64Decoder? longDec = intDec is null && floatDec is null && vecDec is null ? FieldDecoderFactory.TryCreateUInt64(field) : null;
 
                 // Classify the natural decoder lane from the factory output.
                 LaneKind naturalLane = intDec is not null ? LaneKind.Int
                     : floatDec is not null ? LaneKind.Float
+                    : vecDec is not null ? LaneKind.Vector
+                    : longDec is not null ? LaneKind.Long
                     : LaneKind.Object;
 
                 // Consult the Lens resolver to override the natural lane with the
@@ -931,14 +1007,14 @@ public sealed class EntityTracker
                 if (targetLane != LaneKind.Fallback && shapeBuilder is not null)
                 {
                     SlotAddr addr = shapeBuilder.Allocate(targetLane, path, transform, fallbackDefault, lensSlot);
-                    AddLeafDescriptor(result, field, path, intDec, floatDec, naturalLane, addr, transform);
+                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, longDec, naturalLane, addr, transform);
                 }
                 else
                 {
                     // No shape builder (we're inside an array element walk) — emit a fallback
                     // descriptor and let the lane-write site route to _fallback.
                     SlotAddr addr = SlotAddr.Fallback;
-                    AddLeafDescriptor(result, field, path, intDec, floatDec, naturalLane, addr, transform);
+                    AddLeafDescriptor(result, field, path, intDec, floatDec, vecDec, longDec, naturalLane, addr, transform);
                 }
             }
         }
@@ -963,11 +1039,31 @@ public sealed class EntityTracker
         string path,
         IntDecoder? intDec,
         FloatDecoder? floatDec,
+        Vector3Decoder? vecDec,
+        UInt64Decoder? longDec,
         LaneKind naturalLane,
         SlotAddr addr,
         LensTransform transform)
     {
-        if (intDec is not null)
+        if (longDec is not null)
+        {
+            result.Add(new FieldDescriptor(path, longDec, null)
+            {
+                Field = field,
+                SlotAddr = addr,
+                Transform = transform
+            });
+        }
+        else if (vecDec is not null)
+        {
+            result.Add(new FieldDescriptor(path, vecDec, null)
+            {
+                Field = field,
+                SlotAddr = addr,
+                Transform = transform
+            });
+        }
+        else if (intDec is not null)
         {
             result.Add(new FieldDescriptor(path, intDec, null)
             {
@@ -1054,6 +1150,15 @@ public sealed class EntityTracker
     {
         return new LazyArrayElementDescs(ArrayPregenSize,
             e => new FieldDescriptor($"{arrayPath}[{e}]", floatDecoder, null)
+            {
+                Field = elemField
+            });
+    }
+
+    private static LazyArrayElementDescs BuildTypedLongArrayDescs(string arrayPath, UInt64Decoder longDecoder, RuntimeField elemField)
+    {
+        return new LazyArrayElementDescs(ArrayPregenSize,
+            e => new FieldDescriptor($"{arrayPath}[{e}]", longDecoder, null)
             {
                 Field = elemField
             });
@@ -1353,7 +1458,20 @@ public sealed class EntityTracker
             return null;
         }
 
-        RuntimeSerializer? ser = Schema.GetSerializer(className);
+        lock (_fieldDescs)
+        {
+            if (_fieldDescs.TryGetValue(className, out cached))
+            {
+                return cached;
+            }
+
+            return BuildClassDescriptors(className);
+        }
+    }
+
+    private List<FieldDescriptor>? BuildClassDescriptors(string className)
+    {
+        RuntimeSerializer? ser = Schema!.GetSerializer(className);
         if (ser is null)
         {
             _fieldDescs[className] = [];
@@ -1392,8 +1510,11 @@ public sealed class EntityTracker
         }
 
         List<FieldDescriptor> descs = BuildFieldDescs(ser, "", shapeBuilder, _lensResolver, className);
-        _fieldDescs[className] = descs;
+
+        // Shape first: a reader on another tracker gates on the descriptors being present and
+        // then binds the shape, so the shape must be there by the time the descriptors are.
         _classShapes[className] = shapeBuilder.Build();
+        _fieldDescs[className] = descs;
         if (prof)
         {
             _profDescriptorBuildTicks += Stopwatch.GetTimestamp() - dbStart;
@@ -1475,8 +1596,12 @@ public sealed class EntityTracker
 
             IntDecoder? intDec = FieldDecoderFactory.TryCreateInt(field);
             FloatDecoder? floatDec = intDec is null ? FieldDecoderFactory.TryCreateFloat(field) : null;
+            bool isVector = intDec is null && floatDec is null && FieldDecoderFactory.TryCreateVector3(field) is not null;
+            bool isLong = intDec is null && floatDec is null && !isVector && FieldDecoderFactory.TryCreateUInt64(field) is not null;
             LaneKind naturalLane = intDec is not null ? LaneKind.Int
                 : floatDec is not null ? LaneKind.Float
+                : isVector ? LaneKind.Vector
+                : isLong ? LaneKind.Long
                 : LaneKind.Object;
 
             LensSlotRule r = rule.Value;
@@ -1851,7 +1976,7 @@ public sealed class EntityTracker
         // must NOT re-process these (they double-deliver PacketEntities, causing duplicate
         // ENTERPVS events and entity-baseline confusion that cascades into bit-misalignment
         // ~5 packets later).
-        bool isFullPacketCheckpoint = frame.Command == "DEM_FullPacket";
+        bool isFullPacketCheckpoint = frame.CommandKind == EDemoCommands.DemFullPacket;
 
         foreach (NetMessage msg in frame.MessageList)
         {
@@ -1919,14 +2044,14 @@ public sealed class EntityTracker
     ///         </list>
     ///     </para>
     /// </summary>
-    private void ReadInstanceBaselineUpdate(byte[] data, int entries, bool compressed = false)
+    private void ReadInstanceBaselineUpdate(ReadOnlySpan<byte> data, int entries, bool compressed = false)
     {
         try
         {
             // Decompressing inside the try is the point: the create path used to do it at the call
             // site, so a bomb or a corrupt stream escaped this method's swallow and, since neither
             // ProcessNetMessage call site catches, left the tracker entirely.
-            BitBuffer buf = new(compressed ? DecompressBounded(data) : data);
+            BitBuffer buf = compressed ? new BitBuffer(DecompressBounded(data)) : new BitBuffer(data);
 
             // entries is attacker-controlled and sizes the history array below. Bits present is a
             // hard structural ceiling on how many entries the message can actually carry.
@@ -2094,7 +2219,7 @@ public sealed class EntityTracker
                     _ibUsingVarintBitcounts = createTable.UsingVarintBitcounts;
                     _ibFlags = createTable.Flags;
                     ReadInstanceBaselineUpdate(
-                        createTable.StringData.ToByteArray(), createTable.NumEntries, createTable.DataCompressed);
+                        createTable.StringData.Span, createTable.NumEntries, createTable.DataCompressed);
                 }
 
                 break;
@@ -2102,7 +2227,7 @@ public sealed class EntityTracker
             case CSVCMsg_UpdateStringTable updateTable:
                 if (_ibInitialized && updateTable.TableId == _ibTableId && !updateTable.StringData.IsEmpty)
                 {
-                    ReadInstanceBaselineUpdate(updateTable.StringData.ToByteArray(), updateTable.NumChangedEntries);
+                    ReadInstanceBaselineUpdate(updateTable.StringData.Span, updateTable.NumChangedEntries);
                 }
 
                 break;
@@ -2206,7 +2331,7 @@ public sealed class EntityTracker
 
     private void ProcessPacketEntitiesCore(CSVCMsg_PacketEntities msg)
     {
-        BitBuffer entityBuf = new(msg.EntityData.ToByteArray());
+        BitBuffer entityBuf = new(msg.EntityData.Span);
         int entityIndex = -1;
         bool prof = Profiling.Enabled;
         long peStart = 0, peAlloc = 0;
@@ -2304,9 +2429,9 @@ public sealed class EntityTracker
                 }
 
                 // Apply instance baseline if available
-                if (_instanceBaselines.TryGetValue((int)classId, out byte[]? baseline))
+                if (_instanceBaselines.TryGetValue((int)classId, out ReadOnlyMemory<byte> baseline))
                 {
-                    BitBuffer baselineBuf = new(baseline);
+                    BitBuffer baselineBuf = new(baseline.Span);
                     _curUpdateKind = "Baseline";
                     ReadEntityFields(ref baselineBuf, state, _fieldPathScratch);
                 }
@@ -2385,10 +2510,12 @@ public sealed class EntityTracker
             return;
         }
 
-        // CDemoSendTables.data = [uvarint size][CSVCMsg_FlattenedSerializer bytes]
-        BitBuffer buf = new(msg.Data.ToByteArray());
+        // CDemoSendTables.data = [uvarint size][CSVCMsg_FlattenedSerializer bytes]; the varint is
+        // whole bytes, so the serializer starts on a byte boundary and parses in place.
+        ReadOnlySpan<byte> data = msg.Data.Span;
+        BitBuffer buf = new(data);
         int size = (int)buf.ReadUVarInt32();
-        byte[] raw = buf.ReadBytes(size);
+        ReadOnlySpan<byte> raw = data.Slice(data.Length - buf.RemainingBytes, size);
 
         CSVCMsg_FlattenedSerializer? flatSer = CSVCMsg_FlattenedSerializer.Parser.ParseFrom(raw);
         Schema ??= RuntimeSchema.Parse(flatSer);
@@ -2435,8 +2562,15 @@ public sealed class EntityTracker
                                 : Boxes.Int(iv);
                             state.SetObjectSlot(desc.SlotAddr.Slot, boxed);
                             break;
+                        case LaneKind.Long:
+                            state.SetLongSlot(desc.SlotAddr.Slot, (ulong)iv);
+                            break;
                         default:
-                            state.SetFallback(desc.Path, Boxes.Int(iv));
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, Boxes.Int(iv));
+                            }
+
                             break;
                     }
 
@@ -2461,7 +2595,64 @@ public sealed class EntityTracker
                             state.SetObjectSlot(desc.SlotAddr.Slot, fv);
                             break;
                         default:
-                            state.SetFallback(desc.Path, fv);
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, fv);
+                            }
+
+                            break;
+                    }
+
+                    break;
+                case DecoderKind.UInt64 when desc.LongDecoder is { } ld:
+                    ulong lv = ld(ref buf);
+                    if (_suppressFieldStore)
+                    {
+                        break;
+                    }
+
+                    switch (desc.SlotAddr.Lane)
+                    {
+                        case LaneKind.Long:
+                            state.SetLongSlot(desc.SlotAddr.Slot, lv);
+                            break;
+                        case LaneKind.Object:
+                            state.SetObjectSlot(desc.SlotAddr.Slot, lv);
+                            break;
+                        case LaneKind.Int:
+                            state.SetIntSlot(desc.SlotAddr.Slot, (int)lv);
+                            break;
+                        default:
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, lv);
+                            }
+
+                            break;
+                    }
+
+                    break;
+                case DecoderKind.Vector3 when desc.VectorDecoder is { } vd:
+                    Vector3 vv = vd(ref buf);
+                    if (_suppressFieldStore)
+                    {
+                        break;
+                    }
+
+                    switch (desc.SlotAddr.Lane)
+                    {
+                        case LaneKind.Vector:
+                            state.SetVectorSlot(desc.SlotAddr.Slot, vv);
+                            break;
+                        case LaneKind.Object:
+                            state.SetObjectSlot(desc.SlotAddr.Slot, vv);
+                            break;
+                        default:
+                            if (StoreUnlensedFields)
+                            {
+                                state.SetFallback(desc.Path, vv);
+                            }
+
                             break;
                     }
 
@@ -2480,6 +2671,12 @@ public sealed class EntityTracker
                             case LaneKind.Object:
                                 state.SetObjectSlot(desc.SlotAddr.Slot, ov);
                                 break;
+                            case LaneKind.Vector when ov is Vector3 v3:
+                                state.SetVectorSlot(desc.SlotAddr.Slot, v3);
+                                break;
+                            case LaneKind.Long when ov is ulong ul:
+                                state.SetLongSlot(desc.SlotAddr.Slot, ul);
+                                break;
                             case LaneKind.Int:
                                 // Lens drift: object wire (uint64/etc.), int Lens lane.
                                 // Common case: HandleIndex (UInt64Raw decoder → int lane).
@@ -2492,7 +2689,11 @@ public sealed class EntityTracker
                                 state.SetFloatSlot(desc.SlotAddr.Slot, CoerceToFloat(ov));
                                 break;
                             default:
-                                state.SetFallback(desc.Path, ov);
+                                if (StoreUnlensedFields)
+                                {
+                                    state.SetFallback(desc.Path, ov);
+                                }
+
                                 break;
                         }
                     }
@@ -2835,58 +3036,77 @@ public sealed class EntityTracker
     {
         Object,
         Int,
-        Float
+        Float,
+        Vector3,
+        UInt64
     }
 
     /// <summary>
-    ///     Array-element descriptors, materialised on first access instead of all at once.
-    ///     <para>
-    ///         Every array field used to pre-generate <see cref="ArrayPregenSize" /> (1024) descriptors —
-    ///         and for arrays-of-class, a full recursive child tree PER ELEMENT. On a real demo that came
-    ///         to 3,117,491 FieldDescriptor objects / 231 MB, the single largest consumer of the loaded
-    ///         heap, plus ~1024 interpolated <c>"path[N]"</c> strings per array field. Actual demos touch
-    ///         a handful of indices per array, so nearly all of it was never read.
-    ///     </para>
-    ///     <para>
-    ///         This is safe precisely because of the invariant <see cref="ResolveNestedField" /> already
-    ///         relies on: array elements are decoder-equivalent — same wire shape, only the path string
-    ///         differs — which is why that method can clamp an out-of-range index onto the last entry.
-    ///         Deferring construction changes when a descriptor is built, never what it decodes.
-    ///         <see cref="Count" /> reports the full logical size, so that clamp is unaffected.
-    ///     </para>
-    ///     <para>
-    ///         Races are benign by the same invariant: two threads may both materialise index <c>i</c> and
-    ///         one write wins, but the loser's instance is functionally identical and remains valid for
-    ///         the caller holding it. No lock, to keep the decode path allocation- and contention-free.
-    ///     </para>
+    ///     Array-element descriptors, materialised on first access into a cache that grows with the
+    ///     highest index touched. <see cref="Count" /> is the logical size, so the out-of-range clamp
+    ///     in <see cref="ResolveNestedField" /> is unaffected. Elements are decoder-equivalent (same
+    ///     wire shape, only the path differs), which is what makes the races benign: a slot lost to a
+    ///     concurrent grow, or materialised twice, is rebuilt identical. No lock on the decode path.
     /// </summary>
     private sealed class LazyArrayElementDescs : IReadOnlyList<FieldDescriptor>
     {
-        private readonly FieldDescriptor?[] _cache;
+        private const int InitialCapacity = 8;
         private readonly Func<int, FieldDescriptor> _create;
+        private FieldDescriptor?[] _cache;
 
         public LazyArrayElementDescs(int count, Func<int, FieldDescriptor> create)
         {
-            _cache = new FieldDescriptor?[count];
+            Count = count;
+            _cache = new FieldDescriptor?[Math.Min(count, InitialCapacity)];
             _create = create;
         }
 
-        public FieldDescriptor this[int index] => _cache[index] ??= _create(index);
+        public FieldDescriptor this[int index]
+        {
+            get
+            {
+                FieldDescriptor?[] cache = _cache;
+                if ((uint)index >= (uint)cache.Length)
+                {
+                    cache = Grow(index);
+                }
 
-        public int Count => _cache.Length;
+                return cache[index] ??= _create(index);
+            }
+        }
 
-        // Enumerating materialises everything, defeating the point. Nothing on the decode path
-        // enumerates element lists (they are index-addressed); FindLeafField has a direct-index fast
-        // path for exactly this reason. Kept correct for debug/inspection callers.
+        public int Count { get; }
+
         public IEnumerator<FieldDescriptor> GetEnumerator()
         {
-            for (int i = 0; i < _cache.Length; i++)
+            for (int i = 0; i < Count; i++)
             {
                 yield return this[i];
             }
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        // Never past Count: an index beyond it throws here exactly as the full-size array did.
+        private FieldDescriptor?[] Grow(int index)
+        {
+            FieldDescriptor?[] old = _cache;
+            if (index < old.Length)
+            {
+                return old;
+            }
+
+            int size = Math.Max(old.Length, 1);
+            while (size <= index && size < Count)
+            {
+                size = Math.Min(size * 2, Count);
+            }
+
+            FieldDescriptor?[] grown = new FieldDescriptor?[size];
+            Array.Copy(old, grown, old.Length);
+            _cache = grown;
+            return grown;
+        }
     }
 
     private sealed class FieldDescriptor
@@ -2917,6 +3137,26 @@ public sealed class EntityTracker
             ChildDescs = childDescs;
             Kind = DecoderKind.Float;
         }
+
+        public FieldDescriptor(string path, Vector3Decoder vectorDecoder, IReadOnlyList<FieldDescriptor>? childDescs)
+        {
+            Path = path;
+            VectorDecoder = vectorDecoder;
+            ChildDescs = childDescs;
+            Kind = DecoderKind.Vector3;
+        }
+
+        public Vector3Decoder? VectorDecoder { get; }
+
+        public FieldDescriptor(string path, UInt64Decoder longDecoder, IReadOnlyList<FieldDescriptor>? childDescs)
+        {
+            Path = path;
+            LongDecoder = longDecoder;
+            ChildDescs = childDescs;
+            Kind = DecoderKind.UInt64;
+        }
+
+        public UInt64Decoder? LongDecoder { get; }
 
         /// <summary>Child descs.</summary>
         public IReadOnlyList<FieldDescriptor>? ChildDescs { get; }

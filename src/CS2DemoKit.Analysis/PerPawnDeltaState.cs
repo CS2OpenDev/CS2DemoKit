@@ -64,6 +64,16 @@ internal sealed class PerPawnDeltaState
 {
     private TypedSlotRow?[] _bySlot = new TypedSlotRow?[64];
 
+    /// <summary>The controller team last read per slot, -1 unseen; the digest carries the set only when one changed.</summary>
+    internal int[] ControllerTeams { get; } = Unseen();
+
+    private static int[] Unseen()
+    {
+        int[] teams = new int[64];
+        Array.Fill(teams, -1);
+        return teams;
+    }
+
     /// <param name="layout">The column plan every row of this stream follows.</param>
     /// <param name="dedup">When false, every recorded cell reads as changed (the full readout).</param>
     public PerPawnDeltaState(DigestColumnLayout layout, bool dedup = true)

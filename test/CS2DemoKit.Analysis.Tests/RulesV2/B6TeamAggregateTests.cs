@@ -369,7 +369,7 @@ public class B6TeamAggregateTests
         List<StateNode> all = [];
         foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
         {
-            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test", null);
+            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test");
             all.AddRange(player.Nodes);
         }
 

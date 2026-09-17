@@ -51,8 +51,9 @@ They are gated on listener attachment, not on `Profiling.Enabled`:
 - **`Meter` `CS2DemoKit.Analysis.Evaluator`** — counters (`analysis.messages.processed`,
   `analysis.edges.evaluated`, `analysis.edges.fired`, `analysis.logic_nodes.recomputed`,
   `analysis.players.materialized`) plus the `analysis.frame.duration_ms` histogram.
-- **`ActivitySource` `CS2DemoKit.Analysis`** — phase-timeline spans (`analysis.eval` ⊃
-  `analysis.precompute`). `StartActivity` returns `null` when nothing is sampling, so the spans are
+- **`ActivitySource` `CS2DemoKit.Analysis`**: the `analysis.eval` phase-timeline span, and
+  `analysis.precompute` around `EntityChangeScanner.PrecomputeParallelDigests` when a host calls it.
+  `StartActivity` returns `null` when nothing is sampling, so the spans are
   near-free by default. A host can nest its own spans (read / parse / build) on the same source to get
   the full pipeline in one timeline.
 
@@ -144,8 +145,12 @@ Reading the trees correctly:
   unattributed remainder.
 - **`ScannerProfilingSnapshot`** — `SeekTicks` is the outer cost of advancing the entity layer one
   frame and transitively contains the tracker-internal decode that `EntityProfilingSnapshot` reports
-  separately. Under the parallel precompute path the decode runs up front on throwaway worker
-  trackers, so `SeekTicks`/`SnapshotTicks` and the tracker sub-tree read ~0 and the cost lands in
-  `PrecomputeTicks` instead. That is expected, not a regression. `ProviderPollTicks` and
-  `ProjectileScanTicks` are legacy sub-phases folded into the snapshot/digest build and are now
-  always zero.
+  separately. Only the sequential producer (`MaxDegreeOfParallelism = 1`) drives it: under the
+  pipelined producer the fold runs on worker trackers, so `SeekTicks`/`SnapshotTicks` and the
+  tracker sub-tree read ~0. That is expected, not a regression: the fold lands in `FoldTicks` and
+  `FoldAlloc`, the producer's worker time and allocation summed over its workers, whether it folded
+  under the evaluation or up front in `EntityChangeScanner.PrecomputeParallelDigests`. Worker time,
+  not wall: three workers can read three times the wall the fold took, and under an evaluation it
+  overlaps `analysis.eval` rather than adding to it. `PrecomputeTicks` and `PrecomputeAlloc` are the
+  same two numbers under their earlier name. `ProviderPollTicks` and `ProjectileScanTicks` are legacy
+  sub-phases and are always zero.

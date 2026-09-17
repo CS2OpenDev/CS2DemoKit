@@ -45,7 +45,7 @@ public sealed class RuleChainEventProjector : IOutputProjector
     public string? MatchId { get; init; }
 
     /// <inheritdoc />
-    public IReadOnlyList<MetricTable> Project(EvaluationResult result, ParsedDemo demo)
+    public IReadOnlyList<MetricTable> Project(EvaluationResult result, DemoDescriptor demo)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(demo);
@@ -97,7 +97,7 @@ public sealed class RuleChainEventProjector : IOutputProjector
     ///     index (later messages in a frame win — matching how the evaluator stamps events during
     ///     the frame). Frames between messages inherit nothing; lookups default to 0.
     /// </summary>
-    private static Dictionary<int, int> BuildRoundByFrame(EvaluationResult result, ParsedDemo demo)
+    private static Dictionary<int, int> BuildRoundByFrame(EvaluationResult result, DemoDescriptor demo)
     {
         Dictionary<int, int> roundByFrame = new();
 
@@ -105,12 +105,6 @@ public sealed class RuleChainEventProjector : IOutputProjector
         if (roundIdx < 0 || result.Messages.Count == 0)
         {
             return roundByFrame;
-        }
-
-        Dictionary<DemoFrame, int> frameIndexByFrame = new(ReferenceEqualityComparer.Instance);
-        for (int i = 0; i < demo.Frames.Count; i++)
-        {
-            frameIndexByFrame[demo.Frames[i]] = i;
         }
 
         int currentRound = 0;
@@ -121,10 +115,7 @@ public sealed class RuleChainEventProjector : IOutputProjector
                 currentRound = (int)rn;
             }
 
-            if (frameIndexByFrame.TryGetValue(result.Messages[m].Frame, out int fi))
-            {
-                roundByFrame[fi] = currentRound;
-            }
+            roundByFrame[result.Messages[m].FrameIndex] = currentRound;
         }
 
         return roundByFrame;

@@ -9,7 +9,7 @@ vals=KASTRounds,KAST%,2K,3K,4K,5K
 == post_plant_double_context
 dims=match_id,map,round_number,player_slot,player_name,team
 vals=Achieved,PostPlantKills,PlantTick,KillTick
-nodeCount=1634
+nodeCount=1651
 chains
 _chain_kast=133
 _chain_opening_death=20
@@ -18,4 +18,4 @@ _chain_post_plant_double=4
 _chain_traded_death=12
 has_kast=117
 traded=12
-sha256=088fc860fc649855ba8073912754fc41b0a008cb184459d76481c6bd7b777c0b
+sha256=31c663fcd3ce8731cffcc1133eba6f04a4175124fe14281e82759cdcc0dc5da1

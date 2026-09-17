@@ -102,7 +102,7 @@ public static class SchemaLensSdkDeriver
     ///     DVN's storage policy: which lane a schema type occupies, plus the handle marker.
     ///     Lanes are HONEST — they state the lane the decoder's honour-the-wire routing
     ///     actually uses (bools/enums as ints on the int lane; wide 64-bit values boxed on
-    ///     the object lane; handles boxed on the object lane with the <c>HandleIndex</c>
+    ///     the object lane; handles on the long lane with the <c>HandleIndex</c>
     ///     marker), so there is no downstream "effective lane" correction table. Nullability
     ///     truth lives in seen bits, not per-rule defaults — the migration-era default
     ///     ceremony fed pre-population plumbing nothing ever read.
@@ -114,8 +114,8 @@ public static class SchemaLensSdkDeriver
 
         if (s.StartsWith("CHandle<", StringComparison.Ordinal))
         {
-            // Boxed raw wire handle; masking/sentinels belong to handle resolution.
-            return (WireType.ObjectLane, LensTransform.HandleIndex);
+            // Raw wire handle, typed; masking and sentinels belong to handle resolution.
+            return (WireType.LongLane, LensTransform.HandleIndex);
         }
 
         switch (s)
@@ -127,9 +127,13 @@ public static class SchemaLensSdkDeriver
                 return (WireType.IntLane, LensTransform.None);
             case "float32" or "float64" or "GameTime_t" or "CNetworkedQuantizedFloat":
                 return (WireType.FloatLane, LensTransform.None);
-            case "uint64" or "CInButtonState": // wide 64-bit values are boxed on the object lane
+            case "uint64": // decoded typed onto the long lane
+                return (WireType.LongLane, LensTransform.None);
+            case "CInButtonState": // a struct of uint64 members; the leaf itself is never a scalar
                 return (WireType.ObjectLane, LensTransform.None);
-            case "CUtlString" or "Vector" or "VectorWS" or "QAngle"
+            case "Vector" or "VectorWS" or "QAngle": // three components, decoded typed onto the vector lane
+                return (WireType.VectorLane, LensTransform.None);
+            case "CUtlString"
                 or "CNetworkOriginCellCoordQuantizedVector" or "CNetworkVelocityVector":
                 return (WireType.ObjectLane, LensTransform.None);
         }

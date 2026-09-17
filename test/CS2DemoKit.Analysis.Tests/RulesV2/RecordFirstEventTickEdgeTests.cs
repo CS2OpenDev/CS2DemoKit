@@ -6,6 +6,8 @@ using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 using CS2DemoKit.TestSupport;
@@ -26,7 +28,7 @@ public class RecordFirstEventTickEdgeTests
 {
     private static DemoFrame Frame(int frameNumber, int serverTick, params NetMessage[] msgs) => new()
     {
-        Command = "DEM_Packet",
+        CommandKind = EDemoCommands.DemPacket,
         FrameNumber = frameNumber,
         ServerTick = serverTick,
         RawStart = 0,

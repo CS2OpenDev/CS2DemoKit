@@ -120,7 +120,7 @@ public class RulesetV2ShowColumnFormatTests
         List<PerPlayerColumnAssignment> merged = [];
         foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
         {
-            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test", null);
+            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test");
             merged.AddRange(player.ColumnAssignments);
         }
 

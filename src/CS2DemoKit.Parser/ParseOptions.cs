@@ -18,7 +18,7 @@ public sealed record ParseOptions
     ///     the Pass 2 <c>Parallel.For</c> (also wired into <c>ParallelOptions.CancellationToken</c>
     ///     so the scheduler stops handing out new work), and before Pass 3. A canceled parse throws
     ///     <see cref="OperationCanceledException" /> — no partial <see cref="ParsedDemo" /> is ever
-    ///     returned (mirrors <c>ParallelDigestProducer.Produce</c>'s identical contract).
+    ///     returned, the same contract the analysis engine's evaluation gives.
     /// </summary>
     public CancellationToken CancellationToken { get; init; }
 
@@ -71,4 +71,22 @@ public sealed record ParseOptions
     ///     </para>
     /// </summary>
     public bool CountDropSites { get; init; }
+
+    /// <summary>
+    ///     What to decode and keep. Defaults to <see cref="DecodePlan.Everything" />, which is the
+    ///     options-less behaviour. A narrower plan leaves the unplanned messages out of
+    ///     <see cref="DemoFrame.DecodedMessages" /> and never materialises their payloads; with
+    ///     <see cref="DecodePlan.RecordStructure" /> each packet frame still records what it held.
+    /// </summary>
+    public DecodePlan Plan { get; init; } = DecodePlan.Everything;
+
+    /// <summary>
+    ///     Frames a <see cref="DemoReader" /> decodes ahead of its consumer, in parallel, per window.
+    ///     Zero, the default, decodes one frame at a time on the reading thread. A window is scanned
+    ///     sequentially, decoded with <c>Parallel.For</c> under <see cref="MaxDegreeOfParallelism" />,
+    ///     and yielded in order; the frames of one window are the only ones held beyond what the
+    ///     caller keeps. Ignored by the whole-file parse and when <see cref="MaxDegreeOfParallelism" />
+    ///     is 1.
+    /// </summary>
+    public int ReadAheadFrames { get; init; }
 }

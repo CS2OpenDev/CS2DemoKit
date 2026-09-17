@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
+using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Parser;
 
 #endregion
@@ -328,7 +329,7 @@ public class ConfiguredOutputProjectorTests
                     [new MetricRef("kills", "Kills")], ["round_number", "player_name"])
             ]);
 
-        AnalysisRun run = new(build, result.Timeline, result);
+        AnalysisRun run = new(build, result.Timeline, result) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
         IReadOnlyList<MetricTable> tables = run.ProjectConfiguredOutputs(demo, "match.dem");
 
         await Assert.That(tables.Count).IsEqualTo(2);
@@ -348,7 +349,7 @@ public class ConfiguredOutputProjectorTests
             new StateGraph(), [], [], [], new HashSet<Type>(), [],
             Outputs: [PerGameOutput(["player_name"], "kills")]);
 
-        AnalysisRun run = new(build, result.Timeline, null);
+        AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
 
         InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => run.ProjectConfiguredOutputs(demo));
         await Assert.That(ex.Message).Contains("snapshot");
@@ -362,10 +363,14 @@ public class ConfiguredOutputProjectorTests
             [1], [(0, "Alice")], (_, _) => 0);
 
         BuildResult build = new(new StateGraph(), [], [], [], new HashSet<Type>(), []);
-        AnalysisRun run = new(build, result.Timeline, null);
+        AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
 
         await Assert.That(run.ProjectConfiguredOutputs(demo)).IsEmpty();
     }
+
+    private static readonly AnalysisProvenance _provenance =
+        new(AnalysisSourceKind.Materialised, DemoSourceProfileRegistry.DefaultFallback, ProfileResolutionKind.Explicit,
+            null, DigestProducerKind.None, true, 0, 0, default);
 
     /// <summary>A minimal concrete StateNode — the projector only uses reference identity + Name.</summary>
     private sealed class StubNode(string name) : StateNode

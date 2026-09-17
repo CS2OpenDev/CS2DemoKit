@@ -73,7 +73,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     public string? MatchId { get; init; }
 
     /// <inheritdoc />
-    public IReadOnlyList<MetricTable> Project(EvaluationResult result, ParsedDemo demo)
+    public IReadOnlyList<MetricTable> Project(EvaluationResult result, DemoDescriptor demo)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(demo);
@@ -97,7 +97,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     ///     fan-out. When there are no game-scoped nodes (no <see cref="_gameNodesByRuleId" />) the table
     ///     is still emitted, with null value cells (the columns convention).
     /// </summary>
-    private MetricTable ProjectPerMatch(EvaluationResult result, ParsedDemo demo)
+    private MetricTable ProjectPerMatch(EvaluationResult result, DemoDescriptor demo)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
         Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
@@ -141,7 +141,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
     // ── per_player_per_game: final-snapshot sampling ─────────────────────
 
-    private MetricTable ProjectPerPlayerPerGame(EvaluationResult result, ParsedDemo demo)
+    private MetricTable ProjectPerPlayerPerGame(EvaluationResult result, DemoDescriptor demo)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
         Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
@@ -166,7 +166,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
     // ── per_player_per_round: last-snapshot-per-live-round sampling ──────
 
-    private MetricTable ProjectPerPlayerPerRound(EvaluationResult result, ParsedDemo demo)
+    private MetricTable ProjectPerPlayerPerRound(EvaluationResult result, DemoDescriptor demo)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
         Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
@@ -193,7 +193,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
     // ── per_event: timeline rising edges filtered to the declared chains ─
 
-    private MetricTable ProjectPerEvent(EvaluationResult result, ParsedDemo demo)
+    private MetricTable ProjectPerEvent(EvaluationResult result, DemoDescriptor demo)
     {
         HashSet<string> wantedChains = new(_output.Chains ?? [], StringComparer.Ordinal);
         bool wantRound = _output.Dimensions.Contains(DimRoundNumber, StringComparer.Ordinal);
@@ -284,7 +284,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
     private MetricRow BuildPlayerRow(
         List<PerPlayerNodeTemplate.MaterializedPlayer> group,
-        ParsedDemo demo,
+        DemoDescriptor demo,
         NodeSnapshot[] snapshot,
         Dictionary<StateNode, int> nodeIndex,
         int? roundNumber)
@@ -427,7 +427,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     ///     index (later messages in a frame win). Frames between messages inherit nothing; lookups
     ///     default to 0 (warmup/unknown).
     /// </summary>
-    private static Dictionary<int, int> BuildRoundByFrame(EvaluationResult result, ParsedDemo demo)
+    private static Dictionary<int, int> BuildRoundByFrame(EvaluationResult result, DemoDescriptor demo)
     {
         Dictionary<int, int> roundByFrame = new();
 
@@ -435,12 +435,6 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         if (roundIdx < 0 || result.Messages.Count == 0)
         {
             return roundByFrame;
-        }
-
-        Dictionary<DemoFrame, int> frameIndexByFrame = new(ReferenceEqualityComparer.Instance);
-        for (int i = 0; i < demo.Frames.Count; i++)
-        {
-            frameIndexByFrame[demo.Frames[i]] = i;
         }
 
         int currentRound = 0;
@@ -451,10 +445,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                 currentRound = (int)rn;
             }
 
-            if (frameIndexByFrame.TryGetValue(result.Messages[m].Frame, out int fi))
-            {
-                roundByFrame[fi] = currentRound;
-            }
+            roundByFrame[result.Messages[m].FrameIndex] = currentRound;
         }
 
         return roundByFrame;

@@ -7,6 +7,8 @@ using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.TestSupport;
 using TUnit.Core.Exceptions;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -386,7 +388,7 @@ public class VisibilityAssetLayerTests
         {
             frames.Add(new DemoFrame
             {
-                Command = "DEM_Packet",
+                CommandKind = EDemoCommands.DemPacket,
                 FrameNumber = i,
                 ServerTick = i * 8,
                 RawStart = 0,

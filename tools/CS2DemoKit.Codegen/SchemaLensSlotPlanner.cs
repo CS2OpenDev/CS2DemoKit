@@ -67,6 +67,8 @@ public static class SchemaLensSlotPlanner
             List<string> intFields = new();
             List<string> floatFields = new();
             List<string> objectFields = new();
+            List<string> vectorFields = new();
+            List<string> longFields = new();
 
             foreach ((string canonical, FieldRule rule) in fieldMap)
             {
@@ -83,6 +85,12 @@ public static class SchemaLensSlotPlanner
                     case WireType.ObjectLane:
                         objectFields.Add(canonical);
                         break;
+                    case WireType.VectorLane:
+                        vectorFields.Add(canonical);
+                        break;
+                    case WireType.LongLane:
+                        longFields.Add(canonical);
+                        break;
                     default:
                         throw new InvalidOperationException(
                             $"SchemaLensSlotPlanner: unknown wire type {effectiveLane} on " +
@@ -98,11 +106,15 @@ public static class SchemaLensSlotPlanner
             intFields.Sort(StringComparer.Ordinal);
             floatFields.Sort(StringComparer.Ordinal);
             objectFields.Sort(StringComparer.Ordinal);
+            vectorFields.Sort(StringComparer.Ordinal);
+            longFields.Sort(StringComparer.Ordinal);
 
             classes[className] = new ClassPlan(
                 AssignDenseSlots(intFields),
                 AssignDenseSlots(floatFields),
-                AssignDenseSlots(objectFields));
+                AssignDenseSlots(objectFields),
+                AssignDenseSlots(vectorFields),
+                AssignDenseSlots(longFields));
         }
 
         return new SlotPlan(classes);
@@ -128,6 +140,8 @@ public static class SchemaLensSlotPlanner
             WireType.IntLane => classPlan.IntSlots,
             WireType.FloatLane => classPlan.FloatSlots,
             WireType.ObjectLane => classPlan.ObjectSlots,
+            WireType.VectorLane => classPlan.VectorSlots,
+            WireType.LongLane => classPlan.LongSlots,
             _ => throw new InvalidOperationException(
                 $"SchemaLensSlotPlanner: unknown wire type {effectiveLane} on " +
                 $"'{className}.{canonical}'.")
@@ -165,5 +179,7 @@ public static class SchemaLensSlotPlanner
     public sealed record ClassPlan(
         IReadOnlyDictionary<string, int> IntSlots,
         IReadOnlyDictionary<string, int> FloatSlots,
-        IReadOnlyDictionary<string, int> ObjectSlots);
+        IReadOnlyDictionary<string, int> ObjectSlots,
+        IReadOnlyDictionary<string, int> VectorSlots,
+        IReadOnlyDictionary<string, int> LongSlots);
 }

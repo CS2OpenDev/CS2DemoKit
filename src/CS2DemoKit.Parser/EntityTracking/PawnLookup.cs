@@ -60,19 +60,13 @@ public static class PawnLookup
                 continue;
             }
 
-            // Allocation-free direct lane read. EntityState.Fields rebuilds an entire per-entity
-            // dictionary projection on every access, so reading it once per entity per frame inside
-            // this walk was the dominant entity-tracking allocation (profiled: ~40 GiB /
-            // 227 KB per ForEachLivePawn call). The indexer reads the single m_hController slot
-            // directly; m_hController is object-lane, so an unseen slot returns null — byte-identical
-            // to the .Fields projection, which excludes unseen slots.
-            object? hv = ent["m_hController"];
-            if (hv is null)
+            // Unseen and present-null both mean no controller, as the Fields projection reads them.
+            if (!TryReadHandle(ent, "m_hController", out uint hv))
             {
                 continue;
             }
 
-            int ctrlIdx = IndexOf(TryUnboxHandle(hv));
+            int ctrlIdx = IndexOf(hv);
             int slot = ctrlIdx - 1;
             if (slot < 0)
             {
@@ -96,9 +90,13 @@ public static class PawnLookup
     ///     Resolves an entity-handle value to the live entity it points to. Returns <c>null</c>
     ///     when the handle points at nothing (see <see cref="IndexOf" />) or the slot is empty.
     /// </summary>
-    public static EntityState? ResolveHandle(EntityTracker tracker, object? handleValue)
+    public static EntityState? ResolveHandle(EntityTracker tracker, object? handleValue) =>
+        ResolveHandle(tracker, TryUnboxHandle(handleValue));
+
+    /// <summary>The same resolution for a handle already read as its 32-bit wire value.</summary>
+    public static EntityState? ResolveHandle(EntityTracker tracker, uint handle)
     {
-        int index = IndexOf(TryUnboxHandle(handleValue));
+        int index = IndexOf(handle);
         return index < 0 ? null : tracker.CurrentEntities[index];
     }
 
@@ -124,19 +122,12 @@ public static class PawnLookup
                 continue;
             }
 
-            // Allocation-free direct lane read. EntityState.Fields rebuilds an entire per-entity
-            // dictionary projection on every access, so reading it once per entity per frame inside
-            // this walk was the dominant entity-tracking allocation (profiled: ~40 GiB /
-            // 227 KB per ForEachLivePawn call). The indexer reads the single m_hController slot
-            // directly; m_hController is object-lane, so an unseen slot returns null — byte-identical
-            // to the .Fields projection, which excludes unseen slots.
-            object? hv = ent["m_hController"];
-            if (hv is null)
+            if (!TryReadHandle(ent, "m_hController", out uint hv))
             {
                 continue;
             }
 
-            if (IndexOf(TryUnboxHandle(hv)) == targetControllerIdx)
+            if (IndexOf(hv) == targetControllerIdx)
             {
                 return ent;
             }
@@ -153,6 +144,35 @@ public static class PawnLookup
     ///     Returns <c>0</c> for non-numeric or null values — callers should treat zero
     ///     as "no live handle" (the wire sentinel).
     /// </summary>
+    /// <summary>
+    ///     Reads a handle field as its 32-bit wire value without boxing: straight off the long lane
+    ///     when the field lives there, else through the boxed read and <see cref="TryUnboxHandle" />.
+    ///     False when the field is unseen or present with no value.
+    /// </summary>
+    public static bool TryReadHandle(EntityState entity, string path, out uint handle)
+    {
+        if (entity.Shape is { } shape && shape.PathToSlot.TryGetValue(path, out SlotAddr addr) && addr.Lane == LaneKind.Long)
+        {
+            if (entity.TryGetLongSlot(addr.Slot, out ulong wide))
+            {
+                handle = unchecked((uint)wide);
+                return true;
+            }
+
+            handle = 0;
+            return false;
+        }
+
+        if (entity.TryGetValue(path, out object? boxed) && boxed is not null)
+        {
+            handle = TryUnboxHandle(boxed);
+            return true;
+        }
+
+        handle = 0;
+        return false;
+    }
+
     public static uint TryUnboxHandle(object? value) => value switch
     {
         null => 0u,

@@ -98,9 +98,16 @@ public sealed class LensBoundReader : IEntityFieldReader
 
     /// <inheritdoc />
     public bool TryReadUInt64(int ordinal, out ulong value)
-        // No ulong lane exists: wide ints land boxed on the object lane under the
-        // honour-the-wire rule (m_steamID, m_nButtons), so this is always a boxed read.
-        => TryReadConverted(ordinal, out value);
+    {
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Long
+            && _state.TryGetLongSlot(addr.Slot, out value))
+        {
+            return true;
+        }
+
+        return TryReadConverted(ordinal, out value);
+    }
 
     /// <inheritdoc />
     public bool TryReadSingle(int ordinal, out float value)
@@ -160,6 +167,14 @@ public sealed class LensBoundReader : IEntityFieldReader
     /// <inheritdoc />
     public bool TryReadEntityHandle(int ordinal, out uint rawHandle)
     {
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Long
+            && _state.TryGetLongSlot(addr.Slot, out ulong wide))
+        {
+            rawHandle = unchecked((uint)wide);
+            return true;
+        }
+
         if (!TryReadRaw(ordinal, out object? raw) || raw is null)
         {
             rawHandle = default;
@@ -200,6 +215,13 @@ public sealed class LensBoundReader : IEntityFieldReader
     /// <inheritdoc />
     public bool TryReadVector3(int ordinal, out Vector3 value)
     {
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Vector
+            && _state.TryGetVectorSlot(addr.Slot, out value))
+        {
+            return true;
+        }
+
         if (TryReadRaw(ordinal, out object? raw) && raw is Vector3 v)
         {
             value = v;
@@ -213,6 +235,15 @@ public sealed class LensBoundReader : IEntityFieldReader
     /// <inheritdoc />
     public bool TryReadQAngle(int ordinal, out QAngle value)
     {
+        // The angle decoders produce Vector3(pitch, yaw, roll): a component reinterpretation.
+        if (_map.TryGetResolved(ordinal, out SlotAddr addr, out _)
+            && addr.Lane == LaneKind.Vector
+            && _state.TryGetVectorSlot(addr.Slot, out Vector3 typed))
+        {
+            value = new QAngle(typed.X, typed.Y, typed.Z);
+            return true;
+        }
+
         if (TryReadRaw(ordinal, out object? raw))
         {
             switch (raw)
@@ -296,6 +327,22 @@ public sealed class LensBoundReader : IEntityFieldReader
             case LaneKind.Object:
                 if (_state.TryGetObjectSlot(addr.Slot, out value))
                 {
+                    return true;
+                }
+
+                break;
+            case LaneKind.Vector:
+                if (_state.TryGetVectorSlot(addr.Slot, out Vector3 vec))
+                {
+                    value = vec;
+                    return true;
+                }
+
+                break;
+            case LaneKind.Long:
+                if (_state.TryGetLongSlot(addr.Slot, out ulong wide))
+                {
+                    value = wide;
                     return true;
                 }
 

@@ -1,3 +1,10 @@
+#region
+
+using Google.Protobuf;
+using CS2OpenSchema.Protos;
+
+#endregion
+
 namespace CS2DemoKit.Parser;
 
 /// <summary>
@@ -5,10 +12,14 @@ namespace CS2DemoKit.Parser;
 /// </summary>
 public sealed class DemoFrame
 {
+    /// <summary>The demo command, with the compressed flag already stripped.</summary>
+    public required EDemoCommands CommandKind { get; init; }
+
     /// <summary>
-    ///     Name of the demo command, e.g. "DEM_Packet", "DEM_SyncTick", etc.
+    ///     Name of the demo command, e.g. "DEM_Packet", "DEM_SyncTick", etc. Derived from
+    ///     <see cref="CommandKind" />.
     /// </summary>
-    public required string Command { get; init; }
+    public string Command => NetMessageCatalog.DemoCommandName(CommandKind);
 
     /// <summary>Zero-based sequential index of this frame in <see cref="ParsedDemo.Frames" />.</summary>
     public required int FrameNumber { get; init; }
@@ -17,7 +28,15 @@ public sealed class DemoFrame
     ///     Alias for <see cref="ServerTick" />. In CS2 demos the frame header tick IS the game tick,
     ///     so this always equals <see cref="ServerTick" />.
     /// </summary>
-    public int? GameTick { get; internal set; }
+    public int? GameTick { get; init; }
+
+    /// <summary>
+    ///     One header per inner message of a packet frame, in bitstream order, recorded when the
+    ///     parse's <see cref="DecodePlan.RecordStructure" /> was set. Empty otherwise, and always
+    ///     empty on a direct-payload frame. This is what answers "how many messages of which type"
+    ///     when the payloads were never decoded.
+    /// </summary>
+    public ReadOnlyMemory<InnerMessageHeader> InnerMessageHeaders { get; init; }
 
     /// <summary>
     ///     Byte length of the three ULEB128-encoded header fields (cmd, tick, size) that precede the payload.
@@ -78,6 +97,38 @@ public sealed class DemoFrame
     ///     </para>
     /// </summary>
     public IReadOnlyList<NetMessage> DecodedMessages => MessageList;
+
+    /// <summary>
+    ///     Drops the decoded messages in <paramref name="categories" /> from <see cref="DecodedMessages" />,
+    ///     for a forward consumer that has finished with them: an entity fold that has applied the
+    ///     frame has no further use for its <c>svc_PacketEntities</c> bytes, which are most of what a
+    ///     decoded frame weighs. Offsets, structure headers and stored user commands are untouched.
+    /// </summary>
+    /// <returns>How many messages were dropped.</returns>
+    public int Release(MessageCategories categories) => categories switch
+    {
+        MessageCategories.None => 0,
+        MessageCategories.Entities => MessageList.RemoveAll(_entities),
+        MessageCategories.Entities | MessageCategories.StringTables => MessageList.RemoveAll(_entitiesAndStringTables),
+        _ => MessageList.RemoveAll(m => (CategoryOf(m.Payload) & categories) != 0)
+    };
+
+    // The two masks a fold releases, so a per-frame release allocates no closure.
+    private static readonly Predicate<NetMessage> _entities = m => CategoryOf(m.Payload) == MessageCategories.Entities;
+
+    private static readonly Predicate<NetMessage> _entitiesAndStringTables =
+        m => (CategoryOf(m.Payload) & (MessageCategories.Entities | MessageCategories.StringTables)) != 0;
+
+    private static MessageCategories CategoryOf(IMessage payload) => payload switch
+    {
+        CSVCMsg_PacketEntities => MessageCategories.Entities,
+        CSVCMsg_CreateStringTable or CSVCMsg_UpdateStringTable or CSVCMsg_ClearAllStringTables or CDemoStringTables =>
+            MessageCategories.StringTables,
+        CMsgSource1LegacyGameEventList or CMsgSource1LegacyGameEvent => MessageCategories.GameEvents,
+        CSVCMsg_FlattenedSerializer or CSVCMsg_ClassInfo or CDemoSendTables or CDemoClassInfo => MessageCategories.Schema,
+        CDemoFileHeader or CDemoFileInfo or CSVCMsg_ServerInfo => MessageCategories.Header,
+        _ => MessageCategories.Other
+    };
 
     /// <summary>
     ///     This frame's <c>svc_UserCmds</c> payloads, held in shared blocks rather than as one

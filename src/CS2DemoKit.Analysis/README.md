@@ -1,21 +1,19 @@
 # CS2DemoKit.Analysis
 
-A rule-driven analysis engine for parsed CS2 demos: a state-graph evaluator that walks a
-`ParsedDemo`'s frames once, four baseline rulesets embedded in the assembly, rich highlights with
-frame-clock timestamps, per-player stats, and a 3D line-of-sight engine for visibility-gated
-stats. Builds on `CS2DemoKit.Parser` — parse first, then hand the result here.
+A rule-driven analysis engine for CS2 demos: a state-graph evaluator that walks a demo's frames
+once and forward, straight off a file or over a retained `ParsedDemo`, four baseline rulesets
+embedded in the assembly, rich highlights with frame-clock timestamps, per-player stats, and a 3D
+line-of-sight engine for visibility-gated stats. Builds on `CS2DemoKit.Parser`, which does the
+decoding.
 
 ## Quickstart
 
 ```csharp
 using CS2DemoKit.Analysis;
-using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 
-ParsedDemo demo = MemoryMappedDemoSource.ParseFile(path);
-
-// The four baseline rulesets — KAST, per-player stats, weapon stats, post-plant multi-kills —
+// The four baseline rulesets (KAST, per-player stats, weapon stats, post-plant multi-kills) are
 // embedded in this assembly, so there are no files to ship or locate alongside your app.
 RuleConfigLoadResult loaded = YamlConfigLoader.LoadShippedEmbedded();
 if (!loaded.Success)
@@ -23,23 +21,47 @@ if (!loaded.Success)
     throw new RuleConfigException(loaded.Errors);
 }
 
-AnalysisRun run = DemoAnalysis.Run(demo, loaded.Rulesets);
+// Reads the demo forward once. The reader decodes only what the rules consume and drops each
+// frame behind the evaluation loop, so memory stays flat whatever the demo size.
+AnalysisRun run = DemoAnalysis.Run(path, loaded.Rulesets);
 
 foreach (HighlightFired hl in run.Highlights)
 {
-    // hl.Tick is frame clock — the same clock as GameEvent.GameTick and DemoFrame.ServerTick.
-    // Never subtract ParsedDemo.ServerStartTick from it.
-    PlayerInfo? player = demo.Players.GetValueOrDefault(hl.PlayerSlot);
+    // hl.Tick is frame clock, the same clock as GameEvent.GameTick and DemoFrame.ServerTick.
+    // Never subtract ServerStartTick from it.
+    PlayerInfo? player = run.Demo.Players.GetValueOrDefault(hl.PlayerSlot);
     Console.WriteLine($"[{hl.RulesetId}.{hl.HighlightId}] tick {hl.Tick} {player?.SteamId64}: {hl.RenderedTitle}");
 }
 ```
 
-`DemoAnalysis.Run` builds the graph and evaluates it in one call; `DemoAnalysis.Build` +
-`DemoAnalysis.Evaluate` split the two steps for callers that need the compiled graph before the
-(multi-second) evaluation runs, e.g. to render a skeleton UI. `AnalysisRun.Highlights` is populated
-in **both** capture modes — including the cheaper bare scan (`new AnalysisOptions { CaptureSnapshots
-= false }`), which is the mode to reach for if you only need highlights, not per-frame snapshots.
+`DemoAnalysis.Run(path, rules)` is the forward path: open a `DemoReader`, resolve the source
+profile from the header and the demo's game-event vocabulary, build the graph, narrow the reader's
+decode to what the graph consumes (`DemoAnalysis.PlanDecode`), and evaluate. Nothing but the run's
+outputs outlives the loop. `AnalysisRun.Provenance` says what actually ran: the source kind, the
+profile and how it was resolved, the decode plan, the digest producer, and whether snapshots were
+kept. `AnalysisRun.Demo` holds the demo's final facts (map, tick rate, roster) detached from the
+reader.
 
+The same call over a retained demo keeps everything:
+
+```csharp
+ParsedDemo demo = MemoryMappedDemoSource.ParseFile(path);
+AnalysisRun run = DemoAnalysis.Run(demo, loaded.Rulesets);
+```
+
+This is the path for a viewer that seeks and inspects after the run; a consumer coming from
+0.11.0 starts at `docs/migrating-to-0.12.md` in the repository. Per-message node snapshots
+are on by default over a `ParsedDemo` and off by default over a stream; `AnalysisOptions.CaptureSnapshots`
+overrides either way, and on a stream it retains one row per dispatched message, which is what the
+stream was chosen to avoid. `AnalysisRun.Highlights`, `MaterializedPlayers` and `FinalNodes` are
+populated in both modes. `DemoAnalysis.Build` + `DemoAnalysis.Evaluate` split the two steps for
+callers that need the compiled graph before the (multi-second) evaluation runs, e.g. to render a
+skeleton UI. Over a stream, a player's name is the one the roster carried when the slot first
+materialised; the final names are in `run.Demo.Players`. Over a stream the entity digests are
+folded a chunk ahead of the loop by three workers (`AnalysisOptions.MaxDegreeOfParallelism` sets
+the count, one means in step with the loop), the file is read and decoded on its own thread, and
+a frame's entity and string-table payloads are released once folded, so snapshot rows over a
+stream carry no entries for them.
 To customize or fork the shipped rules, extract them to disk with
 `YamlConfigLoader.ExtractShippedTo(dir)`, edit the copies, and load your directory back with
 `YamlConfigLoader.TryLoadDirectory(dir)` or layer it over the shipped tier with
@@ -86,11 +108,26 @@ this to your project so that class of skew fails the build instead:
 
 ## Parallelism
 
-Set `AnalysisOptions.MaxDegreeOfParallelism` when evaluating several demos in one process —
-otherwise each demo's entity-decode precompute fans out to every core, and each worker holds a
-full `EntityTracker`. `null`/≤0 means unbounded (the default). Still gate the number of
-*concurrent demos* with your own `SemaphoreSlim`, sized with the parse-side memory multiplier
-in mind.
+`AnalysisOptions.MaxDegreeOfParallelism` is the number of entity digest workers, each holding a
+tracker and a chunk of frames folded ahead of the evaluation loop. Unset, a forward reader gets
+three (the read bounds the run, and each worker is memory the run would otherwise not hold) and
+a retained demo gets two fewer than the core count (the frames are already resident; the fold is
+the only thing left to hide). One selects the sequential producer. Set it when evaluating several
+demos in one process, and still gate the number of *concurrent demos* with your own
+`SemaphoreSlim`, sized with the parse-side memory multiplier in mind.
+
+## Garbage collection
+
+The forward path allocates 100 to 500 MB of short-lived frames per demo, and under the default
+concurrent workstation collector that is a gen0 collection every few frames, each one suspending
+the reader thread and the digest workers. Two startup settings on the host process are worth a
+quarter of the wall-clock over the corpus (measured in `docs/perf/baseline.md`, "GC
+configuration"): `DOTNET_gcConcurrent=0`, or `<ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>`
+in the host's project file, and `DOTNET_GCgen0size=4000000` (hex bytes: a 64 MB gen0 budget).
+Both are read when the process starts. Nothing the engine can set at run time reproduces them;
+`GCSettings.LatencyMode` was measured and is a wash, so the engine leaves the collector alone.
+A host with a UI thread should weigh the first one, since it trades background collections for
+blocking ones.
 
 ## Pawn position
 

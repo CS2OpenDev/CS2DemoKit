@@ -1,55 +1,76 @@
 namespace CS2DemoKit.Parser.Tests;
 
 /// <summary>
-///     The S11 parse-diagnostics channel (v0.6.0): warnings accumulate per parse thread and drain
-///     into <see cref="ParsedDemo.Warnings" /> at construction (which doubles as the reset). Unit-
-///     level (no demo file, synthetic <see cref="ParsedDemo" />) — the App-tier consumer of this
-///     channel (the Match Overview damaged-demo banner) is covered separately in
-///     <c>DemoViewer.NET.App.Tests</c>.
+///     The warning channel is one instance per parse. Its result owns whatever it drained, a
+///     snapshot reads the same shape without clearing, and the cap turns into one summary entry.
 /// </summary>
 [Category("Unit")]
 public class ParseDiagnosticsTests
 {
-    private static ParsedDemo NewDemo() => new(
+    private static ParsedDemo NewDemo(IReadOnlyList<ParseWarning>? warnings = null) => new(
         [], [], new Dictionary<int, PlayerInfo>(), null,
         "de_test", 6400, 1f / 64, "test",
         "test", "csgo", 0, 0, 0,
-        "valve_demo_2", "", "", DemoProfile.Unknown);
+        "valve_demo_2", "", "", DemoProfile.Unknown, warnings: warnings);
 
-    /// <summary>Warnings recorded before construction land on the result — and ONLY that result.</summary>
     [Test]
-    public async Task Warnings_DrainIntoTheConstructedDemo_AndReset()
+    public async Task Drain_HandsTheWarningsToTheResult_AndResets()
     {
-        // Self-isolating: Warn's backing store is [ThreadStatic] and only Drain() (inside the
-        // ParsedDemo ctor) clears it. A sibling test that calls Warn without ever constructing a
-        // ParsedDemo (e.g. StringTableBoundsTests' hostile-table swallow path) can leave residue
-        // on a pool thread this test later reuses — drain it first so the count below is ours alone.
-        ParseDiagnostics.Drain();
+        ParseDiagnostics diagnostics = new();
+        diagnostics.Warn(ParseWarningCodes.StringTableCreateFailed, "table 'userinfo' failed");
+        diagnostics.Warn(ParseWarningCodes.PlayerInfoUnreadable, "slot 3 dropped", 1234);
 
-        ParseDiagnostics.Warn(ParseWarningCodes.StringTableCreateFailed, "table 'userinfo' failed");
-        ParseDiagnostics.Warn(ParseWarningCodes.PlayerInfoUnreadable, "slot 3 dropped", 1234);
-
-        ParsedDemo first = NewDemo();
+        ParsedDemo first = NewDemo(diagnostics.Drain());
         await Assert.That(first.Warnings).HasCount().EqualTo(2);
         await Assert.That(first.Warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
         await Assert.That(first.Warnings[1].Tick).IsEqualTo(1234);
+        await Assert.That(first.Health).IsEqualTo(ParseHealth.Damaged);
 
-        // Drain-on-construct IS the reset: the next parse on this thread starts clean.
-        ParsedDemo second = NewDemo();
+        await Assert.That(diagnostics.Count).IsEqualTo(0);
+        ParsedDemo second = NewDemo(diagnostics.Drain());
         await Assert.That(second.Warnings).HasCount().EqualTo(0);
     }
 
-    /// <summary>A healthy parse carries an empty (never null) warning list.</summary>
+    [Test]
+    public async Task Snapshot_ReadsWithoutClearing()
+    {
+        ParseDiagnostics diagnostics = new();
+        diagnostics.Warn(ParseWarningCodes.DemoTruncated, "cut short");
+
+        IReadOnlyList<ParseWarning> live = diagnostics.Snapshot();
+        await Assert.That(live).HasCount().EqualTo(1);
+        await Assert.That(diagnostics.Count).IsEqualTo(1);
+
+        diagnostics.Warn(ParseWarningCodes.NetMessageDropped, "svc_X dropped", count: 3);
+        await Assert.That(live).HasCount().EqualTo(1).Because("a snapshot is a copy");
+        await Assert.That(diagnostics.Snapshot()).HasCount().EqualTo(2);
+    }
+
+    [Test]
+    public async Task PastTheCap_OneSummaryEntryCarriesTheRest()
+    {
+        ParseDiagnostics diagnostics = new();
+        for (int i = 0; i < ParseDiagnostics.MaxWarnings + 7; i++)
+        {
+            diagnostics.Warn(ParseWarningCodes.StringTableUpdateFailed, $"update {i}");
+        }
+
+        IReadOnlyList<ParseWarning> snapshot = diagnostics.Snapshot();
+        await Assert.That(snapshot).HasCount().EqualTo(ParseDiagnostics.MaxWarnings + 1);
+        await Assert.That(snapshot[^1].Code).IsEqualTo(ParseWarningCodes.WarningsTruncated);
+        await Assert.That(snapshot[^1].Message).Contains("7 further");
+
+        IReadOnlyList<ParseWarning> drained = diagnostics.Drain();
+        await Assert.That(drained).HasCount().EqualTo(ParseDiagnostics.MaxWarnings + 1);
+        await Assert.That(diagnostics.Drain()).HasCount().EqualTo(0);
+    }
+
     [Test]
     public async Task HealthyParse_HasEmptyWarnings()
     {
-        // See the isolating comment in Warnings_DrainIntoTheConstructedDemo_AndReset above — a
-        // stale, un-drained warning left on this pool thread by a sibling test would otherwise
-        // make "empty" flaky rather than deterministic.
-        ParseDiagnostics.Drain();
-
         ParsedDemo demo = NewDemo();
         await Assert.That(demo.Warnings).IsNotNull();
         await Assert.That(demo.Warnings).HasCount().EqualTo(0);
+        await Assert.That(demo.Health).IsEqualTo(ParseHealth.Clean);
     }
 }

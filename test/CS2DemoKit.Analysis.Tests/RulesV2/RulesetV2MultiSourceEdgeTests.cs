@@ -182,7 +182,7 @@ public class RulesetV2MultiSourceEdgeTests
         BuildResult build = builder.Build([rs]);
 
         // The v2 template is the last per-player template added (after the built-in context template).
-        return build.Graph.PerPlayerTemplates[^1].Materialize(0, 0, "test", null);
+        return build.Graph.PerPlayerTemplates[^1].Materialize(0, 0, "test");
     }
 
     private static StateNode FindNode(PerPlayerNodeTemplate.MaterializedPlayer player, string name) =>

@@ -65,7 +65,7 @@ public static class AuthoringGraph
 
         foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
         {
-            PerPlayerNodeTemplate.MaterializedPlayer p = template.Materialize(0, 0, "each player", null);
+            PerPlayerNodeTemplate.MaterializedPlayer p = template.Materialize(0, 0, "each player");
             foreach (StateNode n in p.Nodes)
             {
                 perPlayer.Add(n);

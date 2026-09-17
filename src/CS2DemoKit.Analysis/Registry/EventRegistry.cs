@@ -170,6 +170,44 @@ public sealed class EventRegistry
     /// <summary>True when <paramref name="name" /> matches a registered net message.</summary>
     public bool IsNetMessage(string name) => _netMessages.ContainsKey(name);
 
+    private Dictionary<Type, (string Name, bool IsNetMessage)>? _namesByType;
+
+    /// <summary>
+    ///     The reverse of <see cref="TryResolve" />: the registered name of a game-event or net-message
+    ///     CLR type, and which of the two it is. A type registered under several names reports the
+    ///     first registration. False for an unregistered type, synthesized events included.
+    /// </summary>
+    public bool TryGetName(Type type, out string name, out bool isNetMessage)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        if (_namesByType is null)
+        {
+            Dictionary<Type, (string, bool)> map = new();
+            foreach ((string n, EventRegistration reg) in _events)
+            {
+                map.TryAdd(reg.EventType, (n, false));
+            }
+
+            foreach ((string n, NetMessageRegistration reg) in _netMessages)
+            {
+                map.TryAdd(reg.PayloadType, (n, true));
+            }
+
+            _namesByType = map;
+        }
+
+        if (_namesByType.TryGetValue(type, out (string Name, bool IsNetMessage) entry))
+        {
+            name = entry.Name;
+            isNetMessage = entry.IsNetMessage;
+            return true;
+        }
+
+        name = string.Empty;
+        isNetMessage = false;
+        return false;
+    }
+
     /// <summary>
     ///     Resolves <paramref name="name" /> to either a game-event or net-message CLR type. Returns <c>false</c> if
     ///     unknown.

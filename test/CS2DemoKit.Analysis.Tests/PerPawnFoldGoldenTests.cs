@@ -26,10 +26,10 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         <see cref="BuiltinProviderSpecs.CreateGenericPerPlayerProviders" />.
 ///     </para>
 ///     <para>
-///         Section B hashes the parallel producer's stream as a FOLD: the cells whose folded value
+///         Section B hashes the pipelined producer's stream as a FOLD: the cells whose folded value
 ///         changed after each frame. Rows there are chunk-dependent by construction (a worker
-///         re-emits every live cell on its chunk's first frame, and the chunk count follows the
-///         runner's core count), so Section B renders no row count at all: not in the totals and
+///         re-emits every live cell on its chunk's first frame, and the chunk boundaries follow the
+///         demo's full-packet cadence), so Section B renders no row count at all: not in the totals and
 ///         not in the checkpoints. What it renders, the folded cell count and hash, is
 ///         chunk-invariant, which is exactly the property nobody may re-pin over: a Section B
 ///         mismatch is a real equivalence bug, not a layout difference.
@@ -66,7 +66,7 @@ public class PerPawnFoldGoldenTests
     }
 
     [Test]
-    public async Task ParallelFold_DefaultRegistry_MatchesGolden()
+    public async Task PipelinedFold_DefaultRegistry_MatchesGolden()
     {
         await RunSectionB("per-pawn-fold.parallel.golden.txt",
             () => PerPlayerEntityValueProviderRegistry.CreateDefault().All.Select(Clone).ToList());
@@ -106,7 +106,7 @@ public class PerPawnFoldGoldenTests
     private static async Task RunSectionB(string fixtureName, Func<List<IPerPlayerEntityValueProvider>> factory)
     {
         ParsedDemo demo = RequireSample();
-        EntityFrameDigest[] digests = ParallelDigestProducer.Produce(demo.Frames, factory, () => [], false);
+        EntityFrameDigest[] digests = PipelinedDigests.Produce(demo.AsFrameSource(), factory, () => [], false);
 
         Hasher hasher = new(countRows: false);
         Dictionary<(int Provider, int Slot), object> snapshot = [];

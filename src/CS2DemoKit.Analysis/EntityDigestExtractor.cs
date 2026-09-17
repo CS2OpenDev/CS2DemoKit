@@ -13,8 +13,8 @@ namespace CS2DemoKit.Analysis;
 /// <summary>
 ///     Builds an <see cref="EntityFrameDigest" /> from a layer's current (post-seek) entity state. This is
 ///     the single source of truth for digest extraction, shared by the sequential scanner
-///     (<c>EntityChangeScanner.BuildDigest</c>) and the parallel chunk decoder
-///     (<c>ParallelDigestProducer</c>). Singletons and molotovs come out identical by construction;
+///     (<c>EntityChangeScanner.BuildDigest</c>) and the pipelined producer's chunk workers
+///     (<c>PipelinedDigestSource</c>). Singletons and molotovs come out identical by construction;
 ///     per-pawn rows depend on the caller's <see cref="PerPawnDeltaState" />, so those agree once folded
 ///     rather than row for row.
 ///     <para>
@@ -53,13 +53,19 @@ internal static class EntityDigestExtractor
     ///     Null falls back to the full walk; the two produce byte-identical digests (the parity
     ///     tests pin it), so the walk stays as the oracle rather than as a path anything ships on.
     /// </param>
+    /// <param name="pawns">
+    ///     The caller's pawn slot index, which turns the per-pawn sweep from a walk over every live
+    ///     entity into a read of the dozen slots that hold one. Null falls back to the full walk,
+    ///     which produces the same digest.
+    /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
         PerPawnDeltaState delta,
         IReadOnlyList<IEntityValueProvider> singletonProviders,
         bool emitMolotovThrows,
         bool captureSmokes = false,
-        ProjectileSlotIndex? projectiles = null)
+        ProjectileSlotIndex? projectiles = null,
+        PawnSlotIndex? pawns = null)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(delta);
@@ -77,8 +83,17 @@ internal static class EntityDigestExtractor
 
         if (delta.Layout.Count > 0)
         {
-            PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
-                static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            if (pawns is not null)
+            {
+                pawns.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
+                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            }
+            else
+            {
+                PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
+                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+            }
+
             delta.LastRowCount = d.PerPawn.Count;
         }
 
@@ -87,6 +102,8 @@ internal static class EntityDigestExtractor
         {
             d.Singletons[i] = singletonProviders[i].Read(layer);
         }
+
+        d.ControllerTeams = ReadControllerTeams(tracker, delta);
 
         if (emitMolotovThrows || captureSmokes)
         {
@@ -114,6 +131,31 @@ internal static class EntityDigestExtractor
         }
 
         return d;
+    }
+
+    private const string ControllerClass = "CCSPlayerController";
+    private const int MaxSlots = 64;
+
+    // Controllers occupy entity indices 1..64, one per slot. Sixty-four indexed reads, no walk,
+    // and an array only on the frames where a slot's team differs from the last one read.
+    private static int[]? ReadControllerTeams(EntityTracker tracker, PerPawnDeltaState delta)
+    {
+        int[] last = delta.ControllerTeams;
+        bool changed = false;
+        EntitySet entities = tracker.CurrentEntities;
+        for (int slot = 0; slot < MaxSlots; slot++)
+        {
+            int team = entities[slot + 1] is { } controller && controller.ClassName == ControllerClass
+                ? controller.TryGet<int>("m_iTeamNum") ?? -1
+                : -1;
+            if (team != last[slot])
+            {
+                last[slot] = team;
+                changed = true;
+            }
+        }
+
+        return changed ? (int[])last.Clone() : null;
     }
 
     // The per-entity half of the projectile visit, shared by the walk and the indexed read so the
@@ -146,25 +188,13 @@ internal static class EntityDigestExtractor
     /// </summary>
     internal static int ResolveThrowerSlot(EntityTracker tracker, EntityState projectile)
     {
-        // Single-key seen-gated read via the indexer instead of projectile.Fields, which rebuilds the
-        // ENTIRE per-entity dict projection on every access (per live molotov per frame). The indexer
-        // returns null for an unseen field (the _seen[] bitvector gates every lane and it falls through
-        // to the fallback dict), byte-identical to the old Fields.TryGetValue-false path; a received
-        // handle flows on unchanged. Mirrors the FreezePeriodProvider seen-gated swap.
-        object? throwerHandle = projectile["m_hThrower"];
-        if (throwerHandle is null)
+        if (!PawnLookup.TryReadHandle(projectile, "m_hThrower", out uint throwerHandle))
         {
             return -1;
         }
 
         EntityState? pawn = PawnLookup.ResolveHandle(tracker, throwerHandle);
-
-        // m_hController is NOT a clean indexer swap: the control flow returns -1 only on ABSENT and
-        // lets a present-null fall through to TryUnboxHandle, a shape the indexer cannot reproduce
-        // (it collapses absent and present-null). EntityState.TryGetValue keeps that distinction with
-        // Fields' exact resolution order, without materialising the whole per-entity dict projection,
-        // which this call site was doing per live molotov per frame.
-        if (pawn is null || !pawn.TryGetValue("m_hController", out object? controllerHandle))
+        if (pawn is null || !PawnLookup.TryReadHandle(pawn, "m_hController", out uint controllerHandle))
         {
             return -1;
         }
@@ -172,7 +202,7 @@ internal static class EntityDigestExtractor
         // Must go through IndexOf. A dead pawn's m_hController is the 24-bit invalid handle, and
         // masking it raw yields slot 16382, which this method's contract says should be -1. Nothing
         // downstream re-checks, and unlike a table lookup there is no empty slot to save it.
-        int controllerIdx = PawnLookup.IndexOf(PawnLookup.TryUnboxHandle(controllerHandle));
+        int controllerIdx = PawnLookup.IndexOf(controllerHandle);
         return controllerIdx <= 0 ? -1 : controllerIdx - 1;
     }
 

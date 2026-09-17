@@ -3,6 +3,8 @@
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Config;
+using CS2DemoKit.Analysis.Profiles;
+using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 
 #endregion
@@ -103,6 +105,18 @@ public sealed record BuildResult(
     ///     the graph entirely: their stats and highlights produce no nodes and can never fire.
     /// </summary>
     public IReadOnlyList<ExcludedRuleset> ExcludedRulesets { get; init; } = [];
+
+    /// <summary>The source profile the graph was built for, dialect included.</summary>
+    public DemoSourceProfile Profile { get; init; } = DemoSourceProfileRegistry.DefaultFallback;
+
+    /// <summary>
+    ///     How <see cref="Profile" /> was chosen. Set by <c>DemoAnalysis.Build</c>; a build driven
+    ///     through <see cref="RuleChainBuilder" /> directly reports <see cref="ProfileResolutionKind.Explicit" />.
+    /// </summary>
+    public ProfileResolutionKind ProfileResolution { get; init; } = ProfileResolutionKind.Explicit;
+
+    /// <summary>The registry the graph's edges were resolved against; what a decode plan maps edge types back through.</summary>
+    public EventRegistry? Events { get; init; }
 }
 
 /// <summary>Visualization hint: a named cluster grouping a set of nodes for display.</summary>

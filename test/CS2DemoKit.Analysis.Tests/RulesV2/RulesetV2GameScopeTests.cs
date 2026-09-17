@@ -239,7 +239,7 @@ public class RulesetV2GameScopeTests
         BuildResult build = Build(Checked(Yaml));
         await Assert.That(build.Graph.PerPlayerTemplates.Count).IsGreaterThan(0);
 
-        PerPlayerNodeTemplate.MaterializedPlayer mp = build.Graph.PerPlayerTemplates[^1].Materialize(0, 0, "test", null);
+        PerPlayerNodeTemplate.MaterializedPlayer mp = build.Graph.PerPlayerTemplates[^1].Materialize(0, 0, "test");
         await Assert.That(mp.NodesByRuleId!.ContainsKey("pp.kills")).IsTrue();
     }
 
@@ -308,7 +308,7 @@ public class RulesetV2GameScopeTests
     {
         RuleChainBuilder builder = new(
             EventRegistry.Build(),
-            demo,
+            AnalysisTarget.From(demo),
             entityProviders: EntityValueProviderRegistry.CreateDefault(),
             perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault());
 

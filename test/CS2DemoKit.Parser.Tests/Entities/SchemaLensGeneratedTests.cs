@@ -112,9 +112,9 @@ public class SchemaLensGeneratedTests
         await Assert.That(defusing.WireType).IsEqualTo(WireType.IntLane);
         await Assert.That(defusing.Transform).IsEqualTo(LensTransform.None);
 
-        // Handle: honest object lane (boxed raw wire handle) with the HandleIndex marker.
+        // Handle: the raw wire handle typed on the long lane, with the HandleIndex marker.
         FieldRule activeWeapon = state.Fields["CCSPlayerPawn"]["m_pWeaponServices.m_hActiveWeapon"];
-        await Assert.That(activeWeapon.WireType).IsEqualTo(WireType.ObjectLane);
+        await Assert.That(activeWeapon.WireType).IsEqualTo(WireType.LongLane);
         await Assert.That(activeWeapon.Transform).IsEqualTo(LensTransform.HandleIndex);
 
         // Prefix layout reaches inherited fields on concrete classes: CAK47 lanes the

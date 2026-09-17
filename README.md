@@ -14,12 +14,61 @@ set of all three. Intra-family dependencies are exact-pinned; upgrade the family
 
 ## Quick start
 
+Four baseline rulesets ship embedded in the analysis assembly, so a consumer with no rules
+directory on disk gets working output from a file path alone:
+
+```csharp
+using CS2DemoKit.Analysis;
+using CS2DemoKit.Analysis.Yaml;
+
+RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+AnalysisRun run = DemoAnalysis.Run("match.dem", rules.Rulesets);
+
+foreach (HighlightFired hl in run.Highlights)
+{
+    Console.WriteLine($"[{hl.RulesetId}.{hl.HighlightId}] tick {hl.Tick} slot {hl.PlayerSlot}: {hl.RenderedTitle}");
+}
+```
+
+That is the forward path: the demo is read once, front to back, decoding only what the rules
+consume and dropping each frame behind the evaluation loop, so memory stays flat whatever the
+demo's size (`docs/perf/baseline.md` has the numbers). `run.Demo` holds the demo's final facts
+(map, tick rate, roster) and `run.Provenance` says what actually ran: which source, which profile
+and how it was resolved, the decode plan, the digest producer.
+
+Reading the demo yourself works the same way. Ask for what you need and walk the frames:
+
 ```csharp
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 using CS2OpenSchema.Events;
 
+using DemoReader reader = DemoReader.OpenFile("match.dem", new ParseOptions { Plan = DecodePlan.GameEventsOnly });
+foreach (DemoFrame frame in reader.ReadFrames())
+{
+    foreach (NetMessage msg in frame.DecodedMessages)
+    {
+        if (msg is GameEventMessage { DecodedEvent.Payload: PlayerDeathEvent death } evt)
+        {
+            Console.WriteLine($"tick {evt.DecodedEvent.GameTick}: {death.Attacker} killed {death.UserId} with {death.Weapon}");
+        }
+    }
+}
+```
+
+`DecodePlan` says which message categories are decoded, which game events are kept, and whether
+the packet structure is recorded; `Everything`, `StructureOnly`, `GameEventsOnly` and
+`EntityReplay` are the presets. Each `GameEvent` is an envelope, frame and tick metadata plus a
+`Payload` holding the typed record from the CS2OpenDev SDK; synthesized events (entity-derived
+fires that never appeared on the wire) carry a null payload, which is why the pattern match is the
+access route rather than a cast.
+
+A viewer that seeks and inspects after the run keeps everything instead (a consumer on 0.11.0
+starts at `docs/migrating-to-0.12.md`):
+
+```csharp
 ParsedDemo demo = MemoryMappedDemoSource.ParseFile("match.dem");
+AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets);   // snapshots on by default over a ParsedDemo
 
 foreach (GameEvent evt in demo.AllGameEvents)
 {
@@ -30,21 +79,6 @@ foreach (GameEvent evt in demo.AllGameEvents)
 }
 ```
 
-Each `GameEvent` is an envelope — frame and tick metadata plus a `Payload` holding the typed record
-from the CS2OpenDev SDK. Synthesized events (entity-derived fires that never appeared on the wire)
-carry a null payload, which is why the pattern match is the access route rather than a cast.
-
-Analysis runs rulesets over a parsed demo. Four baseline rulesets ship embedded in the assembly, so
-a consumer with no rules directory on disk still gets working output:
-
-```csharp
-using CS2DemoKit.Analysis;
-using CS2DemoKit.Analysis.Yaml;
-
-RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
-AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets);
-```
-
 `Run` is `Build` then `Evaluate`. Split them when you want to compile a graph once and evaluate it
 against several demos, or to pass `AnalysisOptions` to only one of the two:
 
@@ -52,6 +86,10 @@ against several demos, or to pass `AnalysisOptions` to only one of the two:
 BuildResult build = DemoAnalysis.Build(demo, rules.Rulesets);   // CS2DemoKit.Analysis.Graphs
 AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
 ```
+
+Over a stream the same split is `DemoAnalysis.Build(reader, rules)`, then
+`reader.Configure(DemoAnalysis.PlanDecode(build))`, then `DemoAnalysis.Evaluate(reader, build)`,
+which is what `Run(path, rules)` does.
 
 ### Line of sight — `enemy_spotted`
 

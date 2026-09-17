@@ -59,7 +59,7 @@ internal sealed record BenchOptions
     }
 
     /// <summary>The commit the measurement was taken at, so a CSV is traceable to a tree.</summary>
-    private static string? GitDescribe()
+    internal static string? GitDescribe()
     {
         try
         {

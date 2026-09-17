@@ -3,7 +3,6 @@
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
-using CS2DemoKit.Parser;
 
 #endregion
 
@@ -14,7 +13,7 @@ namespace CS2DemoKit.Analysis;
 ///     calls <see cref="Materialize" /> for each newly-discovered player slot, producing concrete
 ///     nodes, edges, column assignments, and edge descriptors.
 /// </summary>
-public sealed class PerPlayerNodeTemplate(Func<int, int, string, ParsedDemo?, PerPlayerNodeTemplate.MaterializedPlayer> factory)
+public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTemplate.MaterializedPlayer> factory)
 {
     /// <summary>
     ///     Invokes the underlying factory to produce concrete nodes, edges, column assignments,
@@ -23,9 +22,8 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, ParsedDemo?, Pe
     /// <param name="playerSlot">The CS2 player slot (0...N-1) for the materialized player.</param>
     /// <param name="playerIndex">Materialization order index — used to assign columns deterministically.</param>
     /// <param name="playerName">Display name for this player, included in node subtitles.</param>
-    /// <param name="demo">Optional reference to the parsed demo for callers that need wider context.</param>
-    public MaterializedPlayer Materialize(int playerSlot, int playerIndex, string playerName, ParsedDemo? demo) =>
-        factory(playerSlot, playerIndex, playerName, demo);
+    public MaterializedPlayer Materialize(int playerSlot, int playerIndex, string playerName) =>
+        factory(playerSlot, playerIndex, playerName);
 
     /// <summary>The materialization output for one player: nodes, edges, column assignments, and edge descriptors.</summary>
     /// <param name="PlayerSlot">The CS2 player slot this materialization is for.</param>

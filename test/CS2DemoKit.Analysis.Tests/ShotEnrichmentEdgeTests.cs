@@ -7,6 +7,8 @@ using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 using CS2DemoKit.TestSupport;
@@ -61,7 +63,7 @@ public class ShotEnrichmentEdgeTests
 
     private static EvaluationContext Context(NetMessage msg) => new(msg, new DemoFrame
     {
-        Command = "DEM_Packet",
+        CommandKind = EDemoCommands.DemPacket,
         FrameNumber = 0,
         ServerTick = 0,
         RawStart = 0,

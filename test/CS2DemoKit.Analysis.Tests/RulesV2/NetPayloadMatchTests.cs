@@ -241,7 +241,7 @@ public class NetPayloadMatchTests
 
         RuleChainBuilder builder = new(EventRegistry.Build());
         BuildResult build = builder.Build([rs]);
-        return build.Graph.PerPlayerTemplates[^1].Materialize(0, 0, "test", null);
+        return build.Graph.PerPlayerTemplates[^1].Materialize(0, 0, "test");
     }
 
     private static StateEdge FindWriteEdge(PerPlayerNodeTemplate.MaterializedPlayer player, string writtenNodeName) =>

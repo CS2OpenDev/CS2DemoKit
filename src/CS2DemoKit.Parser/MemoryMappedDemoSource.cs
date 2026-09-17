@@ -335,6 +335,22 @@ public sealed unsafe class MemoryMappedDemoSource : IDisposable
     }
 
     /// <summary>
+    ///     <see cref="ParseFile(string,DemoProfile?)" /> with <see cref="ParseOptions" />, which is how a
+    ///     <see cref="DecodePlan" /> reaches a mapped parse.
+    /// </summary>
+    /// <param name="path">Path to the .dem file.</param>
+    /// <param name="options">The per-parse knobs; never <c>null</c>.</param>
+    /// <param name="profileOverride">Optional explicit <see cref="DemoProfile" />.</param>
+    public static ParsedDemo ParseFile(string path, ParseOptions options, DemoProfile? profileOverride = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        using MemoryMappedDemoSource src = Open(path);
+        ParsedDemo demo = DemoParser.Parse(src.Memory, options, profileOverride);
+        GC.KeepAlive(src);
+        return demo;
+    }
+
+    /// <summary>
     ///     Bridges the unmanaged view pointer to <see cref="ReadOnlyMemory{T}" />. Instances are owned
     ///     one-to-one by their <see cref="MemoryMappedDemoSource" /> and never handed out directly.
     /// </summary>

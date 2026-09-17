@@ -23,18 +23,6 @@ namespace CS2DemoKit.Parser.Tests;
 [Category("Unit")]
 public class StringTableBoundsTests
 {
-    /// <summary>
-    ///     S14 hygiene: the swallow paths here Warn without ever constructing a
-    ///     <see cref="ParsedDemo" />, stranding [ThreadStatic] warnings on this pool thread for
-    ///     whatever runs on it next (the mechanism behind the ±1 Warnings.Count flake). This
-    ///     drain is BEST-EFFORT residue reduction only — an async test body may resume on a
-    ///     different thread than it warned on, and hook thread-affinity is not guaranteed — so
-    ///     count-sensitive tests must still pre-drain on their own thread; see
-    ///     <c>ParseOptionsTests.EmptyOptions_ParsesIdenticallyToTheOptionsLessOverload</c>.
-    /// </summary>
-    [After(Test)]
-    public void DrainStrandedWarnings() => ParseDiagnostics.Drain();
-
     private static StringTableProcessor.TableState VarintTable() =>
         new("userinfo")
         {
@@ -287,12 +275,11 @@ public class StringTableBoundsTests
     [Test]
     public async Task ProcessCreate_CorruptCompressedTable_SwallowsAndWarns()
     {
-        ParseDiagnostics.Drain(); // this thread's residue is not ours; see the class-level note
         StringTableProcessor processor = new();
 
         processor.ProcessCreate(CompressedUserinfo(CompressedDeclaring(64)));
 
-        IReadOnlyList<ParseWarning> warnings = ParseDiagnostics.Drain();
+        IReadOnlyList<ParseWarning> warnings = processor.Diagnostics.Drain();
         await Assert.That(warnings).HasCount().EqualTo(1);
         await Assert.That(warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
         await Assert.That(processor.Players.Count).IsEqualTo(0);
@@ -302,12 +289,11 @@ public class StringTableBoundsTests
     [Test]
     public async Task ProcessCreate_CompressedLengthAboveTheCap_SwallowsAndWarns()
     {
-        ParseDiagnostics.Drain();
         StringTableProcessor processor = new();
 
         processor.ProcessCreate(CompressedUserinfo(CompressedDeclaring((16 * 1024 * 1024) + 1)));
 
-        IReadOnlyList<ParseWarning> warnings = ParseDiagnostics.Drain();
+        IReadOnlyList<ParseWarning> warnings = processor.Diagnostics.Drain();
         await Assert.That(warnings).HasCount().EqualTo(1);
         await Assert.That(warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
     }
@@ -316,12 +302,11 @@ public class StringTableBoundsTests
     [Test]
     public async Task ProcessCreate_CompressedLengthWrappingNegative_SwallowsAndWarns()
     {
-        ParseDiagnostics.Drain();
         StringTableProcessor processor = new();
 
         processor.ProcessCreate(CompressedUserinfo(CompressedDeclaring(2147483648u)));
 
-        IReadOnlyList<ParseWarning> warnings = ParseDiagnostics.Drain();
+        IReadOnlyList<ParseWarning> warnings = processor.Diagnostics.Drain();
         await Assert.That(warnings).HasCount().EqualTo(1);
         await Assert.That(warnings[0].Code).IsEqualTo(ParseWarningCodes.StringTableCreateFailed);
         await Assert.That(warnings[0].Message).Contains("InvalidDataException")

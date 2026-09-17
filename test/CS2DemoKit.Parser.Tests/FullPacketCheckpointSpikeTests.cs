@@ -3,6 +3,8 @@
 using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.TestSupport;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Parser.Tests;
@@ -104,7 +106,7 @@ public class FullPacketCheckpointSpikeTests
             // baselines land before the ENTERPVS that consumes them.
             DemoFrame checkpoint = new()
             {
-                Command = "DEM_Packet",
+                CommandKind = EDemoCommands.DemPacket,
                 FrameNumber = fp.FrameNumber,
                 ServerTick = fp.ServerTick,
                 HeaderLength = 0,

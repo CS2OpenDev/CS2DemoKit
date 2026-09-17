@@ -5,6 +5,8 @@ using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 using CS2DemoKit.TestSupport;
@@ -42,7 +44,7 @@ public class DeclaredReadsTopologyTests
 {
     private static DemoFrame Frame(params NetMessage[] msgs) => new()
     {
-        Command = "DEM_Packet",
+        CommandKind = EDemoCommands.DemPacket,
         FrameNumber = 0,
         ServerTick = 0,
         RawStart = 0,
@@ -212,7 +214,7 @@ public class DeclaredReadsTopologyTests
         List<ConjunctionNode> materializedConjunctions = [];
 
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             GenericBoolNode primary = new($"primary_unread_p{slot}");
             GenericValueNode<int> extra = new($"additional_written_p{slot}");
@@ -242,7 +244,7 @@ public class DeclaredReadsTopologyTests
         List<DisjunctionNode> materializedDisjunctions = [];
 
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             GenericBoolNode primary = new($"dj_primary_unread_p{slot}");
             GenericValueNode<int> extra = new($"dj_additional_written_p{slot}");

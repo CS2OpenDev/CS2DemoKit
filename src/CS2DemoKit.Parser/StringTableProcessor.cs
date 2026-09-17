@@ -131,6 +131,15 @@ internal sealed class StringTableProcessor
 
     private readonly Dictionary<int, PlayerInfo> _players = new();
 
+    /// <param name="diagnostics">The owning parse's warning channel; a private one when null.</param>
+    public StringTableProcessor(ParseDiagnostics? diagnostics = null)
+    {
+        Diagnostics = diagnostics ?? new ParseDiagnostics();
+    }
+
+    /// <summary>Where the swallow paths report. Shared with the parse that owns this processor.</summary>
+    public ParseDiagnostics Diagnostics { get; }
+
     /// <summary>
     ///     Snapshot of all known players, keyed by slot (0–63), after each update.
     /// </summary>
@@ -171,7 +180,7 @@ internal sealed class StringTableProcessor
                 Debug.WriteLine($"[StringTableProcessor] CreateStringTable decode error for '{msg.Name}': {ex.Message}");
                 // S11 diagnostics channel (v0.6.0): Debug.WriteLine is [Conditional("DEBUG")] — a
                 // Release build saw NOTHING, and every table rejected = a silent no-player parse.
-                ParseDiagnostics.Warn(ParseWarningCodes.StringTableCreateFailed,
+                Diagnostics.Warn(ParseWarningCodes.StringTableCreateFailed,
                     $"String table '{msg.Name}' failed to decode and was skipped ({ex.GetType().Name}).");
             }
         }
@@ -223,7 +232,7 @@ internal sealed class StringTableProcessor
                     Debug.WriteLine(
                         $"[StringTableProcessor] snapshot for '{table.TableName}' exceeds "
                         + $"{MaxEntriesPerTable} entries; ignoring the remainder.");
-                    ParseDiagnostics.Warn(ParseWarningCodes.StringTableTruncated,
+                    Diagnostics.Warn(ParseWarningCodes.StringTableTruncated,
                         $"String-table snapshot '{table.TableName}' exceeds {MaxEntriesPerTable} entries; "
                         + "the remainder was ignored.");
                     break;
@@ -272,7 +281,7 @@ internal sealed class StringTableProcessor
             catch (Exception ex)
             {
                 Debug.WriteLine($"[StringTableProcessor] UpdateStringTable decode error for table id {msg.TableId}: {ex.Message}");
-                ParseDiagnostics.Warn(ParseWarningCodes.StringTableUpdateFailed,
+                Diagnostics.Warn(ParseWarningCodes.StringTableUpdateFailed,
                     $"An update to string table '{state.Name}' failed to decode and was skipped "
                     + $"({ex.GetType().Name}).");
             }
@@ -573,7 +582,7 @@ internal sealed class StringTableProcessor
                 // never-occupied slot is normal churn and stays quiet.)
                 if (_players.Remove(slot))
                 {
-                    ParseDiagnostics.Warn(ParseWarningCodes.PlayerInfoUnreadable,
+                    Diagnostics.Warn(ParseWarningCodes.PlayerInfoUnreadable,
                         $"Player slot {slot}'s userinfo became unreadable; the player was dropped from the roster.");
                 }
             }

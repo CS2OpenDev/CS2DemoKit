@@ -24,7 +24,7 @@ public static class GeneratedLensRegistry
     ///     it matches — a mismatch means the emitted literals drifted from the
     ///     derivation (re-run codegen against the pinned SDK release).
     /// </summary>
-    public const string LensHash = "sha256:0799d9ea632962b78a86d9058ec3a5eef1de43cf96a4fbbfbca796ac2319da66";
+    public const string LensHash = "sha256:9906b60aa988ee0c1a62c8a0a328fd8b1c0927de2e31ef2e5a28814bf2ca98bb";
 
     /// <summary>
     ///     Constructs and returns the <see cref="LensState" /> encoded at codegen time.
@@ -102,26 +102,26 @@ public static class GeneratedLensRegistry
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CBaseCSGrenade"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CBaseCSGrenadeProjectile"] = new()
         {
@@ -134,37 +134,37 @@ public static class GeneratedLensRegistry
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecZ"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 2),
             ["m_bDetonationRecorded"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_flSpawnTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
-            ["m_hOriginalThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
+            ["m_hOriginalThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CBasePlayerWeapon"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CC4"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CCSGameRules"] = new()
         {
@@ -201,8 +201,8 @@ public static class GeneratedLensRegistry
             ["m_pGameRules.m_nCTsAliveAtFreezetimeEnd"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 13),
             ["m_pGameRules.m_nTerroristsAliveAtFreezetimeEnd"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 14),
             ["m_pGameRules.m_totalRoundsPlayed"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 15),
-            ["m_pGameRules.m_vMinimapMaxs"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
-            ["m_pGameRules.m_vMinimapMins"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 2),
+            ["m_pGameRules.m_vMinimapMaxs"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_pGameRules.m_vMinimapMins"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CCSPlayerController"] = new()
         {
@@ -211,8 +211,8 @@ public static class GeneratedLensRegistry
             ["m_bPawnHasDefuser"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_bPawnHasHelmet"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_bPawnIsAlive"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_hPawn"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
-            ["m_hPlayerPawn"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hPawn"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hPlayerPawn"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
             ["m_iCompetitiveRanking"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_iCompetitiveWins"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_iConnected"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
@@ -223,7 +223,7 @@ public static class GeneratedLensRegistry
             ["m_iPing"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 12),
             ["m_iScore"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 13),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 14),
-            ["m_iszPlayerName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 2),
+            ["m_iszPlayerName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_pActionTrackingServices.m_flTotalRoundDamageDealt"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
             ["m_pActionTrackingServices.m_iNumRoundKills"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 15),
             ["m_pActionTrackingServices.m_iNumRoundKillsHeadshots"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 16),
@@ -235,8 +235,8 @@ public static class GeneratedLensRegistry
             ["m_pInGameMoneyServices.m_iCashSpentThisRound"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 22),
             ["m_pInGameMoneyServices.m_iStartAccount"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 23),
             ["m_pInGameMoneyServices.m_iTotalCashSpent"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 24),
-            ["m_sSanitizedPlayerName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 3),
-            ["m_steamID"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
+            ["m_sSanitizedPlayerName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_steamID"] = new FieldRule(WireType.LongLane, LensTransform.None, LensSlot: 2),
         };
         state.Fields["CCSPlayerPawn"] = new()
         {
@@ -248,7 +248,7 @@ public static class GeneratedLensRegistry
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecX"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecY"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 1),
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecZ"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 2),
-            ["m_angEyeAngles"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_angEyeAngles"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
             ["m_bInBombZone"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_bInBuyZone"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_bIsDefusing"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
@@ -260,9 +260,9 @@ public static class GeneratedLensRegistry
             ["m_flDeathTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 5),
             ["m_flFlashDuration"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 6),
             ["m_flFlashMaxAlpha"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 7),
-            ["m_hController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hOriginalController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 4),
+            ["m_hController"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOriginalController"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iDeathFlags"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 10),
             ["m_iHealth"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 11),
             ["m_iMaxHealth"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 12),
@@ -274,18 +274,18 @@ public static class GeneratedLensRegistry
             ["m_pItemServices.m_bHasHelmet"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 18),
             ["m_pMovementServices.m_flDuckAmount"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 8),
             ["m_pMovementServices.m_flStamina"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 9),
-            ["m_pMovementServices.m_nButtons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_pObserverServices.m_hObserverTarget"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 6),
+            ["m_pMovementServices.m_nButtons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pObserverServices.m_hObserverTarget"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 3),
             ["m_pObserverServices.m_iObserverMode"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 19),
-            ["m_pWeaponServices.m_hActiveWeapon"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 7),
-            ["m_pWeaponServices.m_hLastWeapon"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 8),
-            ["m_pWeaponServices.m_hMyWeapons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 9),
-            ["m_szLastPlaceName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 10),
+            ["m_pWeaponServices.m_hActiveWeapon"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 4),
+            ["m_pWeaponServices.m_hLastWeapon"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 5),
+            ["m_pWeaponServices.m_hMyWeapons"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 2),
+            ["m_szLastPlaceName"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 3),
             ["m_unCurrentEquipmentValue"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 20),
             ["m_unFreezetimeEndEquipmentValue"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 21),
             ["m_unRoundStartEquipmentValue"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 22),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 11),
-            ["v_angle"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 12),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
+            ["v_angle"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CCSPlayerPawnBase"] = new()
         {
@@ -293,7 +293,7 @@ public static class GeneratedLensRegistry
             ["m_blindUntilTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 1),
             ["m_flFlashDuration"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 2),
             ["m_flFlashMaxAlpha"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
-            ["m_hOriginalController"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOriginalController"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iPlayerState"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CCSTeam"] = new()
@@ -306,51 +306,51 @@ public static class GeneratedLensRegistry
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CCSWeaponBaseShotgun"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CDEagle"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CDecoyGrenade"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CDecoyProjectile"] = new()
         {
@@ -365,28 +365,28 @@ public static class GeneratedLensRegistry
             ["m_decoyWeaponDefIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_fExpireTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
             ["m_flSpawnTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 4),
-            ["m_hOriginalThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
+            ["m_hOriginalThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_nDecoyShotTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
             ["m_shotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 9),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CFlashbang"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CFlashbangProjectile"] = new()
         {
@@ -400,28 +400,28 @@ public static class GeneratedLensRegistry
             ["m_bDetonationRecorded"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_flSpawnTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
             ["m_flTimeToDetonate"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 4),
-            ["m_hOriginalThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
+            ["m_hOriginalThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_numOpponentsHit"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_numTeammatesHit"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CHEGrenade"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CHEGrenadeProjectile"] = new()
         {
@@ -434,26 +434,26 @@ public static class GeneratedLensRegistry
             ["m_CBodyComponent.m_pSceneNode.m_vecOrigin.m_vecZ"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 2),
             ["m_bDetonationRecorded"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_flSpawnTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
-            ["m_hOriginalThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
+            ["m_hOriginalThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CIncendiaryGrenade"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CInferno"] = new()
         {
@@ -462,24 +462,24 @@ public static class GeneratedLensRegistry
         state.Fields["CKnife"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CMolotovGrenade"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CMolotovProjectile"] = new()
         {
@@ -494,15 +494,15 @@ public static class GeneratedLensRegistry
             ["m_bDetonationRecorded"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_bIsIncGrenade"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_flSpawnTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
-            ["m_hOriginalThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
+            ["m_hOriginalThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CPlantedC4"] = new()
         {
@@ -522,19 +522,19 @@ public static class GeneratedLensRegistry
             ["m_flDefuseCountDown"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 4),
             ["m_flDefuseLength"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 5),
             ["m_flTimerLength"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 6),
-            ["m_hBombDefuser"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hBombDefuser"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_nBombSite"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
         };
         state.Fields["CSmokeGrenade"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CSmokeGrenadeProjectile"] = new()
         {
@@ -550,471 +550,471 @@ public static class GeneratedLensRegistry
             ["m_bDidSmokeEffect"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_bExplodeFromInferno"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
             ["m_flSpawnTime"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 3),
-            ["m_hOriginalThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 1),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 2),
-            ["m_hThrower"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 3),
+            ["m_hOriginalThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 1),
+            ["m_hThrower"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 2),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
             ["m_nBounces"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 8),
             ["m_nItemIndex"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 9),
             ["m_nSmokeEffectTickBegin"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 10),
-            ["m_vInitialPosition"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 4),
-            ["m_vInitialVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 5),
-            ["m_vSmokeColor"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 6),
-            ["m_vSmokeDetonationPos"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 7),
-            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 8),
+            ["m_vInitialPosition"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 0),
+            ["m_vInitialVelocity"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 1),
+            ["m_vSmokeColor"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 2),
+            ["m_vSmokeDetonationPos"] = new FieldRule(WireType.VectorLane, LensTransform.None, LensSlot: 3),
+            ["m_vecVelocity"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
         };
         state.Fields["CWeaponAWP"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponAug"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponBizon"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponCZ75a"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponElite"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponFamas"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponFiveSeven"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponG3SG1"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponGalilAR"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponGlock"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponHKP2000"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponM249"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponM4A1"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponM4A1Silencer"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponMAC10"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponMP5SD"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponMP7"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponMP9"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponMag7"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponNOVA"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CWeaponNegev"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponP250"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponP90"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponRevolver"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponSCAR20"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponSG556"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponSSG08"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponSawedoff"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
         state.Fields["CWeaponTaser"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponTec9"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponUMP45"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponUSPSilencer"] = new()
         {
             ["m_bNeedsBoltAction"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iBurstShotsRemaining"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 5),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 6),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
             ["m_zoomLevel"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 7),
         };
         state.Fields["CWeaponXM1014"] = new()
         {
             ["m_flNextPrimaryAttackTickRatio"] = new FieldRule(WireType.FloatLane, LensTransform.None, LensSlot: 0),
-            ["m_hOwnerEntity"] = new FieldRule(WireType.ObjectLane, LensTransform.HandleIndex, LensSlot: 0),
+            ["m_hOwnerEntity"] = new FieldRule(WireType.LongLane, LensTransform.HandleIndex, LensSlot: 0),
             ["m_iClip1"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 0),
             ["m_iClip2"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 1),
             ["m_iTeamNum"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 2),
             ["m_nNextPrimaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 3),
             ["m_nNextSecondaryAttackTick"] = new FieldRule(WireType.IntLane, LensTransform.None, LensSlot: 4),
-            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 1),
+            ["m_pReserveAmmo"] = new FieldRule(WireType.ObjectLane, LensTransform.None, LensSlot: 0),
         };
 
         // ── Alias map ─────────────────────────────────────────────────────

@@ -15,6 +15,8 @@ using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 using CS2DemoKit.TestSupport;
@@ -252,7 +254,7 @@ public class CaptureKeepMinMaxTests
         GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(fire);
         DemoFrame frame = new()
         {
-            Command = "DEM_Packet",
+            CommandKind = EDemoCommands.DemPacket,
             FrameNumber = 0,
             ServerTick = 0,
             RawStart = 0,
@@ -294,7 +296,7 @@ public class CaptureKeepMinMaxTests
         Dictionary<string, StateNode> merged = new(StringComparer.OrdinalIgnoreCase);
         foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
         {
-            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test", null);
+            PerPlayerNodeTemplate.MaterializedPlayer player = template.Materialize(0, 0, "test");
             if (player.NodesByRuleId is { } byId)
             {
                 foreach ((string key, StateNode node) in byId)

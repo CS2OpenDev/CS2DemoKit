@@ -23,14 +23,6 @@ namespace CS2DemoKit.Parser.Tests;
 [Category("Unit")]
 public class StringTableWireFormatTests
 {
-    /// <summary>
-    ///     Warnings here are raised without ever constructing a <see cref="ParsedDemo" />, which would
-    ///     otherwise strand them on this pool thread — see the same hook on
-    ///     <see cref="StringTableBoundsTests" />.
-    /// </summary>
-    [After(Test)]
-    public void DrainStrandedWarnings() => ParseDiagnostics.Drain();
-
     private static StringTableProcessor.TableState VarintTable() =>
         new("userinfo")
         {

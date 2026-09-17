@@ -28,6 +28,12 @@ internal static class FieldDecoderFactory
             };
         }
 
+        return TryCreateKnown(field, enc) ?? Fallback(field, enc);
+    }
+
+    /// <summary>The decoder for a type the factory names, or null for one it does not.</summary>
+    private static FieldDecoder? TryCreateKnown(RuntimeField field, FieldEncodingInfo enc)
+    {
         string type = StripTemplateArgs(field.TypeName);
 
         return type switch
@@ -67,8 +73,7 @@ internal static class FieldDecoderFactory
             "GameTime" or "GameTime_t" => (ref b) => b.ReadFloat(),
             "GameTick" => UInt32(enc), // uint alias
             "CNetworkedQuantizedFloat" => Float(enc), // Float() routes bc>=32 to raw ReadFloat; see TryCreateFloat comment.
-            // Array element type — fall through to dynamic decode below
-            _ => Fallback(field, enc)
+            _ => null
         };
     }
 
@@ -167,7 +172,9 @@ internal static class FieldDecoderFactory
             "int16" or "short" => (ref b) => (short)b.ReadVarInt32(),
             "int32" or "int" => (ref b) => b.ReadVarInt32(),
             "GameTick" => (ref b) => (int)b.ReadUVarInt32(),
-            _ => null
+            _ => TryCreateKnown(field, enc) is null && IsEnumLike(field)
+                ? static (ref b) => (int)b.ReadUVarInt64()
+                : null
         };
     }
 
@@ -348,6 +355,12 @@ internal static class FieldDecoderFactory
 
     private static FieldDecoder QAngle(FieldEncodingInfo enc)
     {
+        Vector3Decoder typed = QAngleTyped(enc);
+        return (ref b) => typed(ref b);
+    }
+
+    private static Vector3Decoder QAngleTyped(FieldEncodingInfo enc)
+    {
         // qangle_pitch_yaw: 2 components with BitCount bits each
         if (enc.VarEncoder == "qangle_pitch_yaw")
         {
@@ -508,6 +521,37 @@ internal static class FieldDecoderFactory
 
     private static FieldDecoder UInt64(FieldEncodingInfo enc)
     {
+        UInt64Decoder typed = UInt64Typed(enc);
+        return (ref b) => typed(ref b);
+    }
+
+    /// <summary>
+    ///     A typed decoder for the 64-bit unsigned scalar types, the entity handle types and every
+    ///     type the factory does not name that is not enum-like (all of them one unsigned varint on
+    ///     the wire), or null. A handle is the raw wire varint; masking belongs to the reader.
+    /// </summary>
+    public static UInt64Decoder? TryCreateUInt64(RuntimeField field)
+    {
+        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
+        return StripTemplateArgs(field.TypeName) switch
+        {
+            "uint64" or "ulong" => UInt64Typed(enc),
+            "CHandle" or "CStrongHandle" or "CEntityHandle" => static (ref b) => b.ReadUVarInt64(),
+            _ => TryCreateKnown(field, enc) is null && !IsEnumLike(field)
+                ? static (ref b) => b.ReadUVarInt64()
+                : null
+        };
+    }
+
+    // The fallback family: every type the factory does not name decodes as one unsigned varint.
+    // Enum-like fields carry small values and take the int lane; the rest stay wide.
+    private static bool IsEnumLike(RuntimeField field) =>
+        (field.Name.Length > 4 && field.Name.StartsWith("m_e", StringComparison.Ordinal) && char.IsUpper(field.Name[3]))
+        || IsEnumType(field.TypeName)
+        || field.TypeName is "CSPlayerState" or "PlayerConnectedState";
+
+    private static UInt64Decoder UInt64Typed(FieldEncodingInfo enc)
+    {
         if (enc.VarEncoder == "fixed64")
         {
             return (ref b) => ReadFixed64(ref b);
@@ -572,17 +616,38 @@ internal static class FieldDecoderFactory
 
     private static FieldDecoder Vec3(FieldEncodingInfo enc)
     {
+        Vector3Decoder typed = Vec3Typed(enc);
+        return (ref b) => typed(ref b);
+    }
+
+    /// <summary>
+    ///     A typed decoder for the three-component vector and angle types, or null for any other
+    ///     type. What the vector lane stores; the boxing decoders above wrap the same code.
+    /// </summary>
+    public static Vector3Decoder? TryCreateVector3(RuntimeField field)
+    {
+        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
+        return StripTemplateArgs(field.TypeName) switch
+        {
+            "Vector" or "VectorWS" => Vec3Typed(enc),
+            "QAngle" => QAngleTyped(enc),
+            _ => null
+        };
+    }
+
+    private static Vector3Decoder Vec3Typed(FieldEncodingInfo enc)
+    {
         if (enc.VarEncoder == "normal")
         {
-            return (ref b) => { return b.Read3BitNormal(); };
+            return (ref b) => b.Read3BitNormal();
         }
 
-        FieldDecoder fd = Float(enc);
+        FloatDecoder fd = BuildFloatDecoder(enc);
         return (ref b) =>
         {
-            float x = (float)fd(ref b)!;
-            float y = (float)fd(ref b)!;
-            float z = (float)fd(ref b)!;
+            float x = fd(ref b);
+            float y = fd(ref b);
+            float z = fd(ref b);
             return new Vector3(x, y, z);
         };
     }

@@ -61,15 +61,6 @@ public class ParseOptionsTests
         (int Frames, int Events, int Players, int Ticks, int Warnings) Shape(ParsedDemo d) =>
             (d.Frames.Count, d.AllGameEvents.Count, d.Players.Count, d.TickCount, d.Warnings.Count);
 
-        // S14 (the ±1 Warnings.Count flake, root-caused 2026-08-14): Warn's backing store is
-        // [ThreadStatic] and StringTableBoundsTests' hostile-table paths call Warn through
-        // DecodeEntries without ever constructing a ParsedDemo, stranding warnings on a pool
-        // thread. The FIRST parse below then drains that residue into ITS result while the
-        // second parses clean — the exact ±1 this test flaked with. Drain here is airtight:
-        // no await sits between it and the two synchronous Parse calls, so all three run on
-        // this one thread. Same idiom as the other count-sensitive tests in this file.
-        ParseDiagnostics.Drain();
-
         (int, int, int, int, int) withoutOptions = Shape(DemoParser.Parse(bytes.AsMemory()));
         (int, int, int, int, int) withEmptyOptions = Shape(DemoParser.Parse(bytes.AsMemory(), new ParseOptions()));
 
@@ -201,7 +192,7 @@ public class ParseOptionsTests
 
     /// <summary>
     ///     The cap constrains the real pass-2 fan-out. <c>DemoParser</c> exposes no per-worker
-    ///     factory seam (unlike <c>ParallelDigestProducer</c>), so the probe rides the one hook
+    ///     factory seam, so the probe rides the one hook
     ///     <see cref="ParseOptions" /> gives into the loop body: <see cref="ParseOptions.Progress" />
     ///     is reported from the pass-2 worker threads, so holding briefly inside it makes concurrent
     ///     workers observably overlap.
@@ -402,7 +393,6 @@ public class ParseOptionsTests
     [Test]
     public async Task CountDropSites_OffByDefault_EmitsNoDropWarnings()
     {
-        ParseDiagnostics.Drain();
         byte[] demo = BuildDemo(PacketFrame(
             Message(UnknownTypeId, [1]), Message(UnknownTypeId, [2]),
             Message(UnknownTypeId, [3]), Message(UnknownTypeId, [4])));
@@ -416,7 +406,6 @@ public class ParseOptionsTests
     [Test]
     public async Task CountDropSites_UnknownTypeId_IsCountedUnderItsResolvedName()
     {
-        ParseDiagnostics.Drain();
         byte[] demo = BuildDemo(PacketFrame(
             Message(UnknownTypeId, [1]), Message(UnknownTypeId, [2]),
             Message(UnknownTypeId, [3]), Message(UnknownTypeId, [4])));
@@ -435,7 +424,6 @@ public class ParseOptionsTests
     [Test]
     public async Task CountDropSites_KnownTypeThatFailsToDecode_IsCountedUnderItsProtoName()
     {
-        ParseDiagnostics.Drain();
         byte[] demo = BuildDemo(PacketFrame(
             Message(KnownTypeId, _undecodableProtoBytes), Message(KnownTypeId, _undecodableProtoBytes),
             Message(KnownTypeId, _undecodableProtoBytes), Message(KnownTypeId, _undecodableProtoBytes)));
@@ -459,7 +447,6 @@ public class ParseOptionsTests
     [Test]
     public async Task CountDropSites_TruncatedBitstream_IsCountedOncePerEvent()
     {
-        ParseDiagnostics.Drain();
         // One header declaring 200 payload bytes over a bitstream holding 3, in each of two frames.
         byte[] frame = PacketFrameRaw(new Bits().UBitVar(UnknownTypeId).VarInt(200).Raw(1, 8).Raw(2, 8).Raw(3, 8));
         byte[] demo = BuildDemo(frame, frame);
@@ -481,7 +468,6 @@ public class ParseOptionsTests
     [Test]
     public async Task CountDropSites_ManyDistinctTypes_CapAtTopEightPlusRemainder()
     {
-        ParseDiagnostics.Drain();
         // 12 distinct unknown type IDs, occurrence counts 12, 11, … 1 — so the ranking is total.
         List<Bits> messages = new();
         for (int t = 0; t < 12; t++)
@@ -522,7 +508,6 @@ public class ParseOptionsTests
     [Test]
     public async Task CountDropSites_AreEmittedAfterPass3sOwnWarnings()
     {
-        ParseDiagnostics.Drain();
         // A svc_CreateStringTable that PARSES as protobuf but whose declared entry count cannot fit
         // in its string_data — pass 3 rejects the table and warns. Alongside it, dropped messages.
         byte[] createStringTable = new CSVCMsg_CreateStringTable

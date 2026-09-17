@@ -5,6 +5,8 @@ using CS2DemoKit.Bench;
 //   sweep     run the whole benchmark: one child process per (round, demo), CSV out
 //   compare   interleaved A/B between two published builds, both arms into one CSV
 //   measure   one measured load, one CSV row on stdout (what the other two spawn)
+//   paths     one child per (round, demo, arm): the forward reader against the retained parse,
+//             memory high-water mark per arm, digests gated across paths
 //   rays      per-ray occlusion throughput and work on one bake, old tree and new side by side
 //   build     build cost and memory for both trees per bake, with the eight-wide tree's digest
 //
@@ -15,6 +17,8 @@ return args switch
     ["measure", ..] => Measure(args),
     ["compare", .. var compareArgs] => StartCompare(compareArgs),
     ["sweep", .. var sweepArgs] => StartSweep(sweepArgs),
+    ["paths", .. var pathArgs] => Paths.Start(pathArgs),
+    ["path-measure", ..] => Paths.Measure(args),
     ["rays", .. var raysArgs] => Rays.Run(raysArgs),
     ["build", .. var buildArgs] => Build.Run(buildArgs),
     _ when args.Contains("--help") || args.Contains("-h") => Help(),
@@ -91,6 +95,22 @@ static int Help()
 
         measure <demo.dem> <label> <round>
           one measured load, one CSV row on stdout
+
+        paths [--demos <dir>] [--rounds N] [--cooldown S] [--out <file>] [--label <s>] [--arms a,b,..]
+          one child per (round, demo, arm), demos smallest first. Arms: file-read, message-scan
+          (structure only), game-events, entity-replay (curated tracker off the reader),
+          materialised-replay (the same walk over a retained parse), scoreboard-materialised
+          (shipped rulesets over a retained parse, snapshots on), scoreboard-stream (the same
+          rulesets straight off the file, snapshots off), parse (the whole-file parse, every
+          frame retained) and materialise (the reader's windowed loop with one window over the
+          whole file, every frame retained). Each row carries the arm's wall-clock, allocation,
+          collector cost and the process's sampled memory high-water mark, plus a digest of what
+          it produced; the two replay arms, the two scoreboard arms and the two decode arms must
+          agree per demo or neither row is written. No warm-up, so wall-clock includes JIT.
+          CS2DEMOKIT_PATHS_LIVE=1 forces a compacting collection before every memory sample,
+          so the peak is the live set instead of live plus garbage; it perturbs the arm, so
+          take wall-clock from a run without it. CS2DEMOKIT_PATHS_DOP caps the stream
+          scoreboard's parallelism and CS2DEMOKIT_PATHS_READAHEAD sets the reader arms' window.
 
         The ray path (the enemy_spotted transition scan) is measured only when
         CS2DEMOKIT_COLLISION_DIR names a directory of per-map bakes (<dir>/<map>/collision.tris

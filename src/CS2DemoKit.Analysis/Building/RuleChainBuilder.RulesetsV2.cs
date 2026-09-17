@@ -418,7 +418,7 @@ public sealed partial class RuleChainBuilder
             }
         }
 
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, playerName, demo) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, playerName) =>
         {
             Dictionary<string, StateNode> localLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
             List<StateNode> nodes = [];
@@ -437,7 +437,8 @@ public sealed partial class RuleChainBuilder
             MapStatHashSource hashSource = new(statHashesByPath);
             Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
 
-            _currentPlayerTeam = demo?.Players.TryGetValue(slot, out PlayerInfo? info) == true ? info.Team : null;
+            // No team is known at build time; player.team reads the live context index.
+            _currentPlayerTeam = null;
 
             // Per-player context bridge: materialize the same per-player CONTEXT
             // nodes (alive/survived/traded) v1 builds into THIS template's localLookup, keyed by v1 rule

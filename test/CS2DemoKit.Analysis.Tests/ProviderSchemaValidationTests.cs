@@ -16,14 +16,48 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     every registered provider's field path must EXIST on its class and its declared type
 ///     must be COMPATIBLE with the wire type — both failures throw. Before this, CS2 schema
 ///     drift was silent: the read path's coercion fallback turned a renamed or re-typed field
-///     into eternal nulls/zeros. Covers both decode paths (the parallel-precompute probe layer
-///     and the sequential per-frame hook). DEMO_PATH-gated.
+///     into eternal nulls/zeros. Covers both producers: the pipelined fold judges the schema on
+///     its own worker's tracker and fails the chunk, the sequential path judges it on the
+///     scanner's layer as the loop advances. DEMO_PATH-gated.
 /// </summary>
 [Category("Unit")]
 [NotInParallel]
 public class ProviderSchemaValidationTests
 {
+    // Far enough for the first full packet to land descriptors; a few hundred frames is ample.
+    private const int FramesToDrive = 600;
+
     private static ParsedDemo ParseReference() => DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+
+    /// <summary>
+    ///     Polls the first <paramref name="frames" /> frames through the pipelined producer, as the
+    ///     evaluator would. The schema check runs on the fold worker, so drift fails the chunk and
+    ///     surfaces from the first poll that takes a digest from it.
+    /// </summary>
+    private static int DrivePipelined(EntityChangeScanner scanner, ParsedDemo parsed, int frames)
+    {
+        IDemoFrameSource source = scanner.BeginEvaluation(parsed.AsFrameSource(), null, CancellationToken.None);
+        try
+        {
+            if (scanner.ProducerKind != DigestProducerKind.Pipelined)
+            {
+                throw new InvalidOperationException("the scanner chose the sequential producer");
+            }
+
+            int polled = 0;
+            while (polled < frames && source.TryReadNext(out DemoFrame? frame))
+            {
+                scanner.AdvanceAndPollAt(polled, frame.ServerTick);
+                polled++;
+            }
+
+            return polled;
+        }
+        finally
+        {
+            scanner.EndEvaluation();
+        }
+    }
 
     private static EntityChangeScanner Scanner(
         ParsedDemo parsed, List<IPerPlayerEntityValueProvider> perPlayer) => new(
@@ -41,20 +75,20 @@ public class ProviderSchemaValidationTests
     ///     bool ↔ bool, string ↔ CHandle for the weapon projection).
     /// </summary>
     [Test]
-    public async Task ShippedSpecs_ValidateClean_OnParallelPath()
+    public async Task ShippedSpecs_ValidateClean_OnPipelinedPath()
     {
         ParsedDemo parsed = ParseReference();
         EntityChangeScanner scanner = Scanner(parsed, BuiltinProviderSpecs.CreateGenericPerPlayerProviders());
 
-        scanner.PrecomputeParallelDigests(parsed.Frames);
+        int polled = DrivePipelined(scanner, parsed, FramesToDrive);
 
-        await Assert.That(scanner.PrecomputedDigests).IsNotNull()
-            .Because("clean validation must not disturb the precompute");
+        await Assert.That(polled).IsEqualTo(FramesToDrive)
+            .Because("clean validation must not fail the chunk it ran on");
     }
 
     /// <summary>A misspelled field path on a seen class throws the missing-field drift error.</summary>
     [Test]
-    public async Task MissingField_ThrowsLoudly_OnParallelPath()
+    public async Task MissingField_ThrowsLoudly_OnPipelinedPath()
     {
         ParsedDemo parsed = ParseReference();
         EntityChangeScanner scanner = Scanner(parsed,
@@ -63,14 +97,14 @@ public class ProviderSchemaValidationTests
                 "entity.pawn.bogus", "CCSPlayerPawn", "m_iHealht" /* typo */, typeof(int)))
         ]);
 
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => scanner.PrecomputeParallelDigests(parsed.Frames));
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => DrivePipelined(scanner, parsed, FramesToDrive));
         await Assert.That(ex.Message).Contains("m_iHealht");
         await Assert.That(ex.Message).Contains("does not exist");
     }
 
     /// <summary>A wrong declared type throws the type-drift error (the loud arm).</summary>
     [Test]
-    public async Task WrongDeclaredType_ThrowsLoudly_OnParallelPath()
+    public async Task WrongDeclaredType_ThrowsLoudly_OnPipelinedPath()
     {
         ParsedDemo parsed = ParseReference();
         EntityChangeScanner scanner = Scanner(parsed,
@@ -80,7 +114,7 @@ public class ProviderSchemaValidationTests
                 SchemaNames.CBaseEntity.Health, typeof(bool)))
         ]);
 
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => scanner.PrecomputeParallelDigests(parsed.Frames));
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => DrivePipelined(scanner, parsed, FramesToDrive));
         await Assert.That(ex.Message).Contains("not");
         await Assert.That(ex.Message).Contains("compatible");
     }
@@ -101,9 +135,12 @@ public class ProviderSchemaValidationTests
         {
             // Drive the sequential per-frame path far enough for the first FullPacket to land
             // descriptors (a few hundred frames is ample).
-            for (int f = 0; f < Math.Min(parsed.Frames.Count, 600); f++)
+            foreach ((int index, DemoFrame _, IReadOnlyList<NetMessage> _) in SequentialScan.Frames(scanner, parsed))
             {
-                scanner.AdvanceAndPollAt(f, parsed.Frames[f].ServerTick);
+                if (index >= FramesToDrive)
+                {
+                    break;
+                }
             }
         }
         catch (InvalidOperationException ex)

@@ -93,7 +93,7 @@ public class G1WhereContextConfirmTests
             {
                 // Materialize slot 0 — runs the per-player template lambda that compiles the where:
                 // condition via ExpressionCompiler.CompileEventCondition.
-                _ = template.Materialize(0, 2, "confirm-probe", null);
+                _ = template.Materialize(0, 2, "confirm-probe");
             }
         }
         catch (Exception ex)

@@ -32,13 +32,13 @@ namespace CS2DemoKit.Analysis.Plugins;
 /// </param>
 /// <param name="ViaHandleToClassName">
 ///     Single-hop handle follow: when set, <see cref="Path" /> is ignored,
-///     the handle at THIS path is read instead, resolved via <see cref="PawnLookup.ResolveHandle" />,
+///     the handle at THIS path is read instead, resolved via <see cref="PawnLookup.ResolveHandle(EntityTracker, object?)" />,
 ///     and the target entity's <c>ClassName</c> is the value (the active-weapon pattern).
 /// </param>
 /// <param name="ViaHandleToField">
 ///     Handle-then-field follow (Tier C ammo read): when set, <see cref="Path" /> is ignored;
 ///     the handle at <see cref="HandleFieldHop.HandlePath" /> is read off the subject entity,
-///     resolved via <see cref="PawnLookup.ResolveHandle" />, and
+///     resolved via <see cref="PawnLookup.ResolveHandle(EntityTracker, object?)" />, and
 ///     <see cref="HandleFieldHop.TargetField" /> is read on the RESOLVED entity through its
 ///     seen-gated indexer, then coerced/gated like a direct read. At most one of
 ///     <see cref="ViaHandleToClassName" /> / <see cref="ViaHandleToField" /> may be set.
@@ -423,32 +423,20 @@ public sealed class GenericPerPlayerFieldProvider(ProviderSpec spec)
         return true;
     }
 
-    // ReadForPawn's handle follow with the handle kept unboxed: an int-lane handle goes straight
-    // to IndexOf as the uint ResolveHandle would have unboxed it to.
+    // ReadForPawn's handle follow with the handle kept unboxed: a lane hit goes straight to
+    // IndexOf as the uint ResolveHandle would have unboxed it to.
     private bool TryResolveHop(PawnReadContext context, string handlePath, [NotNullWhen(true)] out EntityState? target)
     {
-        uint handle;
-        switch (PawnCellCoercion.Probe(context.Pawn, handlePath, _pawnCursor, out int lane, out _, out object? boxed))
+        if (!PawnCellCoercion.TryProbeHandle(context.Pawn, handlePath, _pawnCursor, out uint handle))
         {
-            case LaneHit.Int:
-                handle = unchecked((uint)lane);
-                break;
-            case LaneHit.Float:
-                handle = 0;
-                break;
-            case LaneHit.Object:
-                handle = PawnLookup.TryUnboxHandle(boxed);
-                break;
-            default:
-                object? read = context.Wrapper[handlePath];
-                if (read is null)
-                {
-                    target = null;
-                    return false;
-                }
+            object? read = context.Wrapper[handlePath];
+            if (read is null)
+            {
+                target = null;
+                return false;
+            }
 
-                handle = PawnLookup.TryUnboxHandle(read);
-                break;
+            handle = PawnLookup.TryUnboxHandle(read);
         }
 
         int index = PawnLookup.IndexOf(handle);

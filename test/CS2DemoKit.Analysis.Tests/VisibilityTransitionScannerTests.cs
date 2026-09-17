@@ -15,6 +15,8 @@ using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 namespace CS2DemoKit.Analysis.Tests;
@@ -712,7 +714,7 @@ public class VisibilityTransitionScannerTests
             transitionScanner: transitions);
 
         // Frame 0 puts slot 0's crosshair on slot 1's chest; frame 1's decode is compromised.
-        entities.SetPrecomputedDigests(
+        entities.InjectDigests(
         [
             AimDigest(false, (0, AimRow(0f, 0f, -16f, 0f, 0f)), (1, AimRow(500f, 0f, 0f, 0f, 0f))),
             AimDigest(true)
@@ -822,7 +824,7 @@ public class VisibilityTransitionScannerTests
         GameEventMessage msg = GameEventMessage.ForSynthesizedEvent(spotted);
         return edge.TryApplyDirect(spotted, new EvaluationContext(msg, new DemoFrame
         {
-            Command = "DEM_Packet",
+            CommandKind = EDemoCommands.DemPacket,
             FrameNumber = 0,
             ServerTick = tick,
             RawStart = 0,

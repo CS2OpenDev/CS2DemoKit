@@ -27,7 +27,7 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///         <b>Typed-wrapper read path:</b> reads the handle via the SDK-emitted typed wrapper
 ///         <see cref="CSPlayerPawn.ActiveWeaponHandle" /> (raw int — V1 HandleIndex transform
 ///         emits the unmodified wire int; cross-class resolution via
-///         <see cref="PawnLookup.ResolveHandle" /> is kept because concrete weapon classes
+///         <see cref="PawnLookup.ResolveHandle(EntityTracker, object?)" /> is kept because concrete weapon classes
 ///         like <c>CWeaponAK47</c> are not in the curated wrapper set, so the runtime's
 ///         factory dispatch would return null for them). The lane-indexed read replaces
 ///         the prior <c>pawn.Fields[dottedPath]</c> string-hash dict lookup; the second
@@ -119,7 +119,7 @@ public sealed class ActiveWeaponProvider : IPerPlayerEntityValueProvider, IPawnS
 
     /// <summary>
     ///     Reads the active-weapon handle off the pawn via the typed wrapper (lane-indexed,
-    ///     no string hash), then resolves through <see cref="PawnLookup.ResolveHandle" /> to
+    ///     no string hash), then resolves through <see cref="PawnLookup.ResolveHandle(EntityTracker, object?)" /> to
     ///     the live weapon <see cref="EntityState" /> and returns its <c>ClassName</c>.
     ///     Returns <c>null</c> for the zero handle (no weapon equipped) or when the resolved
     ///     slot is empty.
@@ -133,9 +133,6 @@ public sealed class ActiveWeaponProvider : IPerPlayerEntityValueProvider, IPawnS
             return null;
         }
 
-        // PawnLookup.ResolveHandle takes a boxed object?; pass the int as-is. It coerces
-        // to uint internally to match the historical wire-typed unbox behaviour (which
-        // varied across UInt32 / UInt64 depending on the field).
         EntityState? weapon = PawnLookup.ResolveHandle(tracker, handle);
         return weapon?.ClassName;
     }

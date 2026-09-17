@@ -4,6 +4,8 @@ using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
+using CS2OpenSchema.Protos;
+
 #endregion
 
 using CS2DemoKit.TestSupport;
@@ -39,7 +41,7 @@ public class MaterializationGuardTests
     {
         List<int> materialized = [];
         StateGraph graph = new();
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name, _) =>
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, name) =>
         {
             materialized.Add(slot);
             return new PerPlayerNodeTemplate.MaterializedPlayer(slot, name, [], [], [], []);
@@ -49,7 +51,7 @@ public class MaterializationGuardTests
 
     private static DemoFrame Frame(params NetMessage[] msgs) => new()
     {
-        Command = "DEM_Packet",
+        CommandKind = EDemoCommands.DemPacket,
         FrameNumber = 0,
         ServerTick = 0,
         RawStart = 0,
@@ -112,7 +114,7 @@ public class MaterializationGuardTests
         EntityChangeScanner scanner = new(new EntityStateLayer([]), [], null, true);
         EntityFrameDigest digest = new();
         digest.AddMolotov(index: 1, serial: 1, throwerSlot: 7);
-        scanner.SetPrecomputedDigests([digest]);
+        scanner.InjectDigests([digest]);
 
         new StateGraphEvaluator(graph, null, null, scanner).Evaluate([Frame()]);
 
@@ -133,7 +135,7 @@ public class MaterializationGuardTests
         EntityChangeScanner scanner = new(new EntityStateLayer([]), [], null, true);
         EntityFrameDigest digest = new();
         digest.AddMolotov(index: 1, serial: 1, throwerSlot: 64);
-        scanner.SetPrecomputedDigests([digest]);
+        scanner.InjectDigests([digest]);
 
         new StateGraphEvaluator(graph, null, null, scanner).Evaluate([Frame()]);
 

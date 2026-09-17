@@ -12,6 +12,12 @@ public enum WireType
     /// <summary>Float wire type — stored in the float lane. Corresponds to <c>"float"</c> in migration JSON.</summary>
     FloatLane,
 
+    /// <summary>Three-component vector and angle wire types, stored unboxed in the vector lane.</summary>
+    VectorLane,
+
+    /// <summary>64-bit unsigned scalars and entity handles, stored unboxed in the long lane.</summary>
+    LongLane,
+
     /// <summary>
     ///     Object wire type — stored in the object lane (arrays, strings, structs). Corresponds to <c>"object"</c> in
     ///     migration JSON.

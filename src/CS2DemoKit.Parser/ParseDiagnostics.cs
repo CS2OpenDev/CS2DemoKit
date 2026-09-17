@@ -76,6 +76,22 @@ public static class ParseWarningCodes
     ///     which is this library being behind rather than the demo being damaged. Grading it with
     ///     structural decode failures would make every demo from a new build look broken.
     /// </remarks>
+    /// <summary>The worst severity across <paramref name="warnings" />, <see cref="ParseHealth.Clean" /> when empty.</summary>
+    public static ParseHealth WorstOf(IEnumerable<ParseWarning> warnings)
+    {
+        ParseHealth worst = ParseHealth.Clean;
+        foreach (ParseWarning w in warnings)
+        {
+            ParseHealth s = SeverityOf(w.Code);
+            if (s > worst)
+            {
+                worst = s;
+            }
+        }
+
+        return worst;
+    }
+
     public static ParseHealth SeverityOf(string code) => code switch
     {
         StringTableCreateFailed => ParseHealth.Damaged,
@@ -120,87 +136,79 @@ public enum ParseHealth
 }
 
 /// <summary>
-///     The per-parse warning accumulator (S11). Modeled on <c>ParseProfiler</c>: an internal
-///     static living in an UNPROTECTED file, so instrumented sites (string tables today; more
-///     later) can report without threading state through the protected parse pipeline.
-///     <para>
-///         <b>Isolation is thread-affine.</b> The store is <see cref="ThreadStaticAttribute" />:
-///         a parse runs pass 3 and constructs its <see cref="ParsedDemo" /> on one thread, and
-///         <see cref="Drain" /> (called from the <see cref="ParsedDemo" /> ctor) empties that
-///         thread's list, so concurrent parses on the background queue cannot
-///         cross-contaminate.
-///     </para>
-///     <para>
-///         Drain-on-construct is not sufficient on its own. A parse that throws before
-///         constructing its result leaves residue on its thread, and the next parse on that
-///         thread used to inherit it, so the same demo could report a different warning count
-///         depending on what ran before it. <see cref="Reset" /> at the entry to
-///         <c>DemoParser.ParseCore</c> is what makes a parse's warnings depend on that parse
-///         alone.
-///     </para>
+///     One parse's or one read's warning accumulator. Owned by the decode that created it and
+///     handed to every site that can warn, so a result carries exactly the warnings its own run
+///     produced and a forward reader can expose them while the read is still going.
+///     Single-threaded: the scan, the enrichment and the string-table decode all run on the
+///     consuming thread. Pass-2 workers never warn; their drop tallies are merged after the join.
 /// </summary>
-internal static class ParseDiagnostics
+internal sealed class ParseDiagnostics
 {
-    // Soft cap: a demo whose EVERY table is damaged must not accumulate an unbounded list (the
-    // repo's no-unbounded-diagnostics invariant). Past the cap the count still advances via a
-    // final summary warning.
-    private const int MaxWarnings = 256;
+    // Soft cap: a demo whose EVERY table is damaged must not accumulate an unbounded list. Past
+    // the cap the count still advances via a final summary warning.
+    public const int MaxWarnings = 256;
 
-    [ThreadStatic]
-    private static List<ParseWarning>? _warnings;
+    private readonly List<ParseWarning> _warnings = [];
+    private int _dropped;
 
-    [ThreadStatic]
-    private static int _dropped;
+    /// <summary>Warnings recorded so far, not counting any suppressed past the cap.</summary>
+    public int Count => _warnings.Count;
 
     /// <summary>
-    ///     Records one warning on the current parse thread (cheap; cap-bounded).
-    ///     <paramref name="count" /> is the occurrence tally for summary-shaped warnings — see
-    ///     <see cref="ParseWarning.Count" />; leave it null for one-warning-per-event codes.
+    ///     Records one warning (cheap; cap-bounded). <paramref name="count" /> is the occurrence
+    ///     tally for summary-shaped warnings, see <see cref="ParseWarning.Count" />; leave it null
+    ///     for one-warning-per-event codes.
     /// </summary>
-    public static void Warn(string code, string message, int? tick = null, int? count = null)
+    public void Warn(string code, string message, int? tick = null, int? count = null)
     {
-        List<ParseWarning> list = _warnings ??= [];
-        if (list.Count >= MaxWarnings)
+        if (_warnings.Count >= MaxWarnings)
         {
             _dropped++;
             return;
         }
 
-        list.Add(new ParseWarning(code, message, tick, count));
+        _warnings.Add(new ParseWarning(code, message, tick, count));
     }
 
     /// <summary>
-    ///     Discards any warnings left on the current thread. Called at the entry to
-    ///     <c>DemoParser.ParseCore</c> so a parse cannot inherit residue from an earlier parse on
-    ///     the same thread that threw before reaching <see cref="Drain" />.
+    ///     A copy of the warnings so far, in the shape <see cref="Drain" /> would return, without
+    ///     clearing anything. The live view a reader exposes mid-stream.
     /// </summary>
-    public static void Reset()
+    public IReadOnlyList<ParseWarning> Snapshot()
     {
-        _warnings = null;
-        _dropped = 0;
-    }
-
-    /// <summary>
-    ///     Returns and clears the current thread's warnings, called by the
-    ///     <see cref="ParsedDemo" /> constructor, so every parse result carries exactly the
-    ///     warnings its own run produced.
-    /// </summary>
-    public static IReadOnlyList<ParseWarning> Drain()
-    {
-        List<ParseWarning>? list = _warnings;
-        int dropped = _dropped;
-        _warnings = null;
-        _dropped = 0;
-        if (list is null || list.Count == 0)
+        if (_warnings.Count == 0)
         {
             return [];
         }
 
+        List<ParseWarning> copy = new(_warnings.Count + 1);
+        copy.AddRange(_warnings);
+        AppendTruncation(copy, _dropped);
+        return copy;
+    }
+
+    /// <summary>Returns the warnings and resets, so the result owns them.</summary>
+    public IReadOnlyList<ParseWarning> Drain()
+    {
+        if (_warnings.Count == 0)
+        {
+            _dropped = 0;
+            return [];
+        }
+
+        List<ParseWarning> list = new(_warnings.Count + 1);
+        list.AddRange(_warnings);
+        AppendTruncation(list, _dropped);
+        _warnings.Clear();
+        _dropped = 0;
+        return list;
+    }
+
+    private static void AppendTruncation(List<ParseWarning> list, int dropped)
+    {
         if (dropped > 0)
         {
             list.Add(new ParseWarning(ParseWarningCodes.WarningsTruncated, $"{dropped} further warning(s) suppressed."));
         }
-
-        return list;
     }
 }
