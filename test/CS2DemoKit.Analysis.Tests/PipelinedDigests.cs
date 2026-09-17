@@ -14,7 +14,10 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     in frame order, which is what a gate compares against a sequential fold. The chunk
 ///     boundaries the reader chose come back alongside, since a boundary is where a worker
 ///     primes from a checkpoint and re-emits every live cell: the one position a reconstruction
-///     bug can hide at.
+///     bug can hide at. Left unset, the worker count and the chunk size are what an evaluation
+///     over the source would run: <see cref="EntityChangeScanner.ResolveWorkers" /> and
+///     <see cref="EntityChangeScanner.MinChunkFrames" /> for that source, which differ between
+///     a list and a stream.
 /// </summary>
 internal static class PipelinedDigests
 {
@@ -24,8 +27,8 @@ internal static class PipelinedDigests
         Func<IReadOnlyList<IEntityValueProvider>> singletonFactory,
         bool emitMolotov,
         bool captureSmokes = false,
-        int workers = EntityChangeScanner.DefaultPipelineWorkers,
-        int minChunkFrames = PipelinedDigestSource.MinChunkFrames,
+        int? workers = null,
+        int? minChunkFrames = null,
         bool releaseFolded = false,
         Action<EntityTracker>? schemaCheck = null,
         CancellationToken cancellationToken = default) =>
@@ -39,14 +42,16 @@ internal static class PipelinedDigests
         bool emitMolotov,
         out IReadOnlyList<PipelinedDigestSource.ChunkSpan> spans,
         bool captureSmokes = false,
-        int workers = EntityChangeScanner.DefaultPipelineWorkers,
-        int minChunkFrames = PipelinedDigestSource.MinChunkFrames,
+        int? workers = null,
+        int? minChunkFrames = null,
         bool releaseFolded = false,
         Action<EntityTracker>? schemaCheck = null,
         CancellationToken cancellationToken = default)
     {
+        int workerCount = workers ?? EntityChangeScanner.ResolveWorkers(null, source.SupportsRandomAccess);
         PipelinedDigestSource pipeline = new(source, perPlayerFactory, singletonFactory, emitMolotov, captureSmokes,
-            workers, releaseFolded, schemaCheck, cancellationToken, minChunkFrames);
+            workerCount, releaseFolded, schemaCheck, cancellationToken,
+            minChunkFrames ?? EntityChangeScanner.MinChunkFrames(source.FrameCount, workerCount));
         try
         {
             EntityFrameDigest[] digests = Drain(pipeline);

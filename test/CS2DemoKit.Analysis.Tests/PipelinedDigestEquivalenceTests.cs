@@ -72,12 +72,15 @@ public class PipelinedDigestEquivalenceTests
         //    readout (dedup off). That is the ground truth the fold below is judged against. ──
         EntityFrameDigest[] sequential = BuildSequential(frames, dedup: false);
 
-        // ── Under test, with the production chunking: every candidate full packet past MinChunkFrames
-        //    closes a chunk. PipelinedDigest_FoldsToTheSameSnapshot_AtEveryChunkPlan below moves them. ──
+        // ── Under test, with the chunking an evaluation over this list would run: the list's worker
+        //    count, and a chunk of about a 2 * workers share of the frames closing at the first
+        //    candidate full packet after it. PipelinedDigest_FoldsToTheSameSnapshot_AtEveryChunkPlan
+        //    below moves the boundaries. ──
         EntityFrameDigest[] pipelined = PipelinedDigests.Produce(
             demo.AsFrameSource(), NewPerPlayer, NewSingletons, true,
             out IReadOnlyList<PipelinedDigestSource.ChunkSpan> spans);
-        Console.WriteLine($"chunks={spans.Count}  checkpoints={spans.Count(s => s.CheckpointFrameIndex >= 0)}");
+        Console.WriteLine($"chunks={spans.Count}  checkpoints={spans.Count(s => s.CheckpointFrameIndex >= 0)}  "
+                          + $"minChunkFrames={EntityChangeScanner.MinChunkFrames(frames.Count, EntityChangeScanner.ResolveWorkers(null, true))}");
 
         // ── The scanner's own sequential arm: ONE delta stream over every frame, no chunk resets.
         //    That is what EntityChangeScanner.BuildDigest does on the sequential path, and it is a
@@ -227,7 +230,8 @@ public class PipelinedDigestEquivalenceTests
     ///     <para>
     ///         Sweeping the minimum chunk size moves every boundary: a chunk closes at the first candidate
     ///         full packet after that many frames, so a larger minimum takes a sparser subset of the full
-    ///         packets, not a subset of the same one. The production size is swept too, so the layout an
+    ///         packets, not a subset of the same one. Both production sizes are swept too, the stream's
+    ///         minimum and the cut a list gets for this machine's worker count, so the layout an
     ///         evaluation would run is in the set rather than only the small ones.
     ///     </para>
     /// </summary>
@@ -251,8 +255,9 @@ public class PipelinedDigestEquivalenceTests
         await Assert.That(reference.Count).IsGreaterThan(0)
             .Because("an empty fold would make every comparison below pass while checking nothing");
 
+        int listChunkFrames = EntityChangeScanner.MinChunkFrames(frames.Count, EntityChangeScanner.ResolveWorkers(null, randomAccess: true));
         HashSet<string> layouts = [];
-        foreach (int minChunkFrames in (int[]) [1, 512, PipelinedDigestSource.MinChunkFrames, 4096, 8192, int.MaxValue])
+        foreach (int minChunkFrames in (int[]) [1, 512, PipelinedDigestSource.MinChunkFrames, listChunkFrames, 4096, 8192, int.MaxValue])
         {
             EntityFrameDigest[] pipelined = PipelinedDigests.Produce(
                 demo.AsFrameSource(), NewPerPlayer, NewSingletons, true,
@@ -310,16 +315,23 @@ public class PipelinedDigestEquivalenceTests
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
         byte[] bytes = await File.ReadAllBytesAsync(path);
 
+        // One plan for both. Production cuts a list to its worker count and leaves a stream at the
+        // minimum, so what is held here is the fold from either source over the same boundaries,
+        // at the stream's count and size.
+        const int workers = EntityChangeScanner.DefaultPipelineWorkers;
+        const int minChunkFrames = PipelinedDigestSource.MinChunkFrames;
         EntityFrameDigest[] list = PipelinedDigests.Produce(
             demo.AsFrameSource(), NewPerPlayer, NewSingletons, true,
-            out IReadOnlyList<PipelinedDigestSource.ChunkSpan> listSpans, captureSmokes: true);
+            out IReadOnlyList<PipelinedDigestSource.ChunkSpan> listSpans, captureSmokes: true,
+            workers: workers, minChunkFrames: minChunkFrames);
 
         EntityFrameDigest[] stream;
         IReadOnlyList<PipelinedDigestSource.ChunkSpan> streamSpans;
         using (DemoReader reader = DemoReader.Open(bytes.AsMemory()))
         {
             stream = PipelinedDigests.Produce(
-                reader, NewPerPlayer, NewSingletons, true, out streamSpans, captureSmokes: true, releaseFolded: true);
+                reader, NewPerPlayer, NewSingletons, true, out streamSpans, captureSmokes: true,
+                workers: workers, minChunkFrames: minChunkFrames, releaseFolded: true);
         }
 
         Console.WriteLine($"frames: list={list.Length:N0} stream={stream.Length:N0}  chunks: list={listSpans.Count} stream={streamSpans.Count}");
