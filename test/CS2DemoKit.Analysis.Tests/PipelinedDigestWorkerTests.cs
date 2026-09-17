@@ -32,7 +32,8 @@ namespace CS2DemoKit.Analysis.Tests;
 ///         they run without a demo: the minimum chunk size reaching the reader, which is what lets
 ///         <see cref="PipelinedDigestEquivalenceTests" /> sweep the chunk boundaries instead of taking
 ///         whatever the demo's full-packet cadence gives it; a chunk opening at its checkpoint's tick-run
-///         start; and how a failure leaves a fold worker.
+///         start; and how a failure leaves a fold worker. Over a demo: how a cancelled evaluation
+///         leaves the pool.
 ///     </para>
 /// </summary>
 [NotInParallel]
@@ -278,6 +279,52 @@ public class PipelinedDigestWorkerTests
         Assert.Throws<OperationCanceledException>(
             () => PipelinedDigests.Produce(
                 new FrameListSource(frames, null), NewPerPlayer, NewSingletons, false, cancellationToken: cts.Token));
+    }
+
+    /// <summary>
+    ///     Ending an evaluation joins the folds. A run cancelled after its first poll leaves the chunks
+    ///     ahead of it folding on the pool; <c>EndEvaluation</c> returns only once every one of them has
+    ///     ended, so no worker primes a tracker or judges the schema against the scanner after it, and
+    ///     the next evaluation starts on a quiet pool.
+    /// </summary>
+    [Test]
+    [Category("Integration")]
+    public async Task EndEvaluation_JoinsEveryFold_AndTheNextEvaluationStarts()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        if (Environment.ProcessorCount < 2)
+        {
+            throw new SkipTestException("needs >= 2 cores for the scanner to choose the pipeline");
+        }
+
+        EntityChangeScanner scanner = new(new EntityStateLayer(), [], [new PawnHealthProvider()]);
+        using CancellationTokenSource cts = new();
+
+        IDemoFrameSource source = scanner.BeginEvaluation(demo.AsFrameSource(), null, cts.Token);
+        PipelinedDigestSource pipeline = (PipelinedDigestSource)source;
+        await Assert.That(source.TryReadNext(out DemoFrame? first)).IsTrue();
+        scanner.AdvanceAndPollAt(0, first!.ServerTick);
+        int inFlight = pipeline.FoldsInFlight;
+        await cts.CancelAsync();
+        scanner.EndEvaluation();
+
+        Console.WriteLine($"folds in flight at cancel={inFlight}");
+        await Assert.That(inFlight).IsGreaterThan(0)
+            .Because("the chunks ahead of the first poll must still be folding, or the join is vacuous");
+        await Assert.That(pipeline.FoldsInFlight).IsEqualTo(0)
+            .Because("EndEvaluation returns only after every fold has ended");
+
+        IDemoFrameSource next = scanner.BeginEvaluation(demo.AsFrameSource(), null, CancellationToken.None);
+        try
+        {
+            await Assert.That(next).IsTypeOf<PipelinedDigestSource>();
+            await Assert.That(next.TryReadNext(out DemoFrame? frame)).IsTrue();
+            await Assert.That(scanner.AdvanceAndPollAt(0, frame!.ServerTick)).IsNotNull();
+        }
+        finally
+        {
+            scanner.EndEvaluation();
+        }
     }
 
     /// <summary>

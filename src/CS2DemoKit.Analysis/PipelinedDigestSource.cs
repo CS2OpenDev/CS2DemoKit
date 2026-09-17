@@ -36,7 +36,8 @@ namespace CS2DemoKit.Analysis;
 ///         Threads: the inner source is touched by the reader thread alone once reading starts;
 ///         the queue is guarded by one lock; chunk contents are published to the consumer through
 ///         that lock and to the fold worker through the task start; a fold releases only frames
-///         the consumer has not reached, which the queue order guarantees.
+///         the consumer has not reached, which the queue order guarantees. <see cref="Close" />
+///         cancels and then joins every fold, so no worker outlives it.
 ///     </para>
 /// </summary>
 internal sealed class PipelinedDigestSource : IDemoFrameSource
@@ -87,6 +88,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private bool _readerDone;
     private ExceptionDispatchInfo? _readerError;
     private bool _disposed;
+    private int _foldsInFlight;
 
     /// <param name="inner">The source to read; consumed by this producer alone from here on.</param>
     /// <param name="perPlayerFactory">Fresh per-player providers for one worker, in the layout's order.</param>
@@ -237,7 +239,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         return digest;
     }
 
-    /// <summary>Stops the reader thread, cancels every chunk still decoding, and joins. Not reusable.</summary>
+    /// <summary>
+    ///     Stops the reader thread, cancels every fold still running, and joins them all: when this
+    ///     returns no worker is touching a tracker or the schema check. Not reusable.
+    /// </summary>
     public void Close()
     {
         Thread? reader;
@@ -257,21 +262,29 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         reader?.Join();
         lock (_gate)
         {
-            foreach (Chunk chunk in _ahead)
+            while (_foldsInFlight > 0)
             {
-                Observe(chunk.Digests);
+                Monitor.Wait(_gate);
             }
 
             _ahead.Clear();
         }
 
-        Observe(_current?.Digests);
         _current = null;
         _pending = null;
     }
 
-    private static void Observe(Task? task) =>
-        task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+    /// <summary>Folds started and not yet ended, whatever their outcome. Zero once <see cref="Close" /> returns.</summary>
+    internal int FoldsInFlight
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _foldsInFlight;
+            }
+        }
+    }
 
     // The reader thread starts on the first read, so a source built and never read costs no thread.
     private void EnsureReading()
@@ -306,7 +319,6 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
 
                         if (_disposed)
                         {
-                            Observe(chunk.Digests);
                             return;
                         }
 
@@ -480,8 +492,29 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 chunk.Checkpoint is null ? -1 : chunk.FirstFrameIndex + chunk.CheckpointPos));
         }
 
-        chunk.Digests = Task.Run(() => Fold(chunk), _token);
+        lock (_gate)
+        {
+            _foldsInFlight++;
+        }
+
+        // No token on the task: a fold that never ran would never end, and Close waits on the
+        // count. Fold checks the token itself before it takes a worker.
+        Task<EntityFrameDigest[]> fold = Task.Run(() => Fold(chunk));
+        fold.ContinueWith(FoldEnded, TaskContinuationOptions.ExecuteSynchronously);
+        chunk.Digests = fold;
         return chunk;
+    }
+
+    // Observes a fault so a chunk nobody takes never raises the unobserved-exception event, and
+    // frees the slot Close waits on.
+    private void FoldEnded(Task fold)
+    {
+        _ = fold.Exception;
+        lock (_gate)
+        {
+            _foldsInFlight--;
+            Monitor.PulseAll(_gate);
+        }
     }
 
     /// <summary>Bytes the fold workers allocated so far, counted only while profiling was on.</summary>
@@ -489,6 +522,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
 
     private EntityFrameDigest[] Fold(Chunk chunk)
     {
+        _token.ThrowIfCancellationRequested();
         Worker worker = TakeWorker(fresh: chunk.Checkpoint is null);
         bool prof = Profiling.Enabled;
         long allocStart = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
@@ -555,6 +589,8 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 layer.AdoptSchema(_template!);
             }
 
+            // The prime is a full-packet decode, the one step of a fold that is not per frame.
+            _token.ThrowIfCancellationRequested();
             layer.PrimeFromCheckpoint([], chunk.InstanceBaseline, chunk.Checkpoint,
                 at + 1 < frames.Count ? frames[at + 1] : null);
             next = at + 1;
