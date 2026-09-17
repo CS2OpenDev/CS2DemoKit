@@ -262,7 +262,7 @@ MB, and no reading of either builder from this tool lands on 182.4.
     machine   10 cores (6P + 4E), .NET 10, Release, workstation GC
     corpus    15 full-match demos, 40 to 524 MB, 36k to 229k frames
 
-Raw rows in `paths-0a617f9.csv`. Reproduce with
+Reproduce with
 `dotnet run --project tools/CS2DemoKit.Bench -c Release -- paths --rounds 1`.
 
 Each arm is one way of consuming a demo, run in its own process with a sampler thread that
@@ -310,7 +310,6 @@ scoreboard columns side by side.
 ### After the pipelined digest producer
 
     runs      60 sampled + 30 live (1 round x 15 demos), zero failures, zero digest mismatches
-    rows      not kept; superseded by paths-alloc.csv and paths-alloc-live.csv below
 
 The stream scoreboard now folds entity digests two chunks ahead of the loop on pooled trackers
 and releases a frame's entity and string-table payloads once folded. Same five demos, the
@@ -348,7 +347,6 @@ read) and does nothing for the entity walk or the scoreboard, which are bound by
 ### After the probe stop, the reader thread and the tuned defaults
 
     runs      120 sampled + 15 live (1 round x 15 demos), zero failures, zero digest mismatches
-    rows      not kept; superseded by paths-alloc.csv and paths-alloc-live.csv below
 
 Three changes since the table above, in the order the numbers asked for them. The dialect
 probe stops once the first round has decided the dialect instead of reading the whole file,
@@ -387,7 +385,6 @@ caller building its own `DemoReader`, `ParseOptions.ReadAheadFrames`.
 ### After the allocation pass
 
     runs      30 sampled + 30 live (1 round x 15 demos x 2 arms), zero failures, zero digest mismatches
-    rows      paths-alloc.csv, paths-alloc-live.csv (CS2DEMOKIT_PATHS_LIVE=1)
 
 Six commits driven by an allocation-by-type profile of the forward run
 (`CS2DEMOKIT_PATHS_ALLOCTICK=1` on a `path-measure` child prints the top types from the
@@ -406,7 +403,7 @@ and the corpus parity arm. The 280 MB demo (...410), forward run, allocation aft
 What is left is the parser's: 125 MB of byte[] is protobuf's copy of every message payload,
 15 MB of `CSVCMsg_PacketEntities` and 12 MB of `ByteString` are the messages, 8 MB of
 `SnappyDecompressor` is one per call, 8 MB of strings are decoded and dropped. The ring buffer
-for entity bytes in the refinement is what would move the byte[] figure; it is on hold.
+for entity bytes is what would move the byte[] figure; it is on hold.
 
 Same five demos as above, single runs, the default collector:
 
@@ -431,7 +428,6 @@ retained parse 221 to 1706 MB.
 ### GC configuration
 
     runs      15 demos x 1 round x scoreboard-stream per configuration
-    rows      paths-gc.csv; the variant column names the configuration
 
 Measured last on purpose: a collector setting flatters whichever allocation profile it is
 measured against, so it waited until the profile stopped moving. Workstation GC throughout (the
@@ -468,7 +464,6 @@ own. `src/CS2DemoKit.Analysis/README.md` says the same in fewer words.
 ### One producer
 
     runs      10 sampled (1 round x 5 demos x 2 arms), zero failures, zero digest mismatches
-    rows      paths-one-producer.csv (the demos were symlinked into a scratch directory, so size_mb reads 0.0)
 
 The up-front parallel producer that decoded a retained demo's digests before the first frame
 was evaluated is gone; the pipelined producer that served the forward reader serves the
@@ -476,8 +471,8 @@ was evaluated is gone; the pipelined producer that served the forward reader ser
 releases nothing and cuts its chunks from the frame count to about twice the worker count,
 because every chunk costs a checkpoint prime and the frames are resident either way: with the
 stream's 1024-frame chunks the retained arm ran 15 to 20% slower than the producer it replaced
-(39 primes where that one did 10), and the derived size closes that. Same five demos, before
-(`paths-alloc.csv`) and after, single runs:
+(39 primes where that one did 10), and the derived size closes that. Same five demos, before (the section
+above) and after, single runs:
 
 | demo | size | retained wall before | after | retained peak heap before | after | forward wall before | after |
 |---|---|---|---|---|---|---|---|
@@ -506,7 +501,6 @@ on the reader thread, is gone, and the check runs on the fold worker's own track
 ### Two decode loops
 
     runs      30 sampled (3 rounds x 5 demos x 2 arms) and 10 live (1 round), zero failures, zero digest mismatches
-    rows      not kept; paths-one-loop-base.csv below re-measures the same build as the control
     load      2.6 to 4.9 throughout
 
 `DemoParser.Parse` decodes in three passes over the whole file: a sequential header scan, a
@@ -547,7 +541,6 @@ on the other four.
 
     commit    d527da4
     runs      30 sampled on each build (3 passes x 5 demos x 2 arms, the builds alternated per pass), 10 live on this build, zero failures, zero digest mismatches
-    rows      paths-one-loop.csv (this build, sampled), paths-one-loop-live.csv (live), paths-one-loop-base.csv (776de80, sampled)
     load      2.6 to 4.5 throughout
 
 `DemoParser.Parse` is now `DemoReader.Materialize()` over a reader it opens: one window over every
