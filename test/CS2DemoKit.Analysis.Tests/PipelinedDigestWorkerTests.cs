@@ -282,6 +282,47 @@ public class PipelinedDigestWorkerTests
     }
 
     /// <summary>
+    ///     The schema check is a bounded probe, not a per-frame hook: chunk 0's worker runs it at
+    ///     frames 32 to 608 every 96, and no later chunk runs it at all. One chunk over 802 frames
+    ///     gives the whole window; a chunk 0 that closes near frame 300 gives the three probes
+    ///     inside it and nothing from the chunks after; a ten-frame chunk 0 gives none.
+    /// </summary>
+    /// <param name="minChunkFrames">Frames a chunk must hold before the next candidate closes it.</param>
+    /// <param name="expectedChecks">Times the check should run over the whole fold.</param>
+    [Test]
+    [Arguments(int.MaxValue, 7)]
+    [Arguments(300, 3)]
+    [Arguments(1, 0)]
+    public async Task Pipeline_JudgesTheSchema_OnChunkZero_OverTheProbeWindow(int minChunkFrames, int expectedChecks)
+    {
+        List<DemoFrame> frames = SyntheticFrames(100);
+        List<int> checks = [];
+        Lock gate = new();
+
+        EntityFrameDigest[] digests = PipelinedDigests.Produce(
+            new FrameListSource(frames, null), () => [], () => [], false,
+            out IReadOnlyList<PipelinedDigestSource.ChunkSpan> spans,
+            minChunkFrames: minChunkFrames,
+            schemaCheck: _ =>
+            {
+                lock (gate)
+                {
+                    checks.Add(Environment.CurrentManagedThreadId);
+                }
+            });
+
+        Console.WriteLine($"minChunkFrames={minChunkFrames}  chunks={spans.Count}  checks={checks.Count}");
+        await Assert.That(digests.Length).IsEqualTo(frames.Count);
+        await Assert.That(checks.Count).IsEqualTo(expectedChecks);
+        await Assert.That(spans.Count).IsGreaterThanOrEqualTo(expectedChecks == 0 ? 2 : 1);
+        if (expectedChecks > 0)
+        {
+            await Assert.That(checks.Distinct().Count()).IsEqualTo(1)
+                .Because("every probe runs on the one worker folding chunk 0");
+        }
+    }
+
+    /// <summary>
     ///     Ending an evaluation joins the folds. A run cancelled after its first poll leaves the chunks
     ///     ahead of it folding on the pool; <c>EndEvaluation</c> returns only once every one of them has
     ///     ended, so no worker primes a tracker or judges the schema against the scanner after it, and

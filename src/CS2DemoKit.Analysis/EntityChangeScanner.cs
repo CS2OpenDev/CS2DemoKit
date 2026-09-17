@@ -498,9 +498,8 @@ public sealed class EntityChangeScanner
         }
     }
 
-    // Runs on whichever thread applied the frame: the loop's on the sequential path, a fold
-    // worker's on the pipelined one. The latch is idempotent, so two workers judging the same
-    // schema at once reach the same answer.
+    // Runs on whichever thread applied the frame: the loop's on the sequential path, chunk 0's
+    // fold worker on the pipelined one, over the producer's probe window.
     private void ValidateSchema(EntityTracker tracker)
     {
         if (!_schemaValidated)

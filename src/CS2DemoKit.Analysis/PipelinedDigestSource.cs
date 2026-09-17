@@ -48,6 +48,13 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     // carries the schema.
     internal const int MinChunkFrames = 1024;
 
+    // The schema check runs on chunk 0's worker at these frames and nowhere else. The first full
+    // packet lands every provider class's descriptors within the first few dozen frames, and a
+    // class still missing at 608 is not going to appear.
+    internal const int SchemaProbeFirstFrame = 32;
+    internal const int SchemaProbeLastFrame = 608;
+    internal const int SchemaProbeStride = 96;
+
     private readonly IDemoFrameSource _inner;
     private readonly Func<IReadOnlyList<IPerPlayerEntityValueProvider>> _perPlayerFactory;
     private readonly Func<IReadOnlyList<IEntityValueProvider>> _singletonFactory;
@@ -107,9 +114,11 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     ///     owns its frames.
     /// </param>
     /// <param name="schemaCheck">
-    ///     Runs on a fold worker after each frame is applied, against that worker's tracker, until
-    ///     the caller stops caring; a throw fails the chunk and reaches the consumer from
-    ///     <see cref="Take" />.
+    ///     Runs on chunk 0's worker, against its tracker, at frames
+    ///     <see cref="SchemaProbeFirstFrame" /> to <see cref="SchemaProbeLastFrame" /> every
+    ///     <see cref="SchemaProbeStride" />, once each and never on a later chunk; a throw fails
+    ///     chunk 0 and reaches the consumer from the first <see cref="Take" />, before any frame is
+    ///     dispatched.
     /// </param>
     /// <param name="cancellationToken">Cancels the read-ahead and every worker.</param>
     /// <param name="minChunkFrames">
@@ -669,12 +678,19 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 }
             }
 
-            _schemaCheck?.Invoke(layer.Tracker);
+            if (_schemaCheck is not null && chunk.Checkpoint is null && IsSchemaProbeFrame(n))
+            {
+                _schemaCheck(layer.Tracker);
+            }
+
             digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, _emitMolotov, _captureSmokes, worker.Projectiles, worker.Pawns);
         }
 
         return digests;
     }
+
+    internal static bool IsSchemaProbeFrame(int n) =>
+        n >= SchemaProbeFirstFrame && n <= SchemaProbeLastFrame && (n - SchemaProbeFirstFrame) % SchemaProbeStride == 0;
 
     // A full packet is never released: another worker may be reading its string tables to
     // prime baselines while this one has finished with it, and RemoveAll under an enumeration
