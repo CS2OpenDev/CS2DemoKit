@@ -63,7 +63,8 @@ the packet structure is recorded; `Everything`, `StructureOnly`, `GameEventsOnly
 fires that never appeared on the wire) carry a null payload, which is why the pattern match is the
 access route rather than a cast.
 
-A viewer that seeks and inspects after the run keeps everything instead:
+A viewer that seeks and inspects after the run keeps everything instead (a consumer on 0.11.0
+starts at `docs/migrating-to-0.12.md`):
 
 ```csharp
 ParsedDemo demo = MemoryMappedDemoSource.ParseFile("match.dem");

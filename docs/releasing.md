@@ -101,7 +101,9 @@ its packaging exercised before the tag exists.
 ## Compatibility notes worth carrying into a release
 
 These are the changes a consumer cannot see in a version number. Add to the list rather than
-rewriting it; each entry names the version the change first ships in.
+rewriting it; each entry names the version the change first ships in. For 0.12.0 the entries are
+the reference; the order a consumer meets them in, with the code to write, is
+[`migrating-to-0.12.md`](migrating-to-0.12.md).
 
 ### `CatalogEnrichment` gained two positional parameters (0.11.0)
 

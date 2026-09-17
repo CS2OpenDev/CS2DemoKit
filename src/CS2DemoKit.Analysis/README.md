@@ -49,7 +49,8 @@ ParsedDemo demo = MemoryMappedDemoSource.ParseFile(path);
 AnalysisRun run = DemoAnalysis.Run(demo, loaded.Rulesets);
 ```
 
-This is the path for a viewer that seeks and inspects after the run. Per-message node snapshots
+This is the path for a viewer that seeks and inspects after the run; a consumer coming from
+0.11.0 starts at `docs/migrating-to-0.12.md` in the repository. Per-message node snapshots
 are on by default over a `ParsedDemo` and off by default over a stream; `AnalysisOptions.CaptureSnapshots`
 overrides either way, and on a stream it retains one row per dispatched message, which is what the
 stream was chosen to avoid. `AnalysisRun.Highlights`, `MaterializedPlayers` and `FinalNodes` are
