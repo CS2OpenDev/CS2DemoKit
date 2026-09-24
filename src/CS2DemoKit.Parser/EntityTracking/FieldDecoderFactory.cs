@@ -18,17 +18,56 @@ internal static class FieldDecoderFactory
     /// <summary>Returns a <see cref="FieldDecoder" /> matching the field's encoding metadata.</summary>
     public static FieldDecoder Create(RuntimeField field)
     {
+        FieldEncodingInfo enc = ResolveEncoding(field);
+        return TryCreateKnown(field, enc) ?? Fallback(field, enc);
+    }
+
+    /// <summary>
+    ///     The field's encoding metadata, with the serializer overrides the proto does not carry
+    ///     filled in by field name.
+    /// </summary>
+    /// <remarks>
+    ///     Some fields are marked with an <c>MNetworkSerializer</c> attribute in the C++ schema that
+    ///     the flattened-serializer proto never sends, so <c>var_encoder_sym</c> arrives unset and
+    ///     the override has to be applied by name. demofile-net's codegen does the same through
+    ///     custom decoder methods on the schema class. A proto-declared encoder always wins: the
+    ///     table only fills a null one.
+    ///     <list type="bullet">
+    ///         <item>
+    ///             <c>m_flSimulationTime</c> / <c>m_flAnimTime</c> → <c>simtime</c>
+    ///             (<c>simulationTimeSerializer</c> / <c>animTimeSerializer</c>): an unsigned tick
+    ///             count, not a float.
+    ///         </item>
+    ///         <item>
+    ///             <c>m_iClip1</c> → <c>minusone</c>: the wire carries clip + 1 as an unsigned
+    ///             varint, so the no-magazine sentinel -1 travels as 0. The CS2OpenDev.Sdk metadata
+    ///             for <c>CBasePlayerWeapon.Clip1</c> names the encoder, and the decode checks out on
+    ///             the demos: every knife, grenade and C4 reads -1 on every read, and every firearm's
+    ///             maximum is its magazine size (Galil 35, AK-47 30, Deagle 7, Negev 150). Read as
+    ///             zigzag, the same bytes alternate in sign and come out one high in magnitude.
+    ///         </item>
+    ///     </list>
+    /// </remarks>
+    private static FieldEncodingInfo ResolveEncoding(RuntimeField field)
+    {
         FieldEncodingInfo enc = FieldEncodingInfo.From(field);
-        // Schema-attribute overrides — see TryCreateFloat for the rationale.
-        if (enc.VarEncoder is null && field.Name is "m_flSimulationTime" or "m_flAnimTime")
+        if (enc.VarEncoder is not null)
         {
-            enc = enc with
-            {
-                VarEncoder = "simtime"
-            };
+            return enc;
         }
 
-        return TryCreateKnown(field, enc) ?? Fallback(field, enc);
+        return field.Name switch
+        {
+            "m_flSimulationTime" or "m_flAnimTime" => enc with
+            {
+                VarEncoder = "simtime"
+            },
+            "m_iClip1" => enc with
+            {
+                VarEncoder = "minusone"
+            },
+            _ => enc
+        };
     }
 
     /// <summary>The decoder for a type the factory names, or null for one it does not.</summary>
@@ -121,19 +160,7 @@ internal static class FieldDecoderFactory
     /// </summary>
     public static FloatDecoder? TryCreateFloat(RuntimeField field)
     {
-        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
-        // Schema-attribute overrides: CS2 marks m_flSimulationTime / m_flAnimTime with
-        // MNetworkSerializer="simulationTimeSerializer"/"animTimeSerializer" in the C++ schema.
-        // The proto's var_encoder_sym is unset, so we must apply the override by field name.
-        // demofile-net's codegen handles this via custom decoder methods on the schema class.
-        if (enc.VarEncoder is null && field.Name is "m_flSimulationTime" or "m_flAnimTime")
-        {
-            enc = enc with
-            {
-                VarEncoder = "simtime"
-            };
-        }
-
+        FieldEncodingInfo enc = ResolveEncoding(field);
         string type = StripTemplateArgs(field.TypeName);
         return type switch
         {
@@ -158,7 +185,7 @@ internal static class FieldDecoderFactory
     /// </summary>
     public static IntDecoder? TryCreateInt(RuntimeField field)
     {
-        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
+        FieldEncodingInfo enc = ResolveEncoding(field);
         string type = StripTemplateArgs(field.TypeName);
         return type switch
         {
@@ -170,7 +197,9 @@ internal static class FieldDecoderFactory
                 or "CPlayerSlot" => (ref b) => (int)b.ReadUVarInt32(),
             "int8" or "sbyte" => (ref b) => (sbyte)b.ReadVarInt32(),
             "int16" or "short" => (ref b) => (short)b.ReadVarInt32(),
-            "int32" or "int" => (ref b) => b.ReadVarInt32(),
+            "int32" or "int" => enc.VarEncoder == "minusone"
+                ? static (ref b) => DecodeMinusOne(ref b)
+                : static (ref b) => b.ReadVarInt32(),
             "GameTick" => (ref b) => (int)b.ReadUVarInt32(),
             _ => TryCreateKnown(field, enc) is null && IsEnumLike(field)
                 ? static (ref b) => (int)b.ReadUVarInt64()
@@ -309,7 +338,13 @@ internal static class FieldDecoderFactory
     }
 
     private static FieldDecoder Int16(FieldEncodingInfo _) => (ref b) => (short)b.ReadVarInt32();
-    private static FieldDecoder Int32(FieldEncodingInfo _) => (ref b) => b.ReadVarInt32();
+    private static FieldDecoder Int32(FieldEncodingInfo enc) => enc.VarEncoder == "minusone"
+        ? static (ref b) => DecodeMinusOne(ref b)
+        : static (ref b) => b.ReadVarInt32();
+
+    // The minusone serializer: an unsigned varint holding value + 1. The subtraction is on int
+    // after the cast, so a raw 0 reads -1 rather than wrapping.
+    private static int DecodeMinusOne(ref BitBuffer b) => (int)b.ReadUVarInt32() - 1;
 
     private static FieldDecoder Int64(FieldEncodingInfo _) => (ref b) =>
     {
@@ -532,7 +567,7 @@ internal static class FieldDecoderFactory
     /// </summary>
     public static UInt64Decoder? TryCreateUInt64(RuntimeField field)
     {
-        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
+        FieldEncodingInfo enc = ResolveEncoding(field);
         return StripTemplateArgs(field.TypeName) switch
         {
             "uint64" or "ulong" => UInt64Typed(enc),
@@ -626,7 +661,7 @@ internal static class FieldDecoderFactory
     /// </summary>
     public static Vector3Decoder? TryCreateVector3(RuntimeField field)
     {
-        FieldEncodingInfo enc = FieldEncodingInfo.From(field);
+        FieldEncodingInfo enc = ResolveEncoding(field);
         return StripTemplateArgs(field.TypeName) switch
         {
             "Vector" or "VectorWS" => Vec3Typed(enc),
