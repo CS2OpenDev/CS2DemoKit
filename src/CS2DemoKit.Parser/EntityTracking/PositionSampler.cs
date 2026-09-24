@@ -26,12 +26,22 @@ namespace CS2DemoKit.Parser.EntityTracking;
 ///     stands outside any named nav area and on maps with no named areas. Null only if the field
 ///     was never networked for the pawn, which has not been observed on a sampled pawn.
 /// </param>
+/// <param name="Team">
+///     The pawn's <c>m_iTeamNum</c>: 2 for T, 3 for CT, 0 when unseen. It is the pawn's team at
+///     this frame, so it follows the halftime side swap.
+/// </param>
+/// <param name="IsAlive">
+///     <see cref="PawnLookup.IsAlive" />: <c>m_lifeState</c> is alive and <c>m_iHealth</c> is above
+///     zero. The walk yields dead pawns too, so filter on this for the living only.
+/// </param>
 public readonly record struct PositionSample(
     int FrameIndex,
     int Tick,
     int PlayerSlot,
     Vector3 Position,
-    string? Place);
+    string? Place,
+    int Team,
+    bool IsAlive);
 
 /// <summary>
 ///     Streams every player's position over a whole demo. Assembles the four pieces a trajectory
@@ -46,8 +56,10 @@ public readonly record struct PositionSample(
 public static class PositionSampler
 {
     /// <summary>
-    ///     Positions for every pawn bound to a controller, dead or alive, on every <paramref name="frameStride" />-th frame, in
-    ///     frame order then entity order. Lazy: nothing is decoded until enumerated, and the walk
+    ///     Positions for every pawn bound to a controller, dead or alive, on every
+    ///     <paramref name="frameStride" />-th frame, in frame order then entity order. Each sample
+    ///     carries the pawn's team and <see cref="PositionSample.IsAlive" />; filter on the latter
+    ///     for the living only. Lazy: nothing is decoded until enumerated, and the walk
     ///     restarts from frame 0 on a second enumeration.
     ///     <para>
     ///         <paramref name="frameStride" /> subsamples the <b>output</b> only. Every frame is
@@ -100,7 +112,9 @@ public static class PositionSampler
             }
 
             buffer.Add(new PositionSample(frameIndex, tick, slot, position,
-                pawn["m_szLastPlaceName"] as string));
+                pawn["m_szLastPlaceName"] as string,
+                pawn.TryGet<int>("m_iTeamNum") ?? 0,
+                PawnLookup.IsAlive(pawn)));
         }
 
         Action<int, EntityState> collect = Collect;

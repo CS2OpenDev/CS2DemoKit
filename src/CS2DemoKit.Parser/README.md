@@ -186,12 +186,14 @@ demo-tick mapping and tick-boundary frame indexing.
 
 `PositionSampler.Walk` is those pieces assembled: it steps the tracker one frame at a time,
 enumerates every controller-bound pawn (dead or alive: a dead player's pawn keeps sampling for the
-rest of the round), resolves each to a slot, and reconstructs world position.
+rest of the round), resolves each to a slot, and reconstructs world position. Each sample carries
+the pawn's team (`m_iTeamNum`, 2 = T, 3 = CT) and `IsAlive` (`PawnLookup.IsAlive`: life state alive
+and health above zero), so `.Where(s => s.IsAlive)` keeps the living only.
 
 ```csharp
 foreach (PositionSample s in PositionSampler.Walk(demo, frameStride: 8))
 {
-    // s.FrameIndex, s.Tick, s.PlayerSlot, s.Position (Vector3), s.Place
+    // s.FrameIndex, s.Tick, s.PlayerSlot, s.Position (Vector3), s.Place, s.Team, s.IsAlive
 }
 ```
 

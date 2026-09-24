@@ -3,6 +3,7 @@
 using System.Numerics;
 using CS2DemoKit.Parser.Entities;
 using CS2DemoKit.Parser.EntityTracking;
+using CS2DemoKit.Parser.GameEvents;
 using CS2DemoKit.TestSupport;
 using TUnit.Core.Exceptions;
 
@@ -51,8 +52,8 @@ public class PositionSamplerTests
     }
 
     /// <summary>
-    ///     The sampler is the four pieces assembled: incremental advance, live-pawn enumeration,
-    ///     slot resolution, cell→world. Rolling them by hand must land on the same stream.
+    ///     The sampler is the four pieces assembled: incremental advance, controller-bound pawn
+    ///     enumeration, slot resolution, cell→world, plus the team and alive reads. Rolling them by hand must land on the same stream.
     /// </summary>
     [Test]
     public async Task Walk_MatchesTheHandRolledFourPieceVersion()
@@ -73,8 +74,11 @@ public class PositionSamplerTests
             {
                 if (PositionUtil.CellToWorld(pawn) is { } p)
                 {
+                    // Team and alive written out from the raw fields rather than through
+                    // PawnLookup.IsAlive, so this stays an independent oracle for the rule.
+                    bool alive = pawn.TryGet<int>("m_lifeState") is 0 && pawn.TryGet<int>("m_iHealth") is > 0;
                     byHand.Add(new PositionSample(frameIndex, tick, slot, p,
-                        pawn["m_szLastPlaceName"] as string));
+                        pawn["m_szLastPlaceName"] as string, pawn.TryGet<int>("m_iTeamNum") ?? 0, alive));
                 }
             });
         }
@@ -106,6 +110,100 @@ public class PositionSamplerTests
         int placed = samples.Count(s => !string.IsNullOrEmpty(s.Place));
         Console.WriteLine($"[sampler] {samples.Count} samples, {samples.Select(s => s.PlayerSlot).Distinct().Count()} "
                           + $"slots, place set on {placed * 100.0 / samples.Count:F1}%");
+    }
+
+    /// <summary>
+    ///     Issue #58: the walk yields dead pawns, and <see cref="PositionSample.IsAlive" /> is what
+    ///     tells them apart. Over the whole sample: some samples are dead, every team is T or CT
+    ///     with both present, and no pawn reads alive on or after the frame carrying its
+    ///     <c>player_death</c> until a <c>player_spawn</c> brings it back. Only that direction is
+    ///     asserted: the trimmed sample starts without spawn events, so pawns alive before any
+    ///     spawn has been seen are expected.
+    /// </summary>
+    [Test]
+    public async Task Walk_TagsDeadPawnsAndTheirTeam()
+    {
+        ParsedDemo demo = Demo();
+        List<PositionSample> samples = PositionSampler.Walk(demo).ToList();
+
+        int dead = samples.Count(s => !s.IsAlive);
+        await Assert.That(dead).IsGreaterThan(0)
+            .Because("a dead player's pawn keeps sampling for the rest of the round");
+        await Assert.That(samples.All(s => s.Team is 2 or 3)).IsTrue()
+            .Because("a controller-bound player pawn is on T or CT");
+        await Assert.That(samples.Select(s => s.Team).Distinct().Count()).IsEqualTo(2);
+
+        int violations = AliveAfterDeath(demo, samples);
+        await Assert.That(violations).IsEqualTo(0)
+            .Because("no pawn reads alive on or after the frame that carries its player_death");
+
+        Console.WriteLine($"[sampler] {samples.Count} samples, {dead} dead");
+    }
+
+    /// <summary>
+    ///     Issue #58: <see cref="PositionSample.Tick" /> is the frame clock. At every
+    ///     <c>player_death</c>, the samples on the event's frame carry that frame's tick, the event's
+    ///     GameTick is that tick or one below it, and ServerTick is GameTick plus
+    ///     <see cref="ParsedDemo.ServerStartTick" />.
+    /// </summary>
+    [Test]
+    public async Task Walk_TickIsTheFrameClock()
+    {
+        ParsedDemo demo = Demo();
+        Dictionary<int, int> tickByFrame = PositionSampler.Walk(demo)
+            .GroupBy(s => s.FrameIndex)
+            .ToDictionary(g => g.Key, g => g.Select(s => s.Tick).Distinct().Single());
+
+        List<GameEvent> deaths = demo.AllGameEvents.Where(e => e.Name == "player_death").ToList();
+        await Assert.That(deaths.Count).IsGreaterThan(0);
+
+        foreach (GameEvent death in deaths)
+        {
+            int frameTick = demo.Frames[death.FrameNumber].ServerTick;
+            await Assert.That(tickByFrame[death.FrameNumber]).IsEqualTo(frameTick);
+            await Assert.That(death.GameTick == frameTick || death.GameTick == frameTick - 1).IsTrue()
+                .Because($"GameTick {death.GameTick} is on the frame clock (frame tick {frameTick})");
+            await Assert.That(death.ServerTick - death.GameTick).IsEqualTo(demo.ServerStartTick);
+        }
+    }
+
+    /// <summary>
+    ///     Samples that read alive at or after their slot's latest <c>player_death</c> frame with no
+    ///     <c>player_spawn</c> since, replaying the events by frame number.
+    /// </summary>
+    internal static int AliveAfterDeath(ParsedDemo demo, IEnumerable<PositionSample> samples)
+    {
+        List<GameEvent> lifecycle = demo.AllGameEvents
+            .Where(e => e.Payload is PlayerDeathEvent or PlayerSpawnEvent)
+            .OrderBy(e => e.FrameNumber)
+            .ToList();
+        bool[] deadByEvent = new bool[64];
+        int next = 0;
+        int violations = 0;
+        foreach (PositionSample s in samples)
+        {
+            while (next < lifecycle.Count && lifecycle[next].FrameNumber <= s.FrameIndex)
+            {
+                GameEvent e = lifecycle[next++];
+                (int slot, bool died) = e.Payload switch
+                {
+                    PlayerDeathEvent d => (d.UserId, true),
+                    PlayerSpawnEvent p => (p.UserId, false),
+                    _ => (-1, false)
+                };
+                if (slot is >= 0 and < 64)
+                {
+                    deadByEvent[slot] = died;
+                }
+            }
+
+            if (s.IsAlive && deadByEvent[s.PlayerSlot])
+            {
+                violations++;
+            }
+        }
+
+        return violations;
     }
 
     [Test]
