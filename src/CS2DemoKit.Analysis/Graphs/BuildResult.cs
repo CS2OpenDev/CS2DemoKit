@@ -132,6 +132,15 @@ public sealed record BuildResult(
     ///     <c>null</c> when the build has no team ruleset.
     /// </summary>
     public IReadOnlyDictionary<int, StateNode>? TeamRosterNodes { get; init; }
+
+    /// <summary>
+    ///     The dispatch types of every message that can move the <c>round_number</c> context: the
+    ///     concrete events of <c>$round_freeze_end</c>, <c>$match_start</c> and <c>$match_end</c> (the
+    ///     triggers of <c>round_number</c> and of the <c>match_live</c> gate it is parented on), plus
+    ///     <c>round_freeze_end</c> and <c>begin_new_match</c> themselves. A forward run samples its
+    ///     configured tables just before these, which is where a snapshot run's round rows come from.
+    /// </summary>
+    public IReadOnlySet<Type> RoundBoundaryTypes { get; init; } = new HashSet<Type>();
 }
 
 /// <summary>Visualization hint: a named cluster grouping a set of nodes for display.</summary>

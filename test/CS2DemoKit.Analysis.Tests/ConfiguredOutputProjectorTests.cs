@@ -338,9 +338,34 @@ public class ConfiguredOutputProjectorTests
         await Assert.That(tables[1].Rows.Count).IsEqualTo(2); // two live rounds
     }
 
-    /// <summary>Snapshot-less runs (bare mode) fail loudly instead of returning empty tables.</summary>
+    /// <summary>
+    ///     A snapshot-less run projects its state-sampled tables from what it recorded, but a per-event
+    ///     output logs timeline rising edges, which only a snapshot run keeps: that one still fails
+    ///     loudly instead of returning an empty table.
+    /// </summary>
     [Test]
-    public async Task ProjectConfiguredOutputs_WithoutSnapshots_Throws()
+    public async Task ProjectConfiguredOutputs_WithoutSnapshots_ThrowsForAPerEventOutput()
+    {
+        (EvaluationResult result, ParsedDemo demo) = BuildScenario(
+            [1], [(0, "Alice")], (_, _) => 0);
+
+        OutputDef events = new("my_events", OutputScope.PerEvent, [], ["chain"], ["ace_round"]);
+        BuildResult build = new(
+            new StateGraph(), [], [], [], new HashSet<Type>(), [],
+            Outputs: [PerGameOutput(["player_name"], "kills"), events]);
+
+        AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => run.ProjectConfiguredOutputs(demo));
+        await Assert.That(ex.Message).Contains("snapshot");
+    }
+
+    /// <summary>
+    ///     Without snapshots and without a recording (a run assembled by hand), a state-sampled table
+    ///     projects with no rows rather than throwing.
+    /// </summary>
+    [Test]
+    public async Task ProjectConfiguredOutputs_WithoutSnapshots_ProjectsStateTables()
     {
         (EvaluationResult result, ParsedDemo demo) = BuildScenario(
             [1], [(0, "Alice")], (_, _) => 0);
@@ -351,8 +376,8 @@ public class ConfiguredOutputProjectorTests
 
         AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
 
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => run.ProjectConfiguredOutputs(demo));
-        await Assert.That(ex.Message).Contains("snapshot");
+        MetricTable table = run.ProjectConfiguredOutputs(demo).Single();
+        await Assert.That(table.Rows).IsEmpty();
     }
 
     /// <summary>No configured outputs → empty list (never null), even without snapshots.</summary>

@@ -137,6 +137,13 @@ public sealed class StateGraphEvaluator
     // evaluation starts, the constructor demo's before then.
     private IDemoEnrichmentView? _enrichment;
 
+    /// <summary>
+    ///     An observer told of every message before and after it is dispatched, of every player
+    ///     materialized, and of the end of the run. Null (the default) costs one null check per
+    ///     message. The forward path's configured-output recorder is the one user.
+    /// </summary>
+    internal Output.IEvaluationObserver? Observer { get; set; }
+
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
     /// <param name="playerContextIndex">Optional cross-player state index for enrichment edges.</param>
@@ -580,6 +587,7 @@ public sealed class StateGraphEvaluator
                 for (int s = 0; s < synthesized.Count; s++)
                 {
                     NetMessage syntheticMsg = synthesized[s];
+                    Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
 
                     // Synthesized game events (molotov_thrown) must materialize
                     // their player exactly like real-message events below — a player whose first
@@ -605,6 +613,7 @@ public sealed class StateGraphEvaluator
                         trace, ref sLogic, snap);
 
                     FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
+                    Observer?.AfterMessage();
                 }
             }
 
@@ -617,6 +626,10 @@ public sealed class StateGraphEvaluator
                 Type key = GetDispatchKey(message);
                 long msgStart = trace ? Stopwatch.GetTimestamp() : 0;
 
+                // Before materialization and the round reset: the state it sees is the state after
+                // the previous message, which is what a snapshot row holds.
+                Observer?.BeforeMessage(key);
+
                 if (message is GameEventMessage gem)
                 {
                     MaterializeNewPlayers(gem.DecodedEvent);
@@ -625,7 +638,7 @@ public sealed class StateGraphEvaluator
 
                 if (key == typeof(RoundFreezeEndEvent))
                 {
-                    ResetRoundScopedNodes();
+                    ResetRoundScopedNodes(snap);
                     snap?.MarkRoundScopedDirty(_roundScopedNodes);
                 }
                 else if (key == typeof(BeginNewMatchEvent))
@@ -656,6 +669,7 @@ public sealed class StateGraphEvaluator
                 }
 
                 FinishMessage(message, edgesEvaluated, edgesFired, logicRecomputed);
+                Observer?.AfterMessage();
             }
 
             // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
@@ -669,6 +683,7 @@ public sealed class StateGraphEvaluator
                 for (int p = 0; p < postFrame.Count; p++)
                 {
                     NetMessage postMsg = postFrame[p];
+                    Observer?.BeforeMessage(GetDispatchKey(postMsg));
                     if (postMsg is GameEventMessage pgem)
                     {
                         MaterializeNewPlayers(pgem.DecodedEvent);
@@ -684,6 +699,7 @@ public sealed class StateGraphEvaluator
                         trace, ref pLogic, snap);
 
                     FinishMessage(postMsg, pEvaluated, pFired, pLogic);
+                    Observer?.AfterMessage();
                 }
             }
 
@@ -712,6 +728,7 @@ public sealed class StateGraphEvaluator
 
         FramesConsumed = frameIdx;
         MessagesConsumed = totalMessages;
+        Observer?.Finish();
 
         // A1: snapshot the collected highlight firings for this evaluation (copy — the graph's
         // sink is cleared by the NEXT evaluation over this graph, ours must stay stable).
@@ -1484,6 +1501,7 @@ public sealed class StateGraphEvaluator
 
             _materializedPlayers.Add(result);
             _materializedNodeList.AddRange(result.Nodes);
+            Observer?.OnMaterialized(result);
             _materializedEdgeDescriptors.AddRange(result.EdgeDescriptors);
 
             if (EvaluatorEventSource.Log.IsEnabled())
@@ -1565,7 +1583,11 @@ public sealed class StateGraphEvaluator
         }
     }
 
-    private void RecomputeDirtyLogicNodes()
+    // A logic node this recompute switches off gets its snapshot column marked, like a flip in
+    // RecomputeLogicNode. Unmarked, a node that is not round-scoped itself but reads a round-scoped
+    // input (a per-match highlight over a per-round flag) kept its last `true` in every later
+    // snapshot row while the live node read false.
+    private void RecomputeDirtyLogicNodes(SnapshotState? snap)
     {
         foreach ((StateNode node, List<object> dependents) in _nodeToLogicDependents)
         {
@@ -1575,11 +1597,19 @@ public sealed class StateGraphEvaluator
                 {
                     cj.MarkInputsDirty();
                     cj.Recompute();
+                    if (!cj.IsActive)
+                    {
+                        snap?.MarkDirty(cj);
+                    }
                 }
                 else if (dep is DisjunctionNode { IsActive: true } dj)
                 {
                     dj.MarkInputsDirty();
                     dj.Recompute();
+                    if (!dj.IsActive)
+                    {
+                        snap?.MarkDirty(dj);
+                    }
                 }
             }
         }
@@ -1782,7 +1812,7 @@ public sealed class StateGraphEvaluator
 
     // ── Round-scoped reset ────────────────────────────────────────────────────
 
-    private void ResetRoundScopedNodes()
+    private void ResetRoundScopedNodes(SnapshotState? snap)
     {
         foreach (IRoundScopedNode node in _roundScopedNodes)
         {
@@ -1802,7 +1832,7 @@ public sealed class StateGraphEvaluator
             }
         }
 
-        RecomputeDirtyLogicNodes();
+        RecomputeDirtyLogicNodes(snap);
 
         RebuildLiveDispatchKeys();
 
@@ -1839,7 +1869,7 @@ public sealed class StateGraphEvaluator
     {
         // Round machinery first: round-scoped nodes, first-wins guards, and their logic
         // dependents re-arm exactly as at a round boundary.
-        ResetRoundScopedNodes();
+        ResetRoundScopedNodes(snap);
         snap?.MarkRoundScopedDirty(_roundScopedNodes);
 
         foreach ((StateNode node, Action restore) in _matchRestartBaselines)
@@ -1858,7 +1888,7 @@ public sealed class StateGraphEvaluator
             snap?.MarkDirty(node);
         }
 
-        RecomputeDirtyLogicNodes();
+        RecomputeDirtyLogicNodes(snap);
         RebuildLiveDispatchKeys();
 
         _playerContextIndex?.ResetForMatchRestart();

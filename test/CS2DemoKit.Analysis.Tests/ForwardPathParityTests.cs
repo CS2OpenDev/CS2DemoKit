@@ -139,6 +139,105 @@ public class ForwardPathParityTests
         await Assert.That(RunDigest.Render(fromBytes)).IsEqualTo(RunDigest.Render(streamed));
     }
 
+    /// <summary>
+    ///     A run without snapshots projects its configured tables from what it sampled at the round
+    ///     boundaries, and they must be the tables a snapshot run projects: every row, dimension, value
+    ///     and column clock. Covered with the shipped rulesets plus a per-side and a match ruleset, over
+    ///     a retained demo and over a forward reader.
+    /// </summary>
+    [Test]
+    public async Task ConfiguredTables_WithoutSnapshots_MatchTheSnapshotProjection()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        await AssertTablesAgree(path, demo);
+    }
+
+    /// <summary>The same agreement over whatever demos the corpus holds.</summary>
+    [Test]
+    [MethodDataSource(nameof(CorpusDemos))]
+    public async Task Corpus_ConfiguredTables_WithoutSnapshots_MatchTheSnapshotProjection(string demoPath)
+    {
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
+        await AssertTablesAgree(demoPath, demo);
+    }
+
+    private const string TableRulesets = """
+        ruleset: parity_sides
+        for: each_team
+        stats:
+          kills:
+            count: kill
+            per: round
+          won:
+            count: round_won
+            per: round
+          decided_at:
+            capture: event.frame_tick
+            on: round_decided
+            per: round
+          money:
+            capture: round.team.money
+            on: raw.round_freeze_end
+            per: round
+          match_kills:
+            count: kill
+            per: match
+        show:
+          tables:
+            parity_sides_round:
+              per: team_round
+              columns:
+                - { stat: kills, label: K }
+                - { stat: won, label: W }
+                - { stat: decided_at, label: Decided }
+                - { stat: money, label: M }
+            parity_sides_match:
+              per: team_match
+              columns:
+                - { stat: match_kills, label: K }
+        ---
+        ruleset: parity_match
+        for: match
+        stats:
+          kills:
+            count: kill
+            per: match
+          plant_at:
+            capture: event.tick
+            on: bomb_planted
+            keep: list
+            per: match
+        show:
+          tables:
+            parity_match:
+              per: match
+              columns:
+                - { stat: kills, label: K }
+                - { stat: plant_at, label: Plants }
+        """;
+
+    private static async Task AssertTablesAgree(string path, ParsedDemo demo)
+    {
+        RuleConfigLoadResult shipped = YamlConfigLoader.LoadShippedEmbedded();
+        RuleConfigLoadResult extra = YamlConfigLoader.LoadDocuments([("parity.rules.yaml", TableRulesets)]);
+        await Assert.That(extra.Errors.Count).IsEqualTo(0);
+        List<RulesetsV2.Model.RulesetDoc> rules = [.. shipped.Rulesets, .. extra.Rulesets];
+
+        AnalysisRun snapshots = DemoAnalysis.Run(demo, rules, new AnalysisOptions { CaptureSnapshots = true });
+        AnalysisRun bare = DemoAnalysis.Run(demo, rules, new AnalysisOptions { CaptureSnapshots = false });
+        AnalysisRun streamed = DemoAnalysis.Run(path, rules);
+
+        await Assert.That(snapshots.Build.RulesetDiagnostics.Count).IsEqualTo(0);
+        await Assert.That(bare.Snapshots).IsNull();
+        await Assert.That(streamed.Snapshots).IsNull();
+
+        string expected = RunDigest.Render(snapshots);
+        await Assert.That(expected).Contains("== parity_sides_round");
+        await Assert.That(RunDigest.Render(bare)).IsEqualTo(expected);
+        await Assert.That(RunDigest.Render(streamed)).IsEqualTo(expected);
+    }
+
     [Test]
     [Explicit]
     [MethodDataSource(nameof(CorpusDemos))]
@@ -245,7 +344,8 @@ public class ForwardPathParityTests
                 sb.Append(line).Append('\n');
             }
 
-            if (run.Snapshots is not null)
+            // Both capture modes project: a snapshot run from its rows, a run without snapshots from
+            // what it recorded at the round boundaries.
             {
                 sb.Append("[tables]\n");
                 foreach (MetricTable t in run.ProjectConfiguredOutputs().OrderBy(t => t.Name, StringComparer.Ordinal))
@@ -253,6 +353,8 @@ public class ForwardPathParityTests
                     sb.Append("== ").Append(t.Name).Append('\n');
                     sb.Append("dims=").Append(string.Join(",", t.DimensionColumns)).Append('\n');
                     sb.Append("vals=").Append(string.Join(",", t.ValueColumns)).Append('\n');
+                    sb.Append("clocks=").Append(string.Join(",", t.ColumnClocks.OrderBy(c => c.Key, StringComparer.Ordinal)
+                        .Select(c => $"{c.Key}:{c.Value}"))).Append('\n');
                     foreach (string line in t.Rows
                                  .Select(r =>
                                      string.Join("|", t.DimensionColumns.Select(c => Normalise(Fmt(r.Dimensions.GetValueOrDefault(c))))) +

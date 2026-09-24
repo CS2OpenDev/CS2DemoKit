@@ -17,4 +17,4 @@ _chain_opening_kill=11
 _chain_traded_death=3
 has_kast=19
 traded=3
-sha256=1a735db95a9f900d840f7b95d359bb6cea10b3ae767b0d0c856a77db1457a267
+sha256=2ac6eb42ecd70146551d140e898aad94280f525b9cab3ef110abbc8f70b0d6a6

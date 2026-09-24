@@ -280,6 +280,13 @@ highlights, which events carry which clock, and the facets that read a sentinel 
 when there was nothing to measure. The geometry-backed views (`enemy_spotted` and what hangs off it)
 need the engine wired in first; see the quick start above.
 
+A ruleset is `for: each_player` (one instance per player), `for: each_team` (one per side, for
+per-round, per-side facts such as a side's buy or whether it won) or `for: match`. Its `show: tables`
+project through `run.ProjectConfiguredOutputs()` on either path: a snapshot run projects from its
+rows, and a forward run without snapshots from the state it sampled at each round boundary, which is
+the same state, so the two agree row for row. Only a per-event output (a timeline log) still needs
+snapshots.
+
 ## Building
 
 ```sh

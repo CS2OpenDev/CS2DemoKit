@@ -90,14 +90,34 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(demo);
 
+        if (_output.Scope == OutputScope.PerEvent)
+        {
+            return [WithColumnClocks(ProjectPerEvent(result, demo), _output)];
+        }
+
+        return Project(ProjectionSource.FromSnapshots(result), demo);
+    }
+
+    /// <summary>
+    ///     Projects a state-sampled table (every scope but <see cref="OutputScope.PerEvent" />) from a
+    ///     <see cref="ProjectionSource" />: the snapshot table of a snapshot run, or what a
+    ///     <see cref="ConfiguredOutputRecorder" /> sampled at the round boundaries of a forward run.
+    ///     The two agree row for row; the rows are built by the same code from the same rule.
+    /// </summary>
+    internal IReadOnlyList<MetricTable> Project(ProjectionSource source, DemoDescriptor demo)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(demo);
+
         MetricTable table = _output.Scope switch
         {
-            OutputScope.PerPlayerPerGame => ProjectPerPlayerPerGame(result, demo),
-            OutputScope.PerPlayerPerRound => ProjectPerPlayerPerRound(result, demo),
-            OutputScope.PerMatch => ProjectPerMatch(result, demo),
-            OutputScope.PerTeamPerRound => ProjectPerTeam(result, demo, true),
-            OutputScope.PerTeamPerGame => ProjectPerTeam(result, demo, false),
-            _ => ProjectPerEvent(result, demo)
+            OutputScope.PerPlayerPerGame => ProjectPerPlayerPerGame(source, demo),
+            OutputScope.PerPlayerPerRound => ProjectPerPlayerPerRound(source, demo),
+            OutputScope.PerMatch => ProjectPerMatch(source, demo),
+            OutputScope.PerTeamPerRound => ProjectPerTeam(source, demo, true),
+            OutputScope.PerTeamPerGame => ProjectPerTeam(source, demo, false),
+            _ => throw new InvalidOperationException(
+                $"output '{_output.Id}' logs timeline events, which only a snapshot run records.")
         };
 
         return [WithColumnClocks(table, _output)];
@@ -131,18 +151,15 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     /// <summary>
     ///     Projects a single match-level row (a <c>for: match</c> ruleset's <c>show: tables</c>,
     ///     <c>per: match</c>). Every metric resolves against the build's game-scoped node map
-    ///     (<see cref="_gameNodesByRuleId" />) and is read from the final snapshot — the same
+    ///     (<see cref="_gameNodesByRuleId" />) and is read from the final state — the same
     ///     final-snapshot sampling <see cref="ProjectPerPlayerPerGame" /> uses, minus the per-player
     ///     fan-out. When there are no game-scoped nodes (no <see cref="_gameNodesByRuleId" />) the table
     ///     is still emitted, with null value cells (the columns convention).
     /// </summary>
-    private MetricTable ProjectPerMatch(EvaluationResult result, DemoDescriptor demo)
+    private MetricTable ProjectPerMatch(ProjectionSource source, DemoDescriptor demo)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
-        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
-        NodeSnapshot[]? finalSnapshot = result.MessageSnapshots.Count > 0
-            ? result.MessageSnapshots.MaterializeRow(result.MessageSnapshots.Count - 1)
-            : null;
+        Func<StateNode, object?>? final = source.Final;
 
         Dictionary<string, object?> dimensions = new(StringComparer.Ordinal);
         foreach (string dimension in _output.Dimensions)
@@ -169,9 +186,8 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                               && _gameNodesByRuleId.TryGetValue(metric.RuleRef, out StateNode? gameNode)
                 ? gameNode
                 : null;
-            values[metric.Label] = node is not null && finalSnapshot is not null
-                ? StatValues.ApplyColumnFormat(
-                    StatValues.ReadColumnValue(finalSnapshot, nodeIndex, node), metric.Format, demo.TickRate)
+            values[metric.Label] = node is not null && final is not null
+                ? StatValues.ApplyColumnFormat(final(node), metric.Format, demo.TickRate)
                 : null;
         }
 
@@ -182,46 +198,33 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
     /// <summary>
     ///     Projects a <c>for: each_team</c> ruleset's table: one row per side (2 then 3), for each live
-    ///     round (sampled like <see cref="ProjectPerPlayerPerRound" />: the last snapshot holding the
-    ///     round) or once at the final snapshot. Columns resolve against the side's node map; the
-    ///     <c>slots</c> dimension is the side's roster node read from the same snapshot.
+    ///     round (sampled like <see cref="ProjectPerPlayerPerRound" />: the last state holding the
+    ///     round) or once at the final state. Columns resolve against the side's node map; the
+    ///     <c>slots</c> dimension is the side's roster node read from the same state.
     /// </summary>
-    private MetricTable ProjectPerTeam(EvaluationResult result, DemoDescriptor demo, bool perRound)
+    private MetricTable ProjectPerTeam(ProjectionSource source, DemoDescriptor demo, bool perRound)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
-        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
         List<MetricRow> rows = [];
 
-        List<(int? Round, NodeSnapshot[] Snapshot)> samples = [];
-        if (perRound)
-        {
-            int roundNumberIndex = StatValues.FindRoundNumberIndex(result.FinalTrackedNodes);
-            if (roundNumberIndex >= 0)
-            {
-                foreach (RoundSample round in CollectRoundSamples(result.MessageSnapshots, roundNumberIndex))
-                {
-                    samples.Add((round.RoundNumber, result.MessageSnapshots.MaterializeRow(round.SnapshotIndex)));
-                }
-            }
-        }
-        else if (result.MessageSnapshots.Count > 0)
-        {
-            samples.Add((null, result.MessageSnapshots.MaterializeRow(result.MessageSnapshots.Count - 1)));
-        }
+        List<(int? Round, Func<StateNode, object?> Read)> samples = perRound
+            ? source.Rounds.Select(r => ((int?)r.RoundNumber, r.Read)).ToList()
+            : source.Final is { } final
+                ? [(null, final)]
+                : [];
 
-        foreach ((int? round, NodeSnapshot[] snapshot) in samples)
+        foreach ((int? round, Func<StateNode, object?> read) in samples)
         {
             foreach (int side in (int[])[2, 3])
             {
-                rows.Add(BuildTeamRow(side, demo, snapshot, nodeIndex, round));
+                rows.Add(BuildTeamRow(side, demo, read, round));
             }
         }
 
         return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
     }
 
-    private MetricRow BuildTeamRow(int side, DemoDescriptor demo, NodeSnapshot[] snapshot,
-        Dictionary<StateNode, int> nodeIndex, int? roundNumber)
+    private MetricRow BuildTeamRow(int side, DemoDescriptor demo, Func<StateNode, object?> read, int? roundNumber)
     {
         IReadOnlyDictionary<string, StateNode>? sideNodes =
             TeamNodesByRuleId is not null && TeamNodesByRuleId.TryGetValue(side, out IReadOnlyDictionary<string, StateNode>? map)
@@ -255,7 +258,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                     break;
                 case DimSlots:
                     dimensions[DimSlots] = TeamRosterNodes is not null && TeamRosterNodes.TryGetValue(side, out StateNode? roster)
-                        ? StatValues.ReadColumnValue(snapshot, nodeIndex, roster)
+                        ? read(roster)
                         : null;
                     break;
             }
@@ -270,60 +273,45 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                     ? gameNode
                     : null;
             values[metric.Label] = node is not null
-                ? StatValues.ApplyColumnFormat(
-                    StatValues.ReadColumnValue(snapshot, nodeIndex, node), metric.Format, demo.TickRate)
+                ? StatValues.ApplyColumnFormat(read(node), metric.Format, demo.TickRate)
                 : null;
         }
 
         return new MetricRow(dimensions, values);
     }
 
-    // ── per_player_per_game: final-snapshot sampling ─────────────────────
+    // ── per_player_per_game: final-state sampling ─────────────────────────
 
-    private MetricTable ProjectPerPlayerPerGame(EvaluationResult result, DemoDescriptor demo)
+    private MetricTable ProjectPerPlayerPerGame(ProjectionSource source, DemoDescriptor demo)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
-        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
 
-        NodeSnapshot[]? finalSnapshot = result.MessageSnapshots.Count > 0
-            ? result.MessageSnapshots.MaterializeRow(result.MessageSnapshots.Count - 1)
-            : null;
-
-        List<List<PerPlayerNodeTemplate.MaterializedPlayer>> playerGroups =
-            GroupBySlot(result.MaterializedPlayers);
+        List<List<PerPlayerNodeTemplate.MaterializedPlayer>> playerGroups = GroupBySlot(source.Players);
         List<MetricRow> rows = new(playerGroups.Count);
-        if (finalSnapshot is not null)
+        if (source.Final is { } final)
         {
             foreach (List<PerPlayerNodeTemplate.MaterializedPlayer> group in playerGroups)
             {
-                rows.Add(BuildPlayerRow(group, demo, finalSnapshot, nodeIndex, null));
+                rows.Add(BuildPlayerRow(group, demo, final, null));
             }
         }
 
         return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
     }
 
-    // ── per_player_per_round: last-snapshot-per-live-round sampling ──────
+    // ── per_player_per_round: last-state-per-live-round sampling ──────────
 
-    private MetricTable ProjectPerPlayerPerRound(EvaluationResult result, DemoDescriptor demo)
+    private MetricTable ProjectPerPlayerPerRound(ProjectionSource source, DemoDescriptor demo)
     {
         List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
-        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
 
-        int roundNumberIndex = StatValues.FindRoundNumberIndex(result.FinalTrackedNodes);
-        List<RoundSample> roundSamples = roundNumberIndex >= 0
-            ? CollectRoundSamples(result.MessageSnapshots, roundNumberIndex)
-            : [];
-
-        List<List<PerPlayerNodeTemplate.MaterializedPlayer>> playerGroups =
-            GroupBySlot(result.MaterializedPlayers);
-        List<MetricRow> rows = new(roundSamples.Count * Math.Max(1, playerGroups.Count));
-        foreach (RoundSample round in roundSamples)
+        List<List<PerPlayerNodeTemplate.MaterializedPlayer>> playerGroups = GroupBySlot(source.Players);
+        List<MetricRow> rows = new(source.Rounds.Count * Math.Max(1, playerGroups.Count));
+        foreach ((int roundNumber, Func<StateNode, object?> read) in source.Rounds)
         {
-            NodeSnapshot[] snapshot = result.MessageSnapshots.MaterializeRow(round.SnapshotIndex);
             foreach (List<PerPlayerNodeTemplate.MaterializedPlayer> group in playerGroups)
             {
-                rows.Add(BuildPlayerRow(group, demo, snapshot, nodeIndex, round.RoundNumber));
+                rows.Add(BuildPlayerRow(group, demo, read, roundNumber));
             }
         }
 
@@ -424,8 +412,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     private MetricRow BuildPlayerRow(
         List<PerPlayerNodeTemplate.MaterializedPlayer> group,
         DemoDescriptor demo,
-        NodeSnapshot[] snapshot,
-        Dictionary<StateNode, int> nodeIndex,
+        Func<StateNode, object?> read,
         int? roundNumber)
     {
         // Identity dimensions come from the first materialization — slot is identical across the
@@ -471,8 +458,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         {
             StateNode? node = ResolveMetricNode(group, metric.RuleRef);
             values[metric.Label] = node is not null
-                ? StatValues.ApplyColumnFormat(
-                    StatValues.ReadColumnValue(snapshot, nodeIndex, node), metric.Format, demo.TickRate)
+                ? StatValues.ApplyColumnFormat(read(node), metric.Format, demo.TickRate)
                 : null;
         }
 
@@ -512,7 +498,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     ///     samples ordered by round number. Round-scoped nodes reset on the <i>next</i> round's
     ///     freeze-end, so the last index holding round <c>r</c> captures its end-of-round values.
     /// </summary>
-    private static List<RoundSample> CollectRoundSamples(SnapshotTable snapshots, int roundNumberIndex)
+    internal static List<RoundSample> CollectRoundSamples(SnapshotTable snapshots, int roundNumberIndex)
     {
         Dictionary<int, int> lastIndexByRound = new();
 
@@ -590,5 +576,57 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         return roundByFrame;
     }
 
-    private readonly record struct RoundSample(int RoundNumber, int SnapshotIndex);
+    internal readonly record struct RoundSample(int RoundNumber, int SnapshotIndex);
+}
+
+/// <summary>
+///     What a state-sampled configured table is projected from: one reader per live round (the state
+///     that last held the round), a reader of the final state, and the players materialized over the
+///     run. A reader maps a node to the cell value it had in that state, or null when the node was not
+///     tracked, inactive, or absent.
+/// </summary>
+/// <param name="Rounds">Each live round's state, ordered by round number.</param>
+/// <param name="Final">The final state, or null when the run dispatched nothing.</param>
+/// <param name="Players">Every materialized player, in materialization order.</param>
+internal sealed record ProjectionSource(
+    IReadOnlyList<(int RoundNumber, Func<StateNode, object?> Read)> Rounds,
+    Func<StateNode, object?>? Final,
+    IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> Players)
+{
+    /// <summary>
+    ///     The snapshot run's source: rounds sampled at the last snapshot holding each live round
+    ///     number, the final state at the last snapshot, cells read off the snapshot rows.
+    /// </summary>
+    public static ProjectionSource FromSnapshots(EvaluationResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
+
+        Func<StateNode, object?> Reader(int row)
+        {
+            NodeSnapshot[]? snapshot = null;
+            return node =>
+            {
+                snapshot ??= result.MessageSnapshots.MaterializeRow(row);
+                return StatValues.ReadColumnValue(snapshot, nodeIndex, node);
+            };
+        }
+
+        List<(int, Func<StateNode, object?>)> rounds = [];
+        int roundNumberIndex = StatValues.FindRoundNumberIndex(result.FinalTrackedNodes);
+        if (roundNumberIndex >= 0)
+        {
+            foreach (ConfiguredOutputProjector.RoundSample round in
+                     ConfiguredOutputProjector.CollectRoundSamples(result.MessageSnapshots, roundNumberIndex))
+            {
+                rounds.Add((round.RoundNumber, Reader(round.SnapshotIndex)));
+            }
+        }
+
+        Func<StateNode, object?>? final = result.MessageSnapshots.Count > 0
+            ? Reader(result.MessageSnapshots.Count - 1)
+            : null;
+
+        return new ProjectionSource(rounds, final, result.MaterializedPlayers);
+    }
 }

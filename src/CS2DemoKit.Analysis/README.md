@@ -62,6 +62,13 @@ folded a chunk ahead of the loop by three workers (`AnalysisOptions.MaxDegreeOfP
 the count, one means in step with the loop), the file is read and decoded on its own thread, and
 a frame's entity and string-table payloads are released once folded, so snapshot rows over a
 stream carry no entries for them.
+Configured tables (`show: tables` in a ruleset) project with `run.ProjectConfiguredOutputs()` in
+both modes. A snapshot run reads them off its rows; a run without snapshots samples the tables'
+nodes just before each message that can move the round number (a freeze end, a match start or end)
+and at the end, which is the state a snapshot run's round rows hold, so the tables agree row for row
+and a forward run no longer has to turn snapshots on to get them. A per-event output, a log of
+timeline rising edges, is the one that still needs snapshots.
+
 To customize or fork the shipped rules, extract them to disk with
 `YamlConfigLoader.ExtractShippedTo(dir)`, edit the copies, and load your directory back with
 `YamlConfigLoader.TryLoadDirectory(dir)` or layer it over the shipped tier with

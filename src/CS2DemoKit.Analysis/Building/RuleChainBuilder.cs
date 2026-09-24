@@ -547,8 +547,32 @@ public sealed partial class RuleChainBuilder
             Profile = Profile,
             Events = _registry,
             TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
-            TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null
+            TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
+            RoundBoundaryTypes = RoundBoundaryTypes()
         };
+    }
+
+    /// <summary>
+    ///     The dispatch types that can move <c>round_number</c> (see
+    ///     <see cref="BuildResult.RoundBoundaryTypes" />): the concrete events of the logical events its
+    ///     own triggers and its <c>match_live</c> parent's triggers name, plus the two events the
+    ///     evaluator itself treats as boundaries.
+    /// </summary>
+    private HashSet<Type> RoundBoundaryTypes()
+    {
+        HashSet<Type> types = [typeof(RoundFreezeEndEvent), typeof(BeginNewMatchEvent)];
+        foreach (string logical in (string[])["round_freeze_end", "match_start", "match_end"])
+        {
+            foreach (string concrete in _logicalResolver.Resolve(logical)?.ConcreteEventNames ?? [])
+            {
+                if (_registry.TryResolve(concrete, out Type? type))
+                {
+                    types.Add(type);
+                }
+            }
+        }
+
+        return types;
     }
 
     /// <summary>
