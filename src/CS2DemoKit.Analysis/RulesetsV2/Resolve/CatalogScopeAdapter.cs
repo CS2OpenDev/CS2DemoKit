@@ -44,6 +44,12 @@ public sealed class CatalogScopeAdapter
     /// </summary>
     public const string FrameTickMember = "frame_tick";
 
+    /// <summary>
+    ///     The injected <c>team.side</c> member of a <c>for: each_team</c> ruleset: the side the
+    ///     instance is for, 2 (T) or 3 (CT). A constant per instance; the planner substitutes it.
+    /// </summary>
+    public const string TeamSidePath = "team.side";
+
     private readonly Dictionary<string, CatalogEnrichment> _enrichmentsByName;
 
     private readonly Dictionary<string, IScopeSymbol> _eventNamespaces;
@@ -66,6 +72,7 @@ public sealed class CatalogScopeAdapter
         Round = round;
         Match = match;
         Enrich = enrich;
+        Team = ScopeSymbol.Namespace("team", [ScopeSymbol.Value("side", RulesType.Int)]);
         _eventNamespaces = eventNamespaces;
         _netMessageNamespaces = netMessageNamespaces;
         _roleMembers = roleMembers;
@@ -86,6 +93,12 @@ public sealed class CatalogScopeAdapter
 
     /// <summary>The <c>enrich.*</c> root: the enrichment family as a nested namespace tree.</summary>
     public IScopeSymbol Enrich { get; }
+
+    /// <summary>
+    ///     The <c>team.*</c> root, in scope only for a <c>for: each_team</c> ruleset: <c>team.side</c>,
+    ///     the side the instance is for.
+    /// </summary>
+    public IScopeSymbol Team { get; }
 
     /// <summary>Builds an adapter from the embedded catalog (<see cref="CatalogResource.Load" />).</summary>
     /// <returns>The adapter.</returns>

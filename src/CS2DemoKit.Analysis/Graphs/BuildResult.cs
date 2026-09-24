@@ -117,6 +117,21 @@ public sealed record BuildResult(
 
     /// <summary>The registry the graph's edges were resolved against; what a decode plan maps edge types back through.</summary>
     public EventRegistry? Events { get; init; }
+
+    /// <summary>
+    ///     The <c>for: each_team</c> rulesets' nodes, per side (2 = T, 3 = CT): side → the qualified
+    ///     <c>{ruleset}.{stat}</c> node map, the per-side twin of <see cref="GameNodesByRuleId" />.
+    ///     Configured <c>team_round</c> / <c>team_match</c> tables resolve their columns here.
+    ///     <c>null</c> when the build has no team ruleset.
+    /// </summary>
+    public IReadOnlyDictionary<int, IReadOnlyDictionary<string, StateNode>>? TeamNodesByRuleId { get; init; }
+
+    /// <summary>
+    ///     Per side, the node holding the side's roster (the connected players' slots, ascending) as of
+    ///     the last freeze end: what a <c>team_round</c> table's <c>slots</c> dimension reads.
+    ///     <c>null</c> when the build has no team ruleset.
+    /// </summary>
+    public IReadOnlyDictionary<int, StateNode>? TeamRosterNodes { get; init; }
 }
 
 /// <summary>Visualization hint: a named cluster grouping a set of nodes for display.</summary>

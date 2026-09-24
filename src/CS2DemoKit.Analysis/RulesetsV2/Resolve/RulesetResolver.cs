@@ -74,6 +74,10 @@ public static class RulesetResolver
         private readonly RulesetDoc _doc;
         private readonly RulesetExportGraph? _exports;
         private readonly bool _forEachPlayer;
+
+        // for: each_team — one instance per side. The player root is out of scope (the subject is a
+        // side, not a player); the team root (team.side) is in.
+        private readonly bool _forEachTeam;
         private readonly Dictionary<string, ParamDef> _paramDefsByName = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, ExpressionNode> _paramLiterals = new(StringComparer.Ordinal);
@@ -101,6 +105,7 @@ public static class RulesetResolver
             _exports = exports;
             _rulesetId = new RulesetId(doc.Id, doc.For);
             _forEachPlayer = doc.For == RulesetScope.EachPlayer;
+            _forEachTeam = doc.For == RulesetScope.EachTeam;
 
             _viewsByName = adapter.Catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
             _synthesizedEvents = new HashSet<string>(
@@ -491,15 +496,17 @@ public static class RulesetResolver
             // A team-bound view (round_won / round_lost) filters on the round-end winner against the
             // subject's team. The planner writes that condition, so the reads are declared here: they
             // are what orders the round-end enrichment edge ahead of the stat's edge.
-            if (trigger.View is { Binding: "team" } && _forEachPlayer && !trigger.ActorAny)
+            if (trigger.View is { Binding: "team" } && (_forEachPlayer || _forEachTeam) && !trigger.ActorAny)
             {
                 reads.Declare(TeamBindingHasWinner);
                 reads.Declare(TeamBindingWinnerTeam);
             }
 
+            RejectPlayerSubjectReads(stat, reads);
+
             RuleNodeKind kind = MapNodeKind(stat.Kind);
             KeepKind keep = MapKeep(stat);
-            ScopeAxis scope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis scope = ComputeScope(stat.Per);
 
             // streak/burst kind-args (row 8): fold the window to concrete ticks and default the two so
             // the node's identity is fully determined (an explicit window:640 and its default hash alike).
@@ -809,7 +816,7 @@ public static class RulesetResolver
                 tallyThresholds.Add((minValue, threshold.Target));
             }
 
-            ScopeAxis tallyScope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis tallyScope = ComputeScope(stat.Per);
 
             return new CheckedStat(
                 _rulesetId,
@@ -906,7 +913,7 @@ public static class RulesetResolver
             }
 
             reads.Collect(ratio);
-            ScopeAxis rateScope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis rateScope = ComputeScope(stat.Per);
 
             return new CheckedStat(
                 _rulesetId,
@@ -1350,8 +1357,19 @@ public static class RulesetResolver
             }
 
             reads.Collect(when);
-            ScopeAxis scopeAxis = ComputeScope(highlight.Per, _forEachPlayer);
-            ScopeAxis countScope = _forEachPlayer ? ScopeAxis.PlayerMatch : ScopeAxis.Match;
+            if (_forEachTeam)
+            {
+                // A highlight is a per-round rising edge attributed to a player on the timeline; a
+                // side has no player to attribute it to.
+                Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                    $"highlight '{highlight.Id}': a for: each_team ruleset cannot declare highlights (a "
+                    + "highlight is attributed to a player); count the moments with a stat instead",
+                    highlight.Position);
+                return null;
+            }
+
+            ScopeAxis scopeAxis = ComputeScope(highlight.Per);
+            ScopeAxis countScope = ComputeScope(PerScope.Match);
 
             int score = highlight.Score ?? DefaultHighlightScore;
             HighlightKind kind = ResolveHighlightKind(highlight);
@@ -1715,6 +1733,11 @@ public static class RulesetResolver
                 AddRoot(roots, _adapter.Player);
             }
 
+            if (_forEachTeam)
+            {
+                AddRoot(roots, _adapter.Team);
+            }
+
             AddRoot(roots, _adapter.Round);
             AddRoot(roots, _adapter.Match);
             if (_paramsNamespace is not null)
@@ -1964,14 +1987,39 @@ public static class RulesetResolver
             };
         }
 
-        private static ScopeAxis ComputeScope(PerScope per, bool forEachPlayer) =>
-            (forEachPlayer, per) switch
+        private ScopeAxis ComputeScope(PerScope per) =>
+            (_doc.For, per) switch
             {
-                (true, PerScope.Match) => ScopeAxis.PlayerMatch,
-                (true, _) => ScopeAxis.PlayerRound,
-                (false, PerScope.Match) => ScopeAxis.Match,
+                (RulesetScope.EachPlayer, PerScope.Match) => ScopeAxis.PlayerMatch,
+                (RulesetScope.EachPlayer, _) => ScopeAxis.PlayerRound,
+                (RulesetScope.EachTeam, PerScope.Match) => ScopeAxis.TeamMatch,
+                (RulesetScope.EachTeam, _) => ScopeAxis.TeamRound,
+                (_, PerScope.Match) => ScopeAxis.Match,
                 _ => ScopeAxis.Round
             };
+
+        /// <summary>
+        ///     In a <c>for: each_team</c> ruleset, refuses the two team-aggregate reads whose subject
+        ///     has to be a player: <c>round.alive.in_clutch</c> (is THIS player the lone survivor) and
+        ///     <c>round.clutch.size</c> (the N of THIS player's 1vN). A side is not in a clutch.
+        /// </summary>
+        private void RejectPlayerSubjectReads(StatDef stat, ReadCollector reads)
+        {
+            if (!_forEachTeam)
+            {
+                return;
+            }
+
+            foreach (string read in reads.DeclaredReads)
+            {
+                if (read is "round.alive.in_clutch" or "round.clutch.size")
+                {
+                    Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                        $"stat '{stat.Id}' reads '{read}', whose subject is a player (the clutching player); "
+                        + "a for: each_team ruleset's subject is a side", stat.Position);
+                }
+            }
+        }
 
         private static string LastSegment(string path)
         {

@@ -1427,6 +1427,25 @@ public static class ExpressionCompiler
                 return ResolveEventSlotEntity(b, string.Join(".", entityPath), roleSlot);
             }
 
+            // `<SlotField>.team` — the live team of the player an event's slot field names (the
+            // for: each_team side binding: `Attacker.team == 2`). Read per fire through the player
+            // context index, so a halftime swap is followed; a slot with no context reads 0, which
+            // matches no side. Only a player-slot field qualifies.
+            if (b.EntityValueAtParam is null && b.EventParam is not null && b.EventFields is not null
+                && b.PlayerContextIndex is not null
+                && b.EventFields.ContainsKey(name)
+                && pos + 1 < tokens.Length
+                && tokens[pos].Kind == TokenKind.Dot
+                && tokens[pos + 1].Kind == TokenKind.Identifier && tokens[pos + 1].Text == "team"
+                && IsPlayerSlotField(name, b.EventFields[name].FieldType))
+            {
+                pos += 2; // skip '.team'
+                Expression slotExpr = ResolveEventField(b, name);
+                Expression slotInt = slotExpr.Type == typeof(int) ? slotExpr : Expression.Convert(slotExpr, typeof(int));
+                MethodInfo currentTeam = typeof(PlayerContextIndex).GetMethod(nameof(PlayerContextIndex.GetCurrentTeam))!;
+                return Expression.Call(Expression.Constant(b.PlayerContextIndex), currentTeam, slotInt);
+            }
+
             if (name == "context")
             {
                 if (pos < tokens.Length && tokens[pos].Kind == TokenKind.Dot)

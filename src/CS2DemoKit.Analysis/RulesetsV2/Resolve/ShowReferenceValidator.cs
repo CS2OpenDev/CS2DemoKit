@@ -136,7 +136,25 @@ public sealed class ShowReferenceIds
 /// </summary>
 public static class ShowReferenceValidator
 {
-    private static readonly string[] _supportedPer = ["player_round", "player_match", "match"];
+    private static readonly string[] _supportedPer =
+        ["player_round", "player_match", "match", "team_round", "team_match"];
+
+    /// <summary>The <c>per:</c> values each <c>for:</c> scope's tables may use.</summary>
+    private static string[] PerFor(RulesetScope scope) =>
+        scope switch
+        {
+            RulesetScope.EachPlayer => ["player_round", "player_match"],
+            RulesetScope.EachTeam => ["team_round", "team_match"],
+            _ => ["match"]
+        };
+
+    private static string ScopeText(RulesetScope scope) =>
+        scope switch
+        {
+            RulesetScope.EachPlayer => "each_player",
+            RulesetScope.EachTeam => "each_team",
+            _ => "match"
+        };
 
     /// <summary>Validates <paramref name="ruleset" />'s show block.</summary>
     /// <param name="ruleset">The resolved ruleset.</param>
@@ -151,6 +169,15 @@ public static class ShowReferenceValidator
 
         ShowReferenceIds ids = ShowReferenceIds.From(ruleset);
         List<RulesetDiagnostic> diagnostics = [];
+
+        if (show.Scoreboard.Count > 0 && ruleset.For != RulesetScope.EachPlayer)
+        {
+            diagnostics.Add(new RulesetDiagnostic(
+                ResolveDiagnosticCodes.ShowScoreboardScope,
+                $"ruleset '{ruleset.Id.Id}' is for: {ScopeText(ruleset.For)} but declares show: scoreboard — a "
+                + $"scoreboard is per-player; use show: tables (per: {string.Join(" | ", PerFor(ruleset.For))}).",
+                show.Position));
+        }
 
         foreach (ScoreboardEntry entry in show.Scoreboard)
         {
@@ -173,6 +200,15 @@ public static class ShowReferenceValidator
                     $"show: table '{table.Name}' in ruleset '{ruleset.Id.Id}' declares 'per: "
                     + $"{table.Per ?? "<missing>"}', which is not a supported table dimension "
                     + $"({string.Join(" | ", _supportedPer)}).",
+                    table.Position));
+            }
+            else if (!PerFor(ruleset.For).Contains(table.Per, StringComparer.Ordinal))
+            {
+                diagnostics.Add(new RulesetDiagnostic(
+                    ResolveDiagnosticCodes.ShowTableScopeMismatch,
+                    $"show: table '{table.Name}' in ruleset '{ruleset.Id.Id}' declares 'per: {table.Per}', but the "
+                    + $"ruleset is for: {ScopeText(ruleset.For)}, whose tables are per: "
+                    + $"{string.Join(" | ", PerFor(ruleset.For))}. A table of the wrong scope has no rows to project.",
                     table.Position));
             }
 

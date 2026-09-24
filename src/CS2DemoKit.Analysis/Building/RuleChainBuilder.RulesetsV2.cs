@@ -51,6 +51,16 @@ public sealed partial class RuleChainBuilder
         typeof(RuleChainBuilder).GetMethod(nameof(CreateListAppendEdgeGeneric),
             BindingFlags.NonPublic | BindingFlags.Static)!;
 
+    // The side a for: each_team ruleset is being built for (2 or 3) while BuildV2TeamScope runs; null
+    // everywhere else. The subject binding reads it: an actor view binds the actor's live team to
+    // it, and round_won / round_lost compare the round's winner with it.
+    private int? _teamSubjectSide;
+
+    // The for: each_team build's per-side outputs: side → {ruleset}.{stat} node map, and side → the
+    // roster node its tables' `slots` dimension reads. Empty when no team ruleset was built.
+    private readonly Dictionary<int, IReadOnlyDictionary<string, StateNode>> _teamNodesByRuleId = [];
+    private readonly Dictionary<int, StateNode> _teamRosters = [];
+
     // A2 golden drift-guard seam: the canonical stat/highlight hash map (path → 32-byte hash,
     // all registered spellings) of the most recent per-player template materialization. Written
     // by the template factory (reference assignment only); read by the fingerprint helper's
@@ -90,11 +100,16 @@ public sealed partial class RuleChainBuilder
     {
         List<CheckedRuleset> perPlayer = [];
         List<CheckedRuleset> gameScope = [];
+        List<CheckedRuleset> teamScope = [];
         foreach (CheckedRuleset rs in rulesets)
         {
             if (rs.For == RulesetScope.EachPlayer)
             {
                 perPlayer.Add(rs);
+            }
+            else if (rs.For == RulesetScope.EachTeam)
+            {
+                teamScope.Add(rs);
             }
             else
             {
@@ -118,6 +133,197 @@ public sealed partial class RuleChainBuilder
         {
             BuildV2GameScope(gameScope, options, graph, nodeLookup, allNodes, edgeDescriptors,
                 gameNodesByRuleId, relevantTypes);
+        }
+
+        // After the match rulesets, so a team ruleset's use: of one resolves against its nodes.
+        if (teamScope.Count > 0)
+        {
+            BuildV2TeamScope(teamScope, options, graph, nodeLookup, allNodes, edgeDescriptors,
+                gameNodesByRuleId, relevantTypes);
+        }
+    }
+
+    /// <summary>
+    ///     Builds every <c>for: each_team</c> ruleset twice onto the shared graph, once per side (2 = T,
+    ///     3 = CT): the game-scope lowering (<see cref="BuildV2Stat" />) run into a fresh lookup, dedup
+    ///     space and node map per side. The sides are known at build time, so this needs no
+    ///     materialization; the nodes are static rule nodes, which the evaluator resets and restores
+    ///     like any other.
+    ///     <para>
+    ///         What makes a side the subject: the subject binding (<see cref="BuildSubjectBinding" />)
+    ///         binds an actor view to the actor's LIVE team and <c>round_won</c> / <c>round_lost</c> to
+    ///         the round's winner; <c>round.team.*</c> / <c>round.enemies.*</c> read relative to the
+    ///         side (fixed-side aggregates, and a freeze-end economy edge with a fixed subject side);
+    ///         and <c>team.side</c> is the side as a constant. Each side also gets a roster node, the
+    ///         connected players on it at each freeze end, which a <c>team_round</c> table reads as its
+    ///         <c>slots</c> dimension.
+    ///     </para>
+    /// </summary>
+    private void BuildV2TeamScope(
+        IReadOnlyList<CheckedRuleset> rulesets,
+        RulesetCompilerOptions options,
+        StateGraph graph,
+        Dictionary<string, StateNode> nodeLookup,
+        List<StateNode> allNodes,
+        List<GraphEdgeDescriptor> edgeDescriptors,
+        Dictionary<string, StateNode> gameNodesByRuleId,
+        HashSet<Type> relevantTypes)
+    {
+        CatalogRoot catalog = CatalogResource.Load();
+        Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
+        Dictionary<string, string> baseContextV2ToV1 = BuildContextV2ToV1(catalog);
+
+        foreach (int side in (int[])[2, 3])
+        {
+            string sideName = side == 2 ? "T" : "CT";
+
+            // team.side lowers to the side itself: a constant per instance.
+            Dictionary<string, string> contextV2ToV1 = new(baseContextV2ToV1, StringComparer.Ordinal)
+            {
+                [CatalogScopeAdapter.TeamSidePath] = side.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            };
+
+            Dictionary<string, StateNode> localLookup = new(nodeLookup, StringComparer.OrdinalIgnoreCase);
+
+            // A match ruleset's qualified nodes, for a team ruleset's use: of one.
+            foreach ((string key, StateNode node) in gameNodesByRuleId)
+            {
+                if (key.Contains('.', StringComparison.Ordinal))
+                {
+                    localLookup.TryAdd(key, node);
+                }
+            }
+
+            Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(StringComparer.Ordinal);
+            MapStatHashSource hashSource = new(statHashesByPath);
+            Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
+            List<StateNode> nodes = [];
+            List<StateEdge> edges = [];
+            List<GraphEdgeDescriptor> descriptors = [];
+            List<LiveComputeRegistration> liveComputes = [];
+
+            InjectB6SideAggregates(side, sideName, localLookup, nodes, edges);
+
+            IntListCaptureNode roster = new($"__slots_side_{side}", sideName);
+            nodes.Add(roster);
+            if (_playerContextIndex is { } index)
+            {
+                edges.Add(new SideRosterFreezeEndEdge(localLookup["root"], index, side, roster));
+            }
+
+            _currentPlayerTeam = null;
+            _teamSubjectSide = side;
+            _v2ConditionNodeOverlay = BuildV2ConditionOverlay(localLookup, []);
+            try
+            {
+                foreach (CheckedRuleset rs in rulesets)
+                {
+                    // The resolver and the show validator report both; these stay as invariants for a
+                    // caller that builds without composing.
+                    if (rs.Highlights.Count > 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"ruleset '{rs.Id.Id}' is for: each_team but declares highlights — a highlight "
+                            + "is attributed to a player.");
+                    }
+
+                    if (rs.Show is { Scoreboard.Count: > 0 })
+                    {
+                        throw new InvalidOperationException(
+                            $"ruleset '{rs.Id.Id}' is for: each_team but declares show: scoreboard — a "
+                            + "scoreboard is per-player; use show: tables (per: team_round | team_match).");
+                    }
+
+                    foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind is not (RuleNodeKind.Compute or RuleNodeKind.Rate)))
+                    {
+                        BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
+                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            statHashesByPath, hashSource, nodesByHash);
+                    }
+
+                    foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Rate))
+                    {
+                        BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
+                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            statHashesByPath, hashSource, nodesByHash);
+                    }
+
+                    foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Compute))
+                    {
+                        BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
+                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            statHashesByPath, hashSource, nodesByHash, liveComputes);
+                    }
+                }
+            }
+            finally
+            {
+                _v2ConditionNodeOverlay = null;
+                _teamSubjectSide = null;
+            }
+
+            foreach (StateNode node in nodes)
+            {
+                allNodes.Add(node);
+                graph.AddRuleNode(node);
+                switch (node)
+                {
+                    case ConjunctionNode conjunction:
+                        graph.AddConjunction(conjunction);
+                        break;
+                    case DisjunctionNode disjunction:
+                        graph.AddDisjunction(disjunction);
+                        break;
+                }
+            }
+
+            foreach (StateEdge edge in edges)
+            {
+                graph.AddEdge(edge);
+                relevantTypes.Add(edge.MessageType);
+            }
+
+            foreach (LiveComputeRegistration live in liveComputes)
+            {
+                graph.AddLiveCompute(live.Compute, live.Reads);
+            }
+
+            edgeDescriptors.AddRange(descriptors);
+            _teamNodesByRuleId[side] = nodesByRuleId;
+            _teamRosters[side] = roster;
+        }
+    }
+
+    /// <summary>
+    ///     The per-side B6 aggregates for a team subject: alive and player counts on the side and on
+    ///     the other side (read live, fixed side), and the freeze-end economy sums when a ruleset reads
+    ///     them. The clutch facets are not built: their subject has to be a player, and the resolver
+    ///     refuses them in a team ruleset.
+    /// </summary>
+    private void InjectB6SideAggregates(int side, string sideName,
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, List<StateEdge> edges)
+    {
+        if (_playerContextIndex is not { } index)
+        {
+            return;
+        }
+
+        void Add(string ruleId, RoundTeamAggregateNode.AggregateKind kind)
+        {
+            RoundTeamAggregateNode node = RoundTeamAggregateNode.ForSide(ruleId, index, side, kind, sideName);
+            localLookup[ruleId] = node;
+            nodes.Add(node);
+        }
+
+        Add(B6RuleIds.TeamAlive, RoundTeamAggregateNode.AggregateKind.TeamAlive);
+        Add(B6RuleIds.TeamPlayers, RoundTeamAggregateNode.AggregateKind.TeamPlayers);
+        Add(B6RuleIds.EnemiesAlive, RoundTeamAggregateNode.AggregateKind.EnemyAlive);
+        Add(B6RuleIds.EnemiesPlayers, RoundTeamAggregateNode.AggregateKind.EnemyPlayers);
+
+        if (BuildEconomySums(sideName, localLookup, nodes) is { Count: > 0 } sums)
+        {
+            edges.Add(new PlayerEconomyFreezeEndEdge(localLookup["root"], index, () => side, sums));
         }
     }
 
@@ -647,8 +853,8 @@ public sealed partial class RuleChainBuilder
         // Fire-time kinds are untouched — they keep the RewriteEntityReads → CompileEventCondition path.
         EnsureSettleEntityPullNodes(stat, slot, playerName, localLookup, nodes);
 
-        bool roundScoped = stat.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round;
-        string? condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1), stat);
+        bool roundScoped = stat.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round or ScopeAxis.TeamRound;
+        string? condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
 
         // While: gate. An entity-bearing single-comparison while: (e.g. `while: player.health > 50`) has
         // NO graph node to gate on — it is a subject-slot pre-frame entity-provider read, not a
@@ -828,6 +1034,12 @@ public sealed partial class RuleChainBuilder
                 Dictionary<string, object> exprLookup =
                     localLookup.ToDictionary(kv => kv.Key, kv => (object)kv.Value, StringComparer.OrdinalIgnoreCase);
                 string formula = V1ExpressionWriter.Write(stat.TriggerCondition!.Root);
+
+                // team.side is a constant per instance of a for: each_team ruleset.
+                if (contextV2ToV1.TryGetValue(CatalogScopeAdapter.TeamSidePath, out string? sideText))
+                {
+                    formula = ReplaceWholeIdentifier(formula, CatalogScopeAdapter.TeamSidePath, sideText);
+                }
 
                 // The compute's live dependency set — every graph node its formula actually reads,
                 // collected from the SAME resolution that binds exprLookup (so cross-ruleset
@@ -1617,7 +1829,7 @@ public sealed partial class RuleChainBuilder
 
     /// <summary>Builds the fire-time condition string: the actor binding (if any) ∧ the trigger condition.</summary>
     private static string? BuildConditionString(CheckedRuleset rs, CheckedStat stat,
-        Dictionary<string, CatalogView> views, Dictionary<string, string> contextV2ToV1)
+        Dictionary<string, CatalogView> views, Dictionary<string, string> contextV2ToV1, int? subjectSide)
     {
         // where: (trigger) reads are lowered through contextV2ToV1 so a per-player context
         // (player.survived) / B6 aggregate (round.enemies.alive) becomes its bare v1 rule id — the
@@ -1627,7 +1839,7 @@ public sealed partial class RuleChainBuilder
         string? trigger = stat.TriggerCondition is null
             ? null
             : V1ExpressionWriter.Write(stat.TriggerCondition.Root, contextV2ToV1);
-        string? subject = BuildSubjectBinding(rs, stat, views);
+        string? subject = BuildSubjectBinding(rs, stat, views, subjectSide);
         if (subject is null)
         {
             return trigger;
@@ -1654,11 +1866,17 @@ public sealed partial class RuleChainBuilder
     ///             context at fire time, so the halftime swap is followed. <c>for: match</c> and
     ///             <c>match: {actor: any}</c> leave it unbound, like an actor view with no subject.
     ///         </item>
+    ///         <item>
+    ///             In a <c>for: each_team</c> ruleset the subject is <paramref name="subjectSide" />:
+    ///             an actor view binds the actor's live team to it
+    ///             (<c>event.F &gt;= 0 &amp;&amp; event.F &lt; 64 &amp;&amp; F.team == side</c>), and a team
+    ///             view compares the round's winner with it.
+    ///         </item>
     ///         <item><c>binding: none</c> views bind nothing.</item>
     ///     </list>
     /// </summary>
     private static string? BuildSubjectBinding(CheckedRuleset rs, CheckedStat stat,
-        Dictionary<string, CatalogView> views)
+        Dictionary<string, CatalogView> views, int? subjectSide)
     {
         if (stat.ResolvedView is null || !views.TryGetValue(stat.ResolvedView, out CatalogView? view))
         {
@@ -1667,9 +1885,18 @@ public sealed partial class RuleChainBuilder
 
         if (string.Equals(view.Binding, "team", StringComparison.Ordinal))
         {
-            return rs.For == RulesetScope.EachPlayer && !stat.SuppressActorBinding
-                ? TeamBinding(view, "player.team")
-                : null;
+            if (stat.SuppressActorBinding)
+            {
+                return null;
+            }
+
+            return rs.For switch
+            {
+                RulesetScope.EachPlayer => TeamBinding(view, "player.team"),
+                RulesetScope.EachTeam when subjectSide is { } side =>
+                    TeamBinding(view, side.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                _ => null
+            };
         }
 
         if (!string.Equals(view.Binding, "actor_slot", StringComparison.Ordinal))
@@ -1688,13 +1915,21 @@ public sealed partial class RuleChainBuilder
             return $"event.{role.Field} == player.slot";
         }
 
+        string validSlot = $"event.{role.Field} >= 0 && event.{role.Field} < {PlayerSlotExclusiveUpperBound}";
+        if (rs.For == RulesetScope.EachTeam && !stat.SuppressActorBinding && subjectSide is { } teamSide)
+        {
+            // The actor's LIVE team at fire time, so a halftime swap moves a player's kills to the
+            // side they are on in that round.
+            return $"{validSlot} && {role.Field}.team == {teamSide.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        }
+
         // No subject, so slot equality cannot do the filtering it does above, and the view's baked
         // predicate only excludes suicides. A player_death whose Attacker is the 0xFFFF no-player
         // sentinel is a world kill; counting it made `for: match` disagree with the per-player twin,
         // which drops it for want of a subject. The bound matches MaterializeNewPlayers: any slot in
         // range does get materialized off the event, so this holds for any demo, not just the one
         // that surfaced it.
-        return $"event.{role.Field} >= 0 && event.{role.Field} < {PlayerSlotExclusiveUpperBound}";
+        return validSlot;
     }
 
     /// <summary>

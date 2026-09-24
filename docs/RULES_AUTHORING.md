@@ -57,7 +57,8 @@ text, an in-expression `(line, column)` span, and ranked "did you mean" candidat
 
 A **ruleset** is a named bundle of **stats**. Each stat is one measurement. You choose:
 
-- **`for:`** — do you want this *per player* (`each_player`) or for the *whole match* (`match`)?
+- **`for:`** — do you want this *per player* (`each_player`), *per side* (`each_team`: one for the
+  terrorists, one for the counter-terrorists) or for the *whole match* (`match`)?
 - **the kind** — *how* to measure (count events, sum a value, keep a max, compute a formula, …).
 - **the source** — *what* to measure (a "view" like `kill`, or another stat).
 - **`per:`** — the window it resets over: `round` or `match`.
@@ -483,8 +484,11 @@ time*. Both are useful — pick the site that matches the question. (Under an ev
 read a role's entity state, using the role name in place of `player`: `victim.health` in a
 `kill`-view `where:`.)
 
-Contexts are per-player, so they're only available in a `for: each_player` ruleset. A `for: match`
-ruleset has no subject and cannot read `player.*` or the team aggregates.
+The `round.*` and `match.*` contexts read the same in every scope. `player.*` needs a player, so
+only a `for: each_player` ruleset has it. The team aggregates (`round.team.*` / `round.enemies.*`)
+are relative to a subject: the player's team in `for: each_player`, the ruleset's side in
+`for: each_team`; `round.alive.in_clutch` and `round.clutch.size` need a player. A `for: match`
+ruleset has no subject and cannot read any of them.
 
 ---
 
@@ -493,8 +497,13 @@ ruleset has no subject and cannot read `player.*` or the team aggregates.
 - **`scoreboard:`** — per-player columns. `{ stat: <name or highlight.count>, label:, group: }`.
   `group:` is usually `round` (per-round columns) or `game` (match totals).
 - **`tables:`** — richer per-round or per-match tables, written as a **named map**
-  (`tables: { <table-name>: { per:, columns: [...] } }`). Use `per: match` on a table (in a
-  `for: match` ruleset) for a single match-level row.
+  (`tables: { <table-name>: { per:, columns: [...] } }`). The `per:` has to match the ruleset's
+  `for:`, or validation reports `resolve.show.table-scope-mismatch`: `player_round` /
+  `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`, and
+  `match` (a single match-level row) in `for: match`.
+- **Which clock a tick column is on.** A table lists its bare tick columns in
+  `MetricTable.ColumnClocks` (`frame` or `server`), so a consumer knows whether to subtract the
+  demo's `ServerStartTick` without knowing which views are synthesized.
 - **`as: ticks | seconds | time`** on a column reformats a tick-valued stat (raw ticks, seconds, or
   `m:ss`).
 
@@ -564,6 +573,46 @@ show:
       columns:
         - { stat: total_kills, label: TotalK }
         - { stat: total_rounds, label: Rounds }
+```
+
+### Per-side stats — `for: each_team`
+When the question is about a side rather than a player (what a side bought, whether it won, how its
+kills fell across the round), use `for: each_team`. The ruleset runs twice, once for the terrorists
+(`team.side == 2`) and once for the counter-terrorists (`team.side == 3`), and its tables have one
+row per side: `per: team_round` gives one row per round per side, `per: team_match` one per side.
+
+- An actor view binds to the side: `count: kill` counts the kills by players on the side *in that
+  round* (their live team, so the halftime swap is followed). `match: { actor: any }` counts
+  everyone's, as in `for: match`.
+- `round_won` / `round_lost` fire for the side that won / lost the round.
+- `round.team.*` / `round.enemies.*` read relative to the side: `round.team.equipment`,
+  `round.team.money`, `round.team.alive`, and the enemies' twins.
+- `team.side` is the side, `2` or `3`. `player.*` is not in scope, and neither are
+  `round.alive.in_clutch` / `round.clutch.size`, whose subject is a player.
+- A `team_round` table carries two dimensions besides the round: `side`, and `slots`, the
+  comma-joined slots of the side's connected players at that round's freeze end. `slots` is the join
+  key to a per-player table: it says which side a player was on *in that round*, where a
+  `player_round` table's `team` is the side the player finished the match on.
+- No `highlights:` and no `scoreboard:` (both are attributed to players), and it may `use:` a
+  `for: match` or another `for: each_team` ruleset, but not a per-player one.
+
+```yaml
+ruleset: side_economy
+for: each_team
+stats:
+  equipment: { capture: round.team.equipment, on: raw.round_freeze_end, per: round }
+  money:     { capture: round.team.money,     on: raw.round_freeze_end, per: round }
+  kills:     { count: kill, match: { enemy: true }, per: round }
+  won:       { count: round_won, per: round }
+show:
+  tables:
+    side_rounds:
+      per: team_round
+      columns:
+        - { stat: equipment, label: Equipment }
+        - { stat: money, label: Money }
+        - { stat: kills, label: Kills }
+        - { stat: won, label: Won }
 ```
 
 ### Reusing another ruleset — `use:` / `exports:`

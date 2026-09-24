@@ -63,5 +63,12 @@ public enum RulesetScope
     Match,
 
     /// <summary><c>for: each_player</c> — one instance per player; views bind to the ruleset's player.</summary>
-    EachPlayer
+    EachPlayer,
+
+    /// <summary>
+    ///     <c>for: each_team</c> — one instance per side (2 = T, 3 = CT); views bind to the side:
+    ///     an actor view to the actor's live team, <c>round_won</c> / <c>round_lost</c> to the round's
+    ///     winner, and <c>round.team.*</c> / <c>round.enemies.*</c> read relative to the side.
+    /// </summary>
+    EachTeam
 }

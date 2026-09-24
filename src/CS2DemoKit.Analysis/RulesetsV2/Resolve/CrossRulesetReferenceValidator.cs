@@ -120,13 +120,26 @@ public static class CrossRulesetReferenceValidator
             return;
         }
 
-        // Read-scope rule: same-scope and per-player→match reads are legal; a match→per-player
-        // read is an error — no player binding exists at match scope.
+        // Read-scope rule: same-scope reads and reads of a match ruleset are legal. A read across
+        // subjects is an error: match has no player or side to bind a per-player or per-side stat
+        // to, a player's stat is not a side's, and a side's is not a player's.
         if (doc.For == RulesetScope.Match && entry.For == RulesetScope.EachPlayer)
         {
             diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
                 $"match-scoped ruleset '{doc.Id}' may not read per-player stat '{head}.{stat}' — "
                 + "no player binding exists at match scope", pos));
+        }
+        else if (entry.For == RulesetScope.EachTeam && doc.For != RulesetScope.EachTeam)
+        {
+            diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
+                $"ruleset '{doc.Id}' may not read per-side stat '{head}.{stat}' — only a for: each_team "
+                + "ruleset has a side to bind it to", pos));
+        }
+        else if (doc.For == RulesetScope.EachTeam && entry.For == RulesetScope.EachPlayer)
+        {
+            diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
+                $"per-side ruleset '{doc.Id}' may not read per-player stat '{head}.{stat}' — a side is "
+                + "not a player", pos));
         }
     }
 

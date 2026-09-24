@@ -47,6 +47,17 @@ public static class ShowLowering
         ["match_id", "map"];
 
     /// <summary>
+    ///     A per-side round table: one row per (round, side). <c>side</c> is 2 (T) or 3 (CT), and
+    ///     <c>slots</c> the side's roster at that round's freeze end, the join key to the players.
+    /// </summary>
+    private static readonly string[] _perTeamRoundDimensions =
+        ["match_id", "map", "round_number", "side", "slots"];
+
+    /// <summary>A per-side match table: one row per side.</summary>
+    private static readonly string[] _perTeamMatchDimensions =
+        ["match_id", "map", "side"];
+
+    /// <summary>
     ///     Lowers a checked ruleset's <c>show: scoreboard:</c> to per-player column
     ///     assignments. Called by the planner inside the per-player template factory once a
     ///     ruleset's stats and highlights are materialized, so every referent already lives in
@@ -215,9 +226,13 @@ public static class ShowLowering
             // A game-scoped (for: match) ruleset's table: one match-level row, metrics resolved against
             // the build's game node map. No player dimension.
             "match" => (OutputScope.PerMatch, _perMatchDimensions),
+            // A for: each_team ruleset's tables: one row per side (per round), metrics resolved
+            // against that side's node map.
+            "team_round" => (OutputScope.PerTeamPerRound, _perTeamRoundDimensions),
+            "team_match" => (OutputScope.PerTeamPerGame, _perTeamMatchDimensions),
             _ => throw new InvalidOperationException(
                 $"show: table dimension 'per: {per ?? "<null>"}' is not a supported v2.0 table dimension "
-                + "(player_round | player_match | match).")
+                + "(player_round | player_match | match | team_round | team_match).")
         };
 
     /// <summary>A resolved scoreboard reference: its node-map key, per:-inferred board, and column label.</summary>

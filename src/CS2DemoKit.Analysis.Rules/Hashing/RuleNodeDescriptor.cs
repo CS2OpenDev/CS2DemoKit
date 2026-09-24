@@ -83,7 +83,13 @@ public enum ScopeAxis
     PlayerMatch,
 
     /// <summary>Per-player, round-scoped (one value per player, reset each round).</summary>
-    PlayerRound
+    PlayerRound,
+
+    /// <summary>Per-side, round-scoped (one value per side, reset each round).</summary>
+    TeamRound,
+
+    /// <summary>Per-side, match-scoped (one value per side for the whole match).</summary>
+    TeamMatch
 }
 
 /// <summary>Preimage row 8 — a capture's keep policy (spec §6).</summary>

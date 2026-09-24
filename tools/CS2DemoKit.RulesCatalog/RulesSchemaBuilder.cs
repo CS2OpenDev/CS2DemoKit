@@ -94,13 +94,17 @@ public static class RulesSchemaBuilder
             ["enum"] = new JsonArray
             {
                 "match",
-                "each_player"
+                "each_player",
+                "each_team"
             },
             ["default"] = "match",
             ["markdownDescription"] =
                 "Materialization scope. `each_player` instantiates one ruleset per player and binds "
-                + "actor-anchored views (kill, damage_dealt, ...) to that player; `match` is one instance "
-                + "for the whole demo with no implicit player binding."
+                + "actor-anchored views (kill, damage_dealt, ...) to that player; `each_team` instantiates "
+                + "one per side (T and CT), binds an actor-anchored view to the actor's live side and "
+                + "round_won / round_lost to the round's winner, and reads round.team.* / round.enemies.* "
+                + "relative to the side (team.side is the side, 2 or 3); `match` is one instance for the "
+                + "whole demo with no implicit binding."
         },
         ["enabled"] = new JsonObject
         {
@@ -1378,11 +1382,16 @@ public static class RulesSchemaBuilder
                 {
                     "player_round",
                     "player_match",
-                    "match"
+                    "match",
+                    "team_round",
+                    "team_match"
                 },
-                ["description"] = "The export dimension (the closed table registry). `player_round` / "
-                                  + "`player_match` are per-player (for: each_player); `match` is a single "
-                                  + "match-level row (for: match)."
+                ["description"] = "The export dimension (the closed table registry), which must match the "
+                                  + "ruleset's for:. `player_round` / `player_match` are per-player (for: "
+                                  + "each_player); `team_round` / `team_match` are per-side (for: each_team), "
+                                  + "and team_round carries a `side` and a `slots` dimension (the side's "
+                                  + "players at that round's freeze end); `match` is a single match-level row "
+                                  + "(for: match)."
             },
             ["columns"] = new JsonObject
             {

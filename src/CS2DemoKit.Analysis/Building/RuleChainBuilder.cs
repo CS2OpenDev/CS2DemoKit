@@ -142,6 +142,8 @@ public sealed partial class RuleChainBuilder
         }
 
         StateGraph graph = new();
+        _teamNodesByRuleId.Clear();
+        _teamRosters.Clear();
         Dictionary<string, StateNode> nodeLookup = new(StringComparer.OrdinalIgnoreCase)
         {
             ["root"] = graph.Root
@@ -543,7 +545,9 @@ public sealed partial class RuleChainBuilder
             v2Coverage.Count > 0 ? v2Coverage : null)
         {
             Profile = Profile,
-            Events = _registry
+            Events = _registry,
+            TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
+            TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null
         };
     }
 

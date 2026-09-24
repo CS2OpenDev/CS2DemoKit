@@ -48,6 +48,8 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     private const string DimTick = "tick";
     private const string DimFrameIndex = "frame_index";
     private const string DimChain = "chain";
+    private const string DimSide = "side";
+    private const string DimSlots = "slots";
 
     private readonly IReadOnlyDictionary<string, StateNode>? _gameNodesByRuleId;
     private readonly OutputDef _output;
@@ -68,6 +70,15 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     }
 
     /// <summary>
+    ///     The per-side node maps of a build's <c>for: each_team</c> rulesets
+    ///     (<c>BuildResult.TeamNodesByRuleId</c>), which a team table's columns resolve against.
+    /// </summary>
+    public IReadOnlyDictionary<int, IReadOnlyDictionary<string, StateNode>>? TeamNodesByRuleId { get; init; }
+
+    /// <summary>The per-side roster nodes (<c>BuildResult.TeamRosterNodes</c>) a team table's <c>slots</c> reads.</summary>
+    public IReadOnlyDictionary<int, StateNode>? TeamRosterNodes { get; init; }
+
+    /// <summary>
     ///     The match identifier used in the <c>match_id</c> dimension (typically the demo filename).
     ///     Optional — when null the dimension is omitted, matching the built-in projectors.
     /// </summary>
@@ -84,6 +95,8 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
             OutputScope.PerPlayerPerGame => ProjectPerPlayerPerGame(result, demo),
             OutputScope.PerPlayerPerRound => ProjectPerPlayerPerRound(result, demo),
             OutputScope.PerMatch => ProjectPerMatch(result, demo),
+            OutputScope.PerTeamPerRound => ProjectPerTeam(result, demo, true),
+            OutputScope.PerTeamPerGame => ProjectPerTeam(result, demo, false),
             _ => ProjectPerEvent(result, demo)
         };
 
@@ -163,6 +176,106 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         }
 
         return new MetricTable(_output.Id, _output.Dimensions, valueColumns, [new MetricRow(dimensions, values)]);
+    }
+
+    // ── per_team: one row per side, per round or for the match ─────────────
+
+    /// <summary>
+    ///     Projects a <c>for: each_team</c> ruleset's table: one row per side (2 then 3), for each live
+    ///     round (sampled like <see cref="ProjectPerPlayerPerRound" />: the last snapshot holding the
+    ///     round) or once at the final snapshot. Columns resolve against the side's node map; the
+    ///     <c>slots</c> dimension is the side's roster node read from the same snapshot.
+    /// </summary>
+    private MetricTable ProjectPerTeam(EvaluationResult result, DemoDescriptor demo, bool perRound)
+    {
+        List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
+        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
+        List<MetricRow> rows = [];
+
+        List<(int? Round, NodeSnapshot[] Snapshot)> samples = [];
+        if (perRound)
+        {
+            int roundNumberIndex = StatValues.FindRoundNumberIndex(result.FinalTrackedNodes);
+            if (roundNumberIndex >= 0)
+            {
+                foreach (RoundSample round in CollectRoundSamples(result.MessageSnapshots, roundNumberIndex))
+                {
+                    samples.Add((round.RoundNumber, result.MessageSnapshots.MaterializeRow(round.SnapshotIndex)));
+                }
+            }
+        }
+        else if (result.MessageSnapshots.Count > 0)
+        {
+            samples.Add((null, result.MessageSnapshots.MaterializeRow(result.MessageSnapshots.Count - 1)));
+        }
+
+        foreach ((int? round, NodeSnapshot[] snapshot) in samples)
+        {
+            foreach (int side in (int[])[2, 3])
+            {
+                rows.Add(BuildTeamRow(side, demo, snapshot, nodeIndex, round));
+            }
+        }
+
+        return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
+    }
+
+    private MetricRow BuildTeamRow(int side, DemoDescriptor demo, NodeSnapshot[] snapshot,
+        Dictionary<StateNode, int> nodeIndex, int? roundNumber)
+    {
+        IReadOnlyDictionary<string, StateNode>? sideNodes =
+            TeamNodesByRuleId is not null && TeamNodesByRuleId.TryGetValue(side, out IReadOnlyDictionary<string, StateNode>? map)
+                ? map
+                : null;
+
+        Dictionary<string, object?> dimensions = new(StringComparer.Ordinal);
+        foreach (string dimension in _output.Dimensions)
+        {
+            switch (dimension)
+            {
+                case DimMatchId:
+                    if (MatchId is not null)
+                    {
+                        dimensions[DimMatchId] = MatchId;
+                    }
+
+                    break;
+                case DimMap:
+                    dimensions[DimMap] = demo.MapName;
+                    break;
+                case DimRoundNumber:
+                    if (roundNumber is { } round)
+                    {
+                        dimensions[DimRoundNumber] = round;
+                    }
+
+                    break;
+                case DimSide:
+                    dimensions[DimSide] = side;
+                    break;
+                case DimSlots:
+                    dimensions[DimSlots] = TeamRosterNodes is not null && TeamRosterNodes.TryGetValue(side, out StateNode? roster)
+                        ? StatValues.ReadColumnValue(snapshot, nodeIndex, roster)
+                        : null;
+                    break;
+            }
+        }
+
+        Dictionary<string, object?> values = new(StringComparer.Ordinal);
+        foreach (MetricRef metric in _output.Metrics)
+        {
+            StateNode? node = sideNodes is not null && sideNodes.TryGetValue(metric.RuleRef, out StateNode? sideNode)
+                ? sideNode
+                : _gameNodesByRuleId is not null && _gameNodesByRuleId.TryGetValue(metric.RuleRef, out StateNode? gameNode)
+                    ? gameNode
+                    : null;
+            values[metric.Label] = node is not null
+                ? StatValues.ApplyColumnFormat(
+                    StatValues.ReadColumnValue(snapshot, nodeIndex, node), metric.Format, demo.TickRate)
+                : null;
+        }
+
+        return new MetricRow(dimensions, values);
     }
 
     // ── per_player_per_game: final-snapshot sampling ─────────────────────

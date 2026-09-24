@@ -208,7 +208,9 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 
             ConfiguredOutputProjector projector = new(output, Build.GameNodesByRuleId)
             {
-                MatchId = matchId
+                MatchId = matchId,
+                TeamNodesByRuleId = Build.TeamNodesByRuleId,
+                TeamRosterNodes = Build.TeamRosterNodes
             };
             tables.AddRange(projector.Project(Snapshots, demo));
         }

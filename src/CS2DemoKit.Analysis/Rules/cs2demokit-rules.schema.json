@@ -24,10 +24,11 @@
     "for": {
       "enum": [
         "match",
-        "each_player"
+        "each_player",
+        "each_team"
       ],
       "default": "match",
-      "markdownDescription": "Materialization scope. \u0060each_player\u0060 instantiates one ruleset per player and binds actor-anchored views (kill, damage_dealt, ...) to that player; \u0060match\u0060 is one instance for the whole demo with no implicit player binding."
+      "markdownDescription": "Materialization scope. \u0060each_player\u0060 instantiates one ruleset per player and binds actor-anchored views (kill, damage_dealt, ...) to that player; \u0060each_team\u0060 instantiates one per side (T and CT), binds an actor-anchored view to the actor\u0027s live side and round_won / round_lost to the round\u0027s winner, and reads round.team.* / round.enemies.* relative to the side (team.side is the side, 2 or 3); \u0060match\u0060 is one instance for the whole demo with no implicit binding."
     },
     "enabled": {
       "type": "boolean",
@@ -1756,9 +1757,11 @@
           "enum": [
             "player_round",
             "player_match",
-            "match"
+            "match",
+            "team_round",
+            "team_match"
           ],
-          "description": "The export dimension (the closed table registry). \u0060player_round\u0060 / \u0060player_match\u0060 are per-player (for: each_player); \u0060match\u0060 is a single match-level row (for: match)."
+          "description": "The export dimension (the closed table registry), which must match the ruleset\u0027s for:. \u0060player_round\u0060 / \u0060player_match\u0060 are per-player (for: each_player); \u0060team_round\u0060 / \u0060team_match\u0060 are per-side (for: each_team), and team_round carries a \u0060side\u0060 and a \u0060slots\u0060 dimension (the side\u0027s players at that round\u0027s freeze end); \u0060match\u0060 is a single match-level row (for: match)."
         },
         "columns": {
           "type": "array",

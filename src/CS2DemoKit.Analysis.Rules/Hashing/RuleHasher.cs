@@ -216,6 +216,8 @@ public static class RuleHasher
             ScopeAxis.Round => "round",
             ScopeAxis.PlayerMatch => "player_match",
             ScopeAxis.PlayerRound => "player_round",
+            ScopeAxis.TeamRound => "team_round",
+            ScopeAxis.TeamMatch => "team_match",
             _ => "none"
         };
 
