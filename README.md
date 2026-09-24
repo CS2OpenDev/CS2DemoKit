@@ -304,6 +304,12 @@ already cover, so size is a poor proxy to select on. `MultiDemoCanaryTests` swee
 This is local-only for now. CI still runs on the committed sample alone, so a corpus run before
 opening a PR is worth the minute it costs.
 
+Demos that live elsewhere, such as the Steam replays folder, can be used without copying them in:
+set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, and the corpus
+tests (`RulesOutputGoldenTests`, the forward-path parity sweep) take the demos in it that have a
+fixture under `tests/fixtures/rules-output/`, so a folder of hundreds of matches re-runs the pinned
+set rather than all of them. The folder is only read; nothing in it is written, moved or deleted.
+
 Tests whose expectations are specific to one match name that demo through
 `RequireDemo(DemoTestHelper.ReferenceDemoFileName)` rather than taking whatever is in `demos/`, so
 they skip cleanly rather than failing against a demo their numbers never described. If you add a
