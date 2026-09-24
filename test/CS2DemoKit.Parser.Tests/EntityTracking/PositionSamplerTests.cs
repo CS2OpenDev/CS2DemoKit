@@ -53,7 +53,8 @@ public class PositionSamplerTests
 
     /// <summary>
     ///     The sampler is the four pieces assembled: incremental advance, controller-bound pawn
-    ///     enumeration, slot resolution, cell→world, plus the team and alive reads. Rolling them by hand must land on the same stream.
+    ///     enumeration, slot resolution, cell→world, plus the team and alive reads. Rolling them
+    ///     by hand must land on the same stream.
     /// </summary>
     [Test]
     public async Task Walk_MatchesTheHandRolledFourPieceVersion()
@@ -129,6 +130,9 @@ public class PositionSamplerTests
         int dead = samples.Count(s => !s.IsAlive);
         await Assert.That(dead).IsGreaterThan(0)
             .Because("a dead player's pawn keeps sampling for the rest of the round");
+        // Without this, an IsAlive stuck at false would pass: it is never alive after a death.
+        await Assert.That(samples.Count - dead).IsGreaterThan(samples.Count / 2)
+            .Because("players spend most of a round alive, so alive samples are the majority");
         await Assert.That(samples.All(s => s.Team is 2 or 3)).IsTrue()
             .Because("a controller-bound player pawn is on T or CT");
         await Assert.That(samples.Select(s => s.Team).Distinct().Count()).IsEqualTo(2);
@@ -153,6 +157,9 @@ public class PositionSamplerTests
         Dictionary<int, int> tickByFrame = PositionSampler.Walk(demo)
             .GroupBy(s => s.FrameIndex)
             .ToDictionary(g => g.Key, g => g.Select(s => s.Tick).Distinct().Single());
+
+        // The pre-recording -1 frames carry no pawns, so no sample sits below 0.
+        await Assert.That(tickByFrame.Values.Min()).IsGreaterThanOrEqualTo(0);
 
         List<GameEvent> deaths = demo.AllGameEvents.Where(e => e.Name == "player_death").ToList();
         await Assert.That(deaths.Count).IsGreaterThan(0);

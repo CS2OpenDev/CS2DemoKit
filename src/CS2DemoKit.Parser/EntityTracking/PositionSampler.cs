@@ -13,11 +13,12 @@ namespace CS2DemoKit.Parser.EntityTracking;
 /// <param name="FrameIndex">0-based position in the frame list the sample came from.</param>
 /// <param name="Tick">
 ///     The frame clock: the <see cref="DemoFrame.ServerTick" /> of the frame the sample was taken
-///     on, which runs from 1 through gameplay (pre-game frames carry a negative sentinel). Not
-///     unique: several frames can share one. It is the same clock as <c>GameEvent.GameTick</c>;
-///     <c>GameEvent.ServerTick</c> is this plus <see cref="ParsedDemo.ServerStartTick" />. An event
-///     can be stamped one tick below the frame that delivered it, so an exact join between samples
-///     and events compares <c>GameEvent.FrameNumber</c> with <c>FrameIndex</c> rather than ticks.
+///     on, which is 0 on the few frames just before gameplay and counts up from there (earlier
+///     pre-recording frames carry -1 and yield no pawns). Not unique: several frames can share
+///     one. It is the same clock as <c>GameEvent.GameTick</c>; <c>GameEvent.ServerTick</c> is this
+///     plus <see cref="ParsedDemo.ServerStartTick" />. An event can be stamped one tick below the
+///     frame that delivered it, so an exact join between samples and events compares
+///     <c>GameEvent.FrameNumber</c> with <c>FrameIndex</c> rather than ticks.
 /// </param>
 /// <param name="PlayerSlot">Controller-derived player slot, 0-63.</param>
 /// <param name="Position">World position, reconstructed by <see cref="PositionUtil.CellToWorld" />.</param>

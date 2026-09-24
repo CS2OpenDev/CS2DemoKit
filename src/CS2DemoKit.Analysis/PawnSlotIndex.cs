@@ -11,7 +11,8 @@ namespace CS2DemoKit.Analysis;
 ///     The pawn entity indices, kept in ascending order off the tracker's create events, so the
 ///     per-frame pawn sweep visits a dozen slots instead of every live entity. Same walk as
 ///     <see cref="PawnLookup.ForEachLivePawn{TState}" />, same checks, same order, so it yields
-///     every controller-bound pawn, dead or alive; only the candidate set is narrowed. Bound to one tracker; stale slots are pruned on each sync.
+///     every controller-bound pawn, dead or alive; only the candidate set is narrowed. Bound to
+///     one tracker; stale slots are pruned on each sync.
 /// </summary>
 internal sealed class PawnSlotIndex
 {
