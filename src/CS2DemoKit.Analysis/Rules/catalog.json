@@ -2804,6 +2804,45 @@
       ],
       "v2Name": "player.traded",
       "v2Type": "Bool"
+    },
+    {
+      "chainId": "_builtin_round_facts",
+      "chainScope": "Game",
+      "ruleId": "round_bomb_plant_place",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": true,
+      "triggers": [
+        "bomb_planted"
+      ],
+      "v2Name": "round.bomb.plant_place",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_round_facts",
+      "chainScope": "Game",
+      "ruleId": "round_bomb_site",
+      "ruleType": "Value",
+      "valueType": "string",
+      "resetOnRound": true,
+      "triggers": [
+        "bomb_planted"
+      ],
+      "v2Name": "round.bomb.site",
+      "v2Type": "String"
+    },
+    {
+      "chainId": "_builtin_round_facts",
+      "chainScope": "Game",
+      "ruleId": "round_bomb_site_entity",
+      "ruleType": "Value",
+      "valueType": "int",
+      "resetOnRound": true,
+      "triggers": [
+        "bomb_planted"
+      ],
+      "v2Name": "round.bomb.site_entity",
+      "v2Type": "Int"
     }
   ],
   "providers": [

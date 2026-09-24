@@ -291,6 +291,7 @@ public static class CatalogBuilder
                 ContextV2Name(rule.Id),
                 ContextV2Type(rule.Type.ToString(), rule.ValueType))))
             .Concat(BuildB6AggregateContexts())
+            .Concat(BuildRoundFactContexts())
             .OrderBy(c => c.ChainId, StringComparer.Ordinal)
             .ThenBy(c => c.RuleId, StringComparer.Ordinal)
             .ToList();
@@ -311,6 +312,21 @@ public static class CatalogBuilder
             [],
             m.V2Name,
             ContextV2Type(m.RuleType, "int")));
+
+    // Round facts (round.bomb.site / plant_place / site_entity). Game-scoped round-scoped nodes the
+    // runtime writes from one edge on bomb_planted rather than trigger-driven RuleDefs, so, like the
+    // B6 aggregates, they are appended from their shared id table.
+    private static IEnumerable<CatalogContextRule> BuildRoundFactContexts() =>
+        RoundFactIds.Members.Select(m => new CatalogContextRule(
+            "_builtin_round_facts",
+            "Game",
+            m.RuleId,
+            "Value",
+            m.ValueType,
+            true,
+            ["bomb_planted"],
+            m.V2Name,
+            ContextV2Type("Value", m.ValueType)));
 
     private static List<CatalogProvider> BuildProviders()
     {

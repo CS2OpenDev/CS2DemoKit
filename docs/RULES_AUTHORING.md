@@ -370,7 +370,15 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
 
 - **Per-player (this player):** `player.survived`, `player.traded`, `player.alive`.
 - **Round facts:** `round.number`, `round.active`, `round.no_deaths_yet`, `round.bomb_status`,
-  `round.bomb.was_planted`, `round.clutch.size`. (Winning a round is a *view* — `round_won` /
+  `round.bomb.was_planted`, `round.clutch.size`.
+- **Where the bomb went down:** set at the plant, held until the next round's freeze end, so they
+  read the same at `round_ended` as at the plant.
+  - `round.bomb.site` — `"A"` or `"B"`, from the planter's nav place at the plant (`BombsiteA` /
+    `BombsiteB`); `""` before a plant, or on a map whose nav mesh names its sites differently.
+  - `round.bomb.plant_place` — the planter's place as read (`"BombsiteA"`, or whatever the map
+    calls it); `""` before a plant.
+  - `round.bomb.site_entity` — `bomb_planted.Site`, the bomb target's entity index (e.g. `173` and
+    `236` on nuke), not a letter; `-1` before a plant. (Winning a round is a *view* — `round_won` /
   `round_lost` — not a context.)
 - **Match facts:** `match.map`, `match.phase`, `match.live`, `match.half_state`,
   `match.regulation_status`, `match.freeze_period`.

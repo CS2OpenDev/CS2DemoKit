@@ -161,8 +161,17 @@ would reach the checker, the normalizer and canonical ruleset hashing.
 ### Zones and bombsites
 
 The library does not resolve map zones. Bombsite membership needs trigger volumes or baked zone
-geometry, neither of which is in a demo file. Register your own provider instead, and rules
-address it by name like any built-in:
+geometry, neither of which is in a demo file.
+
+The one exception is the site a bomb was planted at. `round.bomb.site` reads `"A"` or `"B"` from
+the planter's nav-mesh place at the plant (`BombsiteA` / `BombsiteB`), `round.bomb.plant_place`
+holds that place as read, and `round.bomb.site_entity` holds `bomb_planted.Site`, which is the bomb
+target's entity index and not a letter. All three hold until the next freeze end. The letter agreed
+with the planted C4's own `m_nBombSite` on every plant measured (21 across two matchmaking demos),
+but it depends on the map naming its sites the standard way; on a map that does not, `site` reads
+`""` and `plant_place` still carries the name.
+
+For anything else, register your own provider, and rules address it by name like any built-in:
 
 ```csharp
 public sealed class SiteProvider : IPerPlayerEntityValueProvider, IPawnStateReader

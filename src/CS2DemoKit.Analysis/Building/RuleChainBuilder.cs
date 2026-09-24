@@ -258,6 +258,10 @@ public sealed partial class RuleChainBuilder
         // reports its default.
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
         bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false, b6MoneyNeeded = false;
+
+        // The plant-site round facts read the planter's place: an indirect need like the hurt
+        // enrichments', so a ruleset naming any of the three gates the place column in.
+        bool roundFactsNeeded = RoundFactIds.Members.Any(m => IsReferencedByV2Reads(m.V2Name, rulesets));
         if (_perPlayerEntityProviders is { All.Count: > 0 })
         {
             // B6 relative economy: a v2 read of round.team.equipment / round.enemies.equipment needs the
@@ -278,6 +282,7 @@ public sealed partial class RuleChainBuilder
                     "entity.pawn.active_weapon_class" => weaponNeeded,
                     "entity.pawn.equipment_value" => b6EquipmentNeeded,
                     "entity.controller.money" => b6MoneyNeeded,
+                    "entity.pawn.place" => roundFactsNeeded,
                     _ => false
                 };
 
@@ -470,6 +475,11 @@ public sealed partial class RuleChainBuilder
             graph.AddEdge(edge);
         }
 
+        if (roundFactsNeeded)
+        {
+            BuildRoundFacts(graph, nodeLookup, allNodes, gameNodesByRuleId, relevantTypes, entityScanner);
+        }
+
         List<RuleChainDef> gameContexts = builtinContexts.Where(c => c.Scope == ChainScope.Game).ToList();
         List<RuleChainDef> perPlayerContexts = builtinContexts.Where(c => c.Scope == ChainScope.PerPlayer).ToList();
 
@@ -535,6 +545,40 @@ public sealed partial class RuleChainBuilder
             Profile = Profile,
             Events = _registry
         };
+    }
+
+    /// <summary>
+    ///     Builds the plant-site round facts (<see cref="RoundFactIds" />): three round-scoped value
+    ///     nodes and the <see cref="BombPlantSiteEdge" /> that writes them on <c>bomb_planted</c>.
+    ///     Registered as graph rule nodes, so the evaluator resets them at each freeze end, and in the
+    ///     lookups under their node ids, so a v2 read of <c>round.bomb.site</c> resolves through the
+    ///     catalog context table like any other context. Only built when a ruleset reads one.
+    /// </summary>
+    private void BuildRoundFacts(StateGraph graph, Dictionary<string, StateNode> nodeLookup,
+        List<StateNode> allNodes, Dictionary<string, StateNode> gameNodesByRuleId, HashSet<Type> relevantTypes,
+        EntityChangeScanner? scanner)
+    {
+        GenericRoundScopedValueNode<string> site = new(RoundFactIds.BombSite, "", null);
+        GenericRoundScopedValueNode<string> plantPlace = new(RoundFactIds.BombPlantPlace, "", null);
+        GenericRoundScopedValueNode<int> siteEntity = new(RoundFactIds.BombSiteEntity, -1, null);
+
+        foreach (StateNode node in (StateNode[])[site, plantPlace, siteEntity])
+        {
+            nodeLookup[node.Name] = node;
+            _enrichmentNodes![node.Name] = node;
+            gameNodesByRuleId[node.Name] = node;
+            allNodes.Add(node);
+            graph.AddRuleNode(node);
+        }
+
+        // The place provider was gated in by roundFactsNeeded, so the scanner snapshots it.
+        IPerPlayerEntityValueProvider? place = scanner is not null ? _perPlayerEntityProviders?.Get("entity.pawn.place") : null;
+        Func<int, string?>? readPlace = place is not null
+            ? slot => scanner!.GetPreFrameValue(place, slot) as string
+            : null;
+
+        graph.AddEdge(new BombPlantSiteEdge(graph.Root, site, plantPlace, siteEntity, readPlace));
+        relevantTypes.Add(typeof(BombPlantedEvent));
     }
 
     internal static string ResolveContextId(string contextPath)
