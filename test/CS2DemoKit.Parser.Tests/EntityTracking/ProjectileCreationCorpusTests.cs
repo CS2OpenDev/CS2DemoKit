@@ -12,7 +12,8 @@ namespace CS2DemoKit.Parser.Tests.EntityTracking;
 ///     every demo this machine has: the sample, <c>&lt;repo-root&gt;/demos/**</c>, <c>DEMO_PATH</c>,
 ///     and the top-level demos in <c>CS2DEMOKIT_CORPUS_DIR</c>. Explicit because it replays each demo
 ///     in full. A build whose smoke baseline outgrew the field-path cap would fail here with a decode
-///     error; one that cut it off silently again would fail the position, team and thrower checks.
+///     error; one that cut it off silently again would fail the position, team, thrower and entity id
+///     checks.
 ///     <para>
 ///         Only fresh throws are checked (created after the initial snapshot with
 ///         <c>m_nBounces</c> 0). Projectiles already in flight when the demo starts are legitimately
@@ -79,7 +80,7 @@ public class ProjectileCreationCorpusTests
         foreach ((string cls, ProjectileClassTally t) in tally.ByClass)
         {
             Console.WriteLine($"  {cls} created={t.Created} inFlight={t.InFlight} far={t.FarFromThrow} " +
-                              $"badTeam={t.BadTeam} unresolvedThrower={t.UnresolvedThrower}");
+                              $"badTeam={t.BadTeam} unresolvedThrower={t.UnresolvedThrower} badEntityId={t.BadEntityId}");
         }
 
         await Assert.That(tally.Error).IsNull();
@@ -89,6 +90,7 @@ public class ProjectileCreationCorpusTests
             await Assert.That(t.FarFromThrow).IsEqualTo(0).Because($"{cls} position at creation");
             await Assert.That(t.BadTeam).IsEqualTo(0).Because($"{cls} team at creation");
             await Assert.That(t.UnresolvedThrower).IsEqualTo(0).Because($"{cls} thrower at creation");
+            await Assert.That(t.BadEntityId).IsEqualTo(0).Because($"{cls} entity id at creation");
         }
 
         if (tally.ByClass.Values.Sum(t => t.Created) >= FullMatchProjectiles)

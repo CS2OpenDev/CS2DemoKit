@@ -530,10 +530,10 @@ public sealed class EntityTracker
                     if (_instanceBaselines.TryGetValue((int)classId, out ReadOnlyMemory<byte> baseline))
                     {
                         BitBuffer baselineBuf = new(baseline.Span);
-                        ReadEntityFields(ref baselineBuf, temp, peekScratch);
+                        ReadEntityFields(ref baselineBuf, temp, peekScratch, "Baseline");
                     }
 
-                    ReadEntityFields(ref buf, temp, peekScratch);
+                    ReadEntityFields(ref buf, temp, peekScratch, "Enter");
 
                     result.Add(new EntityUpdateInfo
                     {
@@ -552,7 +552,7 @@ public sealed class EntityTracker
                     int serial = live?.Serial ?? 0;
 
                     EntityState temp = new(clsName, serial);
-                    ReadEntityFields(ref buf, temp, peekScratch);
+                    ReadEntityFields(ref buf, temp, peekScratch, "Delta");
 
                     result.Add(new EntityUpdateInfo
                     {
@@ -2433,11 +2433,11 @@ public sealed class EntityTracker
                 {
                     BitBuffer baselineBuf = new(baseline.Span);
                     _curUpdateKind = "Baseline";
-                    ReadEntityFields(ref baselineBuf, state, _fieldPathScratch);
+                    ReadEntityFields(ref baselineBuf, state, _fieldPathScratch, _curUpdateKind);
                 }
 
                 _curUpdateKind = "Enter";
-                ReadEntityFields(ref entityBuf, state, _fieldPathScratch);
+                ReadEntityFields(ref entityBuf, state, _fieldPathScratch, _curUpdateKind);
             }
             else
             {
@@ -2489,7 +2489,7 @@ public sealed class EntityTracker
                 }
 
                 _curUpdateKind = "Delta";
-                ReadEntityFields(ref entityBuf, state, _fieldPathScratch);
+                ReadEntityFields(ref entityBuf, state, _fieldPathScratch, _curUpdateKind);
                 EntityUpdated?.Invoke(entityIndex, state);
             }
         }
@@ -2720,7 +2720,7 @@ public sealed class EntityTracker
     ///     Reads all changed fields from the entity bit stream into <paramref name="state" />.
     ///     This implements the Huffman-coded field-path + per-field decoder loop.
     /// </summary>
-    private void ReadEntityFields(ref BitBuffer buf, EntityState state, List<FieldPath> pathScratch)
+    private void ReadEntityFields(ref BitBuffer buf, EntityState state, List<FieldPath> pathScratch, string updateKind)
     {
         if (Schema is null)
         {
@@ -2774,7 +2774,7 @@ public sealed class EntityTracker
         List<FieldPath> paths = pathScratch;
         paths.Clear();
 
-        CollectFieldPaths(ref buf, paths, MaxFieldPaths, state.ClassName, this);
+        CollectFieldPaths(ref buf, paths, MaxFieldPaths, state.ClassName, updateKind, this);
         if (paths.Count > MaxFieldPathCountForTest)
         {
             MaxFieldPathCountForTest = paths.Count;
@@ -2842,11 +2842,14 @@ public sealed class EntityTracker
     ///     Throws <see cref="InvalidDataException" /> when more than <paramref name="maxPaths" />
     ///     paths arrive without a finish op, so an over-long update surfaces as an entity decode
     ///     error instead of decoding its values from bits that are really path ops (which is how
-    ///     smoke baselines were silently corrupted under the old 2,048 cap). <paramref name="tracer" />
+    ///     smoke baselines were silently corrupted under the old 2,048 cap). <paramref name="updateKind" />
+    ///     (Baseline, Enter or Delta) is passed in rather than read off the tracker because the peek
+    ///     path never sets the tracker's current kind; it may be empty. <paramref name="tracer" />
     ///     receives PathOp trace entries when its trace context is active; it may be null.
     /// </summary>
     internal static void CollectFieldPaths(
-        ref BitBuffer buf, List<FieldPath> paths, int maxPaths, string className, EntityTracker? tracer)
+        ref BitBuffer buf, List<FieldPath> paths, int maxPaths, string className, string updateKind,
+        EntityTracker? tracer)
     {
         FieldPath fp = FieldPath.Default;
         bool trace = tracer is { _traceContextActive: true };
@@ -2869,9 +2872,17 @@ public sealed class EntityTracker
 
             if (pathCount == maxPaths)
             {
+                if (trace)
+                {
+                    tracer!.AddTrace(new DecodeTraceEntry(
+                        TraceKind.PathOp, tracer.PacketCount, tracer._curEntityIndex, tracer._curUpdateKind, className,
+                        pathCount, op.Name, opBefore, buf.TellBits - opBefore,
+                        "<cap>", null, null, 0, 0));
+                }
+
+                string kind = updateKind.Length > 0 ? $" ({updateKind})" : "";
                 throw new InvalidDataException(
-                    $"Entity '{className}' ({tracer?._curUpdateKind ?? ""}) carried more than {maxPaths} " +
-                    "field paths without a finish op");
+                    $"Entity '{className}'{kind} carried more than {maxPaths} field paths without a finish op");
             }
 
             try

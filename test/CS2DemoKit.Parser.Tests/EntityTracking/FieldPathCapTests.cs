@@ -32,26 +32,38 @@ public class FieldPathCapTests
         await Assert.That(node.Symbol.Reader).IsNotNull();
     }
 
+    /// <summary>
+    ///     A run of PlusOne ops past the cap. The run is all zero bits, which is what a misaligned read
+    ///     sees, and it ends in a finish op so that a tracker with the cap removed returns normally
+    ///     and fails this test instead of looping until the process runs out of memory.
+    /// </summary>
     [Test]
-    public async Task ZeroStream_PastTheCap_Throws()
+    public async Task ZeroRun_PastTheCap_Throws()
     {
-        byte[] zeros = new byte[EntityTracker.MaxFieldPaths / 8 + 64];
+        await Assert.That(CodeFor("PlusOne").TrueForAll(bit => !bit)).IsTrue();
+        byte[] stream = BuildStream(EntityTracker.MaxFieldPaths + 64);
         List<FieldPath> paths = [];
 
-        InvalidDataException? thrown = null;
-        try
-        {
-            Collect(zeros, paths);
-        }
-        catch (InvalidDataException ex)
-        {
-            thrown = ex;
-        }
+        InvalidDataException? thrown = Capture(stream, paths, "Baseline");
 
         await Assert.That(thrown).IsNotNull();
-        await Assert.That(thrown!.Message).Contains("CTestEntity");
+        await Assert.That(thrown!.Message).Contains("'CTestEntity' (Baseline) carried more than");
         await Assert.That(thrown.Message).Contains(EntityTracker.MaxFieldPaths.ToString(System.Globalization.CultureInfo.InvariantCulture));
         await Assert.That(paths.Count).IsEqualTo(EntityTracker.MaxFieldPaths);
+    }
+
+    /// <summary>The message leaves out the parenthesised update kind when the caller has none.</summary>
+    [Test]
+    public async Task PastTheCap_WithoutAnUpdateKind_HasNoEmptyParentheses()
+    {
+        byte[] stream = BuildStream(EntityTracker.MaxFieldPaths + 1);
+        List<FieldPath> paths = [];
+
+        InvalidDataException? thrown = Capture(stream, paths, "");
+
+        await Assert.That(thrown).IsNotNull();
+        await Assert.That(thrown!.Message).Contains("'CTestEntity' carried more than");
+        await Assert.That(thrown.Message).DoesNotContain("()");
     }
 
     /// <summary>More paths than the old cap and at least the largest real smoke baseline.</summary>
@@ -81,10 +93,23 @@ public class FieldPathCapTests
         await Assert.That(paths.Count).IsEqualTo(EntityTracker.MaxFieldPaths);
     }
 
-    private static void Collect(byte[] bytes, List<FieldPath> paths)
+    private static void Collect(byte[] bytes, List<FieldPath> paths, string updateKind = "Delta")
     {
         BitBuffer buf = new(bytes);
-        EntityTracker.CollectFieldPaths(ref buf, paths, EntityTracker.MaxFieldPaths, "CTestEntity", null);
+        EntityTracker.CollectFieldPaths(ref buf, paths, EntityTracker.MaxFieldPaths, "CTestEntity", updateKind, null);
+    }
+
+    private static InvalidDataException? Capture(byte[] bytes, List<FieldPath> paths, string updateKind)
+    {
+        try
+        {
+            Collect(bytes, paths, updateKind);
+            return null;
+        }
+        catch (InvalidDataException ex)
+        {
+            return ex;
+        }
     }
 
     /// <summary><paramref name="plusOnes" /> PlusOne ops followed by the finish op, LSB-first.</summary>
