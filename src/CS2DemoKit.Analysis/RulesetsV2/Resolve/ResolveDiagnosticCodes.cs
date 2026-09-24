@@ -81,6 +81,24 @@ public static class ResolveDiagnosticCodes
     public const string ShowBadTableDimension = "resolve.show.bad-table-dimension";
 
     /// <summary>
+    ///     A <c>show:</c> table whose <c>per:</c> does not belong to the ruleset's <c>for:</c> scope
+    ///     (<c>match</c> takes <c>match</c>; <c>each_player</c> takes <c>player_round</c> /
+    ///     <c>player_match</c>; <c>each_team</c> takes <c>team_round</c> / <c>team_match</c>). Left
+    ///     alone it projected zero rows with nothing reported.
+    /// </summary>
+    public const string ShowTableScopeMismatch = "resolve.show.table-scope-mismatch";
+
+    /// <summary>A <c>show: scoreboard:</c> in a ruleset that is not <c>for: each_player</c>: a scoreboard is per-player.</summary>
+    public const string ShowScoreboardScope = "resolve.show.scoreboard-scope";
+
+    /// <summary>
+    ///     Something a <c>for: each_team</c> ruleset cannot lower: a highlight (per-player timeline
+    ///     attribution), or a read whose subject must be a player (<c>round.alive.in_clutch</c>,
+    ///     <c>round.clutch.size</c>).
+    /// </summary>
+    public const string TeamScopeUnsupported = "resolve.team-scope.unsupported";
+
+    /// <summary>
     ///     A stat kind the resolver cannot yet lower faithfully — gated loudly rather than emitting a
     ///     config-less node. All eight base kinds now lower (tally/streak/bucket completed the set);
     ///     this code is <b>reserved</b> for the C8 bucket lifts still on the roadmap (composite keys +

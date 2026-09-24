@@ -240,6 +240,13 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "round announce match start" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundAnnounceMatchStart => null;
 
+    /// <summary>
+    ///     Logical binding for the synthesized "round decided" event: the frame the game rules'
+    ///     round-win status names a winner. Synthesized from entity state, so a profile binds it
+    ///     wherever the game-rules entity is recorded. See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? RoundDecided => null;
+
     /// <summary>Logical binding for the "round end" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundEnd => null;
 

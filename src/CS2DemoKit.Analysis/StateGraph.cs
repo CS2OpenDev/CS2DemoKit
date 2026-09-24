@@ -34,6 +34,8 @@ public sealed class StateGraph
     private readonly List<StateEdge> _edges = [];
     private readonly List<LiveComputeRegistration> _liveComputes = [];
     private readonly List<PerPlayerNodeTemplate> _perPlayerTemplates = [];
+    private readonly List<StateNode> _ruleNodes = [];
+    private List<(StateNode Node, Action Restore)>? _ruleNodeBaselines;
     private readonly Dictionary<StateNode, List<(Action Invoke, StateNode? Writes)>> _risingEdgeActions = new(ReferenceEqualityComparer.Instance);
     internal IReadOnlyList<ConjunctionNode> ConjunctionNodes => _conjunctions;
     internal IReadOnlyList<DisjunctionNode> DisjunctionNodes => _disjunctions;
@@ -63,6 +65,24 @@ public sealed class StateGraph
 
     /// <summary>Graph-scoped live computes (per-player ones ride the materialized player).</summary>
     internal IReadOnlyList<LiveComputeRegistration> LiveComputes => _liveComputes;
+
+    /// <summary>
+    ///     The static nodes a ruleset built directly onto the graph (a <c>for: match</c> or
+    ///     <c>for: each_team</c> stat, its guards and companions), as opposed to a per-player template
+    ///     that materializes during evaluation. The evaluator gives them what a materialized node
+    ///     gets: the round reset for the round-scoped ones, and a restore to the build-time value on
+    ///     a match restart. Built-in context rules are not listed; they reset through their own
+    ///     triggers.
+    /// </summary>
+    internal IReadOnlyList<StateNode> RuleNodes => _ruleNodes;
+
+    /// <summary>
+    ///     True when the evaluator must register a player context for every slot an event names even
+    ///     though no per-player template exists: a build whose rulesets are all <c>for: match</c> or
+    ///     <c>for: each_team</c> still needs live teams and alive state for the enrichments, the team
+    ///     aggregates and the round-end winner.
+    /// </summary>
+    public bool TracksPlayers { get; set; }
 
     /// <summary>
     ///     The always-active entry node. All entry edges (those with no prerequisite) should
@@ -145,6 +165,43 @@ public sealed class StateGraph
 
         actions.Add((action, writes));
         return this;
+    }
+
+    /// <summary>
+    ///     Registers a static node a ruleset built onto the graph (see <see cref="RuleNodes" />), so
+    ///     the evaluator resets it at each round boundary when it is round-scoped and restores it on
+    ///     a match restart. Returns <c>this</c> for fluent chaining.
+    /// </summary>
+    public StateGraph AddRuleNode(StateNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        _ruleNodes.Add(node);
+        _ruleNodeBaselines = null;
+        return this;
+    }
+
+    /// <summary>
+    ///     The match-restart baselines of <see cref="RuleNodes" />, captured once, on first use, from
+    ///     the build-time values, and shared by every evaluator of this graph so a second evaluation
+    ///     restores to the same values the first did.
+    /// </summary>
+    internal IReadOnlyList<(StateNode Node, Action Restore)> RuleNodeBaselines(Func<StateNode, Action?> capture)
+    {
+        if (_ruleNodeBaselines is null)
+        {
+            List<(StateNode, Action)> baselines = new(_ruleNodes.Count);
+            foreach (StateNode node in _ruleNodes)
+            {
+                if (capture(node) is { } restore)
+                {
+                    baselines.Add((node, restore));
+                }
+            }
+
+            _ruleNodeBaselines = baselines;
+        }
+
+        return _ruleNodeBaselines;
     }
 
     /// <summary>

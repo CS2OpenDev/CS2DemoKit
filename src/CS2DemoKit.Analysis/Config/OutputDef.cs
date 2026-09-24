@@ -55,7 +55,17 @@ public sealed record OutputDef(
 ///     the projected value byte-identical; the projector applies non-<c>None</c> formats at the
 ///     demo's tick rate when reading the cell.
 /// </param>
-public sealed record MetricRef(string RuleRef, string Label, ColumnValueFormat Format = ColumnValueFormat.None);
+/// <param name="Clock">
+///     The clock the column's value is on when it is a bare tick read (<c>event.tick</c> or
+///     <c>event.frame_tick</c>); <see cref="TickClock.None" /> for every other column. Carried into
+///     <see cref="Output.MetricTable.ColumnClocks" /> so a consumer does not have to know which views
+///     are synthesized to know whether to subtract <c>ServerStartTick</c>.
+/// </param>
+public sealed record MetricRef(
+    string RuleRef,
+    string Label,
+    ColumnValueFormat Format = ColumnValueFormat.None,
+    TickClock Clock = TickClock.None);
 
 /// <summary>Sampling scope of a configured output table.</summary>
 public enum OutputScope
@@ -75,5 +85,15 @@ public enum OutputScope
     ///     match totals with no player dimension. The output shape a game-scoped <c>show: tables</c>
     ///     (<c>per: match</c>) lowers to.
     /// </summary>
-    PerMatch
+    PerMatch,
+
+    /// <summary>
+    ///     One row per (live round, side) — a <c>for: each_team</c> ruleset's <c>per: team_round</c>
+    ///     table, sampled like <see cref="PerPlayerPerRound" />. Metric refs resolve against the side's
+    ///     node map; the <c>slots</c> dimension is the side's roster at that round's freeze end.
+    /// </summary>
+    PerTeamPerRound,
+
+    /// <summary>One row per side, sampled at the end — a <c>for: each_team</c> ruleset's <c>per: team_match</c> table.</summary>
+    PerTeamPerGame
 }

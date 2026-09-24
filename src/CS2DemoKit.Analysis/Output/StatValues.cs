@@ -18,7 +18,7 @@ internal static class StatValues
     // A StateNode's .Name is the rule's DISPLAY name ("RoundNumber", from BuiltinContexts), not its
     // rule id — keep the id as a defensive fallback so synthetic test graphs resolve either way.
     private const string RoundNumberNodeName = "RoundNumber";
-    private const string RoundNumberRuleId = "round_number";
+    internal const string RoundNumberRuleId = "round_number";
 
     /// <summary>
     ///     The value-column schema: the union of every materialized player's column names, in
@@ -111,7 +111,16 @@ internal static class StatValues
             return null;
         }
 
-        NodeSnapshot snap = snapshot[idx];
+        return ReadSnapshotValue(snapshot[idx], node);
+    }
+
+    /// <summary>
+    ///     The column value one captured <see cref="NodeSnapshot" /> of <paramref name="node" /> reads
+    ///     as: null when inactive, <c>true</c> for an active bool node, else the parsed display value.
+    ///     Shared by the snapshot table and the forward path's recorded samples.
+    /// </summary>
+    internal static object? ReadSnapshotValue(NodeSnapshot snap, StateNode node)
+    {
         if (!snap.IsActive)
         {
             return null;

@@ -71,6 +71,44 @@ public static class CatalogBuilder
     private static readonly Dictionary<string, (string? Unit, string? Note)> _providerAnnotations =
         new(StringComparer.Ordinal)
         {
+            ["entity.game.bomb_planted"] = (null,
+                "True from the frame the bomb is planted, and cleared by a defuse as well as at "
+                + "round_officially_ended, so it is not \"the bomb was planted this round\": that is "
+                + "`round.bomb.was_planted`, which stays true to the round's end."),
+            ["entity.game.game_phase"] = (null,
+                "The match phase. Measured on matchmaking demos: 2 through the first half, 4 over "
+                + "the halftime break, 3 through the second half, 5 once the match is over."),
+            ["entity.game.round_time"] = ("seconds",
+                "The length the round is configured to run, not a countdown: 115 in a live "
+                + "matchmaking round, 999 during warmup."),
+            ["entity.game.round_win_reason"] = (null,
+                "The engine's round-end reason, set with round_win_status and cleared with it: 1 "
+                + "target bombed (the bomb exploded), 7 bomb defused, 8 counter-terrorists "
+                + "eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 "
+                + "target saved (time ran out), 17 the terrorists surrendered, 18 the "
+                + "counter-terrorists surrendered. 0 while the round is undecided. Those are the "
+                + "reasons measured on matchmaking demos, not the engine's whole list. Read it on "
+                + "the `round_decided` view (its `reason` facet) or between the decision and the "
+                + "round's close, not on `round_ended`, where it has already reset to 0 (except on "
+                + "the match's last round, closed by cs_win_panel_match before the reset); there, "
+                + "`enrich.round.win_reason` carries it."),
+            ["entity.game.round_win_status"] = (null,
+                "0 while the round is undecided, 2 once the terrorists have won it, 3 once the "
+                + "counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and "
+                + "back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on "
+                + "`round_ended` it reads 0, except on the match's last round: that one closes on "
+                + "cs_win_panel_match, 193 ticks after the decision on the demos measured, before "
+                + "the reset, and reads the winner. The `round_decided` view fires on the step, and "
+                + "at the round's close the winner is `enrich.round.winner_side`."),
+            ["entity.game.total_rounds_played"] = (null,
+                "Rounds decided so far this match: 0 before round 1, and it increments on the "
+                + "frame a round is decided, not when the next one starts."),
+            ["entity.controller.money"] = ("dollars",
+                "The player's cash, off the controller. Read before the event's frame, like every "
+                + "player column. At round_freeze_end it is the money left after the freeze-time "
+                + "buys, the same sample point as round.team.money; a purchase later in buy time "
+                + "is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold "
+                + "more than 5 x 16000)."),
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),
@@ -259,6 +297,7 @@ public static class CatalogBuilder
                 ContextV2Name(rule.Id),
                 ContextV2Type(rule.Type.ToString(), rule.ValueType))))
             .Concat(BuildB6AggregateContexts())
+            .Concat(BuildRoundFactContexts())
             .OrderBy(c => c.ChainId, StringComparer.Ordinal)
             .ThenBy(c => c.RuleId, StringComparer.Ordinal)
             .ToList();
@@ -279,6 +318,21 @@ public static class CatalogBuilder
             [],
             m.V2Name,
             ContextV2Type(m.RuleType, "int")));
+
+    // Round facts (round.bomb.site / plant_place / site_entity). Game-scoped round-scoped nodes the
+    // runtime writes from one edge on bomb_planted rather than trigger-driven RuleDefs, so, like the
+    // B6 aggregates, they are appended from their shared id table.
+    private static IEnumerable<CatalogContextRule> BuildRoundFactContexts() =>
+        RoundFactIds.Members.Select(m => new CatalogContextRule(
+            "_builtin_round_facts",
+            "Game",
+            m.RuleId,
+            "Value",
+            m.ValueType,
+            true,
+            ["bomb_planted"],
+            m.V2Name,
+            ContextV2Type("Value", m.ValueType)));
 
     private static List<CatalogProvider> BuildProviders()
     {
@@ -585,6 +639,7 @@ public static class CatalogBuilder
 
     /// <summary>
     ///     Provider name → v2 namespace path: <c>entity.pawn.* → player.*</c>,
+    ///     <c>entity.controller.* → player.*</c> (the controller is the player's too: its cash),
     ///     <c>entity.weapon.* → player.weapon_*</c>, <c>entity.game.* → match.*</c>.
     ///     <para>
     ///         The weapon arm FLATTENS to an underscore rather than nesting under
@@ -602,13 +657,15 @@ public static class CatalogBuilder
     private static string ProviderV2Name(string name) =>
         name.StartsWith("entity.pawn.", StringComparison.Ordinal)
             ? "player." + name["entity.pawn.".Length..]
+            : name.StartsWith("entity.controller.", StringComparison.Ordinal)
+            ? "player." + name["entity.controller.".Length..]
             : name.StartsWith("entity.weapon.", StringComparison.Ordinal)
                 ? "player.weapon_" + name["entity.weapon.".Length..]
                 : name.StartsWith("entity.game.", StringComparison.Ordinal)
                     ? "match." + name["entity.game.".Length..]
                     : throw new InvalidOperationException(
                         $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
-                        + "(expected entity.pawn.*, entity.weapon.* or entity.game.*)");
+                        + "(expected entity.pawn.*, entity.controller.*, entity.weapon.* or entity.game.*)");
 
     private static string ContextV2Name(string ruleId) =>
         _contextV2Names.TryGetValue(ruleId, out string? v2)

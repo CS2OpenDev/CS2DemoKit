@@ -72,6 +72,11 @@ public sealed class PerPlayerEntityValueProviderRegistry
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnFlashDuration));
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.WeaponRecoilIndex));
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.WeaponAccuracyPenalty));
+        // The player's cash, read off the controller through the pawn's controller handle. Changes
+        // only on a purchase, a reward or a round's income, so it costs the digest little; gated by
+        // name like everything here. Same spec at the same position in
+        // BuiltinProviderSpecs.CreateGenericPerPlayerProviders(), so parity holds by construction.
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.ControllerMoney));
         // Eye angle and aim-punch base angle, one provider per component. Both sources are QAngle,
         // which the rules type vocabulary cannot express (no vector type, no member access) and
         // which offers no scalar leaf to name, so these are hand-written classes with no spec

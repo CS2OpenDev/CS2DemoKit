@@ -156,8 +156,9 @@ public static class V1ExpressionWriter
     /// <summary>
     ///     Rewrites a resolved reference path to its v1 wire spelling. The loader-injected
     ///     <c>event.tick</c> instant has no catalog field, so it maps to <c>event.ServerTick</c> —
-    ///     the true server tick v1's <c>pp_plant_tick</c>/<c>pp_kill_tick_N</c> captured. Everything
-    ///     else (enrichment outputs, event fields, <c>player.slot</c>) already carries its v1 name.
+    ///     the true server tick v1's <c>pp_plant_tick</c>/<c>pp_kill_tick_N</c> captured — and
+    ///     <c>event.frame_tick</c> maps to <c>event.GameTick</c>, the frame clock. Everything else
+    ///     (enrichment outputs, event fields, <c>player.slot</c>) already carries its v1 name.
     /// </summary>
     /// <param name="path">The resolved dotted reference path.</param>
     /// <returns>The v1 reference spelling.</returns>
@@ -165,6 +166,7 @@ public static class V1ExpressionWriter
         path switch
         {
             "event.tick" => "event.ServerTick",
+            "event.frame_tick" => "event.GameTick",
             _ => path
         };
 

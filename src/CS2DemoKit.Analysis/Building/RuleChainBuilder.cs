@@ -49,6 +49,10 @@ public sealed partial class RuleChainBuilder
     // throws on an un-snapshotted provider, is never reached).
     private IPerPlayerEntityValueProvider? _b6EquipmentProvider;
 
+    // The per-player cash provider, set (and snapshotted) only when a v2 ruleset reads
+    // round.team.money / round.enemies.money. The same freeze-end edge sums it.
+    private IPerPlayerEntityValueProvider? _b6MoneyProvider;
+
     private int? _currentPlayerTeam;
 
     // Combined lookup passed to ExpressionCompiler. Initialised from
@@ -138,6 +142,9 @@ public sealed partial class RuleChainBuilder
         }
 
         StateGraph graph = new();
+        _teamNodesByRuleId.Clear();
+        _teamRosters.Clear();
+        _gameStatHashes.Clear();
         Dictionary<string, StateNode> nodeLookup = new(StringComparer.OrdinalIgnoreCase)
         {
             ["root"] = graph.Root
@@ -161,6 +168,10 @@ public sealed partial class RuleChainBuilder
         _playerContextIndex = playerContextIndex;
 
         List<RuleChainDef> builtinContexts = BuiltinContexts.GenerateContextRules();
+
+        // A ruleset that is not per-player has no template to materialize players through, yet its
+        // enrichments (enemy facets, the round-end winner) read live teams and alive state.
+        graph.TracksPlayers = rulesets.Any(rs => rs.For != RulesetsV2.Model.RulesetScope.EachPlayer);
 
         // Rule-id → node map exposed for configured-output metric resolution (game scope).
         // Bare rule ids mirror nodeLookup; "chain.rule" qualified aliases are added per chain.
@@ -249,13 +260,19 @@ public sealed partial class RuleChainBuilder
         // costs nothing at build time and everything at read time — the node stays registered and
         // reports its default.
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
-        bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false;
+        bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false, b6MoneyNeeded = false;
+
+        // The plant-site round facts read the planter's place: an indirect need like the hurt
+        // enrichments', so a ruleset naming any of the three gates the place column in.
+        bool roundFactsNeeded = RoundFactIds.Members.Any(m => IsReferencedByV2Reads(m.V2Name, rulesets));
         if (_perPlayerEntityProviders is { All.Count: > 0 })
         {
             // B6 relative economy: a v2 read of round.team.equipment / round.enemies.equipment needs the
             // per-player equipment provider snapshotted so the freeze-end maintenance edge can sum it.
             b6EquipmentNeeded = IsReferencedByV2Reads("round.team.equipment", rulesets)
                                 || IsReferencedByV2Reads("round.enemies.equipment", rulesets);
+            b6MoneyNeeded = IsReferencedByV2Reads("round.team.money", rulesets)
+                            || IsReferencedByV2Reads("round.enemies.money", rulesets);
             healthNeeded = IsReferencedByV2Reads("enrich.hurt.victim_health_before", rulesets)
                            || IsReferencedByV2Reads("enrich.hurt.capped_damage", rulesets);
             weaponNeeded = IsReferencedByV2Reads("enrich.hurt.attacker_active_weapon", rulesets);
@@ -267,6 +284,8 @@ public sealed partial class RuleChainBuilder
                     "entity.pawn.health" => healthNeeded,
                     "entity.pawn.active_weapon_class" => weaponNeeded,
                     "entity.pawn.equipment_value" => b6EquipmentNeeded,
+                    "entity.controller.money" => b6MoneyNeeded,
+                    "entity.pawn.place" => roundFactsNeeded,
                     _ => false
                 };
 
@@ -346,10 +365,33 @@ public sealed partial class RuleChainBuilder
         }
 
         // Per-player templates seed each slot's team from its controller entity, so an each_player
-        // ruleset needs the scanner even when it reads no entity value.
-        bool perPlayerRulesets = rulesets.Any(rs => rs.For == RulesetsV2.Model.RulesetScope.EachPlayer);
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || perPlayerRulesets)
+        // ruleset needs the scanner even when it reads no entity value. A ruleset built onto the
+        // graph (for: match) needs the same live teams for its enrichments and the round-end
+        // winner, so any ruleset forces it.
+        bool trackPlayers = rulesets.Count > 0;
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || trackPlayers)
         {
+            // The round's winner is the server's verdict: the scanner synthesizes round_decided
+            // from these three game-rules singletons, and the round-end enrichment reports the
+            // latched winner rather than deriving one. So whenever there is a scanner they are
+            // tracked, read or not: three indexed reads per frame on a cached proxy index. One no
+            // rule reads is tracked silently: its value node updates, but no change marker is
+            // dispatched for it, so a build that does not read them dispatches no extra messages.
+            HashSet<IEntityValueProvider> silent = new(ReferenceEqualityComparer.Instance);
+            foreach (string contextName in (ReadOnlySpan<string>)
+                     [
+                         EntityChangeScanner.RoundWinStatusContext,
+                         EntityChangeScanner.RoundWinReasonContext,
+                         EntityChangeScanner.TotalRoundsPlayedContext
+                     ])
+            {
+                if (_entityProviders?.Get(contextName) is { } provider && !matched.Contains(provider))
+                {
+                    matched.Add(provider);
+                    silent.Add(provider);
+                }
+            }
+
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
             List<(IEntityValueProvider, StateNode)> trackedForScanner = new(matched.Count);
             foreach (IEntityValueProvider provider in matched)
@@ -368,7 +410,8 @@ public sealed partial class RuleChainBuilder
                 perPlayerList,
                 emitMolotov,
                 vantageScanner,
-                transitionScanner);
+                transitionScanner,
+                silent);
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve
@@ -384,6 +427,9 @@ public sealed partial class RuleChainBuilder
         // economy edge) when unreferenced or when the scanner wasn't built.
         _b6EquipmentProvider = b6EquipmentNeeded && entityScanner is not null
             ? _perPlayerEntityProviders?.Get("entity.pawn.equipment_value")
+            : null;
+        _b6MoneyProvider = b6MoneyNeeded && entityScanner is not null
+            ? _perPlayerEntityProviders?.Get("entity.controller.money")
             : null;
 
         // ── Create enrichment infrastructure ──────────────────────────────
@@ -435,6 +481,11 @@ public sealed partial class RuleChainBuilder
         foreach (StateEdge edge in enrichment.Edges)
         {
             graph.AddEdge(edge);
+        }
+
+        if (roundFactsNeeded)
+        {
+            BuildRoundFacts(graph, nodeLookup, allNodes, gameNodesByRuleId, relevantTypes, entityScanner);
         }
 
         List<RuleChainDef> gameContexts = builtinContexts.Where(c => c.Scope == ChainScope.Game).ToList();
@@ -500,8 +551,68 @@ public sealed partial class RuleChainBuilder
             v2Coverage.Count > 0 ? v2Coverage : null)
         {
             Profile = Profile,
-            Events = _registry
+            Events = _registry,
+            TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
+            TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
+            RoundBoundaryTypes = RoundBoundaryTypes()
         };
+    }
+
+    /// <summary>
+    ///     The dispatch types that can move <c>round_number</c> (see
+    ///     <see cref="BuildResult.RoundBoundaryTypes" />): the concrete events of the logical events its
+    ///     own triggers and its <c>match_live</c> parent's triggers name, plus the two events the
+    ///     evaluator itself treats as boundaries.
+    /// </summary>
+    private HashSet<Type> RoundBoundaryTypes()
+    {
+        HashSet<Type> types = [typeof(RoundFreezeEndEvent), typeof(BeginNewMatchEvent)];
+        foreach (string logical in (string[])["round_freeze_end", "match_start", "match_end"])
+        {
+            foreach (string concrete in _logicalResolver.Resolve(logical)?.ConcreteEventNames ?? [])
+            {
+                if (_registry.TryResolve(concrete, out Type? type))
+                {
+                    types.Add(type);
+                }
+            }
+        }
+
+        return types;
+    }
+
+    /// <summary>
+    ///     Builds the plant-site round facts (<see cref="RoundFactIds" />): three round-scoped value
+    ///     nodes and the <see cref="BombPlantSiteEdge" /> that writes them on <c>bomb_planted</c>.
+    ///     Registered as graph rule nodes, so the evaluator resets them at each freeze end, and in the
+    ///     lookups under their node ids, so a v2 read of <c>round.bomb.site</c> resolves through the
+    ///     catalog context table like any other context. Only built when a ruleset reads one.
+    /// </summary>
+    private void BuildRoundFacts(StateGraph graph, Dictionary<string, StateNode> nodeLookup,
+        List<StateNode> allNodes, Dictionary<string, StateNode> gameNodesByRuleId, HashSet<Type> relevantTypes,
+        EntityChangeScanner? scanner)
+    {
+        GenericRoundScopedValueNode<string> site = new(RoundFactIds.BombSite, "", null);
+        GenericRoundScopedValueNode<string> plantPlace = new(RoundFactIds.BombPlantPlace, "", null);
+        GenericRoundScopedValueNode<int> siteEntity = new(RoundFactIds.BombSiteEntity, -1, null);
+
+        foreach (StateNode node in (StateNode[])[site, plantPlace, siteEntity])
+        {
+            nodeLookup[node.Name] = node;
+            _enrichmentNodes![node.Name] = node;
+            gameNodesByRuleId[node.Name] = node;
+            allNodes.Add(node);
+            graph.AddRuleNode(node);
+        }
+
+        // The place provider was gated in by roundFactsNeeded, so the scanner snapshots it.
+        IPerPlayerEntityValueProvider? place = scanner is not null ? _perPlayerEntityProviders?.Get("entity.pawn.place") : null;
+        Func<int, string?>? readPlace = place is not null
+            ? slot => scanner!.GetPreFrameValue(place, slot) as string
+            : null;
+
+        graph.AddEdge(new BombPlantSiteEdge(graph.Root, site, plantPlace, siteEntity, readPlace));
+        relevantTypes.Add(typeof(BombPlantedEvent));
     }
 
     internal static string ResolveContextId(string contextPath)

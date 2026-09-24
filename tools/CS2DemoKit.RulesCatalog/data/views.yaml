@@ -368,6 +368,43 @@ views:
       has_winner: { type: bool, enrichment: enrich.round.has_winner }
     availability: all
 
+  # ── round decided / round ended (binding: none) ──────────────────────────────
+  # The two moments of a round's end, for a rule with no player in it (a for: each_team or
+  # for: match ruleset, or a per-player stat that is about the round rather than the player).
+  #
+  # round_decided is synthesized from the game rules' round-win status, on the frame it steps
+  # from 0 to a winner: the server's own verdict, 448 ticks before the round's close on a
+  # matchmaking demo. It is dispatched after the frame's own events, so it follows the kill that
+  # decided the round.
+  round_decided:
+    event: round_decided
+    note: >-
+      Synthesized from the game rules' round-win status on the frame the round is decided, so
+      event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided
+      round, after the frame's own events; the round's close (round_ended) comes 448 ticks later on
+      a matchmaking demo.
+    binding: none
+    baked: [ ]
+    facets:
+      winner_side: { type: int, field: Winner }
+      reason: { type: int, field: Reason }
+      rounds_played: { type: int, field: RoundsPlayed }
+    availability: all
+
+  # round_ended is the round's close ($round_end), bound to nobody: every player's template fires,
+  # and a per-player stat that is about surviving or playing the round counts it once per round.
+  # round_won / round_lost are the same event filtered to the player's side.
+  round_ended:
+    event: round_end
+    binding: none
+    baked: [ ]
+    facets:
+      winner_team: { type: int,  enrichment: enrich.round.winner_team }
+      winner_side: { type: int,  enrichment: enrich.round.winner_side }
+      has_winner: { type: bool, enrichment: enrich.round.has_winner }
+      win_reason: { type: int,  enrichment: enrich.round.win_reason }
+    availability: all
+
   # -- enemy spotted (actor_slot; actor = the VIEWER) --------------------------
   # Synthesized by VisibilityTransitionScanner on the tick a directed enemy pair crosses from
   # not-visible to visible. There is no wire event for this: the demo's own `spotted` bit is team

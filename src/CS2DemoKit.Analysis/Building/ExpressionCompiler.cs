@@ -702,9 +702,10 @@ public static class ExpressionCompiler
 
     /// <summary>
     ///     Resolves per-fire transport (<c>ServerTick</c>, <c>GameTick</c>, <c>FrameNumber</c>) off an
-    ///     envelope-typed parameter, with <c>tick</c> aliased to <c>ServerTick</c> — the same alias
-    ///     the ruleset loader rewrites before this compiler ever sees a ruleset expression, applied
-    ///     here so a condition that arrives raw (a breakpoint) resolves identically. Payload fields
+    ///     envelope-typed parameter, with <c>tick</c> aliased to <c>ServerTick</c> and <c>frame_tick</c>
+    ///     to <c>GameTick</c> — the same aliases the ruleset loader rewrites before this compiler ever
+    ///     sees a ruleset expression, applied here so a condition that arrives raw (a breakpoint)
+    ///     resolves identically. Payload fields
     ///     take precedence at both call sites, so a wire field named <c>tick</c> would still win.
     ///     <c>null</c> when the parameter IS the subject (net message, entity change — no envelope)
     ///     or the name matches no transport property.
@@ -719,7 +720,9 @@ public static class ExpressionCompiler
 
         string transportName = fieldName.Equals("tick", StringComparison.OrdinalIgnoreCase)
             ? nameof(GameEvent.ServerTick)
-            : fieldName;
+            : fieldName.Equals("frame_tick", StringComparison.OrdinalIgnoreCase)
+                ? nameof(GameEvent.GameTick)
+                : fieldName;
         PropertyInfo? transport = param.Type.GetProperty(transportName,
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
         return transport is null ? null : WidenNarrowIntegral(Expression.Property(param, transport));
@@ -1422,6 +1425,25 @@ public static class ExpressionCompiler
 
                 Expression roleSlot = ResolveEventField(b, name);
                 return ResolveEventSlotEntity(b, string.Join(".", entityPath), roleSlot);
+            }
+
+            // `<SlotField>.team` — the live team of the player an event's slot field names (the
+            // for: each_team side binding: `Attacker.team == 2`). Read per fire through the player
+            // context index, so a halftime swap is followed; a slot with no context reads 0, which
+            // matches no side. Only a player-slot field qualifies.
+            if (b.EntityValueAtParam is null && b.EventParam is not null && b.EventFields is not null
+                && b.PlayerContextIndex is not null
+                && b.EventFields.ContainsKey(name)
+                && pos + 1 < tokens.Length
+                && tokens[pos].Kind == TokenKind.Dot
+                && tokens[pos + 1].Kind == TokenKind.Identifier && tokens[pos + 1].Text == "team"
+                && IsPlayerSlotField(name, b.EventFields[name].FieldType))
+            {
+                pos += 2; // skip '.team'
+                Expression slotExpr = ResolveEventField(b, name);
+                Expression slotInt = slotExpr.Type == typeof(int) ? slotExpr : Expression.Convert(slotExpr, typeof(int));
+                MethodInfo currentTeam = typeof(PlayerContextIndex).GetMethod(nameof(PlayerContextIndex.GetCurrentTeam))!;
+                return Expression.Call(Expression.Constant(b.PlayerContextIndex), currentTeam, slotInt);
             }
 
             if (name == "context")

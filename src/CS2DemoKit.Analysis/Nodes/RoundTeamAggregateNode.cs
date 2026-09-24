@@ -47,6 +47,10 @@ public sealed class RoundTeamAggregateNode : StateNode, ISnapshotExcludedNode
     private readonly AggregateKind _kind;
     private readonly int _slot;
 
+    // The subject SIDE for a team subject (for: each_team), or -1 when the subject is the player
+    // at _slot, whose side is read live.
+    private readonly int _side = -1;
+
     /// <summary>Creates a per-subject team aggregate.</summary>
     /// <param name="name">The node's unique name (the B6 v1 rule id, e.g. <c>round_team_alive</c>).</param>
     /// <param name="index">The shared player-context index the aggregate derives from.</param>
@@ -61,6 +65,29 @@ public sealed class RoundTeamAggregateNode : StateNode, ISnapshotExcludedNode
         _kind = kind;
         Subtitle = subtitle;
     }
+
+    private RoundTeamAggregateNode(string name, PlayerContextIndex index, AggregateKind kind, int side, string? subtitle)
+    {
+        Name = name;
+        _index = index;
+        _slot = -1;
+        _side = side;
+        _kind = kind;
+        Subtitle = subtitle;
+    }
+
+    /// <summary>
+    ///     Creates a team aggregate whose subject is a SIDE rather than a player (the
+    ///     <c>for: each_team</c> scope): "team" is <paramref name="side" /> and "enemies" the other side.
+    /// </summary>
+    /// <param name="name">The node's unique name (the B6 v1 rule id).</param>
+    /// <param name="index">The shared player-context index the aggregate derives from.</param>
+    /// <param name="side">The subject side (2 = T, 3 = CT).</param>
+    /// <param name="kind">Which side + population to report.</param>
+    /// <param name="subtitle">Optional display subtitle (the side's name).</param>
+    /// <returns>The node.</returns>
+    public static RoundTeamAggregateNode ForSide(string name, PlayerContextIndex index, int side, AggregateKind kind,
+        string? subtitle = null) => new(name, index, kind, side, subtitle);
 
     /// <inheritdoc />
     public override bool IsActive => true;
@@ -82,7 +109,7 @@ public sealed class RoundTeamAggregateNode : StateNode, ISnapshotExcludedNode
 
     private int Compute()
     {
-        int team = _index.GetCurrentTeam(_slot);
+        int team = _side >= 0 ? _side : _index.GetCurrentTeam(_slot);
         int enemy = team switch
         {
             2 => 3,

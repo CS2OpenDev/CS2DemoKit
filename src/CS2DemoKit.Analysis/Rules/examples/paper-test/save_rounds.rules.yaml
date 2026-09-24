@@ -4,8 +4,7 @@ ruleset: save_rounds
 for: each_player
 stats:
   saves:
-    count: round_won
-    where: "enrich.round.has_winner && enrich.round.winner_team != player.team"
+    count: round_lost                    # the rounds this player's team lost
     while: player.survived
     per: match
 show:

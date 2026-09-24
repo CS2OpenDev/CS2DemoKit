@@ -59,6 +59,11 @@ public static class RulesetResolver
 
         private const int DefaultStreakMinStreak = 2;
 
+        /// <summary>The round-end enrichments a <c>binding: team</c> view's subject binding reads.</summary>
+        private const string TeamBindingHasWinner = "enrich.round.has_winner";
+
+        private const string TeamBindingWinnerTeam = "enrich.round.winner_team";
+
         /// <summary>The neutral ranking weight a highlight inherits when <c>score:</c> is unspecified.</summary>
         private const int DefaultHighlightScore = 50;
         private readonly CatalogScopeAdapter _adapter;
@@ -69,6 +74,10 @@ public static class RulesetResolver
         private readonly RulesetDoc _doc;
         private readonly RulesetExportGraph? _exports;
         private readonly bool _forEachPlayer;
+
+        // for: each_team — one instance per side. The player root is out of scope (the subject is a
+        // side, not a player); the team root (team.side) is in.
+        private readonly bool _forEachTeam;
         private readonly Dictionary<string, ParamDef> _paramDefsByName = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, ExpressionNode> _paramLiterals = new(StringComparer.Ordinal);
@@ -84,6 +93,10 @@ public static class RulesetResolver
 
         private readonly Dictionary<string, CatalogView> _viewsByName;
 
+        // Wire events the analysis layer synthesizes from entity state. They carry no server stamp,
+        // so their event.tick is the frame clock; see ResolveTickClock.
+        private readonly HashSet<string> _synthesizedEvents;
+
         internal Session(RulesetDoc doc, CatalogScopeAdapter adapter, ResolveContext ctx, RulesetExportGraph? exports)
         {
             _doc = doc;
@@ -92,8 +105,11 @@ public static class RulesetResolver
             _exports = exports;
             _rulesetId = new RulesetId(doc.Id, doc.For);
             _forEachPlayer = doc.For == RulesetScope.EachPlayer;
+            _forEachTeam = doc.For == RulesetScope.EachTeam;
 
             _viewsByName = adapter.Catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
+            _synthesizedEvents = new HashSet<string>(
+                adapter.Catalog.Events.Where(e => e.Synthesized).Select(e => e.Name), StringComparer.Ordinal);
             _definesByName = doc.Defines.ToDictionary(d => d.Name, StringComparer.Ordinal);
             _statsById = doc.Stats.ToDictionary(s => s.Id, StringComparer.Ordinal);
             _providerByV2Name = adapter.Catalog.Providers
@@ -477,9 +493,20 @@ public static class RulesetResolver
 
             CheckedExpression? whileGate = BuildWhileGate(stat, trigger, thisType, reads);
 
+            // A team-bound view (round_won / round_lost) filters on the round-end winner against the
+            // subject's team. The planner writes that condition, so the reads are declared here: they
+            // are what orders the round-end enrichment edge ahead of the stat's edge.
+            if (trigger.View is { Binding: "team" } && (_forEachPlayer || _forEachTeam) && !trigger.ActorAny)
+            {
+                reads.Declare(TeamBindingHasWinner);
+                reads.Declare(TeamBindingWinnerTeam);
+            }
+
+            RejectPlayerSubjectReads(stat, reads);
+
             RuleNodeKind kind = MapNodeKind(stat.Kind);
             KeepKind keep = MapKeep(stat);
-            ScopeAxis scope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis scope = ComputeScope(stat.Per);
 
             // streak/burst kind-args (row 8): fold the window to concrete ticks and default the two so
             // the node's identity is fully determined (an explicit window:640 and its default hash alike).
@@ -563,7 +590,45 @@ public static class RulesetResolver
                 // Carry the compute's display format: through for the planner to stamp on the
                 // ComputedStatNode. Presentation only — the hasher never reads it (V2StatHasher.Descriptor
                 // omits it), so it is outside node identity, exactly like the display Label.
-                Format: stat.Format);
+                Format: stat.Format,
+                Clock: stat.Kind == StatKind.Capture ? ResolveTickClock(valueSelector, trigger) : TickClock.None);
+        }
+
+        /// <summary>
+        ///     Which clock a capture's value is on, when the value is a bare tick read. Only the two bare
+        ///     reads are classified: <c>event.frame_tick</c> is always the frame clock, and
+        ///     <c>event.tick</c> is the server clock on a wire event and the frame clock on one the
+        ///     analysis layer synthesizes (it has no server stamp, so every tick slot carries the frame
+        ///     clock). Anything derived from a tick, a difference included, is left unclassified rather
+        ///     than guessed at.
+        /// </summary>
+        private TickClock ResolveTickClock(CheckedExpression? valueSelector, ResolvedTrigger trigger)
+        {
+            if (valueSelector?.Root is not ReferenceNode reference)
+            {
+                return TickClock.None;
+            }
+
+            if (string.Equals(reference.Path, "event." + CatalogScopeAdapter.FrameTickMember, StringComparison.Ordinal))
+            {
+                return TickClock.Frame;
+            }
+
+            if (!string.Equals(reference.Path, "event.tick", StringComparison.Ordinal))
+            {
+                return TickClock.None;
+            }
+
+            // A net-message payload has no tick envelope; leave it unclassified.
+            if (trigger.IsNet)
+            {
+                return TickClock.None;
+            }
+
+            string? wireEvent = trigger.View?.Event ?? trigger.RawOrNetName;
+            return wireEvent is not null && _synthesizedEvents.Contains(wireEvent)
+                ? TickClock.Frame
+                : TickClock.Server;
         }
 
         /// <summary>
@@ -735,6 +800,7 @@ public static class RulesetResolver
             }
 
             reads.Collect(source);
+            RejectPlayerSubjectReads(stat, reads);
 
             List<(int Min, string Target)> tallyThresholds = [];
             foreach (TallyThreshold threshold in thresholds)
@@ -751,7 +817,7 @@ public static class RulesetResolver
                 tallyThresholds.Add((minValue, threshold.Target));
             }
 
-            ScopeAxis tallyScope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis tallyScope = ComputeScope(stat.Per);
 
             return new CheckedStat(
                 _rulesetId,
@@ -848,7 +914,7 @@ public static class RulesetResolver
             }
 
             reads.Collect(ratio);
-            ScopeAxis rateScope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis rateScope = ComputeScope(stat.Per);
 
             return new CheckedStat(
                 _rulesetId,
@@ -1292,8 +1358,19 @@ public static class RulesetResolver
             }
 
             reads.Collect(when);
-            ScopeAxis scopeAxis = ComputeScope(highlight.Per, _forEachPlayer);
-            ScopeAxis countScope = _forEachPlayer ? ScopeAxis.PlayerMatch : ScopeAxis.Match;
+            if (_forEachTeam)
+            {
+                // A highlight is a per-round rising edge attributed to a player on the timeline; a
+                // side has no player to attribute it to.
+                Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                    $"highlight '{highlight.Id}': a for: each_team ruleset cannot declare highlights (a "
+                    + "highlight is attributed to a player); count the moments with a stat instead",
+                    highlight.Position);
+                return null;
+            }
+
+            ScopeAxis scopeAxis = ComputeScope(highlight.Per);
+            ScopeAxis countScope = ComputeScope(PerScope.Match);
 
             int score = highlight.Score ?? DefaultHighlightScore;
             HighlightKind kind = ResolveHighlightKind(highlight);
@@ -1657,6 +1734,11 @@ public static class RulesetResolver
                 AddRoot(roots, _adapter.Player);
             }
 
+            if (_forEachTeam)
+            {
+                AddRoot(roots, _adapter.Team);
+            }
+
             AddRoot(roots, _adapter.Round);
             AddRoot(roots, _adapter.Match);
             if (_paramsNamespace is not null)
@@ -1848,7 +1930,8 @@ public static class RulesetResolver
             // player.* / match.* entity provider (singleton or per-player keyed by the ruleset player).
             if (_providerByV2Name.TryGetValue(reference.Path, out CatalogProvider? provider))
             {
-                entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject);
+                entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject,
+                    IsSingleton: string.Equals(provider.Scope, "singleton", StringComparison.Ordinal));
                 return true;
             }
 
@@ -1905,14 +1988,39 @@ public static class RulesetResolver
             };
         }
 
-        private static ScopeAxis ComputeScope(PerScope per, bool forEachPlayer) =>
-            (forEachPlayer, per) switch
+        private ScopeAxis ComputeScope(PerScope per) =>
+            (_doc.For, per) switch
             {
-                (true, PerScope.Match) => ScopeAxis.PlayerMatch,
-                (true, _) => ScopeAxis.PlayerRound,
-                (false, PerScope.Match) => ScopeAxis.Match,
+                (RulesetScope.EachPlayer, PerScope.Match) => ScopeAxis.PlayerMatch,
+                (RulesetScope.EachPlayer, _) => ScopeAxis.PlayerRound,
+                (RulesetScope.EachTeam, PerScope.Match) => ScopeAxis.TeamMatch,
+                (RulesetScope.EachTeam, _) => ScopeAxis.TeamRound,
+                (_, PerScope.Match) => ScopeAxis.Match,
                 _ => ScopeAxis.Round
             };
+
+        /// <summary>
+        ///     In a <c>for: each_team</c> ruleset, refuses the two team-aggregate reads whose subject
+        ///     has to be a player: <c>round.alive.in_clutch</c> (is THIS player the lone survivor) and
+        ///     <c>round.clutch.size</c> (the N of THIS player's 1vN). A side is not in a clutch.
+        /// </summary>
+        private void RejectPlayerSubjectReads(StatDef stat, ReadCollector reads)
+        {
+            if (!_forEachTeam)
+            {
+                return;
+            }
+
+            foreach (string read in reads.DeclaredReads)
+            {
+                if (read is "round.alive.in_clutch" or "round.clutch.size")
+                {
+                    Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                        $"stat '{stat.Id}' reads '{read}', whose subject is a player (the clutching player); "
+                        + "a for: each_team ruleset's subject is a side", stat.Position);
+                }
+            }
+        }
 
         private static string LastSegment(string path)
         {
@@ -1949,6 +2057,15 @@ public static class RulesetResolver
             internal IReadOnlyList<string> DeclaredReads => _reads;
 
             internal IReadOnlyList<EntityProviderReference> EntityReads => _entities;
+
+            /// <summary>Declares a read the planner performs on the stat's behalf (no expression carries it).</summary>
+            internal void Declare(string path)
+            {
+                if (_seen.Add(path))
+                {
+                    _reads.Add(path);
+                }
+            }
 
             internal void Collect(CheckedExpression? expression)
             {

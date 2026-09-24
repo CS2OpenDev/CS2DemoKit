@@ -134,6 +134,11 @@ CS2 demos carry two clocks and mixing them produces results that look plausible 
 `GameEvent.GameTick`, `RuleChainEvent.Tick` and `HighlightFired.Tick` are already frame clock. Do
 not subtract `ServerStartTick` from them.
 
+In a ruleset, `event.frame_tick` is the frame clock and `event.tick` the server clock (the frame
+clock on a synthesized event, which has no server stamp). A configured table names the clock of
+each tick column in `MetricTable.ColumnClocks`, so a consumer does not have to know which views are
+synthesized.
+
 ## Player input (`svc_UserCmds`)
 
 `svc_UserCmds` is about 90% of the net messages in a demo (1.15 million on a 290 MB file) and is
@@ -275,6 +280,13 @@ highlights, which events carry which clock, and the facets that read a sentinel 
 when there was nothing to measure. The geometry-backed views (`enemy_spotted` and what hangs off it)
 need the engine wired in first; see the quick start above.
 
+A ruleset is `for: each_player` (one instance per player), `for: each_team` (one per side, for
+per-round, per-side facts such as a side's buy or whether it won) or `for: match`. Its `show: tables`
+project through `run.ProjectConfiguredOutputs()` on either path: a snapshot run projects from its
+rows, and a forward run without snapshots from the state it sampled at each round boundary, which is
+the same state, so the two agree row for row. Only a per-event output (a timeline log) still needs
+snapshots.
+
 ## Building
 
 ```sh
@@ -303,6 +315,12 @@ already cover, so size is a poor proxy to select on. `MultiDemoCanaryTests` swee
 
 This is local-only for now. CI still runs on the committed sample alone, so a corpus run before
 opening a PR is worth the minute it costs.
+
+Demos that live elsewhere, such as the Steam replays folder, can be used without copying them in:
+set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, and the corpus
+tests (`RulesOutputGoldenTests`, the forward-path parity sweep) take the demos in it that have a
+fixture under `tests/fixtures/rules-output/`, so a folder of hundreds of matches re-runs the pinned
+set rather than all of them. The folder is only read; nothing in it is written, moved or deleted.
 
 Tests whose expectations are specific to one match name that demo through
 `RequireDemo(DemoTestHelper.ReferenceDemoFileName)` rather than taking whatever is in `demos/`, so
