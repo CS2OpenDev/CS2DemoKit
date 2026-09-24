@@ -46,7 +46,16 @@ internal static class FieldDecoderFactory
     ///             maximum is its magazine size (Galil 35, AK-47 30, Deagle 7, Negev 150). Read as
     ///             zigzag, the same bytes alternate in sign and come out one high in magnitude.
     ///         </item>
+    ///         <item>
+    ///             <c>m_iClip2</c> → <c>minusone</c>: the same serializer on the secondary clip
+    ///             (the engine schema lists it with <c>MNetworkUserGroup=LocalWeaponExclusive</c>).
+    ///             No CS2 weapon has a secondary clip, so every read on the demos is raw 0, which
+    ///             is -1 here and was 0 as zigzag.
+    ///         </item>
     ///     </list>
+    ///     The engine marks one more field <c>minusone</c> that this table leaves out:
+    ///     <c>m_hSequence</c> (<c>HSequence</c>), which goes through the unsigned fallback and so
+    ///     reads one high. Nothing in the library reads it.
     /// </remarks>
     private static FieldEncodingInfo ResolveEncoding(RuntimeField field)
     {
@@ -62,7 +71,7 @@ internal static class FieldDecoderFactory
             {
                 VarEncoder = "simtime"
             },
-            "m_iClip1" => enc with
+            "m_iClip1" or "m_iClip2" => enc with
             {
                 VarEncoder = "minusone"
             },

@@ -92,6 +92,46 @@ public class WeaponClipDecodeTests
         await Assert.That(forward.Describe()).IsEqualTo(retained.Describe());
     }
 
+    /// <summary>
+    ///     <c>m_iClip2</c> uses the same serializer. No CS2 weapon has a secondary clip, so every
+    ///     read on every weapon class is -1 (raw 0). As zigzag the same bytes read 0.
+    /// </summary>
+    [Test]
+    public async Task Sample_Clip2ReadsMinusOneOnEveryWeapon()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+
+        EntityTracker tracker = EntityTrackerFactory.CreateCurated();
+        long reads = 0;
+        HashSet<string> classes = new(StringComparer.Ordinal);
+        Dictionary<int, long> values = [];
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            tracker.AdvanceOneFrame(frame);
+            foreach ((int _, EntityState entity) in tracker.CurrentEntities.AllIndexed())
+            {
+                if (entity.TryGet<int>("m_iClip2") is not { } clip2)
+                {
+                    continue;
+                }
+
+                reads++;
+                classes.Add(entity.ClassName);
+                values[clip2] = values.GetValueOrDefault(clip2) + 1;
+            }
+        }
+
+        Console.WriteLine($"m_iClip2 reads={reads} classes={classes.Count} values="
+                          + string.Join(",", values.Select(kv => $"{kv.Key}:{kv.Value}")));
+
+        await Assert.That(tracker.LastEntityError).IsNull();
+        await Assert.That(reads).IsGreaterThanOrEqualTo(90_000L);
+        await Assert.That(classes).Contains("CKnife");
+        await Assert.That(classes).Contains("CAK47");
+        await Assert.That(values.Keys.ToArray()).IsEquivalentTo(new[] { -1 });
+    }
+
     private static IEnumerable<DemoFrame> ReadAll(DemoReader reader)
     {
         while (reader.TryReadNext(out DemoFrame? frame))

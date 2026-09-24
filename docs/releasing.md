@@ -355,6 +355,10 @@ meaning, and per-pawn digests or outputs cached from 0.12 differ on this column.
 do not change, because both readings are one-to-one on the same wire value and change on the same
 frames.
 
+`m_iClip2` uses the same serializer and gets the same fix. No CS2 weapon has a secondary clip, so
+it read 0 on every weapon through 0.12.0 and reads -1 now. Only `EntityState` reads of the field and
+the SDK's `BasePlayerWeapon.Clip2` see it; no built-in column or provider reads it.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

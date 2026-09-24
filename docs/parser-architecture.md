@@ -652,8 +652,9 @@ The factory handles every CS2 wire-encoded scalar type:
 
 Some fields carry an `MNetworkSerializer` attribute that the flattened-serializer
 proto never sends, so the factory fills the encoder in from a small name-keyed
-table: `m_flSimulationTime`/`m_flAnimTime` → `simtime`, `m_iClip1` → `minusone`
-(an unsigned varint holding value + 1). A proto-declared encoder always wins.
+table: `m_flSimulationTime`/`m_flAnimTime` → `simtime`, `m_iClip1`/`m_iClip2` → `minusone`
+(an unsigned varint holding value + 1). A proto-declared encoder always wins. The engine also marks
+`m_hSequence` `minusone`; it is not in the table, so it reads one high, and nothing here reads it.
 
 ### `EntitySet` and `EntityState`
 

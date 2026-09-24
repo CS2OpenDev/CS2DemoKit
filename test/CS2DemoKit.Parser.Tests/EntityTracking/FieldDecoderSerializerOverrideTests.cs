@@ -10,9 +10,9 @@ namespace CS2DemoKit.Parser.Tests.EntityTracking;
 /// <summary>
 ///     The name-keyed serializer overrides in <see cref="FieldDecoderFactory" />: fields whose
 ///     <c>MNetworkSerializer</c> attribute the flattened-serializer proto never sends, so the factory
-///     fills the encoder in by name. <c>m_iClip1</c> is networked with <c>minusone</c> (clip + 1 as
-///     an unsigned varint) and was once read as zigzag, which made the clip alternate in sign and
-///     read one high (#49). Hand-built varints, no demo.
+///     fills the encoder in by name. <c>m_iClip1</c> and <c>m_iClip2</c> are networked with
+///     <c>minusone</c> (clip + 1 as an unsigned varint) and were once read as zigzag, which made the
+///     clip alternate in sign and read one high (#49). Hand-built varints, no demo.
 ///     <para>
 ///         <see cref="BitBuffer" /> is a ref struct, so each test decodes into locals first and
 ///         asserts after.
@@ -80,9 +80,11 @@ public class FieldDecoderSerializerOverrideTests
     ///     full Galil magazine (35) arrives as 36.
     /// </summary>
     [Test]
-    public async Task Clip1_DecodesMinusOne_OnBothLanes()
+    [Arguments("m_iClip1")]
+    [Arguments("m_iClip2")]
+    public async Task Clip_DecodesMinusOne_OnBothLanes(string name)
     {
-        RuntimeField field = Field("m_iClip1", "int32");
+        RuntimeField field = Field(name, "int32");
         byte[] data = Leb128(ClipRaw);
 
         int[] typed = DecodeInt(field, data, ClipRaw.Length);
@@ -97,9 +99,11 @@ public class FieldDecoderSerializerOverrideTests
     ///     so the cursor ends where the bytes end and nothing after the field moves.
     /// </summary>
     [Test]
-    public async Task Clip1_ConsumesOneVarint()
+    [Arguments("m_iClip1")]
+    [Arguments("m_iClip2")]
+    public async Task Clip_ConsumesOneVarint(string name)
     {
-        RuntimeField field = Field("m_iClip1", "int32");
+        RuntimeField field = Field(name, "int32");
         byte[] data = Leb128(ClipRaw);
 
         DecodeBoxed(field, data, ClipRaw.Length, out int tellBits);
