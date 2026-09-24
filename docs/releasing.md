@@ -527,6 +527,18 @@ behaviour is unchanged and its doc is corrected; `PawnLookup.IsAlive(EntityState
 the rule. The docs also now say that `PositionSample.Tick` is the frame clock (`GameEvent.GameTick`,
 not `GameEvent.ServerTick`) and that `Place` is the empty string, not null, outside a named nav area.
 
+### Grenade projectiles have a sampler (0.13.0)
+
+New in `CS2DemoKit.Parser.EntityTracking`: `ProjectileSampler.Walk`, over a `ParsedDemo` or a forward
+`IDemoFrameSource`, yields a `ProjectileSample` per grenade projectile per frame with its thrower
+slot, position, initial position and velocity, bounces and Created/Removed flags.
+`GrenadeProjectileClasses` names the five projectile classes, and `PawnLookup.ResolveThrowerSlot`,
+previously internal to Analysis, is public with the same behaviour. The additions are source- and
+binary-compatible except for one case: a consumer that declares its own `ProjectileSample`,
+`ProjectileSampler` or `GrenadeProjectileClasses` and imports `CS2DemoKit.Parser.EntityTracking`
+gets CS0104 (ambiguous reference) until it qualifies the name. The digest and rules output do not
+move.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
