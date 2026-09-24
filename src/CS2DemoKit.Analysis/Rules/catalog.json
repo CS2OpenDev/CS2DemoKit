@@ -2535,6 +2535,17 @@
     {
       "chainId": "_builtin_b6_aggregates",
       "chainScope": "PerPlayer",
+      "ruleId": "round_enemies_money",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.enemies.money",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
       "ruleId": "round_enemies_players",
       "ruleType": "Counter",
       "valueType": "int",
@@ -2563,6 +2574,17 @@
       "resetOnRound": false,
       "triggers": [],
       "v2Name": "round.team.equipment",
+      "v2Type": "Int"
+    },
+    {
+      "chainId": "_builtin_b6_aggregates",
+      "chainScope": "PerPlayer",
+      "ruleId": "round_team_money",
+      "ruleType": "Counter",
+      "valueType": "int",
+      "resetOnRound": false,
+      "triggers": [],
+      "v2Name": "round.team.money",
       "v2Type": "Int"
     },
     {
@@ -2785,6 +2807,15 @@
     }
   ],
   "providers": [
+    {
+      "name": "entity.controller.money",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.money",
+      "v2Type": "Int",
+      "unit": "dollars",
+      "note": "The player\u0027s cash, off the controller. Read before the event\u0027s frame, like every player column. At round_freeze_end it is the money left after the freeze-time buys, the same sample point as round.team.money; a purchase later in buy time is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold more than 5 x 16000)."
+    },
     {
       "name": "entity.game.bomb_planted",
       "scope": "singleton",

@@ -177,6 +177,10 @@
           "markdownDescription": "\u0060player.max_speed\u0060 (type \u0060float\u0060, in units/second) - an entity read, from \u0060entity.pawn.max_speed\u0060. Read at a rule site from the frame BEFORE the triggering event. Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
         },
         {
+          "const": "player.money",
+          "markdownDescription": "\u0060player.money\u0060 (type \u0060int\u0060, in dollars) - an entity read, from \u0060entity.controller.money\u0060. Read at a rule site from the frame BEFORE the triggering event. The player\u0027s cash, off the controller. Read before the event\u0027s frame, like every player column. At round_freeze_end it is the money left after the freeze-time buys, the same sample point as round.team.money; a purchase later in buy time is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold more than 5 x 16000)."
+        },
+        {
           "const": "player.place",
           "markdownDescription": "\u0060player.place\u0060 (type \u0060string\u0060) - an entity read, from \u0060entity.pawn.place\u0060. Read at a rule site from the frame BEFORE the triggering event."
         },

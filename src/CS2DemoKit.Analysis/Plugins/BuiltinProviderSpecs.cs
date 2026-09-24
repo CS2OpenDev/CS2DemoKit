@@ -189,6 +189,22 @@ public static class BuiltinProviderSpecs
             SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
             SchemaNames.CCSWeaponBase.AccuracyPenalty));
 
+    /// <summary>
+    ///     entity.controller.money: the player's cash, <c>m_pInGameMoneyServices.m_iAccount</c> on the
+    ///     controller, reached from the pawn through its <c>m_hController</c> handle (the same
+    ///     two-hop shape as the active-weapon clip). The account lives on the controller, not the
+    ///     pawn, because it survives death and respawn. Read pre-frame like every per-player column,
+    ///     so at an event it is the balance before anything the event's frame changed. Null (slot
+    ///     skipped) when the pawn has no controller handle or the account was never networked.
+    /// </summary>
+    public static ProviderSpec ControllerMoney { get; } = new(
+        "entity.controller.money", "CCSPlayerPawn",
+        "", typeof(int),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.Controller,
+            SchemaNames.CCSPlayerController.InGameMoneyServices + "."
+                                                                + SchemaNames.CCSPlayerControllerInGameMoneyServices.Account));
+
     /// <summary>entity.game.freeze_period — the singleton freeze-period poll.</summary>
     public static ProviderSpec GameFreezePeriod { get; } = new(
         "entity.game.freeze_period", "CCSGameRulesProxy",
@@ -287,6 +303,8 @@ public static class BuiltinProviderSpecs
         new GenericPerPlayerFieldProvider(PawnFlashDuration),
         new GenericPerPlayerFieldProvider(WeaponRecoilIndex),
         new GenericPerPlayerFieldProvider(WeaponAccuracyPenalty),
+        // The controller's cash, at the same position on both sides of the parity gate.
+        new GenericPerPlayerFieldProvider(ControllerMoney),
         // Angle components. QAngle has no scalar leaf to name and the rules language has no
         // vector type, so these are hand-written classes with no spec form, registered
         // identically on both sides of the parity gate exactly like the position trio.

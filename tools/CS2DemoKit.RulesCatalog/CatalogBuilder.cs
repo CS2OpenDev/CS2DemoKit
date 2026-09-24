@@ -97,6 +97,12 @@ public static class CatalogBuilder
             ["entity.game.total_rounds_played"] = (null,
                 "Rounds decided so far this match: 0 before round 1, and it increments on the "
                 + "frame a round is decided, not when the next one starts."),
+            ["entity.controller.money"] = ("dollars",
+                "The player's cash, off the controller. Read before the event's frame, like every "
+                + "player column. At round_freeze_end it is the money left after the freeze-time "
+                + "buys, the same sample point as round.team.money; a purchase later in buy time "
+                + "is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold "
+                + "more than 5 x 16000)."),
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),
@@ -611,6 +617,7 @@ public static class CatalogBuilder
 
     /// <summary>
     ///     Provider name → v2 namespace path: <c>entity.pawn.* → player.*</c>,
+    ///     <c>entity.controller.* → player.*</c> (the controller is the player's too: its cash),
     ///     <c>entity.weapon.* → player.weapon_*</c>, <c>entity.game.* → match.*</c>.
     ///     <para>
     ///         The weapon arm FLATTENS to an underscore rather than nesting under
@@ -628,13 +635,15 @@ public static class CatalogBuilder
     private static string ProviderV2Name(string name) =>
         name.StartsWith("entity.pawn.", StringComparison.Ordinal)
             ? "player." + name["entity.pawn.".Length..]
+            : name.StartsWith("entity.controller.", StringComparison.Ordinal)
+            ? "player." + name["entity.controller.".Length..]
             : name.StartsWith("entity.weapon.", StringComparison.Ordinal)
                 ? "player.weapon_" + name["entity.weapon.".Length..]
                 : name.StartsWith("entity.game.", StringComparison.Ordinal)
                     ? "match." + name["entity.game.".Length..]
                     : throw new InvalidOperationException(
                         $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
-                        + "(expected entity.pawn.*, entity.weapon.* or entity.game.*)");
+                        + "(expected entity.pawn.*, entity.controller.*, entity.weapon.* or entity.game.*)");
 
     private static string ContextV2Name(string ruleId) =>
         _contextV2Names.TryGetValue(ruleId, out string? v2)

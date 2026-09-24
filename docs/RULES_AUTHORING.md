@@ -396,10 +396,17 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   `enrich.round.win_reason` (the `winner_side` and `win_reason` facets of `round_ended`).
 - **Team aggregates (subject-relative):** `round.team.alive` / `round.enemies.alive`,
   `round.team.players` / `round.enemies.players`, `round.team.equipment` /
-  `round.enemies.equipment`, `round.alive.in_clutch`.
+  `round.enemies.equipment`, `round.team.money` / `round.enemies.money`, `round.alive.in_clutch`.
+  The economy sums are sampled once per round, at `round_freeze_end`: the equipment the side
+  carries and the cash it has left after the freeze-time buys. A purchase later in buy time is in
+  neither. Bound-check a money sum before a rule leans on it (`round.team.money <= 5 * 16000`);
+  it is a sum of wire values and a decode fault would show there first. (Issue #54 reported
+  $3,400 to $4,300 per player in round 1 of one build-10231 demo; read through the engine at this
+  sample point the sides of that round hold $2,600 and $750, the pistol round's leftovers.)
 - **Entity state:** `player.health` / `player.armor` / `player.equipment_value` /
-  `player.active_weapon_clip` / `player.active_weapon_class` / `player.place` — the player's live
-  pawn state. (`active_weapon_clip` is the magazine count of the currently held weapon — under the
+  `player.active_weapon_clip` / `player.active_weapon_class` / `player.place` / `player.money` —
+  the player's live pawn state (`money` is the controller's cash, the one read here not on the
+  pawn). (`active_weapon_clip` is the magazine count of the currently held weapon — under the
   pre-frame timing below, at a kill event it is the clip BEFORE the killing shot, so "last bullet"
   reads `== 1`; knives, grenades and the C4 read `-1`, and an empty magazine reads `0`. `place` is the human-readable nav-mesh
   place name the pawn last occupied — `"BombsiteA"`, `"TSpawn"`, `"Ramp"`, … — a string; names come

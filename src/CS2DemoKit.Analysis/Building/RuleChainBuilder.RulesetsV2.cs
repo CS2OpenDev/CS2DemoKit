@@ -1920,6 +1920,8 @@ public sealed partial class RuleChainBuilder
 
         Expose(B6RuleIds.TeamEquipment);
         Expose(B6RuleIds.EnemiesEquipment);
+        Expose(B6RuleIds.TeamMoney);
+        Expose(B6RuleIds.EnemiesMoney);
 
         return overlay;
     }
@@ -1974,26 +1976,55 @@ public sealed partial class RuleChainBuilder
     private void InjectB6EconomyAggregates(int slot, string? playerName,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes, List<StateEdge> edges)
     {
-        if (_playerContextIndex is not { } index || _entityScanner is not { } scanner
-                                                 || _b6EquipmentProvider is not { } equipment)
+        if (_playerContextIndex is not { } index)
         {
             return;
         }
 
-        GenericValueNode<int> teamEquipment = new(B6RuleIds.TeamEquipment, playerName);
-        teamEquipment.SetValue(0);
-        GenericValueNode<int> enemiesEquipment = new(B6RuleIds.EnemiesEquipment, playerName);
-        enemiesEquipment.SetValue(0);
+        if (BuildEconomySums(playerName, localLookup, nodes) is { Count: > 0 } sums)
+        {
+            edges.Add(new PlayerEconomyFreezeEndEdge(
+                localLookup["root"], index, () => index.GetCurrentTeam(slot), sums));
+        }
+    }
 
-        localLookup[B6RuleIds.TeamEquipment] = teamEquipment;
-        localLookup[B6RuleIds.EnemiesEquipment] = enemiesEquipment;
-        nodes.Add(teamEquipment);
-        nodes.Add(enemiesEquipment);
+    /// <summary>
+    ///     The freeze-end economy sums a subject gets, one per gated provider: equipment when a
+    ///     ruleset reads <c>round.*.equipment</c>, cash when one reads <c>round.*.money</c>. Each
+    ///     contributes a team and an enemies node, registered in <paramref name="localLookup" /> under
+    ///     their v1 rule ids. Empty when neither is read, or no scanner exists to sample them.
+    /// </summary>
+    private List<PlayerEconomyFreezeEndEdge.Sum> BuildEconomySums(string? subtitle,
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes)
+    {
+        List<PlayerEconomyFreezeEndEdge.Sum> sums = [];
+        if (_entityScanner is not { } scanner)
+        {
+            return sums;
+        }
 
-        edges.Add(new PlayerEconomyFreezeEndEdge(
-            localLookup["root"], index,
-            s => scanner.GetPreFrameValue(equipment, s) is int v ? v : 0,
-            slot, teamEquipment, enemiesEquipment));
+        void Add(IPerPlayerEntityValueProvider? provider, string teamId, string enemiesId)
+        {
+            if (provider is null)
+            {
+                return;
+            }
+
+            GenericValueNode<int> team = new(teamId, subtitle);
+            team.SetValue(0);
+            GenericValueNode<int> enemies = new(enemiesId, subtitle);
+            enemies.SetValue(0);
+            localLookup[teamId] = team;
+            localLookup[enemiesId] = enemies;
+            nodes.Add(team);
+            nodes.Add(enemies);
+            sums.Add(new PlayerEconomyFreezeEndEdge.Sum(
+                s => scanner.GetPreFrameValue(provider, s) is int v ? v : 0, team, enemies));
+        }
+
+        Add(_b6EquipmentProvider, B6RuleIds.TeamEquipment, B6RuleIds.EnemiesEquipment);
+        Add(_b6MoneyProvider, B6RuleIds.TeamMoney, B6RuleIds.EnemiesMoney);
+        return sums;
     }
 
     /// <summary>

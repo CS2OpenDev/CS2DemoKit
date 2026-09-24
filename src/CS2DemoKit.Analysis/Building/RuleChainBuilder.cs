@@ -49,6 +49,10 @@ public sealed partial class RuleChainBuilder
     // throws on an un-snapshotted provider, is never reached).
     private IPerPlayerEntityValueProvider? _b6EquipmentProvider;
 
+    // The per-player cash provider, set (and snapshotted) only when a v2 ruleset reads
+    // round.team.money / round.enemies.money. The same freeze-end edge sums it.
+    private IPerPlayerEntityValueProvider? _b6MoneyProvider;
+
     private int? _currentPlayerTeam;
 
     // Combined lookup passed to ExpressionCompiler. Initialised from
@@ -253,13 +257,15 @@ public sealed partial class RuleChainBuilder
         // costs nothing at build time and everything at read time — the node stays registered and
         // reports its default.
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
-        bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false;
+        bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false, b6MoneyNeeded = false;
         if (_perPlayerEntityProviders is { All.Count: > 0 })
         {
             // B6 relative economy: a v2 read of round.team.equipment / round.enemies.equipment needs the
             // per-player equipment provider snapshotted so the freeze-end maintenance edge can sum it.
             b6EquipmentNeeded = IsReferencedByV2Reads("round.team.equipment", rulesets)
                                 || IsReferencedByV2Reads("round.enemies.equipment", rulesets);
+            b6MoneyNeeded = IsReferencedByV2Reads("round.team.money", rulesets)
+                            || IsReferencedByV2Reads("round.enemies.money", rulesets);
             healthNeeded = IsReferencedByV2Reads("enrich.hurt.victim_health_before", rulesets)
                            || IsReferencedByV2Reads("enrich.hurt.capped_damage", rulesets);
             weaponNeeded = IsReferencedByV2Reads("enrich.hurt.attacker_active_weapon", rulesets);
@@ -271,6 +277,7 @@ public sealed partial class RuleChainBuilder
                     "entity.pawn.health" => healthNeeded,
                     "entity.pawn.active_weapon_class" => weaponNeeded,
                     "entity.pawn.equipment_value" => b6EquipmentNeeded,
+                    "entity.controller.money" => b6MoneyNeeded,
                     _ => false
                 };
 
@@ -407,6 +414,9 @@ public sealed partial class RuleChainBuilder
         // economy edge) when unreferenced or when the scanner wasn't built.
         _b6EquipmentProvider = b6EquipmentNeeded && entityScanner is not null
             ? _perPlayerEntityProviders?.Get("entity.pawn.equipment_value")
+            : null;
+        _b6MoneyProvider = b6MoneyNeeded && entityScanner is not null
+            ? _perPlayerEntityProviders?.Get("entity.controller.money")
             : null;
 
         // ── Create enrichment infrastructure ──────────────────────────────
