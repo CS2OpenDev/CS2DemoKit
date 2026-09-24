@@ -46,8 +46,10 @@ public static class BuiltinProviderSpecs
     /// <summary>
     ///     entity.pawn.active_weapon_clip — two-hop read (Tier C): the pawn's active-weapon
     ///     handle → the weapon entity's <c>m_iClip1</c> (rounds currently in the magazine).
-    ///     Null (slot skipped) when the pawn has no active weapon or the clip is unseen; 0 and
-    ///     -1 (no-magazine weapons like knives) are real observations and emit as-is. NOTE:
+    ///     Null (slot skipped) when the pawn has no active weapon or the clip is unseen. 0 is an
+    ///     empty magazine; -1 is a weapon with no magazine (knives, grenades, the C4), which the
+    ///     engine's <c>minusone</c> serializer sends as 0 on the wire. Both are real observations
+    ///     and emit as-is. NOTE:
     ///     rule-site reads are PRE-FRAME (the scanner snapshots the previous frame), so at a
     ///     kill event this is the clip BEFORE the killing shot — "last bullet" is <c>== 1</c>,
     ///     not <c>== 0</c>.

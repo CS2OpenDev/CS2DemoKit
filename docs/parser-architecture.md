@@ -648,7 +648,12 @@ The factory handles every CS2 wire-encoded scalar type:
   (bc<32 quantised, bc≥32 raw — the raw case is easy to get wrong and
   produces plausible-looking garbage when you do).
 - Complex (boxed) — strings, `Vector`/`QAngle`, `Color`, encoder-specific
-  paths (`coord`, `simtime`, `runetime`).
+  paths (`coord`, `simtime`, `runetime`, `minusone`).
+
+Some fields carry an `MNetworkSerializer` attribute that the flattened-serializer
+proto never sends, so the factory fills the encoder in from a small name-keyed
+table: `m_flSimulationTime`/`m_flAnimTime` → `simtime`, `m_iClip1` → `minusone`
+(an unsigned varint holding value + 1). A proto-declared encoder always wins.
 
 ### `EntitySet` and `EntityState`
 
