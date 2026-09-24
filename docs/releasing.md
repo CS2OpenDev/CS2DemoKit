@@ -376,7 +376,9 @@ Decode failures used to be swallowed by a catch-all; they are now counted. New p
 `Extract(IEnumerable<DemoFrame>, UserCmdReconstructor)` overload that exposes the stats. Nothing
 was removed. `DecodeProvenance`, the `ParseWarning` catalogue and the parse itself are unchanged:
 the raw payloads are stored as before, and only callers that ask for input pay for the rebuild
-(about 2 to 2.5 s on a full current demo).
+(about 2 to 2.5 s on a full current demo). There is no delta-share counter in the parse
+diagnostics; `UserCmdReconstructor.Stats` carries the delta share, and
+`docs/parser-architecture.md` says why the parse does not count it.
 
 ## Credentials
 

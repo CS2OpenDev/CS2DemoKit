@@ -432,6 +432,17 @@ and skipped, never decoded against defaults. The parse path is untouched:
 the user-command store keeps the raw payloads, and only a consumer that asks
 for input pays for the rebuild.
 
+Issue #53 also asked for a delta-share counter in the parse diagnostics, so
+that "no input" could be told apart from "input not decoded". It was left out
+on purpose. The parser never looks inside a payload, and counting deltas
+would mean walking every command's wire bytes on every parse, including the
+many that never read input. Nor is it a warning: the parser loses nothing, it
+stores every payload as before. The two questions it was meant to answer have
+answers without it: `DemoFrame.UserCmdsPayloadCount` says whether a demo
+carries input at all, and `UserCmdReconstructor.Stats` says how much of it
+arrived as deltas (`Delta` against `Full`) and how much was not rebuilt
+(`MissingBaseline`, `DecodeFailed`, `OutOfOrder`).
+
 ---
 
 ## 4. Bit-level primitives
