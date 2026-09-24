@@ -162,6 +162,10 @@ public sealed partial class RuleChainBuilder
 
         List<RuleChainDef> builtinContexts = BuiltinContexts.GenerateContextRules();
 
+        // A ruleset that is not per-player has no template to materialize players through, yet its
+        // enrichments (enemy facets, the round-end winner) read live teams and alive state.
+        graph.TracksPlayers = rulesets.Any(rs => rs.For != RulesetsV2.Model.RulesetScope.EachPlayer);
+
         // Rule-id → node map exposed for configured-output metric resolution (game scope).
         // Bare rule ids mirror nodeLookup; "chain.rule" qualified aliases are added per chain.
         Dictionary<string, StateNode> gameNodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
@@ -346,9 +350,11 @@ public sealed partial class RuleChainBuilder
         }
 
         // Per-player templates seed each slot's team from its controller entity, so an each_player
-        // ruleset needs the scanner even when it reads no entity value.
-        bool perPlayerRulesets = rulesets.Any(rs => rs.For == RulesetsV2.Model.RulesetScope.EachPlayer);
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || perPlayerRulesets)
+        // ruleset needs the scanner even when it reads no entity value. A ruleset built onto the
+        // graph (for: match) needs the same live teams for its enrichments and the round-end
+        // winner, so any ruleset forces it.
+        bool trackPlayers = rulesets.Count > 0;
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || trackPlayers)
         {
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
             List<(IEntityValueProvider, StateNode)> trackedForScanner = new(matched.Count);

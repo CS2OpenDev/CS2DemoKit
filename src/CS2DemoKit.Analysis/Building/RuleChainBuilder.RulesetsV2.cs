@@ -253,6 +253,11 @@ public sealed partial class RuleChainBuilder
         foreach (StateNode node in nodes)
         {
             allNodes.Add(node);
+
+            // Registered for the evaluator's round reset and match-restart restore, the two things a
+            // per-player node gets by being materialized. Without it a round-scoped match stat
+            // (`per: round`) never reset and read the match total.
+            graph.AddRuleNode(node);
             switch (node)
             {
                 case ConjunctionNode conjunction:

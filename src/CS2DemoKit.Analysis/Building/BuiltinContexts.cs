@@ -579,11 +579,11 @@ public static class BuiltinContexts
                 // later defuse/detonation and round end still count as post-plant (the reason v1's
                 // post-plant-double rule hand-rolled `pp_bomb_planted` as a dedicated per-player
                 // bool). The reset is an EXPLICIT $round_freeze_end deactivate, NOT `reset: round`:
-                // game-scoped round-scoped NODES are not registered for the evaluator's per-round
-                // reset (only per-player nodes and reset-edges are), so a ResetOnRound bool here
-                // would latch true forever. $round_freeze_end is the exact boundary the per-player
-                // reset fires on, so the gate's live window matches v1's per-player pp_bomb_planted
-                // tick-for-tick. v2Name `round.bomb.was_planted` (CatalogBuilder ContextV2Names);
+                // built-in context rules are not registered for the evaluator's per-round reset (only
+                // per-player nodes, reset-edges and the static nodes a ruleset builds are, through
+                // StateGraph.RuleNodes), so a ResetOnRound bool here would latch true forever.
+                // $round_freeze_end is the exact boundary the per-player reset fires on, so the gate's
+                // live window matches v1's per-player pp_bomb_planted tick-for-tick. v2Name `round.bomb.was_planted` (CatalogBuilder ContextV2Names);
                 // the 2.2b adapter injected the path as a type-level stand-in so rulesets RESOLVED,
                 // this real context is what makes them EVALUATE.
                 new RuleDef("bomb_was_planted", RuleType.Bool, "BombWasPlanted",

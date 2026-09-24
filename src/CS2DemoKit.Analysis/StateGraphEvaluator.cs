@@ -79,6 +79,10 @@ public sealed class StateGraphEvaluator
     // before any of the player's edges can dispatch. One restorer per value-bearing node; nodes
     // with nothing match-accumulated (round-scoped, live derivations, pulls) capture none.
     private readonly List<(StateNode Node, Action Restore)> _matchRestartBaselines = [];
+
+    // The same baselines for the graph's static ruleset nodes, captured once per graph from their
+    // build-time values (StateGraph.RuleNodeBaselines).
+    private readonly IReadOnlyList<(StateNode Node, Action Restore)> _ruleNodeBaselines;
     private readonly Dictionary<StateNode, int> _nodeIds = new(ReferenceEqualityComparer.Instance);
 
     // ── Opt-in LIVE computes ─────────────────────────────────────────────────
@@ -176,6 +180,19 @@ public sealed class StateGraphEvaluator
         {
             RegisterLiveCompute(reg.Compute, reg.Reads);
         }
+
+        // Static ruleset nodes get what a materialized node gets: round-scoped ones reset at each
+        // round boundary (a for: match `per: round` count otherwise read the match total), and all
+        // of them return to their build-time value on a match restart (see ResetForMatchRestart).
+        foreach (StateNode node in graph.RuleNodes)
+        {
+            if (node is IRoundScopedNode rsNode)
+            {
+                _roundScopedNodes.Add(rsNode);
+            }
+        }
+
+        _ruleNodeBaselines = graph.RuleNodeBaselines(CreateMatchRestartRestorer);
 
         foreach (StateEdge edge in graph.Edges)
         {
@@ -462,6 +479,13 @@ public sealed class StateGraphEvaluator
         HighlightsFired = [];
         RoundOfficiallyEndedSeen = 0;
         CsPreRestartSeen = 0;
+
+        // Static ruleset nodes start from their build-time values, so evaluating one build twice
+        // does not carry the first run's totals into the second. A no-op on a fresh build.
+        foreach ((StateNode _, Action restore) in _ruleNodeBaselines)
+        {
+            restore();
+        }
 
         bool logStart = _log.IsEnabled(LogLevel.Information);
         if (trace || logStart)
@@ -1293,7 +1317,10 @@ public sealed class StateGraphEvaluator
 
     private void MaterializeNewPlayers(GameEvent gameEvent)
     {
-        if (_perPlayerTemplates.Count == 0)
+        // A build with no per-player template still registers each player's context when a
+        // ruleset built onto the graph needs live teams and alive state (StateGraph.TracksPlayers):
+        // without it a for: match build derived every round's winner from nobody alive.
+        if (_perPlayerTemplates.Count == 0 && !_graph.TracksPlayers)
         {
             return;
         }
@@ -1771,12 +1798,12 @@ public sealed class StateGraphEvaluator
     ///     knife round's kills, deaths and round win otherwise count into the real match's totals
     ///     (a 24-round match scored 14–11 across "25" rounds).
     ///     <para>
-    ///         Scope: per-player template nodes, round-scoped state, and
+    ///         Scope: per-player template nodes, the static nodes rulesets built onto the graph
+    ///         (<see cref="StateGraph.RuleNodes" />: <c>for: match</c> and <c>for: each_team</c>
+    ///         stats, restored to their build-time values), round-scoped state, and
     ///         <see cref="PlayerContextIndex" /> round state. Game-scoped built-in context rules
     ///         reset declaratively via their own <c>$match_start</c> triggers (see
-    ///         <c>BuiltinContexts</c>). Game-scoped v2 (<c>for: match</c>) stats are deliberately
-    ///         untouched — no baseline exists for them, and fabricating one is worse than
-    ///         documenting the gap.
+    ///         <c>BuiltinContexts</c>).
     ///     </para>
     /// </summary>
     private void ResetForMatchRestart(SnapshotState? snap)
@@ -1787,6 +1814,14 @@ public sealed class StateGraphEvaluator
         snap?.MarkRoundScopedDirty(_roundScopedNodes);
 
         foreach ((StateNode node, Action restore) in _matchRestartBaselines)
+        {
+            restore();
+            MarkLogicDependentsDirty(node);
+            MarkLiveComputeDirty(node);
+            snap?.MarkDirty(node);
+        }
+
+        foreach ((StateNode node, Action restore) in _ruleNodeBaselines)
         {
             restore();
             MarkLogicDependentsDirty(node);

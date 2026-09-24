@@ -141,10 +141,7 @@ public class ValueSelectorContextReadTests
             .Select(r => r.Values["Sides"]?.ToString() ?? "")
             .OrderByDescending(s => s.Length).First();
         Console.WriteLine($"[winners] match={match} per-player={longest}");
-        await Assert.That(match).IsNotNull();
-        // The per-player list restarts at the sample's second begin_new_match; the match-scope one
-        // keeps the warmup's round ends in front. What they share must agree value for value.
         await Assert.That(longest.Length).IsGreaterThan(0);
-        await Assert.That(match!.EndsWith(longest, StringComparison.Ordinal)).IsTrue();
+        await Assert.That(match).IsEqualTo(longest);
     }
 }
