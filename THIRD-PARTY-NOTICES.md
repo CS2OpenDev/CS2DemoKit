@@ -1,8 +1,8 @@
 # Third-Party Notices
 
 This repository is licensed under the MIT License (see `LICENSE`). It also contains code
-adapted from a third-party MIT-licensed project, and generates code from third-party protobuf
-definitions. Both are documented below.
+adapted from two third-party MIT-licensed projects, and generates code from third-party protobuf
+definitions. All are documented below.
 
 ## a. demofile-net (MIT)
 
@@ -46,7 +46,43 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## b. Valve protobuf definitions
+## b. demoinfocs-golang (MIT)
+
+One file in the parser ships code adapted from
+[demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang), an MIT-licensed CS2 demo
+parser. It ships in the `CS2DemoKit.Parser` assembly and is published as part of the
+`CS2DemoKit.Parser` package:
+
+- `EntityTracking/UserCmdDelta.cs`, the user-command delta grammar, ported from
+  `pkg/demoinfocs/s2_usercmd_delta.go`
+
+The upstream license text, reproduced in full:
+
+```text
+MIT License
+
+Copyright (c) 2017-2026 Markus Walther
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## c. Valve protobuf definitions
 
 The parser assembly contains C# code generated from protobuf definitions originating from
 Valve's Counter-Strike 2, as tracked by [SteamDatabase/GameTracking-CS2](https://github.com/SteamDatabase/GameTracking-CS2)
@@ -54,7 +90,7 @@ Valve's Counter-Strike 2, as tracked by [SteamDatabase/GameTracking-CS2](https:/
 format. Valve Corporation owns Counter-Strike 2 and its data formats. This project is
 unaffiliated with Valve. No game assets are redistributed in the packages.
 
-## c. Other package dependencies
+## d. Other package dependencies
 
 This project depends on the following NuGet packages, each under its own license, resolved
 via NuGet and not reproduced here: Google.Protobuf, Snappier, YamlDotNet,
