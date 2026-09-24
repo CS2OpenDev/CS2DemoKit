@@ -10,8 +10,9 @@ namespace CS2DemoKit.Analysis;
 /// <summary>
 ///     The pawn entity indices, kept in ascending order off the tracker's create events, so the
 ///     per-frame pawn sweep visits a dozen slots instead of every live entity. Same walk as
-///     <see cref="PawnLookup.ForEachLivePawn{TState}" />, same checks, same order; only the
-///     candidate set is narrowed. Bound to one tracker; stale slots are pruned on each sync.
+///     <see cref="PawnLookup.ForEachLivePawn{TState}" />, same checks, same order, so it yields
+///     every controller-bound pawn, dead or alive; only the candidate set is narrowed. Bound to
+///     one tracker; stale slots are pruned on each sync.
 /// </summary>
 internal sealed class PawnSlotIndex
 {
@@ -31,7 +32,10 @@ internal sealed class PawnSlotIndex
         Prune(tracker);
     }
 
-    /// <summary>The live-pawn walk over the index: a pawn with a live controller yields its slot.</summary>
+    /// <summary>
+    ///     The controller-bound pawn walk over the index: a pawn with a live controller yields its
+    ///     slot, whether the player is dead or alive.
+    /// </summary>
     public void ForEachLivePawn<TState>(EntityTracker tracker, TState state, Action<TState, int, EntityState> onPawn)
     {
         Sync(tracker);

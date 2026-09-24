@@ -34,10 +34,13 @@ public static class PawnLookup
     }
 
     /// <summary>
-    ///     Invokes <paramref name="onPawn" /> once for each live player pawn paired with its
-    ///     resolved player slot. Skips pawns with no controller handle (just-spawned, not yet
-    ///     bound to a controller). One sweep of the entity set, so a caller wanting several
-    ///     values per pawn should read them all inside the callback rather than sweep per value.
+    ///     Invokes <paramref name="onPawn" /> once for each player pawn bound to a controller, dead
+    ///     or alive, paired with its resolved player slot. A dead player's pawn keeps its controller
+    ///     handle and keeps coming through for the rest of the round, so a caller that wants only
+    ///     the living filters with <see cref="IsAlive" />. Skips pawns with no controller handle
+    ///     (just-spawned, not yet bound to a controller). One sweep of the entity set, so a caller
+    ///     wanting several values per pawn should read them all inside the callback rather than
+    ///     sweep per value.
     /// </summary>
     public static void ForEachLivePawn(EntityTracker tracker, Action<int, EntityState> onPawn) =>
         ForEachLivePawn(tracker, onPawn, static (callback, slot, pawn) => callback(slot, pawn));
@@ -45,12 +48,12 @@ public static class PawnLookup
     /// <summary>
     ///     The <see cref="ForEachLivePawn(EntityTracker, Action{int, EntityState})" /> sweep with a
     ///     caller-supplied state argument, so a per-frame caller can pass a static callback and
-    ///     allocate no closure per sweep.
+    ///     allocate no closure per sweep. Yields the same pawns, dead ones included.
     /// </summary>
     /// <typeparam name="TState">The state handed back to every callback.</typeparam>
     /// <param name="tracker">The tracker whose entity set to sweep.</param>
     /// <param name="state">Passed through unchanged to every <paramref name="onPawn" /> call.</param>
-    /// <param name="onPawn">Invoked once per live pawn with the state, the player slot and the pawn.</param>
+    /// <param name="onPawn">Invoked once per controller-bound pawn, dead or alive, with the state, the player slot and the pawn.</param>
     public static void ForEachLivePawn<TState>(EntityTracker tracker, TState state, Action<TState, int, EntityState> onPawn)
     {
         foreach ((int _, EntityState ent) in tracker.CurrentEntities.AllIndexed())
@@ -84,6 +87,27 @@ public static class PawnLookup
 
             onPawn(state, slot, ent);
         }
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="pawn" /> is a living player: <c>m_lifeState</c> is
+    ///     <c>LIFE_ALIVE</c> (0) and <c>m_iHealth</c> is above zero. The wire also carries
+    ///     <c>LIFE_DYING</c> (1) and <c>LIFE_DEAD</c> (2), both of which read false, and a pawn
+    ///     with either field unseen reads false. This is the filter for the dead pawns
+    ///     <see cref="ForEachLivePawn(EntityTracker, Action{int, EntityState})" /> yields.
+    ///     <para>
+    ///         Measured on the sample and five matchmaking demos, joined by frame index: no pawn
+    ///         reads alive on or after the frame carrying its <c>player_death</c>. The reverse does
+    ///         not hold everywhere: a player who disconnects leaves a pawn that reads dead with
+    ///         health above zero and no <c>player_death</c>, so this can say dead where an
+    ///         event-derived alive flag says alive.
+    ///     </para>
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="pawn" /> is null.</exception>
+    public static bool IsAlive(EntityState pawn)
+    {
+        ArgumentNullException.ThrowIfNull(pawn);
+        return pawn.TryGet<int>("m_lifeState") is 0 && pawn.TryGet<int>("m_iHealth") is > 0;
     }
 
     /// <summary>

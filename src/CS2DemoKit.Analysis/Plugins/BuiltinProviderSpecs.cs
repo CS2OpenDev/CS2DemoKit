@@ -65,9 +65,9 @@ public static class BuiltinProviderSpecs
     ///     entity.pawn.place — the pawn's <c>m_szLastPlaceName</c>: the human-readable nav-mesh
     ///     place the player was last located in (e.g. <c>BombsiteA</c>, <c>CTSpawn</c>). A
     ///     <c>char[18]</c> on the wire; the tracker decodes fixed char arrays as a single UTF-8
-    ///     string on the object lane, so this is a plain string read. Null (slot skipped) when
-    ///     the field has never been networked for the pawn; maps without named nav areas simply
-    ///     never populate it.
+    ///     string on the object lane, so this is a plain string read. The empty string when the
+    ///     pawn stands outside any named nav area, and on maps without named areas. Null (slot
+    ///     skipped) only when the field has never been networked for the pawn.
     /// </summary>
     public static ProviderSpec PawnPlace { get; } = new(
         "entity.pawn.place", "CCSPlayerPawn",

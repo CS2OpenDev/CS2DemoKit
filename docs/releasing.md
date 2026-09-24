@@ -510,6 +510,23 @@ The cap is now 16,384, and a demo whose entity carries more paths than that repo
 error (`LastEntityError`, `DecodeErrorRaised`) instead of decoding garbage. As with any entity decode
 error, the rest of that packet is skipped. No API changes.
 
+### `PositionSample` carries `Team` and `IsAlive` (0.13.0)
+
+`PositionSample` gained two trailing positional members, `int Team` (the pawn's `m_iTeamNum`, 0 when
+unseen) and `bool IsAlive` (`m_lifeState` alive and `m_iHealth` above zero). Its constructor and
+`Deconstruct` changed shape: code that constructs or deconstructs the five-member form no longer
+compiles against 0.13.0, and a binary built against 0.12.0 that constructs one fails with
+`MissingMethodException`. Record equality now includes the new members. There are no defaults on
+purpose, since any default for `IsAlive` would be wrong for some pawn.
+
+`PositionSampler.Walk` yields the same samples as through 0.12.0. That includes dead pawns, which it
+always yielded although its docs and `PawnLookup.ForEachLivePawn`'s said "live": a dead player's
+pawn stays bound to its controller for the rest of the round (385 of 2,069 one-second rows on a
+build-10231 de_nuke carry one). Filter on `IsAlive` for the living only. `ForEachLivePawn`'s
+behaviour is unchanged and its doc is corrected; `PawnLookup.IsAlive(EntityState)` is new and holds
+the rule. The docs also now say that `PositionSample.Tick` is the frame clock (`GameEvent.GameTick`,
+not `GameEvent.ServerTick`) and that `Place` is the empty string, not null, outside a named nav area.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
