@@ -1,8 +1,21 @@
+#region
+
+using CS2DemoKit.Parser.EntityTracking;
+
+#endregion
+
 namespace CS2DemoKit.Parser.Models;
 
 /// <summary>
-///     Extracts sub-tick input events from a sequence of demo frames by decoding
-///     <c>CSVCMsg_UserCommands</c> inner messages and their <c>CSubtickMoveStep</c> entries.
+///     Extracts sub-tick input events from a sequence of demo frames: one event per
+///     <c>CSubtickMoveStep</c> of every player command, sorted by <see cref="SubTickEvent.When" />.
+///     <para>
+///         Commands are read through a <see cref="UserCmdReconstructor" />, so the ones the server sent
+///         as <c>delta_data</c> (about 99.8% of them since build 10896) are rebuilt rather than
+///         skipped. Snapshot commands inside <c>DEM_FullPacket</c> frames prime the reconstructor and
+///         produce no events, so they are not counted twice. Feed frames from frame 0 or from a
+///         <c>DEM_FullPacket</c>; the decode plan must include <see cref="MessageCategories.UserCmds" />.
+///     </para>
 /// </summary>
 public static class SubTickExtractor
 {
@@ -18,100 +31,48 @@ public static class SubTickExtractor
     private const ulong InRight = 1ul << 8;
     private const ulong InUse = 1ul << 5;
 
-    /// <summary>Extract.</summary>
-    public static List<SubTickEvent> Extract(IEnumerable<DemoFrame> frames)
+    /// <summary>Extracts every sub-tick event in <paramref name="frames" /> with a fresh reconstructor.</summary>
+    public static List<SubTickEvent> Extract(IEnumerable<DemoFrame> frames) =>
+        Extract(frames, new UserCmdReconstructor());
+
+    /// <summary>
+    ///     Extracts every sub-tick event in <paramref name="frames" /> through
+    ///     <paramref name="reconstructor" />, whose <see cref="UserCmdReconstructor.Stats" /> then say
+    ///     how many commands were rebuilt and how many could not be. The reconstructor keeps its state,
+    ///     so a caller can continue it across calls.
+    /// </summary>
+    public static List<SubTickEvent> Extract(IEnumerable<DemoFrame> frames, UserCmdReconstructor reconstructor)
     {
+        ArgumentNullException.ThrowIfNull(frames);
+        ArgumentNullException.ThrowIfNull(reconstructor);
         List<SubTickEvent> result = new();
 
         foreach (DemoFrame frame in frames)
         {
-            foreach (CSVCMsg_UserCommands userCmds in UserCommandsIn(frame))
+            foreach (ReconstructedUserCmd cmd in reconstructor.AdvanceOneFrame(frame))
             {
-                foreach (CMsgServerUserCmd? serverCmd in userCmds.Commands)
+                if (cmd.Command.Base is not { } baseCmd)
                 {
-                    try
-                    {
-                        CSGOUserCmdPB? cmd = CSGOUserCmdPB.Parser.ParseFrom(serverCmd.Data);
-                        if (cmd?.Base is null)
-                        {
-                            continue;
-                        }
+                    continue;
+                }
 
-                        foreach (CSubtickMoveStep? step in cmd.Base.SubtickMoves)
-                        {
-                            ulong btn = step.Button;
-                            string eventType = ClassifyButton(btn);
-                            string desc = BuildDescription(btn, step);
-
-                            result.Add(new SubTickEvent
-                            {
-                                When = step.When,
-                                EventType = eventType,
-                                Description = desc,
-                                PlayerSlot = serverCmd.PlayerSlot,
-                                CmdNumber = serverCmd.CmdNumber
-                            });
-                        }
-                    }
-                    catch
+                foreach (CSubtickMoveStep step in baseCmd.SubtickMoves)
+                {
+                    ulong btn = step.Button;
+                    result.Add(new SubTickEvent
                     {
-                        // Silent skip on decode failure
-                    }
+                        When = step.When,
+                        EventType = ClassifyButton(btn),
+                        Description = BuildDescription(btn, step),
+                        PlayerSlot = cmd.PlayerSlot,
+                        CmdNumber = cmd.CmdNumber
+                    });
                 }
             }
         }
 
         result.Sort((a, b) => a.When.CompareTo(b.When));
         return result;
-    }
-
-    /// <summary>
-    ///     This frame's subtick messages. Parse-time payloads live in the frame's store blocks and are
-    ///     decoded here, on the one path that reads them. A frame built by hand (tests, synthetic
-    ///     input) carries them in <see cref="DemoFrame.InnerMessages" /> instead, so both are read.
-    /// </summary>
-    private static IEnumerable<CSVCMsg_UserCommands> UserCommandsIn(DemoFrame frame)
-    {
-        if (frame.UserCmdsBlock is { } block)
-        {
-            int offset = frame.UserCmdsOffset;
-            for (int i = 0; i < frame.UserCmdsCount; i++)
-            {
-                ReadOnlySpan<byte> payload = UserCmdsStore.Read(block, ref offset);
-                CSVCMsg_UserCommands? parsed = TryParse(payload);
-                if (parsed is not null)
-                {
-                    yield return parsed;
-                }
-            }
-        }
-
-        foreach (NetMessage msg in frame.InnerMessages)
-        {
-            CSVCMsg_UserCommands? direct = msg.Payload switch
-            {
-                CSVCMsg_UserCommands typed => typed,
-                DeferredMessage deferred => deferred.TryMaterialize<CSVCMsg_UserCommands>(),
-                _ => null
-            };
-            if (direct is not null)
-            {
-                yield return direct;
-            }
-        }
-    }
-
-    /// <summary>Decodes one stored payload, returning null rather than throwing on a bad record.</summary>
-    private static CSVCMsg_UserCommands? TryParse(ReadOnlySpan<byte> payload)
-    {
-        try
-        {
-            return CSVCMsg_UserCommands.Parser.ParseFrom(payload);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static string BuildDescription(ulong btn, CSubtickMoveStep step)

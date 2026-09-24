@@ -21,7 +21,8 @@ namespace CS2DemoKit.Parser;
 ///     </para>
 ///     <para>
 ///         Kept because it is public API and still works: a hand-built frame may carry one, and
-///         <see cref="Models.SubTickExtractor" /> still reads it. Nothing in the parse path creates one.
+///         <see cref="EntityTracking.UserCmdReconstructor" /> (and so <see cref="Models.SubTickExtractor" />)
+///         still reads it. Nothing in the parse path creates one.
 ///     </para>
 ///     <para>
 ///         <b>Why implementing <see cref="IMessage" /> is the right layer</b> (rather than changing the

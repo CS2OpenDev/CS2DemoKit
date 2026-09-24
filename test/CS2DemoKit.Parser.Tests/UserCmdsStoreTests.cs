@@ -1,3 +1,4 @@
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.Models;
 using CS2DemoKit.TestSupport;
 using TUnit.Core.Exceptions;
@@ -24,16 +25,20 @@ public class UserCmdsStoreTests
     private static List<byte[]> ReDerive(DemoFrame frame, byte[] fileBytes)
     {
         List<byte[]> payloads = new();
-        if (frame.Command is not ("DEM_Packet" or "DEM_SignonPacket"))
+        if (frame.Command is not ("DEM_Packet" or "DEM_SignonPacket" or "DEM_FullPacket"))
         {
             return payloads;
         }
 
+        // A full packet nests its CDemoPacket, and since build 10896 it carries each slot's latest
+        // command as a snapshot, so the oracle has to walk it too.
         byte[] decompressed = DownstreamUtilities.GetDecompressedPayload(frame, fileBytes);
         CDemoPacket outer;
         try
         {
-            outer = CDemoPacket.Parser.ParseFrom(decompressed);
+            outer = frame.CommandKind == EDemoCommands.DemFullPacket
+                ? CDemoFullPacket.Parser.ParseFrom(decompressed).Packet ?? new CDemoPacket()
+                : CDemoPacket.Parser.ParseFrom(decompressed);
         }
         catch
         {
@@ -355,14 +360,59 @@ public class UserCmdsStoreTests
         ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
         RequireUserCmds(demo, fileBytes);
 
-        List<SubTickEvent> events = SubTickExtractor.Extract(demo.Frames);
+        UserCmdReconstructor reconstructor = new();
+        List<SubTickEvent> events = SubTickExtractor.Extract(demo.Frames, reconstructor);
+        UserCmdReconstructionStats stats = reconstructor.Stats;
 
-        Console.WriteLine($"subtick events: {events.Count}");
+        Console.WriteLine($"subtick events: {events.Count}; {stats}");
         await Assert.That(events.Count).IsGreaterThan(0)
             .Because("the store is the only source of subtick input now, so zero means it is unreadable");
+        await Assert.That(stats.Full + stats.Delta).IsGreaterThan(0L);
+        await Assert.That(stats.DecodeFailed).IsEqualTo(0L);
+        await Assert.That(stats.MissingBaseline).IsEqualTo(0L);
+        await Assert.That(stats.CheckpointMismatches).IsEqualTo(0L);
 
         // Sorted by When: the extractor's documented output ordering.
         float[] when = events.Select(e => e.When).ToArray();
         await Assert.That(when.SequenceEqual(when.OrderBy(w => w).ToArray())).IsTrue();
+    }
+
+    // The reconstructor carries state from frame to frame, so the forward reader and the retained
+    // parse must hand it the same payloads in the same order. Anything else shows up as a different
+    // event list or different counts.
+    [Test]
+    public async Task SubTickExtractor_ForwardAndRetainedPathsAgree()
+    {
+        string path = DemoTestHelper.RequireDemo();
+        byte[] fileBytes = File.ReadAllBytes(path);
+        ParsedDemo demo = DemoParser.Parse(fileBytes.AsMemory());
+        RequireUserCmds(demo, fileBytes);
+
+        UserCmdReconstructor retainedCmds = new();
+        List<SubTickEvent> retained = SubTickExtractor.Extract(demo.Frames, retainedCmds);
+
+        UserCmdReconstructor forwardCmds = new();
+        List<SubTickEvent> forward;
+        using (DemoReader reader = DemoReader.Open(fileBytes.AsMemory()))
+        {
+            forward = SubTickExtractor.Extract(reader.ReadFrames(), forwardCmds);
+        }
+
+        Console.WriteLine($"events: retained {retained.Count}, forward {forward.Count}; {retainedCmds.Stats}");
+        await Assert.That(forwardCmds.Stats).IsEqualTo(retainedCmds.Stats);
+        await Assert.That(forward.Count).IsEqualTo(retained.Count);
+
+        int differ = 0;
+        for (int i = 0; i < retained.Count; i++)
+        {
+            SubTickEvent a = retained[i], b = forward[i];
+            if (a.PlayerSlot != b.PlayerSlot || a.CmdNumber != b.CmdNumber || a.When != b.When
+                || a.EventType != b.EventType || a.Description != b.Description)
+            {
+                differ++;
+            }
+        }
+
+        await Assert.That(differ).IsEqualTo(0);
     }
 }
