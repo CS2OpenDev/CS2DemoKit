@@ -27,7 +27,10 @@ public readonly record struct ReconstructedUserCmd(
 /// <summary>What <see cref="UserCmdReconstructor.Apply" /> did with one command.</summary>
 public enum UserCmdApplyStatus
 {
-    /// <summary>Parsed from <c>data</c> (with any <c>delta_data</c> applied on top). Emitted.</summary>
+    /// <summary>
+    ///     Parsed from <c>data</c> (with any <c>delta_data</c> applied on top). Emitted, and it becomes
+    ///     the slot's baseline whatever its command number, since it needs no baseline of its own.
+    /// </summary>
     Full,
 
     /// <summary>Rebuilt from <c>delta_data</c> against the slot's latest command. Emitted.</summary>
@@ -46,7 +49,10 @@ public enum UserCmdApplyStatus
     /// <summary>A delta arrived for a slot with no baseline. Skipped, never decoded against defaults.</summary>
     MissingBaseline,
 
-    /// <summary>The command number is behind the slot's latest command. Skipped.</summary>
+    /// <summary>
+    ///     A delta or full-packet snapshot whose command number is behind the slot's latest command.
+    ///     Skipped. A keyframe is never skipped this way: see <see cref="Full" />.
+    /// </summary>
     OutOfOrder,
 
     /// <summary>The payload or delta was malformed. The slot waits for the next keyframe or full packet.</summary>
@@ -135,6 +141,13 @@ public readonly record struct UserCmdReconstructionStats
 ///         baseline until the next keyframe or full packet, since the server's next delta is
 ///         relative to the command that was lost. <see cref="Stats" /> says what was and was not
 ///         rebuilt.
+///     </para>
+///     <para>
+///         <b>Keyframes always re-seed.</b> A delta or snapshot behind the slot's latest command is
+///         skipped as out of order, but a keyframe is complete on its own and is taken as the new
+///         baseline even when its number is lower. A player slot that is reused, for a reconnect or
+///         a new player, restarts its command numbers, and its first keyframe is what lets the
+///         deltas after it decode.
 ///     </para>
 ///     <para>Not thread-safe. One instance follows one demo.</para>
 /// </summary>
@@ -265,6 +278,7 @@ public sealed class UserCmdReconstructor
         UserCmdApplyStatus status;
         if (hasData)
         {
+            // No order check: a keyframe needs no baseline, and a lower number means the slot restarted.
             built = TryParseKeyframe(cmd, hasDelta);
             status = UserCmdApplyStatus.Full;
         }

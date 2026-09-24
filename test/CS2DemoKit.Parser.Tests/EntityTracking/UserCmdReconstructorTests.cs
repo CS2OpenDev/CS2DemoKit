@@ -104,6 +104,25 @@ public class UserCmdReconstructorTests
     }
 
     [Test]
+    public async Task KeyframeBehindTheLatest_ReseedsTheSlot_AndLaterDeltasBuildOnIt()
+    {
+        // A reused slot (reconnect, new player) restarts its command numbers with a keyframe.
+        UserCmdReconstructor r = new();
+        r.Apply(Keyframe(500, 1000, 1), false, out _);
+        r.Apply(Delta(501, 1001, 2), false, out _);
+
+        await Assert.That(r.Apply(Keyframe(3, 1200, 7), false, out CSGOUserCmdPB? reseeded)).IsEqualTo(UserCmdApplyStatus.Full);
+        await Assert.That(reseeded!.Base.Mousedx).IsEqualTo(7);
+        await Assert.That(r.Current(Slot)).IsSameReferenceAs(reseeded);
+
+        await Assert.That(r.Apply(Delta(4, 1201, 8), false, out CSGOUserCmdPB? next)).IsEqualTo(UserCmdApplyStatus.Delta);
+        await Assert.That(next!.Base.ClientTick).IsEqualTo(1201);
+        await Assert.That(r.Apply(Delta(2, 1199), false, out _)).IsEqualTo(UserCmdApplyStatus.OutOfOrder)
+            .Because("the order check now runs against the re-seeded number");
+        await Assert.That(r.Stats.OutOfOrder).IsEqualTo(1L);
+    }
+
+    [Test]
     public async Task GapLargerThanOne_StillAppliesAgainstTheLatest()
     {
         UserCmdReconstructor r = new();
