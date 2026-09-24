@@ -280,8 +280,15 @@ public class ProjectileSamplerTests
     ///     The walk written out the slow way: scan every live entity each frame, match projectiles
     ///     by <c>(index, serial, class)</c>, and emit Removed from the previous frame's values.
     /// </summary>
-    internal static List<ProjectileSample> Oracle(IReadOnlyList<DemoFrame> frames)
+    internal static List<ProjectileSample> Oracle(IReadOnlyList<DemoFrame> frames) => Oracle(frames, out _);
+
+    /// <summary>
+    ///     The oracle walk, also counting in <paramref name="reoccupied" /> the removals where the
+    ///     slot already held another entity, of any class, on the removal frame.
+    /// </summary>
+    internal static List<ProjectileSample> Oracle(IReadOnlyList<DemoFrame> frames, out int reoccupied)
     {
+        reoccupied = 0;
         EntityTracker tracker = EntityTrackerFactory.CreateCurated();
         Dictionary<int, (int Serial, string Class, int Thrower, ProjectileSample Last)> live = [];
         List<ProjectileSample> output = [];
@@ -302,6 +309,10 @@ public class ProjectileSamplerTests
                 {
                     frame.Add(last with { FrameIndex = i, Tick = tick, Created = false, Removed = true });
                     live.Remove(index);
+                    if (tracker.CurrentEntities[index] is not null)
+                    {
+                        reoccupied++;
+                    }
                 }
             }
 
