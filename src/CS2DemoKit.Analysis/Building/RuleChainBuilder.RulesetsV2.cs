@@ -156,14 +156,7 @@ public sealed partial class RuleChainBuilder
     {
         CatalogRoot catalog = CatalogResource.Load();
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
-        Dictionary<string, string> contextV2ToV1 = new(StringComparer.Ordinal);
-        foreach (CatalogContextRule ctx in catalog.Contexts)
-        {
-            if (ctx.V2Name is { } v2)
-            {
-                contextV2ToV1[v2] = ctx.RuleId;
-            }
-        }
+        Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
 
         // The B6 subject-relative aggregate v2 paths (round.team.* / round.enemies.* / round.alive.*):
         // legal in an each_player ruleset (subject = the materialized slot) but meaningless at match
@@ -290,6 +283,37 @@ public sealed partial class RuleChainBuilder
     }
 
     /// <summary>
+    ///     The planner's v2 path → v1 node-name table: every catalog context (<c>round.number</c> →
+    ///     <c>round_number</c>, <c>player.survived</c> → <c>survived</c>, the B6 members) and every
+    ///     singleton provider (<c>match.freeze_period</c> → <c>entity.game.freeze_period</c>), whose
+    ///     value node the builder registers under its context name. A read written through this table
+    ///     resolves against a node in the lookup rather than a player's per-fire entity seam, which
+    ///     has no slot for a game-wide value.
+    /// </summary>
+    private static Dictionary<string, string> BuildContextV2ToV1(CatalogRoot catalog)
+    {
+        Dictionary<string, string> contextV2ToV1 = new(StringComparer.Ordinal);
+        foreach (CatalogContextRule ctx in catalog.Contexts)
+        {
+            if (ctx.V2Name is { } v2)
+            {
+                contextV2ToV1[v2] = ctx.RuleId;
+            }
+        }
+
+        foreach (CatalogProvider provider in catalog.Providers)
+        {
+            if (provider.V2Name is { } v2
+                && string.Equals(provider.Scope, "singleton", StringComparison.Ordinal))
+            {
+                contextV2ToV1[v2] = provider.Name;
+            }
+        }
+
+        return contextV2ToV1;
+    }
+
+    /// <summary>
     ///     Loud-fails a <c>for: match</c> stat that reads a subject-relative B6 aggregate
     ///     (<c>round.team.*</c> / <c>round.enemies.*</c> / <c>round.alive.*</c>). These resolve at match
     ///     scope (they sit under the always-present <c>round</c> root) but have no subject — the planner
@@ -409,14 +433,7 @@ public sealed partial class RuleChainBuilder
     {
         CatalogRoot catalog = CatalogResource.Load();
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
-        Dictionary<string, string> contextV2ToV1 = new(StringComparer.Ordinal);
-        foreach (CatalogContextRule ctx in catalog.Contexts)
-        {
-            if (ctx.V2Name is { } v2)
-            {
-                contextV2ToV1[v2] = ctx.RuleId;
-            }
-        }
+        Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
 
         graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, playerName) =>
         {
@@ -722,7 +739,7 @@ public sealed partial class RuleChainBuilder
             {
                 StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root), stat)!;
+                string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     edges.Add(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Set, $"node.value + ({element})",
@@ -738,11 +755,11 @@ public sealed partial class RuleChainBuilder
                 RequireNoWhileValueGate(sourceGate, stat.StatId, "capture: keep list");
                 ValueNode<IReadOnlyList<int>> node = MakeIntListNode(stat.StatId, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root), stat)!;
+                string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     EventRegistration reg = RequireGameEvent(ev, stat.StatId);
-                    edges.Add(CreateV2ListAppendEdge(reg, source, node, element, condition, slot));
+                    edges.Add(CreateV2ListAppendEdge(reg, source, node, element, condition, slot, declaredReads));
                     descriptors.Add(new GraphEdgeDescriptor(source, node, ev, EdgeEffect.SetValue, condition));
                 }
 
@@ -761,7 +778,7 @@ public sealed partial class RuleChainBuilder
                 bool keepMax = stat.Keep == KeepKind.Max;
                 StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root), stat)!;
+                string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 BoolNode seen = roundScoped
                     ? new GenericRoundScopedBoolNode($"__seen_{rs.Id.Id}_{stat.StatId}", false, playerName)
                     : new GenericBoolNode($"__seen_{rs.Id.Id}_{stat.StatId}", playerName);
@@ -783,7 +800,7 @@ public sealed partial class RuleChainBuilder
                 // (v1 `value` semantics, the default) = plain set.
                 StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                string valueExpr = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root), stat)!;
+                string valueExpr = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     BoolNode? guard = null;
@@ -1011,11 +1028,15 @@ public sealed partial class RuleChainBuilder
                 KeyedCounterNode keyedNode = new(stat.StatId, stat.Label ?? stat.StatId, playerName,
                     MapKeyedReduceMode(stat.BucketReducer));
                 RegisterV2Node(keyedNode, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                IReadOnlyList<string> keyParts = stat.BucketKeyParts!;
+                // The key parts were rendered at resolve time, where the context table does not exist;
+                // lower any context or singleton read in them here, the same way the value selector is.
+                IReadOnlyList<string> keyParts = LowerContextReads(stat.BucketKeyParts!, stat, contextV2ToV1);
                 // A summing bucket (value: present) rides the ValueSelector slot; render it to v1
                 // grammar exactly like sum:/capture: render their element, so the planner feeds
                 // CompileEventValueSelector below. Absent → null → basic count (+1 per event).
-                string? bucketValueExpr = stat.ValueSelector is { } vs ? RewriteEntityReads(V1ExpressionWriter.Write(vs.Root), stat) : null;
+                string? bucketValueExpr = stat.ValueSelector is { } vs
+                    ? RewriteEntityReads(V1ExpressionWriter.Write(vs.Root, contextV2ToV1), stat)
+                    : null;
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     EventRegistration reg = RequireGameEvent(ev, stat.StatId);
@@ -1967,6 +1988,11 @@ public sealed partial class RuleChainBuilder
                 continue; // role-handle reads resolve the role's slot from the event — fire-time only
             }
 
+            if (read.IsSingleton)
+            {
+                continue; // a game-wide value: the provider's own value node is already in the lookup
+            }
+
             if (localLookup.ContainsKey(read.Path))
             {
                 continue; // already materialized (another settle-site stat read the same path this slot)
@@ -2173,7 +2199,8 @@ public sealed partial class RuleChainBuilder
     ///     uses; only the append is hand-written.
     /// </summary>
     private StateEdge CreateV2ListAppendEdge(EventRegistration reg, StateNode source,
-        ValueNode<IReadOnlyList<int>> target, string elementExpr, string? condition, int slot)
+        ValueNode<IReadOnlyList<int>> target, string elementExpr, string? condition, int slot,
+        IReadOnlyList<StateNode>? declaredReads)
     {
         Delegate element = ExpressionCompiler.CompileEventValueSelector(
             elementExpr, reg.EventType, typeof(int), reg.Fields, slot, null, ConditionNodes,
@@ -2184,8 +2211,12 @@ public sealed partial class RuleChainBuilder
                 parameterType: typeof(GameEvent))
             : null;
 
+        // The declared reads order the append after the writer of every node it reads on the same
+        // event. Without them a list of an enrichment could run ahead of the enrichment edge and
+        // append the previous event's value: a for: match capture of enrich.round.winner_side read
+        // the last round's winner in every round.
         return (StateEdge)_listAppendEdgeMethod.MakeGenericMethod(reg.EventType)
-            .Invoke(null, [source, target, element, cond])!;
+            .Invoke(null, [source, target, element, cond, declaredReads])!;
     }
 
     /// <summary>
@@ -2320,12 +2351,12 @@ public sealed partial class RuleChainBuilder
 
     private static OnGameEventSetValue<TEvent, IReadOnlyList<int>> CreateListAppendEdgeGeneric<TEvent>(
         StateNode source, ValueNode<IReadOnlyList<int>> target,
-        Delegate elementSelector, Delegate? condition) where TEvent : class
+        Delegate elementSelector, Delegate? condition, IReadOnlyList<StateNode>? declaredReads) where TEvent : class
     {
         Func<GameEvent, int> element = (Func<GameEvent, int>)elementSelector;
         Func<GameEvent, bool>? cond = (Func<GameEvent, bool>?)condition;
         return new OnGameEventSetValue<TEvent, IReadOnlyList<int>>(
-            source, target, evt => AppendCopy(target.Value, element(evt)), cond);
+            source, target, evt => AppendCopy(target.Value, element(evt)), cond, declaredReads: declaredReads);
     }
 
     private static int[] AppendCopy(IReadOnlyList<int>? old, int item)
@@ -2384,6 +2415,37 @@ public sealed partial class RuleChainBuilder
         Regex.Replace(expression, $@"(?<![\w.]){Regex.Escape(path)}(?![\w.])", alias);
 
     /// <summary>
+    ///     Lowers the context and singleton reads in already-rendered v1-grammar strings (a bucket's
+    ///     key parts, rendered at resolve time) through the planner's context table, for the paths the
+    ///     stat declares reading. The identity of the key parts is untouched: the hash reads the
+    ///     resolved AST, not these strings.
+    /// </summary>
+    private static IReadOnlyList<string> LowerContextReads(IReadOnlyList<string> parts, CheckedStat stat,
+        Dictionary<string, string> contextV2ToV1)
+    {
+        List<string>? lowered = null;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            string part = parts[i];
+            foreach (string read in stat.DeclaredReads)
+            {
+                if (contextV2ToV1.TryGetValue(read, out string? v1Name))
+                {
+                    part = ReplaceWholeIdentifier(part, read, v1Name);
+                }
+            }
+
+            if (!string.Equals(part, parts[i], StringComparison.Ordinal))
+            {
+                lowered ??= [.. parts];
+                lowered[i] = part;
+            }
+        }
+
+        return lowered ?? parts;
+    }
+
+    /// <summary>
     ///     Rewrites each v2 entity-provider read path in a rendered v1-grammar condition/value string
     ///     to the v1 provider spelling the runtime <see cref="ExpressionCompiler" /> resolves (the
     ///     additive v2-only counterpart to the v1 provider threading). The
@@ -2411,7 +2473,13 @@ public sealed partial class RuleChainBuilder
             // `VictimSlot.entity.pawn.health`) — the event-subject entity grammar the compiler resolves via
             // GetPreFrameValue at the slot read from the event. RoleSlotField is always populated for a
             // non-player subject (resolve-time), so fall back loudly if it is somehow absent.
-            string v1Spelling = read.Subject == EntityProviderReference.PlayerSubject
+            // A singleton is one value for the game, keyed by no slot: it reads its provider's value
+            // node by context name (entity.game.freeze_period), which the builder registers in the
+            // condition lookup. Spelled as a player read it would ask for a per-player provider of
+            // that name, and there is none.
+            string v1Spelling = read.IsSingleton
+                ? read.ProviderName
+                : read.Subject == EntityProviderReference.PlayerSubject
                 ? $"player.{read.ProviderName}" // player.entity.pawn.health
                 : $"{read.RoleSlotField // VictimSlot.entity.pawn.health
                      ?? throw new InvalidOperationException(

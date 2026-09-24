@@ -1892,7 +1892,8 @@ public static class RulesetResolver
             // player.* / match.* entity provider (singleton or per-player keyed by the ruleset player).
             if (_providerByV2Name.TryGetValue(reference.Path, out CatalogProvider? provider))
             {
-                entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject);
+                entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject,
+                    IsSingleton: string.Equals(provider.Scope, "singleton", StringComparison.Ordinal));
                 return true;
             }
 
