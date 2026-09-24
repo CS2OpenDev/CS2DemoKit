@@ -168,7 +168,7 @@ internal static class EntityDigestExtractor
     {
         if (emitMolotovThrows && ent.ClassName == ProjectileSlotIndex.MolotovClass)
         {
-            d.AddMolotov(idx, ent.Serial, ResolveThrowerSlot(tracker, ent));
+            d.AddMolotov(idx, ent.Serial, PawnLookup.ResolveThrowerSlot(tracker, ent));
             return;
         }
 
@@ -179,31 +179,6 @@ internal static class EntityDigestExtractor
         {
             d.AddSmoke(sphere);
         }
-    }
-
-    /// <summary>
-    ///     Resolves a projectile's thrower to a player slot via the validated chain
-    ///     <c>m_hThrower -> pawn -> m_hController -> slot</c> (slot = controller index - 1). Returns
-    ///     <c>-1</c> when the handle is missing or doesn't resolve to a controller-bound pawn.
-    /// </summary>
-    internal static int ResolveThrowerSlot(EntityTracker tracker, EntityState projectile)
-    {
-        if (!PawnLookup.TryReadHandle(projectile, "m_hThrower", out uint throwerHandle))
-        {
-            return -1;
-        }
-
-        EntityState? pawn = PawnLookup.ResolveHandle(tracker, throwerHandle);
-        if (pawn is null || !PawnLookup.TryReadHandle(pawn, "m_hController", out uint controllerHandle))
-        {
-            return -1;
-        }
-
-        // Must go through IndexOf. A dead pawn's m_hController is the 24-bit invalid handle, and
-        // masking it raw yields slot 16382, which this method's contract says should be -1. Nothing
-        // downstream re-checks, and unlike a table lookup there is no empty slot to save it.
-        int controllerIdx = PawnLookup.IndexOf(controllerHandle);
-        return controllerIdx <= 0 ? -1 : controllerIdx - 1;
     }
 
     /// <summary>

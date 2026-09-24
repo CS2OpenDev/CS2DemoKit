@@ -38,7 +38,7 @@ namespace CS2DemoKit.Analysis;
 internal sealed class ProjectileSlotIndex
 {
     /// <summary>The molotov projectile class; the synthesized throw event is one per creation of it.</summary>
-    internal const string MolotovClass = "CMolotovProjectile";
+    internal const string MolotovClass = GrenadeProjectileClasses.Molotov;
 
     private readonly List<int> _slots = new(8);
     private EntityTracker? _tracker;

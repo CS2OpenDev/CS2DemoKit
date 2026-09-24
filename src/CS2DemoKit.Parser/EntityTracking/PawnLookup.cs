@@ -125,6 +125,44 @@ public static class PawnLookup
     }
 
     /// <summary>
+    ///     Resolves a projectile's thrower to a player slot through the chain
+    ///     <c>m_hThrower -> pawn -> m_hController -> slot</c> (slot = controller index - 1). Returns
+    ///     <c>-1</c> when the handle is missing or does not resolve to a controller-bound pawn.
+    ///     <para>
+    ///         The value is live, read from the tracker's current state: once the thrower dies, its
+    ///         pawn's controller handle goes invalid and this returns <c>-1</c> for the rest of the
+    ///         projectile's flight. <c>ProjectileSampler</c> holds the first resolved slot for
+    ///         that reason. The controller is not identity-checked, so an index that names a
+    ///         recycled non-controller still maps to a slot; the digest's molotov thrower cells are
+    ///         pinned to this behaviour.
+    ///     </para>
+    /// </summary>
+    /// <param name="tracker">The tracker whose current entity set the handles resolve against.</param>
+    /// <param name="projectile">An entity carrying <c>m_hThrower</c>, normally one of <see cref="GrenadeProjectileClasses" />.</param>
+    public static int ResolveThrowerSlot(EntityTracker tracker, EntityState projectile)
+    {
+        ArgumentNullException.ThrowIfNull(tracker);
+        ArgumentNullException.ThrowIfNull(projectile);
+
+        if (!TryReadHandle(projectile, "m_hThrower", out uint throwerHandle))
+        {
+            return -1;
+        }
+
+        EntityState? pawn = ResolveHandle(tracker, throwerHandle);
+        if (pawn is null || !TryReadHandle(pawn, "m_hController", out uint controllerHandle))
+        {
+            return -1;
+        }
+
+        // Must go through IndexOf. A dead pawn's m_hController is the 24-bit invalid handle, and
+        // masking it raw yields slot 16382, which this method's contract says should be -1. Nothing
+        // downstream re-checks, and unlike a table lookup there is no empty slot to save it.
+        int controllerIdx = IndexOf(controllerHandle);
+        return controllerIdx <= 0 ? -1 : controllerIdx - 1;
+    }
+
+    /// <summary>
     ///     Resolves a player slot to their live pawn entity. Iterates pawns and decodes
     ///     their <c>m_hController</c> handle — the reverse path is ground-truth because the
     ///     forward path (controller.m_hPawn) yields stale indices across pawn lifecycle
