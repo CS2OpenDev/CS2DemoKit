@@ -425,6 +425,9 @@ A third scope builds a ruleset once per side. Additions a consumer compiled agai
   `RoundBoundaryTypes`, `ConfiguredOutputProjector.TeamNodesByRuleId` and `TeamRosterNodes`, and
   `CheckedStat.Clock` are init-only or trailing optional members; `CheckedStat` is a positional
   record, so its constructor changed shape too.
+- `EntityProviderReference` gained a trailing positional parameter, `bool IsSingleton = false`, for
+  the singleton reads described below: its constructor and `Deconstruct` changed shape, and the
+  binary, source and equality consequences described under `CatalogEnrichment` above apply.
 - New resolve codes: `resolve.show.table-scope-mismatch`, `resolve.show.scoreboard-scope`,
   `resolve.team-scope.unsupported`.
 
@@ -453,6 +456,11 @@ The three game-rules providers it reads (`entity.game.round_win_status`, `round_
 `total_rounds_played`) are tracked whenever a scanner is built, and `enrich.round.win_reason` is new,
 so every build carries four more static nodes: the rules-output fixtures moved by `nodeCount + 4` and
 their hash, and a consumer that counts `BuildResult.Nodes` or snapshot columns sees them.
+
+`RoundEndEnrichmentEdge` writes the reason too, so its constructor gained a required parameter,
+`TransientValueNode<int> winReason`, between `winnerSide` and `messageType`. Code that constructs the
+edge itself no longer compiles against 0.13.0, and a binary built against 0.12.0 fails with
+`MissingMethodException`; pass the node `enrich.round.win_reason` writes.
 
 ### Singleton reads build, and a new per-player column shifts the digest (0.13.0)
 
