@@ -2773,61 +2773,11 @@ public sealed class EntityTracker
         // read-only PeekEntityUpdates path passes its OWN buffer so a peek can't disturb Replay's.
         List<FieldPath> paths = pathScratch;
         paths.Clear();
-        FieldPath fp = FieldPath.Default;
 
-        // CS2 entities have at most ~300 top-level fields; array expansion adds at most ~64 per array.
-        // 2048 is far above any real entity while still catching runaway mis-aligned decodes quickly.
-        const int MaxFieldPaths = 2_048;
-        for (int pathCount = 0; pathCount < MaxFieldPaths; pathCount++)
+        CollectFieldPaths(ref buf, paths, MaxFieldPaths, state.ClassName, this);
+        if (paths.Count > MaxFieldPathCountForTest)
         {
-            int opBefore = buf.TellBits;
-            FieldPathEncodingOp op = FieldPathEncoding.ReadOp(ref buf);
-            if (op.Reader is null)
-            {
-                if (_traceContextActive)
-                {
-                    AddTrace(new DecodeTraceEntry(
-                        TraceKind.PathOp, PacketCount, _curEntityIndex, _curUpdateKind, state.ClassName,
-                        pathCount, op.Name, opBefore, buf.TellBits - opBefore,
-                        fp, null, null, 0, 0));
-                }
-
-                break;
-            }
-
-            try
-            {
-                op.Reader(ref buf, ref fp);
-            }
-            catch (Exception ex)
-            {
-                // Capture the failed op into the trace before re-throwing so the dump shows
-                // it in chronological order.
-                if (_traceContextActive)
-                {
-                    AddTrace(new DecodeTraceEntry(
-                        TraceKind.PathOp, PacketCount, _curEntityIndex, _curUpdateKind, state.ClassName,
-                        pathCount, op.Name, opBefore, buf.TellBits - opBefore,
-                        "<threw>", null, null, 0, 0));
-                }
-
-                // Re-throw with entity / op / path context so the catch handler in
-                // ProcessPacketEntities surfaces something actionable instead of
-                // a bare "FieldPath is full".
-                throw new InvalidDataException(
-                    $"Failed to apply field-path op '{op.Name}' on entity '{state.ClassName}' " +
-                    $"after {pathCount} ops; current path={fp}", ex);
-            }
-
-            if (_traceContextActive)
-            {
-                AddTrace(new DecodeTraceEntry(
-                    TraceKind.PathOp, PacketCount, _curEntityIndex, _curUpdateKind, state.ClassName,
-                    pathCount, op.Name, opBefore, buf.TellBits - opBefore,
-                    fp, null, null, 0, 0));
-            }
-
-            paths.Add(fp);
+            MaxFieldPathCountForTest = paths.Count;
         }
 
         if (prof)
@@ -2870,6 +2820,96 @@ public sealed class EntityTracker
         }
     }
 
+    /// <summary>
+    ///     Upper bound on field paths collected for one entity update before a finish op must appear.
+    ///     The largest real case is the <c>CSmokeGrenadeProjectile</c> instancebaseline: its
+    ///     <c>m_VoxelFrameData</c> elements put it at 3,214 to 3,482 paths (builds 10231 and 10896),
+    ///     while the four other projectile baselines carry 134 or 135 and nothing else measured goes
+    ///     above 1,500. The cap still has to exist: <see cref="BitBuffer" /> reads zeros past its end
+    ///     and the all-zero Huffman code is a non-finish op, so a misaligned stream would never stop.
+    /// </summary>
+    internal const int MaxFieldPaths = 16_384;
+
+    /// <summary>
+    ///     The largest number of field paths any single update decoded on this tracker. Test-only:
+    ///     the projectile corpus test prints it so the headroom under <see cref="MaxFieldPaths" /> is
+    ///     visible per demo.
+    /// </summary>
+    internal int MaxFieldPathCountForTest { get; private set; }
+
+    /// <summary>
+    ///     Reads Huffman-coded field-path ops into <paramref name="paths" /> until the finish op.
+    ///     Throws <see cref="InvalidDataException" /> when more than <paramref name="maxPaths" />
+    ///     paths arrive without a finish op, so an over-long update surfaces as an entity decode
+    ///     error instead of decoding its values from bits that are really path ops (which is how
+    ///     smoke baselines were silently corrupted under the old 2,048 cap). <paramref name="tracer" />
+    ///     receives PathOp trace entries when its trace context is active; it may be null.
+    /// </summary>
+    internal static void CollectFieldPaths(
+        ref BitBuffer buf, List<FieldPath> paths, int maxPaths, string className, EntityTracker? tracer)
+    {
+        FieldPath fp = FieldPath.Default;
+        bool trace = tracer is { _traceContextActive: true };
+        for (int pathCount = 0;; pathCount++)
+        {
+            int opBefore = buf.TellBits;
+            FieldPathEncodingOp op = FieldPathEncoding.ReadOp(ref buf);
+            if (op.Reader is null)
+            {
+                if (trace)
+                {
+                    tracer!.AddTrace(new DecodeTraceEntry(
+                        TraceKind.PathOp, tracer.PacketCount, tracer._curEntityIndex, tracer._curUpdateKind, className,
+                        pathCount, op.Name, opBefore, buf.TellBits - opBefore,
+                        fp, null, null, 0, 0));
+                }
+
+                return;
+            }
+
+            if (pathCount == maxPaths)
+            {
+                throw new InvalidDataException(
+                    $"Entity '{className}' ({tracer?._curUpdateKind ?? ""}) carried more than {maxPaths} " +
+                    "field paths without a finish op");
+            }
+
+            try
+            {
+                op.Reader(ref buf, ref fp);
+            }
+            catch (Exception ex)
+            {
+                // Capture the failed op into the trace before re-throwing so the dump shows
+                // it in chronological order.
+                if (trace)
+                {
+                    tracer!.AddTrace(new DecodeTraceEntry(
+                        TraceKind.PathOp, tracer.PacketCount, tracer._curEntityIndex, tracer._curUpdateKind, className,
+                        pathCount, op.Name, opBefore, buf.TellBits - opBefore,
+                        "<threw>", null, null, 0, 0));
+                }
+
+                // Re-throw with entity / op / path context so the catch handler in
+                // ProcessPacketEntities surfaces something actionable instead of
+                // a bare "FieldPath is full".
+                throw new InvalidDataException(
+                    $"Failed to apply field-path op '{op.Name}' on entity '{className}' " +
+                    $"after {pathCount} ops; current path={fp}", ex);
+            }
+
+            if (trace)
+            {
+                tracer!.AddTrace(new DecodeTraceEntry(
+                    TraceKind.PathOp, tracer.PacketCount, tracer._curEntityIndex, tracer._curUpdateKind, className,
+                    pathCount, op.Name, opBefore, buf.TellBits - opBefore,
+                    fp, null, null, 0, 0));
+            }
+
+            paths.Add(fp);
+        }
+    }
+
     private void ResolveNestedField(ref BitBuffer buf, EntityState state, FieldDescriptor parent, ReadOnlySpan<int> remaining)
     {
         if (parent.ChildDescs is null || parent.ChildDescs.Count == 0 || remaining.IsEmpty)
@@ -2879,7 +2919,8 @@ public sealed class EntityTracker
 
         int idx = remaining[0];
         // Atomic-element vectors (NetworkedVector<byte>, etc.) can carry indices past our pregen
-        // size — m_VoxelFrameData on CSmokeGrenadeProjectile observed at idx 1024+. All elements
+        // size — m_VoxelFrameData on CSmokeGrenadeProjectile carries ~3,100 elements in its
+        // instancebaseline (3,214 to 3,482 paths in total). All elements
         // in such arrays are decoder-equivalent (same wire shape; only path string differs), so
         // out-of-range indices reuse the last pregen entry. The bits consume correctly; the state
         // bucket gets clobbered for very high indices, which is acceptable for opaque payload
