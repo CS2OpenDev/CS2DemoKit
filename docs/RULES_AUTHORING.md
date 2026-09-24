@@ -436,7 +436,8 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   reads `== 1`; knives, grenades and the C4 read `-1`, and an empty magazine reads `0`. `place` is the human-readable nav-mesh
   place name the pawn last occupied — `"BombsiteA"`, `"TSpawn"`, `"Ramp"`, … — a string; names come
   from the map's nav mesh, so gate on the standard ones
-  (`BombsiteA`/`BombsiteB`/`CTSpawn`/`TSpawn`) for map-portable rules.)
+  (`BombsiteA`/`BombsiteB`/`CTSpawn`/`TSpawn`) for map-portable rules. Outside any named area it
+  reads `""`, not null.)
 - **Position:** `player.pos_x` / `player.pos_y` / `player.pos_z` — the pawn's world origin in map
   units. That is its FEET, not its eyes; eye height is origin plus a stance-dependent offset.
 - **Movement and aim state:** the pawn and active-weapon reads the shot-anchored aim metrics are

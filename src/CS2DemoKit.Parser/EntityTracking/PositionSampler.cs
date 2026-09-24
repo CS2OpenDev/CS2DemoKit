@@ -11,12 +11,20 @@ namespace CS2DemoKit.Parser.EntityTracking;
 ///     One player's world position at one frame, with the nav place they were last inside.
 /// </summary>
 /// <param name="FrameIndex">0-based position in the frame list the sample came from.</param>
-/// <param name="Tick">The frame's server tick. Not unique: several frames can share one.</param>
+/// <param name="Tick">
+///     The frame clock: the <see cref="DemoFrame.ServerTick" /> of the frame the sample was taken
+///     on, which runs from 1 through gameplay (pre-game frames carry a negative sentinel). Not
+///     unique: several frames can share one. It is the same clock as <c>GameEvent.GameTick</c>;
+///     <c>GameEvent.ServerTick</c> is this plus <see cref="ParsedDemo.ServerStartTick" />. An event
+///     can be stamped one tick below the frame that delivered it, so an exact join between samples
+///     and events compares <c>GameEvent.FrameNumber</c> with <c>FrameIndex</c> rather than ticks.
+/// </param>
 /// <param name="PlayerSlot">Controller-derived player slot, 0-63.</param>
 /// <param name="Position">World position, reconstructed by <see cref="PositionUtil.CellToWorld" />.</param>
 /// <param name="Place">
-///     <c>m_szLastPlaceName</c>, e.g. <c>BombsiteA</c>. Null on maps with no named nav areas, and
-///     before the field is first networked for the pawn.
+///     <c>m_szLastPlaceName</c>, e.g. <c>BombsiteA</c>. The empty string, not null, when the pawn
+///     stands outside any named nav area and on maps with no named areas. Null only if the field
+///     was never networked for the pawn, which has not been observed on a sampled pawn.
 /// </param>
 public readonly record struct PositionSample(
     int FrameIndex,
@@ -27,8 +35,8 @@ public readonly record struct PositionSample(
 
 /// <summary>
 ///     Streams every player's position over a whole demo. Assembles the four pieces a trajectory
-///     walk needs (incremental advance, live-pawn enumeration, slot resolution, cell→world
-///     reconstruction) so consumers do not re-derive them.
+///     walk needs (incremental advance, controller-bound pawn enumeration, slot resolution,
+///     cell→world reconstruction) so consumers do not re-derive them.
 ///     <para>
 ///         Sized on a 223,628-frame match (Release, parse excluded): 1,635,249 samples in 3.6 s,
 ///         ~50 MB if collected. <see cref="Walk" /> is lazy, so a consumer that
@@ -38,7 +46,7 @@ public readonly record struct PositionSample(
 public static class PositionSampler
 {
     /// <summary>
-    ///     Positions for every live pawn on every <paramref name="frameStride" />-th frame, in
+    ///     Positions for every pawn bound to a controller, dead or alive, on every <paramref name="frameStride" />-th frame, in
     ///     frame order then entity order. Lazy: nothing is decoded until enumerated, and the walk
     ///     restarts from frame 0 on a second enumeration.
     ///     <para>

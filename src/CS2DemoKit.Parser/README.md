@@ -185,7 +185,8 @@ demo-tick mapping and tick-boundary frame indexing.
 ### Player trajectories
 
 `PositionSampler.Walk` is those pieces assembled: it steps the tracker one frame at a time,
-enumerates live pawns, resolves each to a slot, and reconstructs world position.
+enumerates every controller-bound pawn (dead or alive: a dead player's pawn keeps sampling for the
+rest of the round), resolves each to a slot, and reconstructs world position.
 
 ```csharp
 foreach (PositionSample s in PositionSampler.Walk(demo, frameStride: 8))
@@ -193,6 +194,12 @@ foreach (PositionSample s in PositionSampler.Walk(demo, frameStride: 8))
     // s.FrameIndex, s.Tick, s.PlayerSlot, s.Position (Vector3), s.Place
 }
 ```
+
+`Tick` is the frame clock, `DemoFrame.ServerTick`, the same clock as `GameEvent.GameTick`.
+`GameEvent.ServerTick` is that plus `ParsedDemo.ServerStartTick`. An event can be stamped one tick
+below the frame that delivered it (`weapon_fire`, `player_hurt` and footsteps often are), so to join
+samples to events exactly, compare `GameEvent.FrameNumber` with `PositionSample.FrameIndex`.
+`Place` is the empty string, not null, when the pawn is outside any named nav area.
 
 `frameStride` subsamples the output only. Every frame is still decoded, because entity state is
 delta-encoded and skipping a frame's deltas corrupts the frames after it, so the stride buys memory
