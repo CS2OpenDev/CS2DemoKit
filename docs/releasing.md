@@ -342,6 +342,23 @@ reads a handle without boxing. `EntityTracker.StoreUnlensedFields`, off in the a
 drops the fallback dictionary for fields no lens rule names, and `AdoptSchemaState` shares one
 parsed schema between trackers.
 
+### `m_iClip1` decodes with the minusone serializer (0.13.0)
+
+Through 0.12.0, `m_iClip1` was read as a zigzag varint. The engine sends it with the `minusone`
+serializer, an unsigned varint holding clip + 1, so every reader got the zigzag reading of clip + 1:
+the value alternated in sign, came out one high in magnitude, and a knife read 0. That covers
+`EntityState` reads of the field, the SDK's `BasePlayerWeapon.Clip1` and the
+`player.active_weapon_clip` column (`entity.pawn.active_weapon_clip`). They now return the rounds in
+the magazine, with -1 for a weapon that has none (knives, grenades, the C4) and 0 for an empty
+magazine. There is no compile error to flag it: a rule written against the old numbers changes
+meaning, and per-pawn digests or outputs cached from 0.12 differ on this column. Row and cell counts
+do not change, because both readings are one-to-one on the same wire value and change on the same
+frames.
+
+`m_iClip2` uses the same serializer and gets the same fix. No CS2 weapon has a secondary clip, so
+it read 0 on every weapon through 0.12.0 and reads -1 now. Only `EntityState` reads of the field and
+the SDK's `BasePlayerWeapon.Clip2` see it; no built-in column or provider reads it.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
