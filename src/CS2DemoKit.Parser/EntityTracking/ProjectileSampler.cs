@@ -160,7 +160,7 @@ public static class ProjectileSampler
         EntityTracker tracker = EntityTrackerFactory.CreateCurated();
 
         // Indices whose slot saw a projectile enter this frame. Checked once the frame is fully
-        // applied, so a slot created and deleted within the frame is dropped here.
+        // applied, so a slot created and deleted within the frame is dropped there.
         List<int> pending = [];
         tracker.EntityCreated += (index, state) =>
         {
@@ -170,8 +170,7 @@ public static class ProjectileSampler
             }
         };
 
-        // Kept ascending by entity index: the order a frame's samples come out in.
-        List<Tracked> tracked = [];
+        Slots slots = new();
         List<ProjectileSample> buffer = [];
 
         int frameIndex = 0;
@@ -183,59 +182,8 @@ public static class ProjectileSampler
             pending.Clear();
             tracker.AdvanceOneFrame(frame);
 
-            int tick = frame.ServerTick;
-            bool emit = frameIndex % frameStride == 0;
-            EntitySet entities = tracker.CurrentEntities;
             buffer.Clear();
-
-            for (int t = 0; t < tracked.Count; t++)
-            {
-                Tracked p = tracked[t];
-                EntityState? ent = entities[p.Index];
-                if (ent is null || ent.Serial != p.Serial || !string.Equals(ent.ClassName, p.ClassName, StringComparison.Ordinal))
-                {
-                    buffer.Add(p.Last with { FrameIndex = frameIndex, Tick = tick, Created = false, Removed = true });
-                    tracked.RemoveAt(t--);
-                    continue;
-                }
-
-                p.Last = Read(tracker, ent, p, frameIndex, tick, false);
-                if (emit)
-                {
-                    buffer.Add(p.Last);
-                }
-            }
-
-            if (pending.Count > 0)
-            {
-                pending.Sort();
-                for (int k = 0; k < pending.Count; k++)
-                {
-                    int index = pending[k];
-                    if (k > 0 && pending[k - 1] == index)
-                    {
-                        continue;
-                    }
-
-                    EntityState? ent = entities[index];
-                    if (ent is null || !GrenadeProjectileClasses.Contains(ent.ClassName) || IsTracked(tracked, index))
-                    {
-                        continue;
-                    }
-
-                    Tracked p = new(index, ent.Serial, ent.ClassName);
-                    p.Last = Read(tracker, ent, p, frameIndex, tick, true);
-                    Insert(tracked, p);
-                    buffer.Add(p.Last);
-                }
-            }
-
-            if (buffer.Count > 1)
-            {
-                buffer.Sort(static (a, b) => a.EntityIndex != b.EntityIndex
-                    ? a.EntityIndex.CompareTo(b.EntityIndex)
-                    : b.Removed.CompareTo(a.Removed));
-            }
+            slots.Step(tracker, pending, frameIndex, frame.ServerTick, frameIndex % frameStride == 0, buffer);
 
             foreach (ProjectileSample sample in buffer)
             {
@@ -246,47 +194,134 @@ public static class ProjectileSampler
         }
     }
 
-    private static ProjectileSample Read(EntityTracker tracker, EntityState ent, Tracked p, int frameIndex,
-        int tick, bool created)
+    /// <summary>
+    ///     The projectiles one walk is following, and the per-frame step that samples them. Split out
+    ///     of the frame loop so tests can drive a step against a hand-built entity set.
+    /// </summary>
+    internal sealed class Slots
     {
-        if (p.ThrowerSlot < 0)
-        {
-            p.ThrowerSlot = PawnLookup.ResolveThrowerSlot(tracker, ent);
-        }
+        // Kept ascending by entity index: the order a frame's samples come out in.
+        private readonly List<Tracked> _tracked = [];
 
-        return new ProjectileSample(frameIndex, tick, p.Index, p.Serial, p.ClassName, p.ThrowerSlot,
-            PositionUtil.CellToWorldCore(ent, true),
-            ent.TryGet<Vector3>("m_vInitialPosition"),
-            ent.TryGet<Vector3>("m_vInitialVelocity"),
-            ent.TryGet<int>("m_nBounces") ?? 0,
-            created,
-            false);
-    }
-
-    // After the removal pass, any entry still at this index is the entity now in the slot (same
-    // serial and class), so a second enter-PVS for it is not a new projectile.
-    private static bool IsTracked(List<Tracked> tracked, int index)
-    {
-        foreach (Tracked p in tracked)
+        /// <summary>
+        ///     Samples one frame that has already been applied to <paramref name="tracker" />: a
+        ///     <c>Removed</c> sample for each followed projectile whose slot no longer holds it, an
+        ///     in-flight sample for each one still there when <paramref name="emit" /> is set, and a
+        ///     <c>Created</c> sample for each new projectile among <paramref name="created" />.
+        ///     Appends to <paramref name="output" /> in ascending entity index, a slot's
+        ///     <c>Removed</c> before its <c>Created</c>. <paramref name="created" /> holds the indices
+        ///     <see cref="EntityTracker.EntityCreated" /> raised for a projectile class this frame, in
+        ///     any order and possibly repeated, and is sorted in place.
+        /// </summary>
+        internal void Step(EntityTracker tracker, List<int> created, int frameIndex, int tick, bool emit,
+            List<ProjectileSample> output)
         {
-            if (p.Index == index)
+            EntitySet entities = tracker.CurrentEntities;
+            int first = output.Count;
+
+            for (int t = 0; t < _tracked.Count; t++)
             {
-                return true;
+                Tracked p = _tracked[t];
+                EntityState? ent = entities[p.Index];
+                if (ent is null || ent.Serial != p.Serial || !string.Equals(ent.ClassName, p.ClassName, StringComparison.Ordinal))
+                {
+                    output.Add(p.Last with { FrameIndex = frameIndex, Tick = tick, Created = false, Removed = true });
+                    _tracked.RemoveAt(t--);
+                    continue;
+                }
+
+                p.Last = Read(tracker, ent, p, frameIndex, tick, false);
+                if (emit)
+                {
+                    output.Add(p.Last);
+                }
+            }
+
+            if (created.Count > 0)
+            {
+                created.Sort();
+                for (int k = 0; k < created.Count; k++)
+                {
+                    int index = created[k];
+                    if (k > 0 && created[k - 1] == index)
+                    {
+                        continue;
+                    }
+
+                    EntityState? ent = entities[index];
+                    if (ent is null || !GrenadeProjectileClasses.Contains(ent.ClassName) || IsTracked(index))
+                    {
+                        continue;
+                    }
+
+                    Tracked p = new(index, ent.Serial, ent.ClassName);
+                    p.Last = Read(tracker, ent, p, frameIndex, tick, true);
+                    Insert(p);
+                    output.Add(p.Last);
+                }
+            }
+
+            if (output.Count - first > 1)
+            {
+                output.Sort(first, output.Count - first, SampleOrder.Instance);
             }
         }
 
-        return false;
-    }
-
-    private static void Insert(List<Tracked> tracked, Tracked p)
-    {
-        int at = tracked.Count;
-        while (at > 0 && tracked[at - 1].Index > p.Index)
+        private static ProjectileSample Read(EntityTracker tracker, EntityState ent, Tracked p, int frameIndex,
+            int tick, bool created)
         {
-            at--;
+            if (p.ThrowerSlot < 0)
+            {
+                p.ThrowerSlot = PawnLookup.ResolveThrowerSlot(tracker, ent);
+            }
+
+            return new ProjectileSample(frameIndex, tick, p.Index, p.Serial, p.ClassName, p.ThrowerSlot,
+                PositionUtil.CellToWorldCore(ent, true),
+                ent.TryGet<Vector3>("m_vInitialPosition"),
+                ent.TryGet<Vector3>("m_vInitialVelocity"),
+                ent.TryGet<int>("m_nBounces") ?? 0,
+                created,
+                false);
         }
 
-        tracked.Insert(at, p);
+        // Purely defensive. After the removal pass, an entry still at this index has the same serial
+        // and class as the entity now in the slot. EntityCreated fires for such an entity only when
+        // the slot was deleted and re-created with that same serial and class within one frame (an
+        // enter-PVS for a live entity raises EntityUpdated instead), and that is the same projectile,
+        // so it must not be followed twice.
+        private bool IsTracked(int index)
+        {
+            foreach (Tracked p in _tracked)
+            {
+                if (p.Index == index)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void Insert(Tracked p)
+        {
+            int at = _tracked.Count;
+            while (at > 0 && _tracked[at - 1].Index > p.Index)
+            {
+                at--;
+            }
+
+            _tracked.Insert(at, p);
+        }
+    }
+
+    // Ascending entity index; within one index the Removed sample first.
+    private sealed class SampleOrder : IComparer<ProjectileSample>
+    {
+        public static readonly SampleOrder Instance = new();
+
+        public int Compare(ProjectileSample a, ProjectileSample b) => a.EntityIndex != b.EntityIndex
+            ? a.EntityIndex.CompareTo(b.EntityIndex)
+            : b.Removed.CompareTo(a.Removed);
     }
 
     private sealed class Tracked(int index, int serial, string className)
