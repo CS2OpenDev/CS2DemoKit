@@ -369,6 +369,62 @@ public class PipelinedDigestWorkerTests
     }
 
     /// <summary>
+    ///     Chunk 0 folds on a tracker that has never loaded a schema, whatever order the thread pool
+    ///     starts the folds in. The fold task used to choose its own tracker, so a pool that started
+    ///     later chunks first let them load a schema into every tracker, and chunk 0 then found none
+    ///     fresh and threw "no free fold worker" (seen on a loaded CI runner). The seam holds chunk
+    ///     0's task back until as many later folds have started as there are workers, which is the
+    ///     most the reader lets start before the consumer takes chunk 0. Before the fix this threw on
+    ///     most runs with two workers.
+    /// </summary>
+    [Test]
+    [Arguments(2)]
+    [Arguments(4)]
+    public async Task Pipeline_FoldsChunkZero_OnAFreshTracker_WhenLaterFoldsStartFirst(int workers)
+    {
+        const int repetitions = 200;
+        List<DemoFrame> frames = SyntheticFrames(61);
+        TimeSpan wait = TimeSpan.FromSeconds(2);
+
+        for (int r = 0; r < repetitions; r++)
+        {
+            int laterStarted = 0;
+            using ManualResetEventSlim enoughStarted = new();
+            PipelinedDigestSource pipeline = new(new FrameListSource(frames, null), () => [], () => [], false, false,
+                workers, false, null, CancellationToken.None, 1)
+            {
+                FoldStarting = first =>
+                {
+                    if (first == 0)
+                    {
+                        enoughStarted.Wait(wait);
+                        Thread.Sleep(20);
+                    }
+                    else if (Interlocked.Increment(ref laterStarted) == workers)
+                    {
+                        enoughStarted.Set();
+                    }
+                }
+            };
+
+            List<EntityFrameDigest> digests = [];
+            try
+            {
+                while (pipeline.TryReadNext(out _))
+                {
+                    digests.Add(pipeline.Take(digests.Count));
+                }
+            }
+            finally
+            {
+                pipeline.Close();
+            }
+
+            await Assert.That(digests.Count).IsEqualTo(frames.Count);
+        }
+    }
+
+    /// <summary>
     ///     A frame list shaped like a GOTV recording: a two-frame signon prefix, then
     ///     <paramref name="fullPackets" /> <c>DEM_FullPacket</c>s on a fixed tick cadence with ordinary
     ///     packets between, none of them sharing a tick with its successor (which the reader would skip).
