@@ -17,6 +17,14 @@ public sealed class EntityValueProviderRegistry
     {
         EntityValueProviderRegistry registry = new();
         registry.Register(new FreezePeriodProvider());
+
+        // Reference-gated like the freeze-period poll: a provider no rule reads builds no value
+        // node and costs the scan nothing.
+        foreach (IEntityValueProvider provider in BuiltinProviderSpecs.CreateGameRulesProviders())
+        {
+            registry.Register(provider);
+        }
+
         return registry;
     }
 

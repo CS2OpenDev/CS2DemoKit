@@ -71,6 +71,31 @@ public static class CatalogBuilder
     private static readonly Dictionary<string, (string? Unit, string? Note)> _providerAnnotations =
         new(StringComparer.Ordinal)
         {
+            ["entity.game.bomb_planted"] = (null,
+                "True from the frame the bomb is planted, and cleared by a defuse as well as at "
+                + "round_officially_ended, so it is not \"the bomb was planted this round\": that is "
+                + "`round.bomb.was_planted`, which stays true to the round's end."),
+            ["entity.game.game_phase"] = (null,
+                "The match phase. Measured on matchmaking demos: 2 through the first half, 4 over "
+                + "the halftime break, 3 through the second half, 5 once the match is over."),
+            ["entity.game.round_time"] = ("seconds",
+                "The length the round is configured to run, not a countdown: 115 in a live "
+                + "matchmaking round, 999 during warmup."),
+            ["entity.game.round_win_reason"] = (null,
+                "The engine's round-end reason, set with round_win_status and cleared with it: 7 "
+                + "bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists "
+                + "eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the "
+                + "round is undecided. Read it between the decision and the round's close, never "
+                + "on round_officially_ended, where it has already reset to 0."),
+            ["entity.game.round_win_status"] = (null,
+                "0 while the round is undecided, 2 once the terrorists have won it, 3 once the "
+                + "counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and "
+                + "back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on "
+                + "round_officially_ended it reads 0. At the round's close the winner is "
+                + "`enrich.round.winner_side`."),
+            ["entity.game.total_rounds_played"] = (null,
+                "Rounds decided so far this match: 0 before round 1, and it increments on the "
+                + "frame a round is decided, not when the next one starts."),
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),

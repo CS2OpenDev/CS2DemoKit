@@ -2755,11 +2755,60 @@
   ],
   "providers": [
     {
+      "name": "entity.game.bomb_planted",
+      "scope": "singleton",
+      "clrType": "bool",
+      "v2Name": "match.bomb_planted",
+      "v2Type": "Bool",
+      "note": "True from the frame the bomb is planted, and cleared by a defuse as well as at round_officially_ended, so it is not \u0022the bomb was planted this round\u0022: that is \u0060round.bomb.was_planted\u0060, which stays true to the round\u0027s end."
+    },
+    {
       "name": "entity.game.freeze_period",
       "scope": "singleton",
       "clrType": "bool",
       "v2Name": "match.freeze_period",
       "v2Type": "Bool"
+    },
+    {
+      "name": "entity.game.game_phase",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.game_phase",
+      "v2Type": "Int",
+      "note": "The match phase. Measured on matchmaking demos: 2 through the first half, 4 over the halftime break, 3 through the second half, 5 once the match is over."
+    },
+    {
+      "name": "entity.game.round_time",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.round_time",
+      "v2Type": "Int",
+      "unit": "seconds",
+      "note": "The length the round is configured to run, not a countdown: 115 in a live matchmaking round, 999 during warmup."
+    },
+    {
+      "name": "entity.game.round_win_reason",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.round_win_reason",
+      "v2Type": "Int",
+      "note": "The engine\u0027s round-end reason, set with round_win_status and cleared with it: 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the round is undecided. Read it between the decision and the round\u0027s close, never on round_officially_ended, where it has already reset to 0."
+    },
+    {
+      "name": "entity.game.round_win_status",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.round_win_status",
+      "v2Type": "Int",
+      "note": "0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on round_officially_ended it reads 0. At the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+    },
+    {
+      "name": "entity.game.total_rounds_played",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.total_rounds_played",
+      "v2Type": "Int",
+      "note": "Rounds decided so far this match: 0 before round 1, and it increments on the frame a round is decided, not when the next one starts."
     },
     {
       "name": "entity.pawn.active_weapon_class",

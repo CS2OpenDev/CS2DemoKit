@@ -354,6 +354,25 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   `round_lost` — not a context.)
 - **Match facts:** `match.map`, `match.phase`, `match.live`, `match.half_state`,
   `match.regulation_status`, `match.freeze_period`.
+- **Game rules:** the server's own round state, read straight off the game-rules entity. One value
+  for the whole game, so they read the same in every scope.
+  - `match.round_win_status` — `0` while the round is undecided, `2` once the terrorists have won
+    it, `3` once the counter-terrorists have.
+  - `match.round_win_reason` — the engine's round-end reason, set with the status: `7` bomb
+    defused, `8` counter-terrorists eliminated the terrorists, `9` terrorists eliminated the
+    counter-terrorists, `12` target saved (time ran out). `0` while undecided.
+  - `match.total_rounds_played` — rounds decided so far this match; `0` before round 1. It
+    increments on the frame a round is decided, not when the next one starts.
+  - `match.game_phase` — `2` first half, `4` the halftime break, `3` second half, `5` match over.
+  - `match.bomb_planted` — true from the plant; cleared by a defuse as well as at the round's close,
+    so "was the bomb planted this round" is `round.bomb.was_planted`, not this.
+  - `match.round_time` — the length the round is configured to run, in seconds (`115` in a live
+    matchmaking round, `999` in warmup). Not a countdown.
+
+  **Read the status and reason between the decision and the round's close.** They go back to `0`
+  at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo, and that
+  is the event a round-end stat fires on, so a round-end read of either is `0`. At the round's
+  close the winner is `enrich.round.winner_side`.
 - **Team aggregates (subject-relative):** `round.team.alive` / `round.enemies.alive`,
   `round.team.players` / `round.enemies.players`, `round.team.equipment` /
   `round.enemies.equipment`, `round.alive.in_clutch`.

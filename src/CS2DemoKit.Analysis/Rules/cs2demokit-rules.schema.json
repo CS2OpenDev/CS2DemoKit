@@ -105,8 +105,32 @@
       "markdownDescription": "An entity-value provider read. GENERATED from the catalog\u0027s providers family: these are the \u0060player.*\u0060 and \u0060match.*\u0060 names a rule expression may read off the entity state, with the unit and the caveat each one carries.",
       "oneOf": [
         {
+          "const": "match.bomb_planted",
+          "markdownDescription": "\u0060match.bomb_planted\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.game.bomb_planted\u0060. True from the frame the bomb is planted, and cleared by a defuse as well as at round_officially_ended, so it is not \u0022the bomb was planted this round\u0022: that is \u0060round.bomb.was_planted\u0060, which stays true to the round\u0027s end."
+        },
+        {
           "const": "match.freeze_period",
           "markdownDescription": "\u0060match.freeze_period\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.game.freeze_period\u0060."
+        },
+        {
+          "const": "match.game_phase",
+          "markdownDescription": "\u0060match.game_phase\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.game_phase\u0060. The match phase. Measured on matchmaking demos: 2 through the first half, 4 over the halftime break, 3 through the second half, 5 once the match is over."
+        },
+        {
+          "const": "match.round_time",
+          "markdownDescription": "\u0060match.round_time\u0060 (type \u0060int\u0060, in seconds) - an entity read, from \u0060entity.game.round_time\u0060. The length the round is configured to run, not a countdown: 115 in a live matchmaking round, 999 during warmup."
+        },
+        {
+          "const": "match.round_win_reason",
+          "markdownDescription": "\u0060match.round_win_reason\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_reason\u0060. The engine\u0027s round-end reason, set with round_win_status and cleared with it: 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the round is undecided. Read it between the decision and the round\u0027s close, never on round_officially_ended, where it has already reset to 0."
+        },
+        {
+          "const": "match.round_win_status",
+          "markdownDescription": "\u0060match.round_win_status\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_status\u0060. 0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on round_officially_ended it reads 0. At the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+        },
+        {
+          "const": "match.total_rounds_played",
+          "markdownDescription": "\u0060match.total_rounds_played\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.total_rounds_played\u0060. Rounds decided so far this match: 0 before round 1, and it increments on the frame a round is decided, not when the next one starts."
         },
         {
           "const": "player.active_weapon_class",
