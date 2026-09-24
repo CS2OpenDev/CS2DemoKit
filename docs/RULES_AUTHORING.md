@@ -130,6 +130,15 @@ For `for: each_player`, a view automatically binds to *this* player (the `kill` 
 player's* kills). At `for: match`, there's no subject, so `count: kill` counts *everyone's* kills
 (a match total).
 
+`round_won` and `round_lost` bind by team: for `for: each_player` they fire on the round's close
+only for the players whose team (their live team, so the halftime swap is followed) won or lost
+it, so `count: round_won` is this player's round wins and `count: round_won` + `count: round_lost`
+is one per decided round. A stat about the round rather than its result, such as "rounds survived",
+counts `round_ended` instead, which fires for everyone. (Before 0.13.0 the binding was not applied
+and both views fired for every player, so a ruleset that counted losses as `round_won` with a
+`where:` on the winner now reads 0: count `round_lost`.) At `for: match` both views fire on every
+close, like any view without a subject.
+
 If you need a raw event with no view, use `raw.<event>`; net messages are `net.<Message>`. Views
 are almost always what you want.
 
@@ -532,7 +541,7 @@ ruleset: match_totals
 for: match
 stats:
   total_kills:  { count: kill, per: match }
-  total_rounds: { count: round_won, per: match }
+  total_rounds: { count: round_ended, per: match }
 show:
   tables:
     match_summary:                         # tables: is a named map: <table-name>: { per, columns }

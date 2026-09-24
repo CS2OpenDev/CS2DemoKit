@@ -125,7 +125,7 @@ public sealed partial class RuleChainBuilder
     ///     Builds every <c>for: match</c> (game-scoped) v2 ruleset directly onto the shared graph —
     ///     one node per stat, not a per-player template. A match-scoped stat has <b>no subject</b>: the
     ///     resolver already suppresses the view's per-player actor binding
-    ///     (<see cref="BuildActorBinding" /> returns <c>null</c> for a non-<c>each_player</c> ruleset),
+    ///     (<see cref="BuildSubjectBinding" /> binds no player for a non-<c>each_player</c> ruleset),
     ///     so <c>count: kill</c> counts <em>every</em> kill (the view's baked killer≠victim condition
     ///     still gates it), and <c>player.*</c> reads are rejected at resolve (the <c>player</c> root is
     ///     only in scope for <c>each_player</c>). The subject-relative B6 aggregates
@@ -1627,32 +1627,52 @@ public sealed partial class RuleChainBuilder
         string? trigger = stat.TriggerCondition is null
             ? null
             : V1ExpressionWriter.Write(stat.TriggerCondition.Root, contextV2ToV1);
-        string? actor = BuildActorBinding(rs, stat, views);
-        if (actor is null)
+        string? subject = BuildSubjectBinding(rs, stat, views);
+        if (subject is null)
         {
             return trigger;
         }
 
-        return trigger is null ? actor : $"{actor} && ({trigger})";
+        return trigger is null ? subject : $"{subject} && ({trigger})";
     }
 
     /// <summary>
-    ///     The per-player actor binding an <c>actor_slot</c> view lowers to
-    ///     (<c>event.&lt;ActorSlotField&gt; == player.slot</c>) — the same slot-equality v1 hand-wrote.
-    ///     Without a subject to bind to (a non-per-player ruleset, or <c>match: {actor: any}</c>
-    ///     suppression) it lowers to the actor-slot validity test instead. Null for
-    ///     <c>binding: none</c>/<c>team</c> views, which have no actor field.
+    ///     The implicit subject binding a view lowers to.
+    ///     <list type="bullet">
+    ///         <item>
+    ///             An <c>actor_slot</c> view binds its actor role to the ruleset player
+    ///             (<c>event.&lt;ActorSlotField&gt; == player.slot</c>), the same slot-equality v1
+    ///             hand-wrote. Without a subject to bind to (a non-per-player ruleset, or
+    ///             <c>match: {actor: any}</c> suppression) it lowers to the actor-slot validity test
+    ///             instead.
+    ///         </item>
+    ///         <item>
+    ///             A <c>binding: team</c> view binds the round's winner to the ruleset player's LIVE
+    ///             team: <c>round_won</c> is
+    ///             <c>enrich.round.has_winner &amp;&amp; enrich.round.winner_team == player.team</c>,
+    ///             <c>round_lost</c> the same with <c>!=</c>. <c>player.team</c> reads the player
+    ///             context at fire time, so the halftime swap is followed. <c>for: match</c> and
+    ///             <c>match: {actor: any}</c> leave it unbound, like an actor view with no subject.
+    ///         </item>
+    ///         <item><c>binding: none</c> views bind nothing.</item>
+    ///     </list>
     /// </summary>
-    private static string? BuildActorBinding(CheckedRuleset rs, CheckedStat stat,
+    private static string? BuildSubjectBinding(CheckedRuleset rs, CheckedStat stat,
         Dictionary<string, CatalogView> views)
     {
-        if (stat.ResolvedView is null)
+        if (stat.ResolvedView is null || !views.TryGetValue(stat.ResolvedView, out CatalogView? view))
         {
             return null;
         }
 
-        if (!views.TryGetValue(stat.ResolvedView, out CatalogView? view)
-            || !string.Equals(view.Binding, "actor_slot", StringComparison.Ordinal))
+        if (string.Equals(view.Binding, "team", StringComparison.Ordinal))
+        {
+            return rs.For == RulesetScope.EachPlayer && !stat.SuppressActorBinding
+                ? TeamBinding(view, "player.team")
+                : null;
+        }
+
+        if (!string.Equals(view.Binding, "actor_slot", StringComparison.Ordinal))
         {
             return null;
         }
@@ -1675,6 +1695,18 @@ public sealed partial class RuleChainBuilder
         // range does get materialized off the event, so this holds for any demo, not just the one
         // that surfaced it.
         return $"event.{role.Field} >= 0 && event.{role.Field} < {PlayerSlotExclusiveUpperBound}";
+    }
+
+    /// <summary>
+    ///     The <c>binding: team</c> condition for a subject whose team is <paramref name="subjectTeam" />
+    ///     (an expression the event condition can read): the round has a winner, and the winner is
+    ///     (<c>result: won</c>) or is not (<c>result: lost</c>) the subject's team. Both enrichments are
+    ///     declared reads of the stat, so the round-end enrichment edge is ordered ahead of it.
+    /// </summary>
+    private static string TeamBinding(CatalogView view, string subjectTeam)
+    {
+        string op = string.Equals(view.Result, "lost", StringComparison.Ordinal) ? "!=" : "==";
+        return $"enrich.round.has_winner && enrich.round.winner_team {op} {subjectTeam}";
     }
 
     /// <summary>

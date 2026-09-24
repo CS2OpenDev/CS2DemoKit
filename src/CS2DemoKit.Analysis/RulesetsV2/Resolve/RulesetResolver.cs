@@ -59,6 +59,11 @@ public static class RulesetResolver
 
         private const int DefaultStreakMinStreak = 2;
 
+        /// <summary>The round-end enrichments a <c>binding: team</c> view's subject binding reads.</summary>
+        private const string TeamBindingHasWinner = "enrich.round.has_winner";
+
+        private const string TeamBindingWinnerTeam = "enrich.round.winner_team";
+
         /// <summary>The neutral ranking weight a highlight inherits when <c>score:</c> is unspecified.</summary>
         private const int DefaultHighlightScore = 50;
         private readonly CatalogScopeAdapter _adapter;
@@ -482,6 +487,15 @@ public static class RulesetResolver
             }
 
             CheckedExpression? whileGate = BuildWhileGate(stat, trigger, thisType, reads);
+
+            // A team-bound view (round_won / round_lost) filters on the round-end winner against the
+            // subject's team. The planner writes that condition, so the reads are declared here: they
+            // are what orders the round-end enrichment edge ahead of the stat's edge.
+            if (trigger.View is { Binding: "team" } && _forEachPlayer && !trigger.ActorAny)
+            {
+                reads.Declare(TeamBindingHasWinner);
+                reads.Declare(TeamBindingWinnerTeam);
+            }
 
             RuleNodeKind kind = MapNodeKind(stat.Kind);
             KeepKind keep = MapKeep(stat);
@@ -1994,6 +2008,15 @@ public static class RulesetResolver
             internal IReadOnlyList<string> DeclaredReads => _reads;
 
             internal IReadOnlyList<EntityProviderReference> EntityReads => _entities;
+
+            /// <summary>Declares a read the planner performs on the stat's behalf (no expression carries it).</summary>
+            internal void Declare(string path)
+            {
+                if (_seen.Add(path))
+                {
+                    _reads.Add(path);
+                }
+            }
 
             internal void Collect(CheckedExpression? expression)
             {
