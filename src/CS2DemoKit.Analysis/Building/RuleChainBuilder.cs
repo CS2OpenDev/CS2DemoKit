@@ -144,6 +144,7 @@ public sealed partial class RuleChainBuilder
         StateGraph graph = new();
         _teamNodesByRuleId.Clear();
         _teamRosters.Clear();
+        _gameStatHashes.Clear();
         Dictionary<string, StateNode> nodeLookup = new(StringComparer.OrdinalIgnoreCase)
         {
             ["root"] = graph.Root
@@ -373,7 +374,10 @@ public sealed partial class RuleChainBuilder
             // The round's winner is the server's verdict: the scanner synthesizes round_decided
             // from these three game-rules singletons, and the round-end enrichment reports the
             // latched winner rather than deriving one. So whenever there is a scanner they are
-            // tracked, read or not: three indexed reads per frame on a cached proxy index.
+            // tracked, read or not: three indexed reads per frame on a cached proxy index. One no
+            // rule reads is tracked silently: its value node updates, but no change marker is
+            // dispatched for it, so a build that does not read them dispatches no extra messages.
+            HashSet<IEntityValueProvider> silent = new(ReferenceEqualityComparer.Instance);
             foreach (string contextName in (ReadOnlySpan<string>)
                      [
                          EntityChangeScanner.RoundWinStatusContext,
@@ -384,6 +388,7 @@ public sealed partial class RuleChainBuilder
                 if (_entityProviders?.Get(contextName) is { } provider && !matched.Contains(provider))
                 {
                     matched.Add(provider);
+                    silent.Add(provider);
                 }
             }
 
@@ -405,7 +410,8 @@ public sealed partial class RuleChainBuilder
                 perPlayerList,
                 emitMolotov,
                 vantageScanner,
-                transitionScanner);
+                transitionScanner,
+                silent);
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve

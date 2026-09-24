@@ -31,7 +31,11 @@ namespace CS2DemoKit.Analysis.Events;
 /// <param name="ServerTick">The same tick; see the clock note above.</param>
 /// <param name="GameTick">The same tick.</param>
 /// <param name="Winner">The winning side: 2 for the terrorists, 3 for the counter-terrorists.</param>
-/// <param name="Reason">The engine's round-end reason (<c>m_eRoundWinReason</c>): 7 bomb defused, 8 and 9 elimination, 12 time ran out.</param>
+/// <param name="Reason">
+///     The engine's round-end reason (<c>m_eRoundWinReason</c>): 1 the bomb exploded, 7 bomb defused, 8
+///     and 9 elimination, 12 time ran out, 17 and 18 a surrender. Those are the values measured on
+///     matchmaking demos, not the engine's whole list.
+/// </param>
 /// <param name="RoundsPlayed">Rounds decided this match, this one included (<c>m_totalRoundsPlayed</c>).</param>
 public sealed record RoundDecidedEvent(int FrameNumber, int ServerTick, int GameTick, int Winner, int Reason,
         int RoundsPlayed)

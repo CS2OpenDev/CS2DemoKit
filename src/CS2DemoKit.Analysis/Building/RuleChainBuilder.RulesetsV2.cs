@@ -61,6 +61,11 @@ public sealed partial class RuleChainBuilder
     private readonly Dictionary<int, IReadOnlyDictionary<string, StateNode>> _teamNodesByRuleId = [];
     private readonly Dictionary<int, StateNode> _teamRosters = [];
 
+    // The for: match build's reference hashes under their qualified {ruleset}.{stat} spelling, so a
+    // team ruleset's compute: over a match stat hashes against the node it reads. Empty when no match
+    // ruleset was built.
+    private readonly Dictionary<string, ReadOnlyMemory<byte>> _gameStatHashes = new(StringComparer.Ordinal);
+
     // A2 golden drift-guard seam: the canonical stat/highlight hash map (path → 32-byte hash,
     // all registered spellings) of the most recent per-player template materialization. Written
     // by the template factory (reference assignment only); read by the fingerprint helper's
@@ -195,7 +200,9 @@ public sealed partial class RuleChainBuilder
             }
 
             Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(StringComparer.Ordinal);
+
+            // And their hashes, which a compute's reference embeds.
+            Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(_gameStatHashes, StringComparer.Ordinal);
             MapStatHashSource hashSource = new(statHashesByPath);
             Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
             List<StateNode> nodes = [];
@@ -490,6 +497,14 @@ public sealed partial class RuleChainBuilder
         foreach ((string key, StateNode node) in nodesByRuleId)
         {
             gameNodesByRuleId[key] = node;
+        }
+
+        foreach ((string path, ReadOnlyMemory<byte> hash) in statHashesByPath)
+        {
+            if (path.Contains('.', StringComparison.Ordinal))
+            {
+                _gameStatHashes[path] = hash;
+            }
         }
     }
 
@@ -1935,13 +1950,28 @@ public sealed partial class RuleChainBuilder
     /// <summary>
     ///     The <c>binding: team</c> condition for a subject whose team is <paramref name="subjectTeam" />
     ///     (an expression the event condition can read): the round has a winner, and the winner is
-    ///     (<c>result: won</c>) or is not (<c>result: lost</c>) the subject's team. Both enrichments are
-    ///     declared reads of the stat, so the round-end enrichment edge is ordered ahead of it.
+    ///     (<c>result: won</c>) or is the other playing side from (<c>result: lost</c>) the subject's
+    ///     team. Both enrichments are declared reads of the stat, so the round-end enrichment edge is
+    ///     ordered ahead of it.
+    ///     <para>
+    ///         The winner is always 2 or 3, so a plain <c>!=</c> would have a subject on team 0 (not
+    ///         yet seen) or 1 (a spectator, coach or caster) lose every decided round. A lost round
+    ///         needs the subject on a playing side.
+    ///     </para>
     /// </summary>
     private static string TeamBinding(CatalogView view, string subjectTeam)
     {
-        string op = string.Equals(view.Result, "lost", StringComparison.Ordinal) ? "!=" : "==";
-        return $"enrich.round.has_winner && enrich.round.winner_team {op} {subjectTeam}";
+        string winner = "enrich.round.has_winner && enrich.round.winner_team";
+        if (!string.Equals(view.Result, "lost", StringComparison.Ordinal))
+        {
+            return $"{winner} == {subjectTeam}";
+        }
+
+        // A team subject's side is a literal 2 or 3 and needs no guard.
+        return int.TryParse(subjectTeam, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out _)
+            ? $"{winner} != {subjectTeam}"
+            : $"{winner} != {subjectTeam} && ({subjectTeam} == 2 || {subjectTeam} == 3)";
     }
 
     /// <summary>

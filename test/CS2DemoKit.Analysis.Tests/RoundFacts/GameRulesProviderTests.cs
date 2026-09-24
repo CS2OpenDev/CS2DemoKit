@@ -57,8 +57,10 @@ public class GameRulesProviderTests
 
     /// <summary>
     ///     On the sample: a live round is configured for 115 seconds (read in a capture and in a
-    ///     compute), the planted flag is up on the plant frame, and rounds played never goes down
-    ///     between kills once the match is live.
+    ///     compute), the planted flag is up on the plant frame and down on most kills, rounds played
+    ///     steps at each decision, the phase is the first half throughout, and the status and reason
+    ///     read on round_decided are the event's winner and reason. Each value is pinned, so a
+    ///     provider reading the wrong field fails here and not only on the corpus.
     /// </summary>
     [Test]
     public async Task Sample_ReadsTheGameRules_FromARuleset()
@@ -83,9 +85,41 @@ public class GameRulesProviderTests
                 count: bomb_planted
                 where: "match.bomb_planted"
                 per: match
+              kills:
+                count: kill
+                per: match
+              kills_while_planted:
+                count: kill
+                where: "match.bomb_planted"
+                per: match
               played_at_kill:
                 capture: match.total_rounds_played
                 on: kill
+                keep: list
+                per: match
+              phase_at_kill:
+                capture: match.game_phase
+                on: kill
+                keep: list
+                per: match
+              status_at_decision:
+                capture: match.round_win_status
+                on: round_decided
+                keep: list
+                per: match
+              reason_at_decision:
+                capture: match.round_win_reason
+                on: round_decided
+                keep: list
+                per: match
+              winners:
+                capture: event.Winner
+                on: round_decided
+                keep: list
+                per: match
+              reasons:
+                capture: event.Reason
+                on: round_decided
                 keep: list
                 per: match
             show:
@@ -98,6 +132,8 @@ public class GameRulesProviderTests
                     - { stat: plants, label: P }
                     - { stat: plants_flagged, label: PF }
                     - { stat: played_at_kill, label: Played }
+                    - { stat: kills, label: K }
+                    - { stat: kills_while_planted, label: KP }
             """);
 
         MetricRow row = RoundFactsTestSupport.Table(run, "g", demo).Rows.Single();
@@ -106,13 +142,22 @@ public class GameRulesProviderTests
         await Assert.That(RoundFactsTestSupport.Int(row, "P") ?? 0).IsGreaterThan(0);
         await Assert.That(RoundFactsTestSupport.Int(row, "PF")).IsEqualTo(RoundFactsTestSupport.Int(row, "P"));
 
-        int[] played = (row.Values["Played"]?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(int.Parse).ToArray();
-        await Assert.That(played.Length).IsGreaterThan(0);
-        for (int i = 1; i < played.Length; i++)
-        {
-            await Assert.That(played[i]).IsGreaterThanOrEqualTo(played[i - 1]);
-        }
+
+        // The flag is up for the kills after the plant and down for the rest.
+        await Assert.That(RoundFactsTestSupport.Int(row, "KP")).IsEqualTo(2);
+        await Assert.That(RoundFactsTestSupport.Int(row, "K")).IsEqualTo(14);
+
+        // Round 1's six kills before the decision read 0, its deciding kill (same frame as the
+        // decision) and round 2's first six read 1, and round 2's deciding kill reads 2.
+        await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.played_at_kill"))
+            .IsEqualTo("0,0,0,0,0,0,1,1,1,1,1,1,1,2");
+        await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.phase_at_kill"))
+            .IsEqualTo(string.Join(",", Enumerable.Repeat(2, 14)));
+
+        await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.winners")).IsEqualTo("2,3");
+        await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.status_at_decision")).IsEqualTo("2,3");
+        await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.reasons")).IsEqualTo("9,8");
+        await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.reason_at_decision")).IsEqualTo("9,8");
     }
 
     /// <summary>

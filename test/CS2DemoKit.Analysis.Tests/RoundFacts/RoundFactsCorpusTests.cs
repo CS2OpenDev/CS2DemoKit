@@ -1,6 +1,7 @@
 #region
 
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Parser;
 using CS2DemoKit.TestSupport;
@@ -54,6 +55,11 @@ public class RoundFactsCorpusTests
             on: round_decided
             keep: list
             per: match
+          rounds_played:
+            capture: event.RoundsPlayed
+            on: round_decided
+            keep: list
+            per: match
           closed_at:
             capture: event.frame_tick
             on: raw.round_officially_ended
@@ -88,9 +94,92 @@ public class RoundFactsCorpusTests
                 await Assert.That(List(run, "round_ends.reasons")).IsEqualTo(reasons).Because(label);
             }
 
+            // Rounds played counts the decisions, from 1.
+            int decisions = match.Winners.Split(',').Length;
+            await Assert.That(List(run, "round_ends.rounds_played"))
+                .IsEqualTo(string.Join(",", Enumerable.Range(1, decisions))).Because(label);
+
             // The round-end enrichment reports the server's winners.
             await Assert.That(List(run, "round_ends.closed_winners")).IsEqualTo(match.Winners).Because(label);
             await AssertRoundCloses(run, label);
+        }
+    }
+
+    /// <summary>
+    ///     Matchmaking demos whose server decided a round with no freeze end before it: a surrender
+    ///     vote passing in freeze time (reason 18, the counter-terrorists surrendered, in round 2 of
+    ///     the first; 17 in round 4 of the second), and a round decided in freeze time mid-match (round
+    ///     23 of 24 in the third). Each decision gets its own round row.
+    /// </summary>
+    public static IEnumerable<(string Demo, int Round, int Winner, int Rounds)> FreezeTimeDecisions()
+    {
+        yield return ("match730_003773181762989981708_1539622424_408.dem", 2, 2, 2);
+        yield return ("match730_003773238437230936211_1318744758_392.dem", 4, 3, 4);
+        yield return ("match730_003809070872640094459_0827290994_117.dem", 23, 3, 24);
+    }
+
+    private const string SideRounds = """
+        ruleset: side_rounds
+        for: each_team
+        stats:
+          won:
+            count: round_won
+            per: round
+          lost:
+            count: round_lost
+            per: round
+          decided:
+            count: round_decided
+            per: round
+        show:
+          tables:
+            side_rounds:
+              per: team_round
+              columns:
+                - { stat: won, label: W }
+                - { stat: lost, label: L }
+                - { stat: decided, label: D }
+        """;
+
+    /// <summary>
+    ///     A round the server decided without a freeze end is opened at its decision: every round's
+    ///     two rows hold one decision, one win and one loss, the round numbers run 1..rounds played,
+    ///     and the freeze-time round is won by the side the server named. Before, the decision and its
+    ///     close folded into the previous round's rows (won 2 for one side, lost 2 for the other) and
+    ///     every later round was numbered one short.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(FreezeTimeDecisions))]
+    public async Task ARoundDecidedInFreezeTime_GetsItsOwnRows((string Demo, int Round, int Winner, int Rounds) match)
+    {
+        string path = DemoTestHelper.RequireDemo(match.Demo);
+        IReadOnlyList<RulesetDoc> rules = RoundFactsTestSupport.Load(RoundEnds, SideRounds);
+
+        foreach ((string label, AnalysisRun run) in RunBothPaths(path, rules))
+        {
+            await Assert.That(List(run, "round_ends.rounds_played"))
+                .IsEqualTo(string.Join(",", Enumerable.Range(1, match.Rounds))).Because(label);
+
+            MetricTable table = run.ProjectConfiguredOutputs().Single(t => t.Name == "side_rounds");
+            List<IGrouping<int, MetricRow>> rounds = table.Rows
+                .GroupBy(r => RoundFactsTestSupport.Dim(r, "round_number")).OrderBy(g => g.Key).ToList();
+            await Assert.That(string.Join(",", rounds.Select(g => g.Key)))
+                .IsEqualTo(string.Join(",", Enumerable.Range(1, match.Rounds))).Because(label);
+
+            foreach (IGrouping<int, MetricRow> round in rounds)
+            {
+                string because = $"{label}: round {round.Key}";
+                await Assert.That(round.Count()).IsEqualTo(2).Because(because);
+                foreach (MetricRow side in round)
+                {
+                    await Assert.That(RoundFactsTestSupport.Int(side, "D")).IsEqualTo(1).Because(because);
+                    await Assert.That((RoundFactsTestSupport.Int(side, "W") ?? 0) + (RoundFactsTestSupport.Int(side, "L") ?? 0))
+                        .IsEqualTo(1).Because(because);
+                }
+            }
+
+            MetricRow winner = rounds.Single(g => g.Key == match.Round).Single(r => RoundFactsTestSupport.Int(r, "W") == 1);
+            await Assert.That(RoundFactsTestSupport.Dim(winner, "side")).IsEqualTo(match.Winner).Because(label);
         }
     }
 

@@ -3,6 +3,10 @@
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.GameEvents;
+using CS2DemoKit.TestSupport;
+
+using CS2OpenSchema.Protos;
 
 #endregion
 
@@ -39,6 +43,87 @@ public class TeamBindingViewTests
         // actor: any suppresses the binding, and with it the reads it would make.
         await Assert.That(rs.Stats[1].DeclaredReads).DoesNotContain("enrich.round.winner_team");
     }
+
+    /// <summary>
+    ///     A subject on neither side (a spectator or coach on team 1, or a slot whose team was never
+    ///     seen) neither wins nor loses a round. The winner is always 2 or 3, so a lost binding of
+    ///     <c>winner_team != player.team</c> alone had them lose every decided round. Synthetic
+    ///     frames: a terrorist, a counter-terrorist and a spectator, one round closed with the
+    ///     counter-terrorists as the (derived) winner.
+    /// </summary>
+    [Test]
+    [Category("Unit")]
+    public async Task EachPlayer_ASubjectOnNeitherSide_NeitherWinsNorLoses()
+    {
+        ParsedDemo sample = RoundFactsTestSupport.Sample();
+        Dictionary<int, PlayerInfo> players = new()
+        {
+            [0] = new PlayerInfo(0, "T", 0UL, 0, 2, false),
+            [1] = new PlayerInfo(1, "CT", 0UL, 1, 3, false),
+            [2] = new PlayerInfo(2, "Spectator", 0UL, 2, 1, false)
+        };
+
+        DemoFrame[] frames =
+        [
+            Frame(1,
+                TestGameEvents.PlayerTeam(0, 2),
+                TestGameEvents.PlayerTeam(1, 3),
+                TestGameEvents.PlayerTeam(2, 1)),
+            Frame(2, TestGameEvents.RoundFreezeEnd(2, 2, 2)),
+            Frame(3, TestGameEvents.RoundOfficiallyEnded(3, 3, 3))
+        ];
+
+        ParsedDemo demo = new(frames, [], players, null, "de_anytown", 3, 1f / 64f, "test", "test", "csgo",
+            sample.BuildNumber, 0, 0, "valve_demo_2", "", "", sample.Profile);
+
+        AnalysisRun run = RoundFactsTestSupport.Run(demo, """
+            ruleset: wl
+            for: each_player
+            stats:
+              won:
+                count: round_won
+                per: match
+              lost:
+                count: round_lost
+                per: match
+              closed:
+                count: round_ended
+                per: match
+            show:
+              tables:
+                wl:
+                  per: player_match
+                  columns:
+                    - { stat: won, label: Won }
+                    - { stat: lost, label: Lost }
+                    - { stat: closed, label: Closed }
+            """);
+
+        MetricTable table = RoundFactsTestSupport.Table(run, "wl", demo);
+        string Row(int slot)
+        {
+            MetricRow row = table.Rows.Single(r => RoundFactsTestSupport.Dim(r, "player_slot") == slot);
+            return $"{RoundFactsTestSupport.Int(row, "Won") ?? 0}/{RoundFactsTestSupport.Int(row, "Lost") ?? 0}/"
+                   + $"{RoundFactsTestSupport.Int(row, "Closed") ?? 0}";
+        }
+
+        // The round closed for all three; the CT side won it.
+        await Assert.That(Row(0)).IsEqualTo("0/1/1");
+        await Assert.That(Row(1)).IsEqualTo("1/0/1");
+        await Assert.That(Row(2)).IsEqualTo("0/0/1");
+    }
+
+    private static DemoFrame Frame(int tick, params GameEvent[] events) => new()
+    {
+        CommandKind = EDemoCommands.DemPacket,
+        FrameNumber = tick,
+        ServerTick = tick,
+        RawStart = 0,
+        RawLength = 1,
+        HeaderLength = 1,
+        IsCompressed = false,
+        MessageList = [.. events.Select(e => (NetMessage)GameEventMessage.ForSynthesizedEvent(e))]
+    };
 
     /// <summary>
     ///     Each closed round, exactly the players on the side the server named read <c>won</c>, and

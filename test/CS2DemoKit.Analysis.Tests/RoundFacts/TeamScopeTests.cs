@@ -40,6 +40,46 @@ public class TeamScopeTests
             capture: round.team.equipment
             on: raw.round_freeze_end
             per: round
+          enemy_equipment:
+            capture: round.enemies.equipment
+            on: raw.round_freeze_end
+            per: round
+          money:
+            capture: round.team.money
+            on: raw.round_freeze_end
+            per: round
+          enemy_money:
+            capture: round.enemies.money
+            on: raw.round_freeze_end
+            per: round
+          players:
+            capture: round.team.players
+            on: raw.round_freeze_end
+            per: round
+          enemy_players:
+            capture: round.enemies.players
+            on: raw.round_freeze_end
+            per: round
+          alive:
+            capture: round.team.alive
+            on: raw.round_freeze_end
+            per: round
+          enemies_alive:
+            capture: round.enemies.alive
+            on: raw.round_freeze_end
+            per: round
+          alive_after_kill:
+            capture: round.team.alive
+            on: kill
+            match: { actor: any }
+            keep: list
+            per: round
+          enemies_alive_after_kill:
+            capture: round.enemies.alive
+            on: kill
+            match: { actor: any }
+            keep: list
+            per: round
           side:
             capture: team.side
             on: round_ended
@@ -56,6 +96,15 @@ public class TeamScopeTests
                 - { stat: won, label: W }
                 - { stat: lost, label: L }
                 - { stat: equipment, label: EQ }
+                - { stat: enemy_equipment, label: EEQ }
+                - { stat: money, label: M }
+                - { stat: enemy_money, label: EM }
+                - { stat: players, label: TP }
+                - { stat: enemy_players, label: EP }
+                - { stat: alive, label: TA }
+                - { stat: enemies_alive, label: EA }
+                - { stat: alive_after_kill, label: TAK }
+                - { stat: enemies_alive_after_kill, label: EAK }
                 - { stat: side, label: S }
             sides_match:
               per: team_match
@@ -74,6 +123,10 @@ public class TeamScopeTests
             capture: round.team.equipment
             on: raw.round_freeze_end
             per: round
+          money:
+            capture: player.money
+            on: raw.round_freeze_end
+            per: round
         show:
           tables:
             players:
@@ -81,6 +134,7 @@ public class TeamScopeTests
               columns:
                 - { stat: kills, label: K }
                 - { stat: equipment, label: EQ }
+                - { stat: money, label: M }
         """;
 
     // ── resolver and validator ─────────────────────────────────────────────
@@ -250,6 +304,135 @@ public class TeamScopeTests
         await Assert.That(scopeError).IsEqualTo(!legal).Because($"{reader} reading {readee}");
     }
 
+    /// <summary>
+    ///     A team ruleset reads a used ruleset's stat in compute: only. In a where: or a capture:
+    ///     the read is a validation error; both used to validate clean and throw at build.
+    /// </summary>
+    [Test]
+    [Arguments("each_team", "where")]
+    [Arguments("each_team", "capture")]
+    [Arguments("match", "where")]
+    [Arguments("match", "capture")]
+    public async Task ATeamRuleset_ReadsAnotherRulesetsStat_InComputeOnly(string readee, string site)
+    {
+        string stat = site == "where"
+            ? """
+                s:
+                  count: kill
+                  where: "source.kills > 0"
+                  per: round
+              """
+            : """
+                s:
+                  capture: source.kills
+                  on: round_ended
+                  per: round
+              """;
+        RulesetValidationResult validation = DemoAnalysis.ValidateRulesets(RoundFactsTestSupport.Load($$"""
+            ruleset: source
+            for: {{readee}}
+            exports: [kills]
+            stats:
+              kills:
+                count: kill
+                per: round
+            """, """
+            ruleset: reader
+            for: each_team
+            use: [source]
+            stats:
+
+            """ + stat));
+
+        await Assert.That(validation.Diagnostics.Any(d => d.Code == ResolveDiagnosticCodes.TeamScopeUnsupported
+                                                          && d.Message.Contains("source.kills", StringComparison.Ordinal)))
+            .IsTrue().Because(string.Join("; ", validation.Diagnostics.Select(d => d.Code + " " + d.Message)));
+    }
+
+    [Test]
+    public async Task ATeamRuleset_ReadsTheClutchSize_InATally_IsAValidationError()
+    {
+        RulesetValidationResult validation = DemoAnalysis.ValidateRulesets(RoundFactsTestSupport.Load("""
+            ruleset: bad
+            for: each_team
+            stats:
+              c1:
+                count: kill
+                per: round
+              t:
+                tally: round.clutch.size
+                thresholds:
+                  - { min: 1, target: c1 }
+                per: round
+            """));
+
+        await Assert.That(validation.Diagnostics.Any(d => d.Code == ResolveDiagnosticCodes.TeamScopeUnsupported)).IsTrue();
+    }
+
+    /// <summary>
+    ///     A team ruleset's compute: over a match stat and over another team ruleset's stat builds and
+    ///     evaluates: every side reads the match's kills that round, and a side reads its own kills
+    ///     through the other team ruleset.
+    /// </summary>
+    [Test]
+    [Category("Integration")]
+    [NotInParallel]
+    public async Task Sample_ATeamRuleset_ComputesOverMatchAndTeamStats()
+    {
+        ParsedDemo demo = RoundFactsTestSupport.Sample();
+        AnalysisRun run = RoundFactsTestSupport.Run(demo, """
+            ruleset: all_kills
+            for: match
+            exports: [kills]
+            stats:
+              kills:
+                count: kill
+                per: round
+            """, """
+            ruleset: side_kills
+            for: each_team
+            exports: [kills]
+            stats:
+              kills:
+                count: kill
+                per: round
+            """, """
+            ruleset: reader
+            for: each_team
+            use: [all_kills, side_kills]
+            stats:
+              round_kills:
+                compute: "all_kills.kills"
+                per: round
+              doubled:
+                compute: "side_kills.kills * 2"
+                per: round
+              own:
+                count: kill
+                per: round
+            show:
+              tables:
+                r:
+                  per: team_round
+                  columns:
+                    - { stat: round_kills, label: RK }
+                    - { stat: doubled, label: D }
+                    - { stat: own, label: K }
+            """);
+
+        MetricTable table = RoundFactsTestSupport.Table(run, "r", demo);
+        await Assert.That(table.Rows.Count).IsGreaterThan(0);
+        foreach (IGrouping<int, MetricRow> round in table.Rows.GroupBy(r => RoundFactsTestSupport.Dim(r, "round_number")))
+        {
+            int roundKills = round.Sum(r => RoundFactsTestSupport.Int(r, "K") ?? 0);
+            foreach (MetricRow side in round)
+            {
+                await Assert.That(RoundFactsTestSupport.Int(side, "RK")).IsEqualTo(roundKills);
+                await Assert.That(RoundFactsTestSupport.Int(side, "D")).IsEqualTo(2 * (RoundFactsTestSupport.Int(side, "K") ?? 0));
+            }
+        }
+    }
+
     [Test]
     public async Task TeamTables_LowerToTheTeamScopes()
     {
@@ -267,7 +450,10 @@ public class TeamScopeTests
     /// <summary>
     ///     Two rows per round, one per side; the sides' kills add up to the round's kills; exactly one
     ///     side wins each decided round, the one round_decided named; each side's roster is its five
-    ///     players at freeze end; and a side's equipment is what each of its players reads.
+    ///     players at freeze end; a side's equipment is what each of its players reads, and its money
+    ///     the sum of theirs; and round.team.* / round.enemies.* read the side and the other side,
+    ///     not the other way round: a side's enemies are the other side's team, and at the round's
+    ///     last kill the side that lost has no one alive.
     /// </summary>
     [Test]
     [Category("Integration")]
@@ -308,17 +494,47 @@ public class TeamScopeTests
 
             foreach (MetricRow side in round)
             {
-                await Assert.That(RoundFactsTestSupport.Int(side, "S")).IsEqualTo(RoundFactsTestSupport.Dim(side, "side"));
+                int sideNumber = RoundFactsTestSupport.Dim(side, "side");
+                string because = $"round {round.Key} side {sideNumber}";
+                MetricRow other = round.Single(r => RoundFactsTestSupport.Dim(r, "side") != sideNumber);
+                await Assert.That(RoundFactsTestSupport.Int(side, "S")).IsEqualTo(sideNumber);
 
                 int[] slots = (side.Dimensions["slots"]?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
                     .Select(int.Parse).ToArray();
-                await Assert.That(slots.Length).IsEqualTo(5).Because($"round {round.Key} side {side.Dimensions["side"]}");
+                await Assert.That(slots.Length).IsEqualTo(5).Because(because);
+                int memberMoney = 0;
                 foreach (int slot in slots)
                 {
                     MetricRow member = roundPlayers.Single(r => RoundFactsTestSupport.Dim(r, "player_slot") == slot);
                     await Assert.That(RoundFactsTestSupport.Int(member, "EQ")).IsEqualTo(RoundFactsTestSupport.Int(side, "EQ"));
+                    memberMoney += RoundFactsTestSupport.Int(member, "M") ?? 0;
                 }
+
+                await Assert.That(RoundFactsTestSupport.Int(side, "M")).IsEqualTo(memberMoney).Because(because);
+
+                // Five a side, all alive at freeze end.
+                foreach (string column in (string[])["TP", "EP", "TA", "EA"])
+                {
+                    await Assert.That(RoundFactsTestSupport.Int(side, column)).IsEqualTo(5).Because($"{because} {column}");
+                }
+
+                // The enemies are the other side.
+                await Assert.That(RoundFactsTestSupport.Int(side, "EEQ")).IsEqualTo(RoundFactsTestSupport.Int(other, "EQ"))
+                    .Because(because);
+                await Assert.That(RoundFactsTestSupport.Int(side, "EM")).IsEqualTo(RoundFactsTestSupport.Int(other, "M"))
+                    .Because(because);
+                string aliveAfterKill = side.Values["TAK"]?.ToString() ?? "";
+                await Assert.That(aliveAfterKill).IsNotEmpty().Because(because);
+                await Assert.That(aliveAfterKill).IsEqualTo(other.Values["EAK"]?.ToString()).Because(because);
+
+                // Both rounds on the sample end in an elimination, so the loser's count reaches 0.
+                bool lost = sideNumber != winners[round.Key - 1];
+                await Assert.That(aliveAfterKill.EndsWith(",0", StringComparison.Ordinal)).IsEqualTo(lost).Because(because);
             }
+
+            // The two sides' equipment differ on the sample, so a swapped read cannot pass above.
+            await Assert.That(RoundFactsTestSupport.Int(round.First(), "EQ"))
+                .IsNotEqualTo(RoundFactsTestSupport.Int(round.Last(), "EQ"));
         }
 
         MetricTable match = RoundFactsTestSupport.Table(run, "sides_match", demo);

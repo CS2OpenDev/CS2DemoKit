@@ -392,6 +392,9 @@ counts the new `round_ended` view, which fires for everyone as the unbound `roun
 shipped rulesets are migrated and their values are unchanged, but the resolved-identity hashes of
 the four migrated stats change with their view, so a cache keyed on those hashes (a highlight
 fingerprint that reaches them) rebuilds once. At `for: match` both views stay unbound.
+A subject on neither side (team 0, a slot whose team was never seen, or team 1, a spectator, coach
+or caster) reads neither view: the winner is always 2 or 3, so `round_lost` also requires the
+subject to be on 2 or 3.
 
 ### `for: match` stats reset per round, and restart with the match (0.13.0)
 
@@ -429,7 +432,11 @@ A third scope builds a ruleset once per side. Additions a consumer compiled agai
   the singleton reads described below: its constructor and `Deconstruct` changed shape, and the
   binary, source and equality consequences described under `CatalogEnrichment` above apply.
 - New resolve codes: `resolve.show.table-scope-mismatch`, `resolve.show.scoreboard-scope`,
-  `resolve.team-scope.unsupported`.
+  `resolve.team-scope.unsupported`. The last covers the clutch reads (`round.alive.in_clutch`,
+  `round.clutch.size`) in any stat, a `tally:` source included, and a read of another ruleset's
+  stat anywhere but `compute:`. A team ruleset's `compute:` reads a `for: match` or another
+  `for: each_team` ruleset's stat; in a `where:`, `while:`, `capture:`, `sum:`, `tally:` or bucket
+  key the read used to validate clean and throw at build.
 
 ### Configured tables project without snapshots (0.13.0)
 
@@ -455,7 +462,21 @@ the round when both arrive in one frame. `$round_end` is unchanged and still the
 The three game-rules providers it reads (`entity.game.round_win_status`, `round_win_reason`,
 `total_rounds_played`) are tracked whenever a scanner is built, and `enrich.round.win_reason` is new,
 so every build carries four more static nodes: the rules-output fixtures moved by `nodeCount + 4` and
-their hash, and a consumer that counts `BuildResult.Nodes` or snapshot columns sees them.
+their hash, and a consumer that counts `BuildResult.Nodes` or snapshot columns sees them. One that no
+rule reads is tracked silently: its node updates, but no change marker is dispatched for it, so the
+only new messages are the `round_decided` events themselves (three on the sample, one per decided
+round), each of which adds one to `MessagesConsumed` and, on a snapshot run, one snapshot row.
+
+A round the server decides without a freeze end (a surrender vote passing in freeze time, or a side
+with nobody left to play) is opened at its decision: when a second `round_decided` arrives with no
+`round_freeze_end` since the first, the evaluator dispatches a synthesized `round_freeze_end` on the
+decision's frame just before it. `round.number` moves only on a freeze end, so without that the
+round's decision and close landed in the previous round's rows (a side's `round_won` read 2 and the
+other's `round_lost` 2), and on a demo where it happens mid-match every later round was numbered one
+short of the server's `m_totalRoundsPlayed`. It happens on 8 of the 282 matchmaking demos measured
+(reasons 17 and 18, the surrenders, and 8 on the mid-match one). A rule that counts
+`raw.round_freeze_end` sees the synthesized one, and the round-scoped reset, the freeze-end economy
+and the side rosters run on it as on a real one. On a demo with no such round nothing changes.
 
 `RoundEndEnrichmentEdge` writes the reason too, so its constructor gained a required parameter,
 `TransientValueNode<int> winReason`, between `winnerSide` and `messageType`. Code that constructs the

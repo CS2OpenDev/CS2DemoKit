@@ -126,6 +126,102 @@ public class RoundDecidedTests
     }
 
     /// <summary>
+    ///     A second decision with no freeze end since the first is a round decided in freeze time (a
+    ///     surrender vote). The evaluator opens it with a synthesized round_freeze_end on the
+    ///     decision's frame, dispatched just before the decision, so the round number moves.
+    /// </summary>
+    [Test]
+    public async Task Evaluator_OpensARound_ForASecondDecisionWithNoFreezeEndBetween()
+    {
+        EntityChangeScanner scanner = LatchScanner();
+        scanner.InjectDigests([Digest(0, 0, 0), Digest(3, 8, 1), Digest(0, 0, 1), Digest(2, 18, 2)]);
+
+        StateGraph graph = new();
+        List<string> log = [];
+        graph.AddEdge(new FreezeEndLog(graph.Root, log));
+        graph.AddEdge(new RecordingEdge(graph.Root, typeof(RoundDecidedEvent), log,
+            p => p is RoundDecidedEvent e ? $"decided {e.Winner}/{e.Reason}/{e.RoundsPlayed}" : "?"));
+
+        new StateGraphEvaluator(graph, null, null, scanner).Evaluate(
+        [
+            Frame(10, GameEventMessage.ForSynthesizedEvent(TestGameEvents.RoundFreezeEnd(10, 10, 10))),
+            Frame(11),
+            Frame(12),
+            Frame(13)
+        ]);
+
+        await Assert.That(string.Join(", ", log))
+            .IsEqualTo("freeze@10, decided 3/8/1, synthesized freeze@13, decided 2/18/2");
+    }
+
+    /// <summary>With a freeze end between the two decisions, nothing is synthesized.</summary>
+    [Test]
+    public async Task Evaluator_OpensNoRound_WhenAFreezeEndCameBetween()
+    {
+        EntityChangeScanner scanner = LatchScanner();
+        scanner.InjectDigests([Digest(0, 0, 0), Digest(3, 8, 1), Digest(0, 0, 1), Digest(2, 9, 2)]);
+
+        StateGraph graph = new();
+        List<string> log = [];
+        graph.AddEdge(new FreezeEndLog(graph.Root, log));
+        graph.AddEdge(new RecordingEdge(graph.Root, typeof(RoundDecidedEvent), log,
+            p => p is RoundDecidedEvent e ? $"decided {e.Winner}" : "?"));
+
+        new StateGraphEvaluator(graph, null, null, scanner).Evaluate(
+        [
+            Frame(10, GameEventMessage.ForSynthesizedEvent(TestGameEvents.RoundFreezeEnd(10, 10, 10))),
+            Frame(11),
+            Frame(12, GameEventMessage.ForSynthesizedEvent(TestGameEvents.RoundFreezeEnd(12, 12, 12))),
+            Frame(13)
+        ]);
+
+        await Assert.That(string.Join(", ", log)).IsEqualTo("freeze@10, decided 3, freeze@12, decided 2");
+    }
+
+    /// <summary>
+    ///     A game-rules singleton tracked only for round_decided updates its value node but
+    ///     dispatches no change marker: a build that reads none of them dispatches no extra messages.
+    ///     round_decided itself still fires.
+    /// </summary>
+    [Test]
+    public async Task Scanner_TracksASilentProvider_WithoutAMarker()
+    {
+        List<(IEntityValueProvider, StateNode)> tracked = [];
+        foreach (string name in _latchProviders)
+        {
+            IEntityValueProvider provider = BuiltinProviderSpecs.CreateGameRulesProviders().Single(p => p.ContextName == name);
+            tracked.Add((provider, new GenericValueNode<int>(name)));
+        }
+
+        HashSet<IEntityValueProvider> silent = new(tracked.Select(t => t.Item1), ReferenceEqualityComparer.Instance);
+        EntityChangeScanner scanner = new(new EntityStateLayer([]), tracked, null, false, null, null, silent);
+        scanner.InjectDigests([Digest(0, 0, 0), Digest(3, 8, 1), Digest(0, 0, 1)]);
+
+        int markers = 0, decided = 0;
+        for (int frame = 0; frame < 3; frame++)
+        {
+            markers += scanner.AdvanceAndPollAt(frame, frame).OfType<EntityChangeMessage>().Count();
+            decided += scanner.TakePostFrameMessages().Count;
+        }
+
+        await Assert.That(markers).IsEqualTo(0);
+        await Assert.That(decided).IsEqualTo(1);
+        await Assert.That(((GenericValueNode<int>)tracked[2].Item2).Value).IsEqualTo(1);
+
+        // The same scanner without the silent set emits a marker per rising change.
+        EntityChangeScanner loud = LatchScanner();
+        loud.InjectDigests([Digest(0, 0, 0), Digest(3, 8, 1), Digest(0, 0, 1)]);
+        int loudMarkers = 0;
+        for (int frame = 0; frame < 3; frame++)
+        {
+            loudMarkers += loud.AdvanceAndPollAt(frame, frame).OfType<EntityChangeMessage>().Count();
+            loud.TakePostFrameMessages();
+        }
+
+        await Assert.That(loudMarkers).IsGreaterThan(0);
+    }
+
+    /// <summary>
     ///     On the sample: three decisions, the first in the warmup before the second
     ///     begin_new_match. Winners, reasons and frames as read off the game rules.
     /// </summary>
@@ -138,10 +234,11 @@ public class RoundDecidedTests
         BuildResult build = DemoAnalysis.Build(demo, RoundFactsTestSupport.Load(WinnerLists));
         List<string> log = [];
         build.Graph.AddEdge(new RecordingEdge(build.Graph.Root, typeof(RoundDecidedEvent), log,
-            p => p is RoundDecidedEvent e ? $"{e.GameTick}:{e.Winner}/{e.Reason}" : "?"));
+            p => p is RoundDecidedEvent e ? $"{e.GameTick}:{e.Winner}/{e.Reason}/{e.RoundsPlayed}" : "?"));
         AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
 
-        await Assert.That(string.Join(" ", log)).IsEqualTo("3636:3/8 13564:2/9 17469:3/8");
+        // Rounds played counts the warmup decision, then restarts with the match.
+        await Assert.That(string.Join(" ", log)).IsEqualTo("3636:3/8/1 13564:2/9/1 17469:3/8/2");
 
         // The round-end enrichment reports the latched verdict: its winners are round_decided's,
         // for the rounds after the restart both lists keep.
@@ -215,6 +312,22 @@ public class RoundDecidedTests
                 - { stat: closed, label: Closed }
                 - { stat: reasons_at_close, label: ReasonsAtClose }
         """;
+
+    /// <summary>Records each round_freeze_end with its frame, marking the synthesized ones.</summary>
+    private sealed class FreezeEndLog(StateNode source, List<string> log) : StateEdge(source)
+    {
+        public override Type MessageType => typeof(RoundFreezeEndEvent);
+
+        public override bool TryApply(EvaluationContext context) => false;
+
+        public override bool TryApplyDirect(object payload, EvaluationContext context)
+        {
+            // A freeze end the frame did not carry is one the evaluator synthesized.
+            bool synthesized = !context.Frame.MessageList.Contains(context.Message);
+            log.Add($"{(synthesized ? "synthesized " : "")}freeze@{context.GameTick}");
+            return false;
+        }
+    }
 
     /// <summary>Records one line per dispatched payload of its message type, in dispatch order.</summary>
     private sealed class RecordingEdge(StateNode source, Type type, List<string> log, Func<object, string> describe)

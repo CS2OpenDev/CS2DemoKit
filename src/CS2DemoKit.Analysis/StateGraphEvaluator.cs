@@ -119,6 +119,11 @@ public sealed class StateGraphEvaluator
     private readonly HashSet<StateNode> _risingEdgeFiredThisMessage = new(ReferenceEqualityComparer.Instance);
     private readonly List<IRoundScopedNode> _roundScopedNodes = [];
 
+    // Whether a round_decided has been dispatched since the last round_freeze_end (or match
+    // restart). A second decision with no freeze end between is a round the server decided in
+    // freeze time, and the evaluator opens it before dispatching the decision.
+    private bool _roundDecidedSinceFreezeEnd;
+
     // ── Dispatch filtering ─────────────────────────────────────────────────
     private readonly Dictionary<StateNode, HashSet<Type>> _sourceToDispatchKeys = new(ReferenceEqualityComparer.Instance);
 
@@ -486,6 +491,7 @@ public sealed class StateGraphEvaluator
         HighlightsFired = [];
         RoundOfficiallyEndedSeen = 0;
         CsPreRestartSeen = 0;
+        _roundDecidedSinceFreezeEnd = false;
 
         // Static ruleset nodes start from their build-time values, so evaluating one build twice
         // does not carry the first run's totals into the second. A no-op on a fresh build.
@@ -638,11 +644,13 @@ public sealed class StateGraphEvaluator
 
                 if (key == typeof(RoundFreezeEndEvent))
                 {
+                    _roundDecidedSinceFreezeEnd = false;
                     ResetRoundScopedNodes(snap);
                     snap?.MarkRoundScopedDirty(_roundScopedNodes);
                 }
                 else if (key == typeof(BeginNewMatchEvent))
                 {
+                    _roundDecidedSinceFreezeEnd = false;
                     ResetForMatchRestart(snap);
                 }
                 else if (key == typeof(RoundOfficiallyEndedEvent))
@@ -683,24 +691,53 @@ public sealed class StateGraphEvaluator
                 for (int p = 0; p < postFrame.Count; p++)
                 {
                     NetMessage postMsg = postFrame[p];
-                    Observer?.BeforeMessage(GetDispatchKey(postMsg));
-                    if (postMsg is GameEventMessage pgem)
+                    if (postMsg is GameEventMessage { DecodedEvent: RoundDecidedEvent decided })
                     {
-                        MaterializeNewPlayers(pgem.DecodedEvent);
-                        snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                        // A second decision since the last freeze end is a round that never left
+                        // freeze time: a surrender vote passing in the freeze period, or a side
+                        // forfeiting with nobody left to play. round_number moves only on
+                        // round_freeze_end, so without one both decisions would land in the same
+                        // round row. Open the round first, with a synthesized freeze end on the
+                        // decision's frame, through the same reset a real one runs.
+                        if (_roundDecidedSinceFreezeEnd)
+                        {
+                            DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(new GameEvent(
+                                "round_freeze_end", -1, decided.FrameNumber, decided.ServerTick, decided.GameTick,
+                                new RoundFreezeEndEvent())));
+                        }
+
+                        _roundDecidedSinceFreezeEnd = true;
                     }
 
-                    Type pKey = GetDispatchKey(postMsg);
-                    int pEvaluated = 0, pFired = 0, pLogic = 0;
-                    EvaluateEdgesInstrumented(new EvaluationContext(postMsg, frame), pKey,
-                        trace, ref pEvaluated, ref pFired,
-                        snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
-                    CheckLogicNodesInstrumented(events, pKey, frameIdx, frame.ServerTick,
-                        trace, ref pLogic, snap);
-
-                    FinishMessage(postMsg, pEvaluated, pFired, pLogic);
-                    Observer?.AfterMessage();
+                    DispatchPostFrame(postMsg);
                 }
+            }
+
+            void DispatchPostFrame(NetMessage postMsg)
+            {
+                Type pKey = GetDispatchKey(postMsg);
+                Observer?.BeforeMessage(pKey);
+                if (postMsg is GameEventMessage pgem)
+                {
+                    MaterializeNewPlayers(pgem.DecodedEvent);
+                    snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                }
+
+                if (pKey == typeof(RoundFreezeEndEvent))
+                {
+                    ResetRoundScopedNodes(snap);
+                    snap?.MarkRoundScopedDirty(_roundScopedNodes);
+                }
+
+                int pEvaluated = 0, pFired = 0, pLogic = 0;
+                EvaluateEdgesInstrumented(new EvaluationContext(postMsg, frame), pKey,
+                    trace, ref pEvaluated, ref pFired,
+                    snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
+                CheckLogicNodesInstrumented(events, pKey, frameIdx, frame.ServerTick,
+                    trace, ref pLogic, snap);
+
+                FinishMessage(postMsg, pEvaluated, pFired, pLogic);
+                Observer?.AfterMessage();
             }
 
             if (timeFrame)

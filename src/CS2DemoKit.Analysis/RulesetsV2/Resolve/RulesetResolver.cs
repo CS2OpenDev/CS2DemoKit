@@ -800,6 +800,7 @@ public static class RulesetResolver
             }
 
             reads.Collect(source);
+            RejectPlayerSubjectReads(stat, reads);
 
             List<(int Min, string Target)> tallyThresholds = [];
             foreach (TallyThreshold threshold in thresholds)

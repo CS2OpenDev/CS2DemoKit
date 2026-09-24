@@ -103,14 +103,24 @@ know the CS2 conventions. Common views:
 
 A round ends twice. **`round_decided`** fires on the frame the server decides the round, read off
 the game rules' round-win status: its facets are `winner_side` (2 = T, 3 = CT), `reason` (the
-engine's round-end reason: 7 bomb defused, 8 and 9 elimination, 12 time ran out) and
-`rounds_played`. It is synthesized from entity state, so its `event.tick` is the frame clock, and
+engine's round-end reason: 1 the bomb exploded, 7 bomb defused, 8 and 9 elimination, 12 time
+ran out, 17 and 18 a surrender) and `rounds_played`. It is synthesized from entity state, so its `event.tick` is the frame clock, and
 it is dispatched after the frame's own events, so it follows the kill that decided the round.
 **`round_ended`** is the round's close (`round_officially_ended` on a matchmaking demo, 448 ticks
-later; 544 at the end of a half, when the break is waited out first), bound to nobody: its facets
+later; 544 at the end of a half, when the break is waited out first; the match's last round has no
+`round_officially_ended` and closes on `cs_win_panel_match`, 193 ticks after the decision on the
+demos measured), bound to nobody: its facets
 are `winner_side`, `winner_team`, `has_winner` and `win_reason`. Every round-end stat (survived,
 KAST) is timed on the close. The winner at the close is the server's verdict from the decision,
 not a guess from who is left alive.
+
+A round the server decides without it ever leaving freeze time (a surrender vote that passes in the
+freeze period, or a side with nobody left to play) has no `round_freeze_end`, and `round.number`
+only moves on one. So when a second `round_decided` arrives with no freeze end since the first,
+the engine opens the round itself: it dispatches a synthesized `round_freeze_end` on the decision's
+frame, just before the `round_decided`, which moves `round.number`, resets the round's stats and
+samples the freeze-end economy and rosters like a real one. That round gets its own rows, and
+`round.number` stays level with `rounds_played`. A `raw.round_freeze_end` stat sees it too.
 
 `enemy_spotted` is a view as well, but it is *synthesized* from recomputed visibility rather than
 read off the wire, so it only fires on a run set up for it — read "Facets that need a map bake" in
@@ -134,7 +144,8 @@ player's* kills). At `for: match`, there's no subject, so `count: kill` counts *
 `round_won` and `round_lost` bind by team: for `for: each_player` they fire on the round's close
 only for the players whose team (their live team, so the halftime swap is followed) won or lost
 it, so `count: round_won` is this player's round wins and `count: round_won` + `count: round_lost`
-is one per decided round. A stat about the round rather than its result, such as "rounds survived",
+is one per decided round for a player on a side. A player on neither side (a spectator, a coach, a
+slot whose team has not been seen) reads neither. A stat about the round rather than its result, such as "rounds survived",
 counts `round_ended` instead, which fires for everyone. (Before 0.13.0 the binding was not applied
 and both views fired for every player, so a ruleset that counted losses as `round_won` with a
 `where:` on the winner now reads 0: count `round_lost`.) At `for: match` both views fire on every
@@ -387,9 +398,12 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   for the whole game, so they read the same in every scope.
   - `match.round_win_status` — `0` while the round is undecided, `2` once the terrorists have won
     it, `3` once the counter-terrorists have.
-  - `match.round_win_reason` — the engine's round-end reason, set with the status: `7` bomb
-    defused, `8` counter-terrorists eliminated the terrorists, `9` terrorists eliminated the
-    counter-terrorists, `12` target saved (time ran out). `0` while undecided.
+  - `match.round_win_reason` — the engine's round-end reason, set with the status: `1` target
+    bombed (the bomb exploded), `7` bomb defused, `8` counter-terrorists eliminated the terrorists,
+    `9` terrorists eliminated the counter-terrorists, `12` target saved (time ran out), `17` the
+    terrorists surrendered, `18` the counter-terrorists surrendered. `0` while undecided. Those are
+    the reasons seen on the matchmaking demos measured, not the engine's whole list, so a filter
+    meant to cover every outcome should not enumerate reasons.
   - `match.total_rounds_played` — rounds decided so far this match; `0` before round 1. It
     increments on the frame a round is decided, not when the next one starts.
   - `match.game_phase` — `2` first half, `4` the halftime break, `3` second half, `5` match over.
@@ -401,7 +415,9 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   **Read the status and reason on `round_decided`, not at the round's close.** They go back to
   `0` at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo, and
   that is the event `round_ended` (and every round-end stat) fires on, so a read of either there is
-  `0`. At the close the winner and reason are `enrich.round.winner_side` and
+  `0`, except on the match's last round: its close is `cs_win_panel_match`, 193 ticks after the
+  decision on the demos measured, before the status resets, so there the status still reads the
+  winner. At the close the winner and reason are `enrich.round.winner_side` and
   `enrich.round.win_reason` (the `winner_side` and `win_reason` facets of `round_ended`).
 - **Team aggregates (subject-relative):** `round.team.alive` / `round.enemies.alive`,
   `round.team.players` / `round.enemies.players`, `round.team.equipment` /
@@ -593,8 +609,10 @@ row per side: `per: team_round` gives one row per round per side, `per: team_mat
   comma-joined slots of the side's connected players at that round's freeze end. `slots` is the join
   key to a per-player table: it says which side a player was on *in that round*, where a
   `player_round` table's `team` is the side the player finished the match on.
-- No `highlights:` and no `scoreboard:` (both are attributed to players), and it may `use:` a
-  `for: match` or another `for: each_team` ruleset, but not a per-player one.
+- No `highlights:` and no `scoreboard:` (both are attributed to players). It may `use:` a
+  `for: match` or another `for: each_team` ruleset, but not a per-player one, and it reads the used
+  ruleset's stats in `compute:` only: a read in `where:`, `while:`, `capture:`, `sum:`, `tally:` or
+  a bucket key is a validation error (`resolve.team-scope.unsupported`).
 
 ```yaml
 ruleset: side_economy
@@ -618,7 +636,10 @@ show:
 `src/CS2DemoKit.Analysis/Rules/examples/round_facts.rules.yaml` is a complete one: the side's buy
 (with its thresholds as `params:`), the decision, the plant, and the kill timeline with the
 man-count after each kill, per round per side, every tick on the frame clock. A tick column of a
-thing that did not happen that round reads `0`.
+thing that did not happen that round reads `0`. A string column does not read `""`: a capture of
+`round.bomb.site` or `round.bomb.plant_place` on a round with no plant projects as null (the
+expression reads `""`, and an empty string capture comes out null), so test a table cell for null,
+or use the int twin `round.bomb.site_entity`, which projects `-1`.
 
 ### Reusing another ruleset — `use:` / `exports:`
 A stat can read `otherRuleset.stat` if your file declares `use: [otherRuleset]` and that ruleset

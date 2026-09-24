@@ -82,18 +82,24 @@ public static class CatalogBuilder
                 "The length the round is configured to run, not a countdown: 115 in a live "
                 + "matchmaking round, 999 during warmup."),
             ["entity.game.round_win_reason"] = (null,
-                "The engine's round-end reason, set with round_win_status and cleared with it: 7 "
-                + "bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists "
-                + "eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the "
-                + "round is undecided. Read it on the `round_decided` view (its `reason` facet) or "
-                + "between the decision and the round's close, never on `round_ended`, where it has "
-                + "already reset to 0; there, `enrich.round.win_reason` carries it."),
+                "The engine's round-end reason, set with round_win_status and cleared with it: 1 "
+                + "target bombed (the bomb exploded), 7 bomb defused, 8 counter-terrorists "
+                + "eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 "
+                + "target saved (time ran out), 17 the terrorists surrendered, 18 the "
+                + "counter-terrorists surrendered. 0 while the round is undecided. Those are the "
+                + "reasons measured on matchmaking demos, not the engine's whole list. Read it on "
+                + "the `round_decided` view (its `reason` facet) or between the decision and the "
+                + "round's close, not on `round_ended`, where it has already reset to 0 (except on "
+                + "the match's last round, closed by cs_win_panel_match before the reset); there, "
+                + "`enrich.round.win_reason` carries it."),
             ["entity.game.round_win_status"] = (null,
                 "0 while the round is undecided, 2 once the terrorists have won it, 3 once the "
                 + "counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and "
                 + "back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on "
-                + "`round_ended` it reads 0. The `round_decided` view fires on the step, and at the "
-                + "round's close the winner is `enrich.round.winner_side`."),
+                + "`round_ended` it reads 0, except on the match's last round: that one closes on "
+                + "cs_win_panel_match, 193 ticks after the decision on the demos measured, before "
+                + "the reset, and reads the winner. The `round_decided` view fires on the step, and "
+                + "at the round's close the winner is `enrich.round.winner_side`."),
             ["entity.game.total_rounds_played"] = (null,
                 "Rounds decided so far this match: 0 before round 1, and it increments on the "
                 + "frame a round is decided, not when the next one starts."),

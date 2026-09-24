@@ -199,6 +199,24 @@ public sealed class EntityChangeScanner
         bool emitMolotovThrows = false,
         AimVantageScanner? vantageScanner = null,
         VisibilityTransitionScanner? transitionScanner = null)
+        : this(layer, providers, perPlayerProviders, emitMolotovThrows, vantageScanner, transitionScanner, null)
+    {
+    }
+
+    /// <summary>
+    ///     The builder's form: <paramref name="silentProviders" /> are tracked for their value node
+    ///     and for <c>round_decided</c> only, so a change of one updates the node but synthesizes no
+    ///     change marker. The builder tracks the three game-rules singletons in every build and
+    ///     passes the ones no rule reads here.
+    /// </summary>
+    internal EntityChangeScanner(
+        EntityStateLayer layer,
+        IReadOnlyList<(IEntityValueProvider Provider, StateNode ValueNode)> providers,
+        IReadOnlyList<IPerPlayerEntityValueProvider>? perPlayerProviders,
+        bool emitMolotovThrows,
+        AimVantageScanner? vantageScanner,
+        VisibilityTransitionScanner? transitionScanner,
+        IReadOnlySet<IEntityValueProvider>? silentProviders)
     {
         Layer = layer;
         _emitMolotovThrows = emitMolotovThrows;
@@ -221,7 +239,7 @@ public sealed class EntityChangeScanner
                     break;
             }
 
-            _tracked.Add(new TrackedProvider(p, node, p.DefaultValue));
+            _tracked.Add(new TrackedProvider(p, node, p.DefaultValue, silentProviders?.Contains(p) != true));
             _singletonProviders.Add(p);
         }
 
@@ -1067,7 +1085,7 @@ public sealed class EntityChangeScanner
 
             UpdateValueNode(t.ValueNode, newValue);
 
-            if (ShouldEmit(t.Provider.EmitOn, t.LastValue, newValue))
+            if (t.Emits && ShouldEmit(t.Provider.EmitOn, t.LastValue, newValue))
             {
                 _scratch.Add(BuildSynthesizedMessage(t.Provider, tick, t.LastValue, newValue));
             }
@@ -1249,8 +1267,12 @@ public sealed class EntityChangeScanner
     /// <param name="provider">Push-model provider to track.</param>
     /// <param name="valueNode">Backing node that mirrors the provider's value.</param>
     /// <param name="initial">Seed value for change detection (typically the provider's default).</param>
-    private struct TrackedProvider(IEntityValueProvider provider, StateNode valueNode, object? initial)
+    /// <param name="emits">False for a provider tracked only for its value: no change marker is synthesized.</param>
+    private struct TrackedProvider(IEntityValueProvider provider, StateNode valueNode, object? initial, bool emits)
     {
+        /// <summary>Whether a qualifying change synthesizes a marker message.</summary>
+        public readonly bool Emits = emits;
+
         /// <summary>The push-model provider being tracked.</summary>
         public readonly IEntityValueProvider Provider = provider;
 

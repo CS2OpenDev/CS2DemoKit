@@ -8,6 +8,11 @@
 # The buy-type thresholds are params, so an install can move the bands without editing the stats.
 # Join a row to the players through its `slots` dimension: the slots on that side at that round's
 # freeze end.
+#
+# A tick column of a thing that did not happen that round reads 0. PlantSite on a round with no
+# plant projects as null, not "" (the expression reads "", and an empty string capture comes out
+# null). A round decided in freeze time (a surrender vote) still gets its own two rows: the engine
+# opens it at the decision, so its freeze-end columns are sampled on the decision's frame.
 ruleset: round_facts
 title: Round facts
 summary: Per-round, per-side economy, outcome, plant and kill timeline.
@@ -52,6 +57,7 @@ stats:
     capture: event.Winner
     on: round_decided
     per: round
+  # 1 the bomb exploded, 7 defused, 8 / 9 elimination, 12 time ran out, 17 / 18 a surrender.
   win_reason:
     capture: event.Reason
     on: round_decided
