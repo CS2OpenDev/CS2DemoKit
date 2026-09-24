@@ -136,7 +136,8 @@ public sealed class DemoFrame
     ///     <para>
     ///         These payloads are deliberately absent from <see cref="MessageList" />: at ~90% of a
     ///         demo's net messages they dominated parse cost purely by existing as live objects.
-    ///         Read them through <see cref="Models.SubTickExtractor" />, which is the only consumer.
+    ///         Read them through <see cref="EntityTracking.UserCmdReconstructor" /> (which
+    ///         <see cref="Models.SubTickExtractor" /> uses) or <see cref="GetUserCmdsPayload" />.
     ///     </para>
     /// </summary>
     internal byte[]? UserCmdsBlock { get; init; }
@@ -158,6 +159,12 @@ public sealed class DemoFrame
     ///     The raw wire bytes of subtick payload <paramref name="index" />, exactly as they appeared
     ///     in the frame's message stream. Decode with <c>CSVCMsg_UserCommands.Parser.ParseFrom</c>, or
     ///     use <see cref="Models.SubTickExtractor" /> for the interpreted view.
+    ///     <para>
+    ///         Since build 10896 most commands in the payload carry <c>delta_data</c> against the
+    ///         player's previous command rather than a full <c>data</c> message, so parsing
+    ///         <c>data</c> alone sees only the occasional keyframe. Feed the frames to
+    ///         <see cref="EntityTracking.UserCmdReconstructor" /> to get every command in full.
+    ///     </para>
     ///     <para>
     ///         The span points into shared storage owned by this frame. It stays valid as long as the
     ///         frame is reachable; copy it if you need to outlive that.

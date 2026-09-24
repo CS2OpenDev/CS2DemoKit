@@ -140,15 +140,50 @@ not subtract `ServerStartTick` from them.
 read by almost nothing. It does not appear in `DemoFrame.InnerMessages`. Each payload is stored
 verbatim in shared blocks on the frame.
 
-For the interpreted view, `SubTickExtractor` reads the subtick move steps out of them:
+Since about July 2026 (build 10896) servers send almost every command as `delta_data`: a patch
+against the same player's previous command, in Valve's own delta encoding rather than protobuf.
+Only an occasional command carries a full `data` message. On current matchmaking demos 99.8% to
+99.9% of commands are deltas, so reading `data` alone sees a fraction of a percent of the input.
+
+`UserCmdReconstructor` rebuilds every command. Feed it frames in order, from frame 0 or from a
+`DEM_FullPacket`; it works the same on `DemoReader.ReadFrames()` and on `ParsedDemo.Frames`, as
+long as the decode plan includes `MessageCategories.UserCmds`:
 
 ```csharp
-List<SubTickEvent> input = SubTickExtractor.Extract(demo.Frames);
+using CS2DemoKit.Parser.EntityTracking;
+
+var input = new UserCmdReconstructor();
+foreach (DemoFrame frame in reader.ReadFrames())
+{
+    foreach (ReconstructedUserCmd cmd in input.AdvanceOneFrame(frame))
+    {
+        CSGOUserCmdPB full = cmd.Command;   // view angles, buttons, movement, subtick moves, ...
+    }
+}
 ```
 
-Subtick moves are only one field of the message. It also carries view angles, movement, buttons,
-weapon select, mouse deltas and the pawn handle, so for anything beyond subtick input take the raw
-wire bytes and decode them yourself:
+The returned list is reused on the next call; the commands in it are not, so keep them if you
+need to, but treat them as read-only, since each one is its slot's baseline for the next delta.
+
+For subtick moves only, `SubTickExtractor` does the same walk and returns one event per move step:
+
+```csharp
+List<SubTickEvent> moves = SubTickExtractor.Extract(demo.Frames);
+```
+
+**Full packets and seeking.** On current demos every `DEM_FullPacket` repeats each player's latest
+command in full. The reconstructor uses those snapshots to prime a player it has no baseline for
+and to check its own rebuild, and never returns them as input. To seek, call `Reset()` and start
+feeding at the nearest `DEM_FullPacket` at or before the target, the way entity seeking does.
+
+**Input present but not rebuilt.** A delta with no baseline (a walk that started mid-stream) is
+skipped, not decoded against defaults. `reconstructor.Stats` counts every case: `Full`, `Delta`,
+`MissingBaseline`, `DecodeFailed`, `OutOfOrder`, and three self-checks that are zero on every demo
+measured (`CheckpointMismatches`, `ClientTickMismatches`, `UnknownFieldsSkipped`). A nonzero
+self-check means the format moved. `frame.UserCmdsPayloadCount` says whether a frame carries input
+at all.
+
+The raw wire bytes stay available:
 
 ```csharp
 for (int i = 0; i < frame.UserCmdsPayloadCount; i++)
@@ -156,6 +191,9 @@ for (int i = 0; i < frame.UserCmdsPayloadCount; i++)
     var cmds = CSVCMsg_UserCommands.Parser.ParseFrom(frame.GetUserCmdsPayload(i));
 }
 ```
+
+`CSGOUserCmdPB.Parser.ParseFrom(cmd.Data)` on those decodes the keyframes only; pass each
+`CMsgServerUserCmd` to `reconstructor.Apply` to rebuild the rest.
 
 The reason for the split is GC, not decode cost. A payload-per-message representation means one
 surviving object per message, and collection cost scales with the number of live objects rather
@@ -368,6 +406,8 @@ and a zero-padded counter, because both are load-bearing.
 ## Licence
 
 MIT. Portions of the bit-level decoder are adapted from
-[demofile-net](https://github.com/saul/demofile-net) (also MIT) — see `THIRD-PARTY-NOTICES.md`.
+[demofile-net](https://github.com/saul/demofile-net) (also MIT), and the user-command delta decoder
+from [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) (also MIT) — see
+`THIRD-PARTY-NOTICES.md`.
 Counter-Strike and Counter-Strike 2 are trademarks of Valve Corporation; this project is not
 affiliated with or endorsed by Valve.
