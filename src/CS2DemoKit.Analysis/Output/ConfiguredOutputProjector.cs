@@ -3,6 +3,7 @@
 using System.Globalization;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Config;
+using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Parser;
 
 #endregion
@@ -78,13 +79,38 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(demo);
 
-        return _output.Scope switch
+        MetricTable table = _output.Scope switch
         {
-            OutputScope.PerPlayerPerGame => [ProjectPerPlayerPerGame(result, demo)],
-            OutputScope.PerPlayerPerRound => [ProjectPerPlayerPerRound(result, demo)],
-            OutputScope.PerMatch => [ProjectPerMatch(result, demo)],
-            _ => [ProjectPerEvent(result, demo)]
+            OutputScope.PerPlayerPerGame => ProjectPerPlayerPerGame(result, demo),
+            OutputScope.PerPlayerPerRound => ProjectPerPlayerPerRound(result, demo),
+            OutputScope.PerMatch => ProjectPerMatch(result, demo),
+            _ => ProjectPerEvent(result, demo)
         };
+
+        return [WithColumnClocks(table, _output)];
+    }
+
+    /// <summary>
+    ///     Stamps <see cref="MetricTable.ColumnClocks" /> from the output's metric refs: one entry per
+    ///     bare tick column, labelled with the clock the resolver classified it on.
+    /// </summary>
+    internal static MetricTable WithColumnClocks(MetricTable table, OutputDef output)
+    {
+        Dictionary<string, string> clocks = new(StringComparer.Ordinal);
+        foreach (MetricRef metric in output.Metrics)
+        {
+            switch (metric.Clock)
+            {
+                case TickClock.Frame:
+                    clocks[metric.Label] = MetricTable.FrameClock;
+                    break;
+                case TickClock.Server:
+                    clocks[metric.Label] = MetricTable.ServerClock;
+                    break;
+            }
+        }
+
+        return clocks.Count == 0 ? table : table with { ColumnClocks = clocks };
     }
 
     // ── per_match: a single match-level row of game-scoped metrics ─────────

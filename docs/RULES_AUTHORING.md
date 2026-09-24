@@ -234,12 +234,19 @@ eco_kills:
 when: [enemy_kills > 0, player.survived]     # same as "enemy_kills > 0 and player.survived"
 ```
 
-**`event.tick` is not one clock across views.** On a wire event (`kill`, `shot`, `bomb_planted`,
-...) it is the absolute server tick. On the two views the engine synthesizes from entity state,
-`enemy_spotted` and `molotov`, there is no wire stamp and it is the frame clock instead, lower by
-the demo's `ServerStartTick` (about 20,000 ticks on a typical GOTV demo). A `where:` that
-differences a molotov or spot tick against a kill tick is off by that much and nothing reports it.
-For timing across views use the `ticks_since_*` facets, which the engine computes on one clock.
+**Two clocks: `event.tick` and `event.frame_tick`.** A demo carries two clocks. `event.frame_tick`
+is the frame clock on every event: the index `DemoFrame`, timeline events and highlights use, and
+the one a video or clip consumer seeks by. `event.tick` is the absolute server tick on a wire event
+(`kill`, `shot`, `bomb_planted`, ...), higher by the demo's `ServerStartTick` (about 20,000 ticks on
+a typical GOTV demo). On the views the engine synthesizes from entity state (`enemy_spotted`,
+`molotov`, `round_decided`) there is no server stamp, and `event.tick` is the frame clock too.
+
+Capture `event.frame_tick` when the tick is going to a consumer, and whenever you compare ticks
+across views: it is one clock everywhere, so a `where:` that differences a molotov tick against a
+kill tick is only right on the frame clock. A table says which clock each tick column is on
+(`MetricTable.ColumnClocks`: `frame` or `server`), for a bare `event.tick` or `event.frame_tick`
+capture; a column computed from a tick has no entry. The `ticks_since_*` facets are already
+durations and need neither.
 
 ### Facets that carry a sentinel
 

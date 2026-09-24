@@ -84,6 +84,10 @@ public static class RulesetResolver
 
         private readonly Dictionary<string, CatalogView> _viewsByName;
 
+        // Wire events the analysis layer synthesizes from entity state. They carry no server stamp,
+        // so their event.tick is the frame clock; see ResolveTickClock.
+        private readonly HashSet<string> _synthesizedEvents;
+
         internal Session(RulesetDoc doc, CatalogScopeAdapter adapter, ResolveContext ctx, RulesetExportGraph? exports)
         {
             _doc = doc;
@@ -94,6 +98,8 @@ public static class RulesetResolver
             _forEachPlayer = doc.For == RulesetScope.EachPlayer;
 
             _viewsByName = adapter.Catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
+            _synthesizedEvents = new HashSet<string>(
+                adapter.Catalog.Events.Where(e => e.Synthesized).Select(e => e.Name), StringComparer.Ordinal);
             _definesByName = doc.Defines.ToDictionary(d => d.Name, StringComparer.Ordinal);
             _statsById = doc.Stats.ToDictionary(s => s.Id, StringComparer.Ordinal);
             _providerByV2Name = adapter.Catalog.Providers
@@ -563,7 +569,45 @@ public static class RulesetResolver
                 // Carry the compute's display format: through for the planner to stamp on the
                 // ComputedStatNode. Presentation only — the hasher never reads it (V2StatHasher.Descriptor
                 // omits it), so it is outside node identity, exactly like the display Label.
-                Format: stat.Format);
+                Format: stat.Format,
+                Clock: stat.Kind == StatKind.Capture ? ResolveTickClock(valueSelector, trigger) : TickClock.None);
+        }
+
+        /// <summary>
+        ///     Which clock a capture's value is on, when the value is a bare tick read. Only the two bare
+        ///     reads are classified: <c>event.frame_tick</c> is always the frame clock, and
+        ///     <c>event.tick</c> is the server clock on a wire event and the frame clock on one the
+        ///     analysis layer synthesizes (it has no server stamp, so every tick slot carries the frame
+        ///     clock). Anything derived from a tick, a difference included, is left unclassified rather
+        ///     than guessed at.
+        /// </summary>
+        private TickClock ResolveTickClock(CheckedExpression? valueSelector, ResolvedTrigger trigger)
+        {
+            if (valueSelector?.Root is not ReferenceNode reference)
+            {
+                return TickClock.None;
+            }
+
+            if (string.Equals(reference.Path, "event." + CatalogScopeAdapter.FrameTickMember, StringComparison.Ordinal))
+            {
+                return TickClock.Frame;
+            }
+
+            if (!string.Equals(reference.Path, "event.tick", StringComparison.Ordinal))
+            {
+                return TickClock.None;
+            }
+
+            // A net-message payload has no tick envelope; leave it unclassified.
+            if (trigger.IsNet)
+            {
+                return TickClock.None;
+            }
+
+            string? wireEvent = trigger.View?.Event ?? trigger.RawOrNetName;
+            return wireEvent is not null && _synthesizedEvents.Contains(wireEvent)
+                ? TickClock.Frame
+                : TickClock.Server;
         }
 
         /// <summary>

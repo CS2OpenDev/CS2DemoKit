@@ -134,6 +134,11 @@ CS2 demos carry two clocks and mixing them produces results that look plausible 
 `GameEvent.GameTick`, `RuleChainEvent.Tick` and `HighlightFired.Tick` are already frame clock. Do
 not subtract `ServerStartTick` from them.
 
+In a ruleset, `event.frame_tick` is the frame clock and `event.tick` the server clock (the frame
+clock on a synthesized event, which has no server stamp). A configured table names the clock of
+each tick column in `MetricTable.ColumnClocks`, so a consumer does not have to know which views are
+synthesized.
+
 ## Player input (`svc_UserCmds`)
 
 `svc_UserCmds` is about 90% of the net messages in a demo (1.15 million on a 290 MB file) and is

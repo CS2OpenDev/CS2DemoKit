@@ -702,9 +702,10 @@ public static class ExpressionCompiler
 
     /// <summary>
     ///     Resolves per-fire transport (<c>ServerTick</c>, <c>GameTick</c>, <c>FrameNumber</c>) off an
-    ///     envelope-typed parameter, with <c>tick</c> aliased to <c>ServerTick</c> — the same alias
-    ///     the ruleset loader rewrites before this compiler ever sees a ruleset expression, applied
-    ///     here so a condition that arrives raw (a breakpoint) resolves identically. Payload fields
+    ///     envelope-typed parameter, with <c>tick</c> aliased to <c>ServerTick</c> and <c>frame_tick</c>
+    ///     to <c>GameTick</c> — the same aliases the ruleset loader rewrites before this compiler ever
+    ///     sees a ruleset expression, applied here so a condition that arrives raw (a breakpoint)
+    ///     resolves identically. Payload fields
     ///     take precedence at both call sites, so a wire field named <c>tick</c> would still win.
     ///     <c>null</c> when the parameter IS the subject (net message, entity change — no envelope)
     ///     or the name matches no transport property.
@@ -719,7 +720,9 @@ public static class ExpressionCompiler
 
         string transportName = fieldName.Equals("tick", StringComparison.OrdinalIgnoreCase)
             ? nameof(GameEvent.ServerTick)
-            : fieldName;
+            : fieldName.Equals("frame_tick", StringComparison.OrdinalIgnoreCase)
+                ? nameof(GameEvent.GameTick)
+                : fieldName;
         PropertyInfo? transport = param.Type.GetProperty(transportName,
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
         return transport is null ? null : WidenNarrowIntegral(Expression.Property(param, transport));

@@ -194,7 +194,11 @@ public static class ShowLowering
             {
                 // The qualified {ruleset}.{stat} key: stats register there, a highlight registers
                 // its per-round conjunction there, so a column ref resolves uniformly (obligation 8).
-                metrics.Add(new MetricRef($"{ruleset.Id.Id}.{column.Stat}", column.Label ?? column.Stat, column.As));
+                // The clock rides along from the stat, so a bare tick column says which clock it is on.
+                TickClock clock = ruleset.Stats.FirstOrDefault(s => string.Equals(s.StatId, column.Stat,
+                    StringComparison.Ordinal))?.Clock ?? TickClock.None;
+                metrics.Add(new MetricRef($"{ruleset.Id.Id}.{column.Stat}", column.Label ?? column.Stat, column.As,
+                    clock));
             }
 
             outputs.Add(new OutputDef(table.Name, scope, metrics, dimensions));
