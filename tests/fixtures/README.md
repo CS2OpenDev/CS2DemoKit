@@ -11,6 +11,7 @@ assert against.
 tests/fixtures/
 ├── rules-v2/                          pinned outputs for the four baseline rulesets
 ├── usercmds-delta/<demo-id>.cmds.bin  raw svc_UserCmds payloads from a build-10896 demo
+├── usercmds-delta/<demo-id>.cmds.sha256  digest of the commands rebuilt from that window
 ├── <demo-id>/
 │   ├── expected.golden.json           The reference. See "Posture" below.
 │   └── entity-fields.ours.golden.json Per-tick entity-field snapshot (FuriaMirage only)
@@ -59,7 +60,7 @@ can give.
 |---|---|
 | `<demo-id>/expected.golden.json` | `PIN_EXPECTED=1` with the demo present. **Deliberate, reviewed re-pin only:** the fixture is the assertion. Never re-pin to absorb a diff; fix the engine, or hand-verify and re-pin on purpose. |
 | `rules-v2/*.expected.json` | Re-run the pilot tests with `PIN_RULES_V2=1` and the pinning demo available. Same rule: deliberate and reviewed. |
-| `usercmds-delta/<demo-id>.cmds.bin` | `PIN_USERCMDS=1` with `DEMO_PATH` set to a demo on build 10896 or later, running `UserCmdFixtureTests`. **Deliberate re-pin only.** The file is wire input, not engine output: the opening full packet's snapshots plus about 1,500 following payloads, widened until every rule of the delta grammar occurs. The demo is read in place and never copied. |
+| `usercmds-delta/<demo-id>.cmds.bin` | `PIN_USERCMDS=1` with `DEMO_PATH` set to a demo on build 10896 or later, running `UserCmdFixtureTests`. **Deliberate re-pin only.** The file is wire input, not engine output: the opening full packet's snapshots plus about 1,500 following payloads, widened until every rule of the delta grammar occurs. The same run writes `<demo-id>.cmds.sha256`, and only after the whole source demo rebuilds with every full-packet snapshot matching the command rebuilt at its number. The demo is read in place and never copied. |
 | `entity-fields.ours.golden.json` | Produced by the entity-field diff tool, which lives in the application repo and additionally needs a sibling demofile-net checkout as its oracle. |
 
 To add a demo to the gate: create `tests/fixtures/<demo-filename-without-dem>/`,
@@ -85,7 +86,13 @@ compatibility yet, which is a follow-up for when a v2 actually exists.
 The committed sample demo has no `svc_UserCmds`, so this is the only real
 `delta_data` a bare clone has. `UserCmdFixtureTests` replays it through
 `UserCmdReconstructor` and requires every command to rebuild with a
-`base.client_tick` that matches the outer `client_tick`. Records are
+`base.client_tick` that matches the outer `client_tick`, and hashes every
+rebuilt command against the pinned `.cmds.sha256`. The window has no second
+full packet (they are further apart than a window worth committing), so the
+digest is what checks the rest of each command: subtick moves, input history,
+buttons, view angles. It is pinned from a rebuild that the source demo's own
+full-packet snapshots confirmed in full (490 of them on the current pin, no
+mismatches). Records are
 `[u8 kind: 0 packet, 1 full packet][u32 LE length][CSVCMsg_UserCommands payload]`.
 The payloads hold player input only (buttons, view angles, movement); there are
 no Steam IDs in them. `.gitattributes` marks `*.bin` binary so the LF rule never

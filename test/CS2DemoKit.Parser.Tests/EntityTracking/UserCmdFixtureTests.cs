@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Collections;
+using System.Security.Cryptography;
 using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 using Google.Protobuf;
@@ -24,10 +25,19 @@ namespace CS2DemoKit.Parser.Tests.EntityTracking;
 ///         in any one of them fails here.
 ///     </para>
 ///     <para>
+///         The window holds no second full packet (they are further apart than any window small
+///         enough to commit), so no snapshot inside it can check a rebuilt command. The full content
+///         is checked by digest instead: a SHA-256 over every rebuilt command's bytes, pinned beside
+///         the window. The pin writes it only after the whole source demo rebuilds with every
+///         full-packet snapshot matching the command rebuilt at its number, so the digest records
+///         output the demo itself vouched for, field by field.
+///     </para>
+///     <para>
 ///         <b>Fixture format</b> (<c>tests/fixtures/usercmds-delta/&lt;demo-id&gt;.cmds.bin</c>): records of
 ///         <c>[u8 frame kind: 0 packet, 1 full packet][u32 LE length][CSVCMsg_UserCommands payload]</c>.
-///         Re-pin with <c>PIN_USERCMDS=1</c> and <c>DEMO_PATH</c> pointing at a demo on build 10896 or
-///         later; the demo is read in place.
+///         <c>&lt;demo-id&gt;.cmds.sha256</c> holds the digest as one line of lowercase hex. Re-pin both with
+///         <c>PIN_USERCMDS=1</c> and <c>DEMO_PATH</c> pointing at a demo on build 10896 or later; the
+///         demo is read in place.
 ///     </para>
 /// </summary>
 [Category("Unit")]
@@ -87,9 +97,15 @@ public class UserCmdFixtureTests
         await Assert.That(s.DecodeFailed).IsEqualTo(0L);
         await Assert.That(s.MissingBaseline).IsEqualTo(0L);
         await Assert.That(s.OutOfOrder).IsEqualTo(0L);
-        await Assert.That(s.CheckpointMismatches).IsEqualTo(0L);
         await Assert.That(s.ClientTickMismatches).IsEqualTo(0L);
         await Assert.That(replay.Emitted).IsEqualTo(s.Full + s.Delta);
+
+        string digestPath = DigestPath(Path.Combine(FixtureDir(), fixture));
+        await Assert.That(File.Exists(digestPath)).IsTrue()
+            .Because($"{Path.GetFileName(digestPath)} pins the rebuilt content; re-pin with PIN_USERCMDS=1");
+        string pinned = (await File.ReadAllTextAsync(digestPath)).Trim();
+        await Assert.That(replay.Digest).IsEqualTo(pinned)
+            .Because("every rebuilt command, field for field, matches the pinned rebuild");
 
         foreach (string missing in replay.Coverage.Missing())
         {
@@ -110,6 +126,17 @@ public class UserCmdFixtureTests
         {
             throw new InvalidOperationException("PIN_USERCMDS=1 needs DEMO_PATH set to a build 10896+ demo");
         }
+
+        // The digest is only worth pinning if the demo's own snapshots agree with the rebuild.
+        (UserCmdReconstructionStats whole, long comparedInFull) = RebuildWholeDemo(path);
+        Console.WriteLine($"{Path.GetFileName(path)} in full: full={whole.Full} delta={whole.Delta} "
+                          + $"dup={whole.CheckpointDuplicates} comparedInFull={comparedInFull} "
+                          + $"mismatches={whole.CheckpointMismatches}");
+        await Assert.That(comparedInFull).IsGreaterThan(0L)
+            .Because("the demo's full packets must repeat rebuilt commands as data for the check to mean anything");
+        await Assert.That(whole.CheckpointMismatches).IsEqualTo(0L);
+        await Assert.That(whole.DecodeFailed + whole.MissingBaseline + whole.OutOfOrder + whole.ClientTickMismatches)
+            .IsEqualTo(0L);
 
         List<(byte Kind, byte[] Payload)> all = CaptureAfterFirstFreezeEnd(path, MaxWindowPayloads);
         await Assert.That(all.Count).IsGreaterThan(1);
@@ -140,8 +167,40 @@ public class UserCmdFixtureTests
             }
         }
 
+        await File.WriteAllTextAsync(DigestPath(target), replay.Digest + "\n");
         Console.WriteLine($"wrote {target}: {window.Count} payloads, {new FileInfo(target).Length} bytes; {replay.Describe()}");
         throw new SkipTestException($"Re-pinned {Path.GetFileName(target)}. Review the diff before committing.");
+    }
+
+    private static string DigestPath(string fixturePath) => Path.ChangeExtension(fixturePath, ".sha256");
+
+    /// <summary>
+    ///     Rebuilds every command in the demo, counting the full-packet snapshots that carried
+    ///     <c>data</c> and repeated a rebuilt command, which are the ones compared in full.
+    /// </summary>
+    private static (UserCmdReconstructionStats Stats, long ComparedInFull) RebuildWholeDemo(string path)
+    {
+        DecodePlan plan = new() { Categories = MessageCategories.Header | MessageCategories.UserCmds };
+        UserCmdReconstructor reconstructor = new();
+        long comparedInFull = 0;
+        using DemoReader reader = DemoReader.OpenFile(path, new ParseOptions { Plan = plan });
+        while (reader.TryReadNext(out DemoFrame? frame))
+        {
+            bool full = frame.CommandKind == EDemoCommands.DemFullPacket;
+            for (int i = 0; i < frame.UserCmdsPayloadCount; i++)
+            {
+                foreach (CMsgServerUserCmd cmd in CSVCMsg_UserCommands.Parser.ParseFrom(frame.GetUserCmdsPayload(i)).Commands)
+                {
+                    UserCmdApplyStatus status = reconstructor.Apply(cmd, full, out _);
+                    if (status == UserCmdApplyStatus.CheckpointDuplicate && cmd.HasData && !cmd.Data.IsEmpty)
+                    {
+                        comparedInFull++;
+                    }
+                }
+            }
+        }
+
+        return (reconstructor.Stats, comparedInFull);
     }
 
     /// <summary>
@@ -214,10 +273,15 @@ public class UserCmdFixtureTests
         public int OpeningSnapshots { get; private set; }
         public long Commands { get; private set; }
 
+        /// <summary>SHA-256 over every emitted command: slot, number, then its serialized bytes.</summary>
+        public string Digest { get; private set; } = "";
+
         public static Replay Run(List<(byte Kind, byte[] Payload)> records)
         {
             Replay replay = new();
             UserCmdReconstructor reconstructor = new();
+            using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            Span<byte> header = stackalloc byte[12];
             bool opening = true;
             foreach ((byte kind, byte[] payload) in records)
             {
@@ -240,11 +304,18 @@ public class UserCmdFixtureTests
                     if (built is not null)
                     {
                         replay.Emitted++;
+                        byte[] bytes = built.ToByteArray();
+                        BinaryPrimitives.WriteInt32LittleEndian(header, cmd.PlayerSlot);
+                        BinaryPrimitives.WriteInt32LittleEndian(header[4..], cmd.CmdNumber);
+                        BinaryPrimitives.WriteInt32LittleEndian(header[8..], bytes.Length);
+                        hash.AppendData(header);
+                        hash.AppendData(bytes);
                     }
                 }
             }
 
             replay.Stats = reconstructor.Stats;
+            replay.Digest = Convert.ToHexStringLower(hash.GetHashAndReset());
             return replay;
         }
 
