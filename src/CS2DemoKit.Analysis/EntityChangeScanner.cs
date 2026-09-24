@@ -1135,7 +1135,7 @@ public sealed class EntityChangeScanner
     ///         not resolved yet (<c>slot &lt; 0</c>) is left out of the set, so a later frame that
     ///         does resolve it still emits. <c>m_hThrower</c> is not reliably networked on the frame
     ///         the entity is created — a pawn killed on that same frame reports the 24-bit invalid
-    ///         handle, which <c>EntityDigestExtractor.ResolveThrowerSlot</c> folds to -1 — and
+    ///         handle, which <c>PawnLookup.ResolveThrowerSlot</c> folds to -1 — and
     ///         recording the projectile as seen on that first sighting would drop the throw for the
     ///         rest of the run with no diagnostic, silently undercounting the shipped
     ///         <c>molotov_used</c> stat.

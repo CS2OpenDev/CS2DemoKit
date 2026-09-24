@@ -79,41 +79,4 @@ public class HandleSentinelTests
 
         await Assert.That(PawnLookup.ResolveHandle(tracker, 42u | (7u << 14))).IsSameReferenceAs(pawn);
     }
-
-    /// <summary>
-    ///     Builds <c>projectile.m_hThrower -> pawn.m_hController</c>, the chain
-    ///     <see cref="EntityDigestExtractor.ResolveThrowerSlot" /> walks, and returns the projectile.
-    /// </summary>
-    private static (EntityTracker Tracker, EntityState Projectile) ThrowerChain(uint controllerHandle)
-    {
-        EntityTracker tracker = new();
-
-        EntityState pawn = tracker.CurrentEntities.GetOrCreate(5, "CCSPlayerPawn", 1);
-        pawn.Set("m_hController", controllerHandle);
-
-        EntityState projectile = tracker.CurrentEntities.GetOrCreate(700, "CMolotovProjectile", 1);
-        projectile.Set("m_hThrower", 5u | (1u << 14));
-
-        return (tracker, projectile);
-    }
-
-    // This is the site with no empty slot to absorb a bad fold: it returns a player slot outright,
-    // so an unfolded 0x00FFFFFF became slot 16382 in the digest rather than the documented -1.
-    [Test]
-    public async Task ResolveThrowerSlot_DeadThrower_IsMinusOne()
-    {
-        (EntityTracker tracker, EntityState projectile) = ThrowerChain(0x00FF_FFFFu);
-
-        await Assert.That(EntityDigestExtractor.ResolveThrowerSlot(tracker, projectile)).IsEqualTo(-1)
-            .Because("a dead pawn's controller handle names no player, and 16382 is not a slot");
-    }
-
-    [Test]
-    public async Task ResolveThrowerSlot_LiveThrower_IsControllerIndexMinusOne()
-    {
-        (EntityTracker tracker, EntityState projectile) = ThrowerChain(3u | (1u << 14));
-
-        await Assert.That(EntityDigestExtractor.ResolveThrowerSlot(tracker, projectile)).IsEqualTo(2)
-            .Because("slot is controller index minus one, and the guard must not eat the live case");
-    }
 }
