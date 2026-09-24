@@ -29,9 +29,12 @@ namespace CS2DemoKit.Parser.EntityTracking;
 ///         </item>
 ///     </list>
 ///     <para>
-///         Scalars, strings and bytes in one message are collected and merged in a single standard
+///         Scalars, strings and bytes in one message are collected and merged in a standard
 ///         <c>MergeFrom</c> pass, and nested messages recurse. Reflection keeps this working when the
-///         packaged protos gain fields.
+///         packaged protos gain fields. Operations take effect in wire order: a reset flushes the
+///         values collected before it, so a set followed by a reset of the same field ends cleared and
+///         a reset followed by a set ends set. A packed repeated scalar set appends, as a standard
+///         protobuf merge does, so replacing a list takes a reset before the set.
 ///     </para>
 ///     <para>
 ///         Unknown fields (numbers missing from the packaged descriptor) are skipped for every wire
@@ -101,7 +104,13 @@ internal static class UserCmdDelta
                 switch (wire)
                 {
                     case ResetWireType:
-                        field?.Accessor.Clear(target);
+                        if (field is not null)
+                        {
+                            // Earlier sets must land before the reset, or a set-then-reset ends set.
+                            FlushScalars(target, scalars, ref scalarLength);
+                            field.Accessor.Clear(target);
+                        }
+
                         break;
 
                     case LengthDelimitedWireType:
@@ -157,17 +166,7 @@ internal static class UserCmdDelta
                 }
             }
 
-            if (scalarLength > 0)
-            {
-                try
-                {
-                    target.MergeFrom(new ReadOnlySpan<byte>(scalars, 0, scalarLength));
-                }
-                catch (InvalidProtocolBufferException ex)
-                {
-                    throw new InvalidDataException($"scalar delta fields of {descriptor.Name} did not parse", ex);
-                }
-            }
+            FlushScalars(target, scalars, ref scalarLength);
         }
         finally
         {
@@ -176,6 +175,26 @@ internal static class UserCmdDelta
                 ArrayPool<byte>.Shared.Return(scalars);
             }
         }
+    }
+
+    /// <summary>Merges the collected scalar, string and bytes fields into the target and empties the buffer.</summary>
+    private static void FlushScalars(IMessage target, byte[]? scalars, ref int scalarLength)
+    {
+        if (scalarLength == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            target.MergeFrom(new ReadOnlySpan<byte>(scalars, 0, scalarLength));
+        }
+        catch (InvalidProtocolBufferException ex)
+        {
+            throw new InvalidDataException($"scalar delta fields of {target.Descriptor.Name} did not parse", ex);
+        }
+
+        scalarLength = 0;
     }
 
     /// <summary>Applies the indexed operations of one repeated message field.</summary>

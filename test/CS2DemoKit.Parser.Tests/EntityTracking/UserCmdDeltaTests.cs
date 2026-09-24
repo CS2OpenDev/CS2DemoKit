@@ -302,6 +302,30 @@ public class UserCmdDeltaTests
     }
 
     [Test]
+    public async Task SetThenResetOfOneField_EndsCleared()
+    {
+        CSGOUserCmdPB m = Baseline();
+        UserCmdDelta.Merge(m, InBase(
+            VarintField(CBaseUserCmdPB.MousedxFieldNumber, 9),
+            VarintField(CBaseUserCmdPB.ClientTickFieldNumber, 101),
+            ResetMarker(CBaseUserCmdPB.MousedxFieldNumber)));
+
+        await Assert.That(m.Base.HasMousedx).IsFalse();
+        await Assert.That(m.Base.ClientTick).IsEqualTo(101);
+    }
+
+    [Test]
+    public async Task ResetThenSetOfOneField_EndsSet()
+    {
+        CSGOUserCmdPB m = Baseline();
+        UserCmdDelta.Merge(m, InBase(
+            ResetMarker(CBaseUserCmdPB.MousedxFieldNumber),
+            VarintField(CBaseUserCmdPB.MousedxFieldNumber, 9)));
+
+        await Assert.That(m.Base.Mousedx).IsEqualTo(9);
+    }
+
+    [Test]
     public async Task FieldNumberZero_Throws()
     {
         Assert.Throws<InvalidDataException>(() => UserCmdDelta.Merge(Baseline(), VarintField(0, 1)));
