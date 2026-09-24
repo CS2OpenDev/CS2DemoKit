@@ -94,6 +94,21 @@ public sealed class EntityChangeScanner
     // protects future demos that hit real decode errors.
     private bool _preFrameSnapshotFrozen;
     private readonly List<NetMessage> _scratch = new(8);
+
+    // Messages the evaluator dispatches AFTER the frame's own messages (round_decided). Refilled per
+    // consumed frame; see TakePostFrameMessages.
+    private readonly List<NetMessage> _postFrame = new(1);
+
+    // Where in _tracked the three game-rules singletons round_decided is read from sit, or -1 when
+    // the build did not track them (a custom provider registry), in which case no round_decided is
+    // synthesized and the round-end winner falls back to its derivation.
+    private readonly int _winStatusIndex = -1;
+    private readonly int _winReasonIndex = -1;
+    private readonly int _roundsPlayedIndex = -1;
+
+    // The last win status observed, or -1 before one has been. A round is decided on an OBSERVED
+    // 0 → 2/3 step: a demo that starts inside a decided round has no decision to report.
+    private int _lastWinStatus = -1;
     private readonly HashSet<(int Index, int Serial)> _seenMolotovs = [];
 
     // The singleton providers in _tracked order — the digest's Singletons[] aligns with these. Held
@@ -193,6 +208,19 @@ public sealed class EntityChangeScanner
         _singletonProviders = new List<IEntityValueProvider>(providers.Count);
         foreach ((IEntityValueProvider p, StateNode node) in providers)
         {
+            switch (p.ContextName)
+            {
+                case RoundWinStatusContext:
+                    _winStatusIndex = _tracked.Count;
+                    break;
+                case RoundWinReasonContext:
+                    _winReasonIndex = _tracked.Count;
+                    break;
+                case TotalRoundsPlayedContext:
+                    _roundsPlayedIndex = _tracked.Count;
+                    break;
+            }
+
             _tracked.Add(new TrackedProvider(p, node, p.DefaultValue));
             _singletonProviders.Add(p);
         }
@@ -210,6 +238,23 @@ public sealed class EntityChangeScanner
         _delta = new PerPawnDeltaState(_layout);
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
+
+    /// <summary>The singleton the synthesized <c>round_decided</c> is detected on.</summary>
+    internal const string RoundWinStatusContext = "entity.game.round_win_status";
+
+    /// <summary>The singleton <c>round_decided</c> reads its reason from.</summary>
+    internal const string RoundWinReasonContext = "entity.game.round_win_reason";
+
+    /// <summary>The singleton <c>round_decided</c> reads the rounds played from.</summary>
+    internal const string TotalRoundsPlayedContext = "entity.game.total_rounds_played";
+
+    /// <summary>
+    ///     The messages to dispatch AFTER the frame just polled with <see cref="AdvanceAndPollAt" />
+    ///     has dispatched its own: the synthesized <c>round_decided</c>, which must follow the kill
+    ///     delivered in the same frame that decided the round. Empty on most frames. The list is
+    ///     refilled on the next poll, so read it before then.
+    /// </summary>
+    public IReadOnlyList<NetMessage> TakePostFrameMessages() => _postFrame;
 
     /// <summary>
     ///     Entity-state layer owned by this scanner. Exposed for per-event reads in edges that
@@ -353,6 +398,8 @@ public sealed class EntityChangeScanner
         _pastSignonPrefix = false;
         _prevDigest = null;
         _seenMolotovs.Clear();
+        _postFrame.Clear();
+        _lastWinStatus = -1;
         _preFrameSnapshotFrozen = false;
         _lastCompatibleLayout = null;
         _pendingFrames.Clear();
@@ -793,12 +840,14 @@ public sealed class EntityChangeScanner
     private List<NetMessage> Consume(EntityFrameDigest digest, int tick)
     {
         _scratch.Clear();
+        _postFrame.Clear();
 
         // Pre-frame snapshot consumed inside THIS frame = the previous frame's per-pawn values (N-1 state).
         // Before _prevDigest exists (frame 0) the snapshot stays empty.
         MergePreFrameSnapshot(_prevDigest);
 
         ConsumeSingletons(digest, tick);
+        ConsumeRoundDecided(digest, tick);
         ConsumeControllerTeams(digest, tick);
         if (_emitMolotovThrows)
         {
@@ -1026,6 +1075,36 @@ public sealed class EntityChangeScanner
             t.LastValue = newValue;
             _tracked[i] = t;
         }
+    }
+
+    /// <summary>
+    ///     Synthesizes <c>round_decided</c> on the frame the game rules' round-win status steps from 0
+    ///     to a winner (2 or 3), carrying the reason and rounds played read off the same digest. It is
+    ///     queued on the post-frame list, not with the other synthesized messages: the evaluator
+    ///     dispatches it after the frame's own messages, so it follows a kill delivered in the same
+    ///     frame. Measured on the build-10231 nuke demo: in several rounds the last kill's tick equals
+    ///     the tick of the status change.
+    /// </summary>
+    private void ConsumeRoundDecided(EntityFrameDigest digest, int tick)
+    {
+        if (_winStatusIndex < 0 || digest.Singletons[_winStatusIndex] is not int status)
+        {
+            return;
+        }
+
+        int previous = _lastWinStatus;
+        _lastWinStatus = status;
+        if (previous != 0 || status is not (2 or 3))
+        {
+            return;
+        }
+
+        int reason = _winReasonIndex >= 0 && digest.Singletons[_winReasonIndex] is int r ? r : 0;
+        int played = _roundsPlayedIndex >= 0 && digest.Singletons[_roundsPlayedIndex] is int p ? p : 0;
+
+        // Frame clock in all three slots, the convention of every event this scanner synthesizes.
+        _postFrame.Add(GameEventMessage.ForSynthesizedEvent(
+            new RoundDecidedEvent(tick, tick, tick, status, reason, played)));
     }
 
     /// <summary>

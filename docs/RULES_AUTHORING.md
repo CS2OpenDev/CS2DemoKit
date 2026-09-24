@@ -98,7 +98,18 @@ know the CS2 conventions. Common views:
 
 `kill` · `death` · `assist` · `damage_dealt` · `shot` · `blinded_enemy` ·
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
-`round_won` · `round_lost`
+`round_won` · `round_lost` · `round_decided` · `round_ended`
+
+A round ends twice. **`round_decided`** fires on the frame the server decides the round, read off
+the game rules' round-win status: its facets are `winner_side` (2 = T, 3 = CT), `reason` (the
+engine's round-end reason: 7 bomb defused, 8 and 9 elimination, 12 time ran out) and
+`rounds_played`. It is synthesized from entity state, so its `event.tick` is the frame clock, and
+it is dispatched after the frame's own events, so it follows the kill that decided the round.
+**`round_ended`** is the round's close (`round_officially_ended` on a matchmaking demo, 448 ticks
+later; 544 at the end of a half, when the break is waited out first), bound to nobody: its facets
+are `winner_side`, `winner_team`, `has_winner` and `win_reason`. Every round-end stat (survived,
+KAST) is timed on the close. The winner at the close is the server's verdict from the decision,
+not a guess from who is left alive.
 
 `enemy_spotted` is a view as well, but it is *synthesized* from recomputed visibility rather than
 read off the wire, so it only fires on a run set up for it — read "Facets that need a map bake" in
@@ -369,10 +380,11 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
   - `match.round_time` — the length the round is configured to run, in seconds (`115` in a live
     matchmaking round, `999` in warmup). Not a countdown.
 
-  **Read the status and reason between the decision and the round's close.** They go back to `0`
-  at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo, and that
-  is the event a round-end stat fires on, so a round-end read of either is `0`. At the round's
-  close the winner is `enrich.round.winner_side`.
+  **Read the status and reason on `round_decided`, not at the round's close.** They go back to
+  `0` at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo, and
+  that is the event `round_ended` (and every round-end stat) fires on, so a read of either there is
+  `0`. At the close the winner and reason are `enrich.round.winner_side` and
+  `enrich.round.win_reason` (the `winner_side` and `win_reason` facets of `round_ended`).
 - **Team aggregates (subject-relative):** `round.team.alive` / `round.enemies.alive`,
   `round.team.players` / `round.enemies.players`, `round.team.equipment` /
   `round.enemies.equipment`, `round.alive.in_clutch`.

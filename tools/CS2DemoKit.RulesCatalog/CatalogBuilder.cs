@@ -85,14 +85,15 @@ public static class CatalogBuilder
                 "The engine's round-end reason, set with round_win_status and cleared with it: 7 "
                 + "bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists "
                 + "eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the "
-                + "round is undecided. Read it between the decision and the round's close, never "
-                + "on round_officially_ended, where it has already reset to 0."),
+                + "round is undecided. Read it on the `round_decided` view (its `reason` facet) or "
+                + "between the decision and the round's close, never on `round_ended`, where it has "
+                + "already reset to 0; there, `enrich.round.win_reason` carries it."),
             ["entity.game.round_win_status"] = (null,
                 "0 while the round is undecided, 2 once the terrorists have won it, 3 once the "
                 + "counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and "
                 + "back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on "
-                + "round_officially_ended it reads 0. At the round's close the winner is "
-                + "`enrich.round.winner_side`."),
+                + "`round_ended` it reads 0. The `round_decided` view fires on the step, and at the "
+                + "round's close the winner is `enrich.round.winner_side`."),
             ["entity.game.total_rounds_played"] = (null,
                 "Rounds decided so far this match: 0 before round 1, and it increments on the "
                 + "frame a round is decided, not when the next one starts."),

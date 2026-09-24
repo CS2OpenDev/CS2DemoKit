@@ -356,6 +356,23 @@ public sealed partial class RuleChainBuilder
         bool trackPlayers = rulesets.Count > 0;
         if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || trackPlayers)
         {
+            // The round's winner is the server's verdict: the scanner synthesizes round_decided
+            // from these three game-rules singletons, and the round-end enrichment reports the
+            // latched winner rather than deriving one. So whenever there is a scanner they are
+            // tracked, read or not: three indexed reads per frame on a cached proxy index.
+            foreach (string contextName in (ReadOnlySpan<string>)
+                     [
+                         EntityChangeScanner.RoundWinStatusContext,
+                         EntityChangeScanner.RoundWinReasonContext,
+                         EntityChangeScanner.TotalRoundsPlayedContext
+                     ])
+            {
+                if (_entityProviders?.Get(contextName) is { } provider && !matched.Contains(provider))
+                {
+                    matched.Add(provider);
+                }
+            }
+
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
             List<(IEntityValueProvider, StateNode)> trackedForScanner = new(matched.Count);
             foreach (IEntityValueProvider provider in matched)

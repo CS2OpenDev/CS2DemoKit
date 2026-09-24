@@ -122,11 +122,11 @@
         },
         {
           "const": "match.round_win_reason",
-          "markdownDescription": "\u0060match.round_win_reason\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_reason\u0060. The engine\u0027s round-end reason, set with round_win_status and cleared with it: 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the round is undecided. Read it between the decision and the round\u0027s close, never on round_officially_ended, where it has already reset to 0."
+          "markdownDescription": "\u0060match.round_win_reason\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_reason\u0060. The engine\u0027s round-end reason, set with round_win_status and cleared with it: 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the round is undecided. Read it on the \u0060round_decided\u0060 view (its \u0060reason\u0060 facet) or between the decision and the round\u0027s close, never on \u0060round_ended\u0060, where it has already reset to 0; there, \u0060enrich.round.win_reason\u0060 carries it."
         },
         {
           "const": "match.round_win_status",
-          "markdownDescription": "\u0060match.round_win_status\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_status\u0060. 0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on round_officially_ended it reads 0. At the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+          "markdownDescription": "\u0060match.round_win_status\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_status\u0060. 0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on \u0060round_ended\u0060 it reads 0. The \u0060round_decided\u0060 view fires on the step, and at the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
         },
         {
           "const": "match.total_rounds_played",
@@ -231,6 +231,8 @@
         "he_grenade",
         "kill",
         "molotov",
+        "round_decided",
+        "round_ended",
         "round_lost",
         "round_won",
         "shot",
@@ -297,7 +299,7 @@
           "markdownDescription": "Facet \u0060flick_error_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u0060-1000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "has_winner": {
-          "markdownDescription": "Facet \u0060has_winner\u0060 (type \u0060bool\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060has_winner\u0060 (type \u0060bool\u0060). Exposed by: round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "headshot": {
           "markdownDescription": "Facet \u0060headshot\u0060 (type \u0060bool\u0060). Exposed by: death, kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -311,8 +313,14 @@
         "no_scope": {
           "markdownDescription": "Facet \u0060no_scope\u0060 (type \u0060bool\u0060). Exposed by: death, kill, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "reason": {
+          "markdownDescription": "Facet \u0060reason\u0060 (type \u0060int\u0060). Exposed by: round_decided. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "recoil_index": {
           "markdownDescription": "Facet \u0060recoil_index\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "rounds_played": {
+          "markdownDescription": "Facet \u0060rounds_played\u0060 (type \u0060int\u0060). Exposed by: round_decided. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "silenced": {
           "markdownDescription": "Facet \u0060silenced\u0060 (type \u0060bool\u0060). Exposed by: shot. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -374,11 +382,14 @@
         "weapon": {
           "markdownDescription": "Facet \u0060weapon\u0060 (type \u0060string\u0060). Exposed by: assist, damage_dealt, damage_taken, death, kill, shot. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "win_reason": {
+          "markdownDescription": "Facet \u0060win_reason\u0060 (type \u0060int\u0060). Exposed by: round_ended. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "winner_side": {
-          "markdownDescription": "Facet \u0060winner_side\u0060 (type \u0060int\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060winner_side\u0060 (type \u0060int\u0060). Exposed by: round_decided, round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "winner_team": {
-          "markdownDescription": "Facet \u0060winner_team\u0060 (type \u0060int\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060winner_team\u0060 (type \u0060int\u0060). Exposed by: round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "actor": {
           "enum": [
@@ -1257,6 +1268,72 @@
               {
                 "properties": {
                   "on": {
+                    "const": "round_decided"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "round_decided"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_round_decided"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "round_ended"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "round_ended"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_round_ended"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
                     "const": "round_lost"
                   }
                 },
@@ -1993,6 +2070,53 @@
       "additionalProperties": false,
       "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_round_decided": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060round_decided\u0060 (event \u0060round_decided\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo.",
+      "properties": {
+        "reason": {
+          "markdownDescription": "\u0060reason\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
+        },
+        "rounds_played": {
+          "markdownDescription": "\u0060rounds_played\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
+        },
+        "winner_side": {
+          "markdownDescription": "\u0060winner_side\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_round_ended": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060round_ended\u0060 (event \u0060round_end\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "properties": {
+        "has_winner": {
+          "markdownDescription": "\u0060has_winner\u0060 (type \u0060bool\u0060) on view \u0060round_ended\u0060."
+        },
+        "win_reason": {
+          "markdownDescription": "\u0060win_reason\u0060 (type \u0060int\u0060) on view \u0060round_ended\u0060."
+        },
+        "winner_side": {
+          "markdownDescription": "\u0060winner_side\u0060 (type \u0060int\u0060) on view \u0060round_ended\u0060."
+        },
+        "winner_team": {
+          "markdownDescription": "\u0060winner_team\u0060 (type \u0060int\u0060) on view \u0060round_ended\u0060."
+        },
         "actor": {
           "enum": [
             "any"

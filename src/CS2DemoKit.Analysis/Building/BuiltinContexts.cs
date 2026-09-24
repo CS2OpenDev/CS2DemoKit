@@ -176,6 +176,11 @@ public static class BuiltinContexts
         TransientValueNode<int> roundWinnerTeam = new("enrich.round.winner_team");
         TransientValueNode<int> roundWinnerSide = new("enrich.round.winner_side");
 
+        // The engine's round-end reason, from the round_decided latch; 0 when the winner had to be
+        // derived because the game rules never named one.
+        TransientValueNode<int> roundWinReason = new("enrich.round.win_reason");
+        RoundDecidedEdge roundDecidedEdge = new(graphRoot, playerContext);
+
         TransientBoolNode weaponFireIsBullet = new("enrich.weapon_fire.is_bullet");
         WeaponFireEnrichmentEdge weaponFireEnrichEdge = new(graphRoot, weaponFireIsBullet);
         TransientBoolNode hurtIsBullet = new("enrich.hurt.is_bullet");
@@ -289,7 +294,7 @@ public static class BuiltinContexts
 
                 roundEndEdges.Add(new RoundEndEnrichmentEdge(
                     graphRoot, playerContext, roundHasWinner, roundWinnerTeam, roundWinnerSide,
-                    eventType));
+                    roundWinReason, eventType));
                 roundEndEdges.Add(new ClutchResolutionEnrichmentEdge(
                     graphRoot, playerContext, clutchWon, clutchWinnerSlot,
                     eventType));
@@ -316,7 +321,8 @@ public static class BuiltinContexts
             sprayKillEnrichEdge,
             spottedEnrichEdge,
             aimShotFiredEdge,
-            aimShotLandedEdge
+            aimShotLandedEdge,
+            roundDecidedEdge
         };
         allEdges.AddRange(roundEndEdges);
 
@@ -328,7 +334,7 @@ public static class BuiltinContexts
                 victimHealthBefore, cappedDamage, attackerActiveWeapon,
                 blindWasEnemyFlash, blindDuration,
                 clutchDetected, clutchPlayerSlot, clutchWon, clutchWinnerSlot,
-                roundHasWinner, roundWinnerTeam, roundWinnerSide,
+                roundHasWinner, roundWinnerTeam, roundWinnerSide, roundWinReason,
                 weaponFireIsBullet, hurtIsBullet,
                 shotTurnDegrees, shotTicksSinceLast, shotSprayShots, shotSprayVictims,
                 killSprayKills, killSprayShotsAtKill,
@@ -364,6 +370,7 @@ public static class BuiltinContexts
                 ["enrich.round.has_winner"] = roundHasWinner,
                 ["enrich.round.winner_team"] = roundWinnerTeam,
                 ["enrich.round.winner_side"] = roundWinnerSide,
+                ["enrich.round.win_reason"] = roundWinReason,
                 ["enrich.weapon_fire.is_bullet"] = weaponFireIsBullet,
                 ["enrich.hurt.is_bullet"] = hurtIsBullet,
                 ["enrich.shot.turn_degrees"] = shotTurnDegrees,

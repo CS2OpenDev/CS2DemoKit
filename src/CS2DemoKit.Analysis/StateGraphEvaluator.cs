@@ -658,6 +658,35 @@ public sealed class StateGraphEvaluator
                 FinishMessage(message, edgesEvaluated, edgesFired, logicRecomputed);
             }
 
+            // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
+            //    messages because the kill that decided the round often arrives in this same frame,
+            //    and "decided" must follow it. Same materialize / track / finish path as the
+            //    pre-frame synthesized messages above, so snapshot rows and forward/retained parity
+            //    hold. ──
+            if (_entityScanner is not null)
+            {
+                IReadOnlyList<NetMessage> postFrame = _entityScanner.TakePostFrameMessages();
+                for (int p = 0; p < postFrame.Count; p++)
+                {
+                    NetMessage postMsg = postFrame[p];
+                    if (postMsg is GameEventMessage pgem)
+                    {
+                        MaterializeNewPlayers(pgem.DecodedEvent);
+                        snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                    }
+
+                    Type pKey = GetDispatchKey(postMsg);
+                    int pEvaluated = 0, pFired = 0, pLogic = 0;
+                    EvaluateEdgesInstrumented(new EvaluationContext(postMsg, frame), pKey,
+                        trace, ref pEvaluated, ref pFired,
+                        snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
+                    CheckLogicNodesInstrumented(events, pKey, frameIdx, frame.ServerTick,
+                        trace, ref pLogic, snap);
+
+                    FinishMessage(postMsg, pEvaluated, pFired, pLogic);
+                }
+            }
+
             if (timeFrame)
             {
                 long frameTicks = Stopwatch.GetTimestamp() - frameStart;

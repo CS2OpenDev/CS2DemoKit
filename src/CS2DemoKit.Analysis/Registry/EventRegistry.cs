@@ -93,6 +93,10 @@ public sealed class EventRegistry
         // wire event at all. The demo's spotted bit is team radar, so this is recomputed from map
         // geometry on the rising edge of per-pair could-see.
         ("enemy_spotted", typeof(EnemySpottedEvent)),
+        // Synthesized (EntityChangeScanner): the frame the game rules' round-win status goes from 0
+        // to a winner. Matchmaking demos carry no round_end, and the round's close comes 448 ticks
+        // after the decision, when the status has already reset.
+        ("round_decided", typeof(RoundDecidedEvent)),
         ("decoy_detonate", typeof(DecoyDetonateEvent)),
         ("bullet_impact", typeof(BulletImpactEvent)),
         ("other_death", typeof(OtherDeathEvent)),

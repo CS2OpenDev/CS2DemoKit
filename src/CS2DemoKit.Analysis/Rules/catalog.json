@@ -1616,6 +1616,32 @@
       "fields": []
     },
     {
+      "name": "round_decided",
+      "clrType": "RoundDecidedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Reason",
+          "type": "int",
+          "v2Name": "event.Reason",
+          "v2Type": "Int"
+        },
+        {
+          "name": "RoundsPlayed",
+          "type": "int",
+          "v2Name": "event.RoundsPlayed",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Winner",
+          "type": "int",
+          "v2Name": "event.Winner",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
       "name": "round_end",
       "clrType": "RoundEndEvent",
       "synthesized": false,
@@ -2333,6 +2359,11 @@
       "scope": "round"
     },
     {
+      "name": "enrich.round.win_reason",
+      "valueType": "int",
+      "scope": "round"
+    },
+    {
       "name": "enrich.round.winner_side",
       "valueType": "int",
       "scope": "round"
@@ -2792,7 +2823,7 @@
       "clrType": "int",
       "v2Name": "match.round_win_reason",
       "v2Type": "Int",
-      "note": "The engine\u0027s round-end reason, set with round_win_status and cleared with it: 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the round is undecided. Read it between the decision and the round\u0027s close, never on round_officially_ended, where it has already reset to 0."
+      "note": "The engine\u0027s round-end reason, set with round_win_status and cleared with it: 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out). 0 while the round is undecided. Read it on the \u0060round_decided\u0060 view (its \u0060reason\u0060 facet) or between the decision and the round\u0027s close, never on \u0060round_ended\u0060, where it has already reset to 0; there, \u0060enrich.round.win_reason\u0060 carries it."
     },
     {
       "name": "entity.game.round_win_status",
@@ -2800,7 +2831,7 @@
       "clrType": "int",
       "v2Name": "match.round_win_status",
       "v2Type": "Int",
-      "note": "0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on round_officially_ended it reads 0. At the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+      "note": "0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on \u0060round_ended\u0060 it reads 0. The \u0060round_decided\u0060 view fires on the step, and at the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
     },
     {
       "name": "entity.game.total_rounds_played",
@@ -3262,6 +3293,13 @@
           ]
         },
         {
+          "logicalName": "$round_decided",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
           "logicalName": "$round_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3654,6 +3692,13 @@
           ]
         },
         {
+          "logicalName": "$round_decided",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
           "logicalName": "$round_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4039,6 +4084,13 @@
           ]
         },
         {
+          "logicalName": "$round_decided",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
           "logicalName": "$round_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4417,6 +4469,13 @@
           ]
         },
         {
+          "logicalName": "$round_decided",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
           "logicalName": "$round_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4785,6 +4844,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "player_team"
+          ]
+        },
+        {
+          "logicalName": "$round_decided",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_decided"
           ]
         },
         {
@@ -5794,6 +5860,138 @@
         }
       ],
       "note": "Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
+    },
+    {
+      "name": "round_decided",
+      "event": "round_decided",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "reason",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Reason"
+        },
+        {
+          "name": "rounds_played",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "RoundsPlayed"
+        },
+        {
+          "name": "winner_side",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Winner"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        }
+      ],
+      "note": "Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo."
+    },
+    {
+      "name": "round_ended",
+      "event": "round_end",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "has_winner",
+          "type": "bool",
+          "v2Type": "Bool",
+          "enrichment": "enrich.round.has_winner"
+        },
+        {
+          "name": "win_reason",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.win_reason"
+        },
+        {
+          "name": "winner_side",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.winner_side"
+        },
+        {
+          "name": "winner_team",
+          "type": "int",
+          "v2Type": "Int",
+          "enrichment": "enrich.round.winner_team"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "round_officially_ended",
+            "cs_win_panel_match"
+          ]
+        }
+      ]
     },
     {
       "name": "round_lost",
