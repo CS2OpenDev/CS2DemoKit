@@ -244,5 +244,6 @@ precedence, so existing scripts keep working.
 
 ## License
 
-MIT. Contains code adapted from [demofile-net](https://github.com/saul/demofile-net) (MIT) —
-see `THIRD-PARTY-NOTICES.md` in the repo for the full attribution and file list.
+MIT. Contains code adapted from [demofile-net](https://github.com/saul/demofile-net) (MIT) and
+[demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) (MIT) — see
+`THIRD-PARTY-NOTICES.md` in the repo for the full attribution and file list.

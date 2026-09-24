@@ -359,6 +359,25 @@ frames.
 it read 0 on every weapon through 0.12.0 and reads -1 now. Only `EntityState` reads of the field and
 the SDK's `BasePlayerWeapon.Clip2` see it; no built-in column or provider reads it.
 
+### `SubTickExtractor` rebuilds `delta_data` commands (0.13.0)
+
+Since build 10896 servers send about 99.8% of user commands as `CMsgServerUserCmd.delta_data`
+against the player's previous command. Through 0.12.0 `SubTickExtractor.Extract` parsed `data`
+only and skipped the rest without a word, so on a current demo it returned the keyframes' moves:
+15 events on a build-10896 matchmaking demo that now gives 60,503. It also treated the command
+snapshots that current `DEM_FullPacket` frames carry as new input and counted each of them twice;
+those now produce no events. Demos from before the switch (all `data`, no snapshots) give the same
+events as before. The event shape and the sort by `When` are unchanged, but anything calibrated on
+0.12.0 counts from a current demo sees different numbers.
+
+Decode failures used to be swallowed by a catch-all; they are now counted. New public types:
+`UserCmdReconstructor`, `ReconstructedUserCmd`, `UserCmdApplyStatus` and
+`UserCmdReconstructionStats` in `CS2DemoKit.Parser.EntityTracking`, and an
+`Extract(IEnumerable<DemoFrame>, UserCmdReconstructor)` overload that exposes the stats. Nothing
+was removed. `DecodeProvenance`, the `ParseWarning` catalogue and the parse itself are unchanged:
+the raw payloads are stored as before, and only callers that ask for input pay for the rebuild
+(about 2 to 2.5 s on a full current demo).
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
