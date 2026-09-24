@@ -131,7 +131,7 @@ public static class PawnLookup
     ///     <para>
     ///         The value is live, read from the tracker's current state: once the thrower dies, its
     ///         pawn's controller handle goes invalid and this returns <c>-1</c> for the rest of the
-    ///         projectile's flight. <c>ProjectileSampler</c> holds the first resolved slot for
+    ///         projectile's flight. <see cref="ProjectileSampler" /> holds the first resolved slot for
     ///         that reason. The controller is not identity-checked, so an index that names a
     ///         recycled non-controller still maps to a slot; the digest's molotov thrower cells are
     ///         pinned to this behaviour.

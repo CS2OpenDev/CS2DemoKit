@@ -61,14 +61,30 @@ public static class PositionUtil
     ///         one so it does not have to own the cell constant.
     ///     </para>
     /// </summary>
-    public static Vector3? CellToWorld(EntityState pawn)
+    public static Vector3? CellToWorld(EntityState pawn) => CellToWorldCore(pawn, false);
+
+    /// <summary>
+    ///     <see cref="CellToWorld(EntityState)" />, optionally refusing a zero cell index. Cell 0
+    ///     puts that axis at -16384 to -15360 world units, outside every playable map, so on an
+    ///     entity whose creation decode can go wrong (the smoke projectile of issue #56) a zero
+    ///     cell is garbage rather than a position. Pawns never sit there, so the public overload
+    ///     keeps reconstructing it unchanged.
+    /// </summary>
+    /// <param name="entity">An entity carrying the six <c>CBodyComponent</c> cell and offset leaves.</param>
+    /// <param name="rejectZeroCell">Return null when any of <c>m_cell{X,Y,Z}</c> is 0.</param>
+    internal static Vector3? CellToWorldCore(EntityState entity, bool rejectZeroCell)
     {
-        if (!TryCellRead(pawn, "CBodyComponent.m_cellX", out int cx) ||
-            !TryCellRead(pawn, "CBodyComponent.m_cellY", out int cy) ||
-            !TryCellRead(pawn, "CBodyComponent.m_cellZ", out int cz) ||
-            !TryOffsetRead(pawn, "CBodyComponent.m_vecX", out float ox) ||
-            !TryOffsetRead(pawn, "CBodyComponent.m_vecY", out float oy) ||
-            !TryOffsetRead(pawn, "CBodyComponent.m_vecZ", out float oz))
+        if (!TryCellRead(entity, "CBodyComponent.m_cellX", out int cx) ||
+            !TryCellRead(entity, "CBodyComponent.m_cellY", out int cy) ||
+            !TryCellRead(entity, "CBodyComponent.m_cellZ", out int cz) ||
+            !TryOffsetRead(entity, "CBodyComponent.m_vecX", out float ox) ||
+            !TryOffsetRead(entity, "CBodyComponent.m_vecY", out float oy) ||
+            !TryOffsetRead(entity, "CBodyComponent.m_vecZ", out float oz))
+        {
+            return null;
+        }
+
+        if (rejectZeroCell && (cx == 0 || cy == 0 || cz == 0))
         {
             return null;
         }
