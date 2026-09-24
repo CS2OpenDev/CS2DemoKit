@@ -654,6 +654,19 @@ in place. The tree is built once at static-class init.
 has a `null` Reader — that's the sentinel meaning "no more field paths in this
 entity".
 
+`EntityTracker.CollectFieldPaths` reads ops until that finish op, up to
+`EntityTracker.MaxFieldPaths` (16,384) paths per update. Going over the cap
+throws `InvalidDataException`, which reaches `LastEntityError` and
+`DecodeErrorRaised` like any other entity decode error; it never truncates.
+The largest real update is the `CSmokeGrenadeProjectile` instancebaseline,
+3,214 to 3,482 paths (builds 10231 and 10896), almost all of them
+`m_VoxelFrameData` elements; the other projectile baselines carry 134 or 135
+and nothing else measured goes above 1,500. Until 0.13.0 the cap was 2,048
+and hitting it stopped collection silently, so the smoke baseline's values
+were read from bits that were really path ops. The cap still has to exist:
+`BitBuffer` reads zeros past its end, and the all-zero code is `PlusOne`, so a
+misaligned stream would never reach a finish op.
+
 ### `FieldDecoder` and `FieldDecoderFactory`
 
 [`FieldDecoder.cs`](../src/CS2DemoKit.Parser/EntityTracking/FieldDecoder.cs)
