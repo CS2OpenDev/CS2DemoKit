@@ -99,6 +99,12 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private bool _disposed;
     private int _foldsInFlight;
 
+    /// <summary>
+    ///     Test seam: called with the chunk's first frame index at the start of every fold task, on
+    ///     the thread that runs it, so a test can choose the order the folds start in.
+    /// </summary>
+    internal Action<int>? FoldStarting { get; set; }
+
     /// <param name="inner">The source to read; consumed by this producer alone from here on.</param>
     /// <param name="perPlayerFactory">Fresh per-player providers for one worker, in the layout's order.</param>
     /// <param name="singletonFactory">Fresh singleton providers for one worker, in the same order contract.</param>
@@ -533,9 +539,23 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             _foldsInFlight++;
         }
 
+        // The tracker is chosen here, on the reader thread and in chunk order, not by the task:
+        // the pool may start the tasks in any order, and a later chunk started first would load a
+        // schema into the tracker chunk 0 needs fresh.
+        Worker worker;
+        try
+        {
+            worker = TakeWorker(fresh: chunk.Checkpoint is null);
+        }
+        catch
+        {
+            FoldEnded(Task.CompletedTask);
+            throw;
+        }
+
         // No token on the task: a fold that never ran would never end, and Close waits on the
-        // count. Fold checks the token itself before it takes a worker.
-        Task<EntityFrameDigest[]> fold = Task.Run(() => Fold(chunk));
+        // count. RunFold checks the token itself before it touches the tracker.
+        Task<EntityFrameDigest[]> fold = Task.Run(() => RunFold(chunk, worker));
         fold.ContinueWith(FoldEnded, TaskContinuationOptions.ExecuteSynchronously);
         chunk.Digests = fold;
         return true;
@@ -563,15 +583,15 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     /// <summary>Bytes the fold workers allocated so far, counted only while profiling was on.</summary>
     internal long FoldAllocBytes => Interlocked.Read(ref _foldAllocBytes);
 
-    private EntityFrameDigest[] Fold(Chunk chunk)
+    private EntityFrameDigest[] RunFold(Chunk chunk, Worker worker)
     {
-        _token.ThrowIfCancellationRequested();
-        Worker worker = TakeWorker(fresh: chunk.Checkpoint is null);
         bool prof = Profiling.Enabled;
         long start = prof ? Stopwatch.GetTimestamp() : 0;
         long allocStart = prof ? GC.GetAllocatedBytesForCurrentThread() : 0;
         try
         {
+            FoldStarting?.Invoke(chunk.FirstFrameIndex);
+            _token.ThrowIfCancellationRequested();
             return Fold(chunk, worker);
         }
         finally
@@ -588,7 +608,8 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
 
     // Chunk 0 folds the signon prefix as ordinary frames, so it needs a tracker that has never
     // loaded a schema; it is the first fold started, so every tracker is. Every other chunk
-    // takes whichever worker is free, and one is: folds in flight never exceed the pool.
+    // takes whichever worker is free, and one is: a fold returns its worker before it frees its
+    // slot, and the reader takes one only after a slot is free. Called on the reader thread only.
     private Worker TakeWorker(bool fresh)
     {
         List<Worker> passed = [];
