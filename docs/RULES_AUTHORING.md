@@ -615,6 +615,11 @@ show:
         - { stat: won, label: Won }
 ```
 
+`src/CS2DemoKit.Analysis/Rules/examples/round_facts.rules.yaml` is a complete one: the side's buy
+(with its thresholds as `params:`), the decision, the plant, and the kill timeline with the
+man-count after each kill, per round per side, every tick on the frame clock. A tick column of a
+thing that did not happen that round reads `0`.
+
 ### Reusing another ruleset — `use:` / `exports:`
 A stat can read `otherRuleset.stat` if your file declares `use: [otherRuleset]` and that ruleset
 `exports:` it. This is how one file builds on another without copy-pasting.

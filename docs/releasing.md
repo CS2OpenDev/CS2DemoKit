@@ -380,6 +380,89 @@ the raw payloads are stored as before, and only callers that ask for input pay f
 diagnostics; `UserCmdReconstructor.Stats` carries the delta share, and
 `docs/parser-architecture.md` says why the parse does not count it.
 
+### `round_won` and `round_lost` filter by team (0.13.0)
+
+`views.yaml` has always said `round_won` fires for the players whose live team won the round and
+`round_lost` for the rest. Through 0.12.0 the planner never applied that binding: both views fired
+for every player at every round end, so `count: round_won` counted every round. A ruleset that
+counted losses as `count: round_won` with a `where:` naming the other team as the winner, as the
+shipped `player_stats` did for `CTLosses` / `TLosses` and the `save_rounds` example did, now reads
+0; count `round_lost` instead. A stat about the round rather than its result ("rounds survived")
+counts the new `round_ended` view, which fires for everyone as the unbound `round_won` did. The
+shipped rulesets are migrated and their values are unchanged, but the resolved-identity hashes of
+the four migrated stats change with their view, so a cache keyed on those hashes (a highlight
+fingerprint that reaches them) rebuilds once. At `for: match` both views stay unbound.
+
+### `for: match` stats reset per round, and restart with the match (0.13.0)
+
+A `per: round` stat in a `for: match` ruleset never reset through 0.12.0: it read the match total.
+It now resets at each freeze end, and every `for: match` stat returns to its build-time value on a
+repeated `begin_new_match`, as a per-player stat always has. A match-only build also tracks players
+now (it forces the entity scanner, as an each_player build already did), so its enrichments see live
+teams: a match-only round-end winner used to be derived from nobody alive and read CT every round.
+No shipped ruleset is `for: match`; a user ruleset that is gets different, correct numbers.
+
+### A `show:` table must match its ruleset's scope (0.13.0)
+
+A table whose `per:` does not belong to the ruleset's `for:` (`player_round` / `player_match` in
+`for: each_player`, `team_round` / `team_match` in `for: each_team`, `match` in `for: match`)
+validated and projected zero rows through 0.12.0. It is now a validation error,
+`resolve.show.table-scope-mismatch`, and a `show: scoreboard` outside `for: each_player` is one too,
+`resolve.show.scoreboard-scope`, where it used to throw at build. Composition drops the ruleset, as
+for any other error.
+
+### `for: each_team`, and the public types that grew for it (0.13.0)
+
+A third scope builds a ruleset once per side. Additions a consumer compiled against 0.12.0 meets:
+
+- `RulesetScope.EachTeam`; `OutputScope.PerTeamPerRound` and `PerTeamPerGame`; in
+  `CS2DemoKit.Analysis.Rules`, `ScopeAxis.TeamRound` and `TeamMatch`. A `switch` over any of these
+  enums that throws on an unknown member throws on the new ones. The hasher names the axes, so every
+  existing resolved-identity hash is unchanged.
+- `MetricRef` gained an optional positional parameter, `TickClock Clock = TickClock.None`: the
+  binary, source and equality consequences described under `CatalogEnrichment` above apply.
+- `MetricTable.ColumnClocks`, `BuildResult.TeamNodesByRuleId`, `TeamRosterNodes` and
+  `RoundBoundaryTypes`, `ConfiguredOutputProjector.TeamNodesByRuleId` and `TeamRosterNodes`, and
+  `CheckedStat.Clock` are init-only or trailing optional members; `CheckedStat` is a positional
+  record, so its constructor changed shape too.
+- New resolve codes: `resolve.show.table-scope-mismatch`, `resolve.show.scoreboard-scope`,
+  `resolve.team-scope.unsupported`.
+
+### Configured tables project without snapshots (0.13.0)
+
+`AnalysisRun.ProjectConfiguredOutputs` threw on a run without snapshots through 0.12.0. It now
+projects from what the run recorded at each round boundary, which is the state a snapshot run's
+round rows hold, so the tables agree row for row. Only a per-event output (a timeline log) still
+throws without snapshots. A snapshot run projects as before, with one correction: a logic node
+switched off by a round reset now marks its snapshot column, where it used to keep its last `true`
+in every later row. kast's `KASTRounds` table cell is one such node, and at the end of a match it
+now reads null for a player whose last round had no KAST (12 cells across the five fixture demos
+present locally), rather than a stale `true`.
+
+### The round's winner is the server's, and `round_decided` is new (0.13.0)
+
+The round-end enrichment (`enrich.round.winner_side` / `winner_team` / `has_winner`) reports the
+winner the game rules declared, latched from the new synthesized `round_decided` event, and derives
+one from bomb state and alive counts only when there is no entity scanner or no win-status provider.
+The two agreed on every round of the demos measured, so no stat value moved; the difference shows on
+rounds the derivation cannot see (a surrender, a draw). `round_decided` is dispatched after the
+frame's own messages, a new ordering special case in the evaluator: it follows the kill that decided
+the round when both arrive in one frame. `$round_end` is unchanged and still the round's close.
+
+The three game-rules providers it reads (`entity.game.round_win_status`, `round_win_reason`,
+`total_rounds_played`) are tracked whenever a scanner is built, and `enrich.round.win_reason` is new,
+so every build carries four more static nodes: the rules-output fixtures moved by `nodeCount + 4` and
+their hash, and a consumer that counts `BuildResult.Nodes` or snapshot columns sees them.
+
+### Singleton reads build, and a new per-player column shifts the digest (0.13.0)
+
+A `match.*` read of a singleton provider (`capture: match.freeze_period`) threw at build through
+0.12.0; it now reads the provider's value. The new per-player provider `entity.controller.money`
+(`player.money`) sits before the angle and position columns in both registries, so the column index
+of every provider after it moved by one in the per-pawn digest layout. A consumer that indexes
+digest columns by position rather than by provider name needs to rebuild its index; the per-pawn
+fold fixtures moved for the new column.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
