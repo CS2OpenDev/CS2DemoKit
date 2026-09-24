@@ -107,7 +107,8 @@ engine's round-end reason: 1 the bomb exploded, 7 bomb defused, 8 and 9 eliminat
 ran out, 17 and 18 a surrender) and `rounds_played`. It is synthesized from entity state, so its `event.tick` is the frame clock, and
 it is dispatched after the frame's own events, so it follows the kill that decided the round.
 **`round_ended`** is the round's close (`round_officially_ended` on a matchmaking demo, 448 ticks
-later; 544 at the end of a half, when the break is waited out first; the match's last round has no
+later; 544 at the end of a half, when the break is waited out first; either can land a tick early or
+late, which is the server's timer, so do not match on the exact gap; the match's last round has no
 `round_officially_ended` and closes on `cs_win_panel_match`, 193 ticks after the decision on the
 demos measured), bound to nobody: its facets
 are `winner_side`, `winner_team`, `has_winner` and `win_reason`. Every round-end stat (survived,

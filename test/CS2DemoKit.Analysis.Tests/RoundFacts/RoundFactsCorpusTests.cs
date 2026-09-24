@@ -199,6 +199,12 @@ public class RoundFactsCorpusTests
     ///     except the last round of a half, whose close waits out the 544-tick break instead (once in
     ///     regulation, and again at each overtime half); the final round has no
     ///     round_officially_ended and is closed by cs_win_panel_match.
+    ///     <para>
+    ///         A tick either way is the server's timer, not the engine: on two corpus demos a round
+    ///         closes 447 or 545 ticks after its decision with contiguous frame ticks around the
+    ///         decision and the usual 19 ticks from cs_pre_restart to the close, so the one tick
+    ///         sits between the networked win status and cs_pre_restart on the server's side.
+    ///     </para>
     /// </summary>
     private static async Task AssertRoundCloses(AnalysisRun run, string label)
     {
@@ -213,13 +219,14 @@ public class RoundFactsCorpusTests
         for (int i = 0; i < closed.Length; i++)
         {
             int gap = closed[i] - decided[i];
-            if (gap == 544)
+            if (Math.Abs(gap - 544) <= 1)
             {
                 breaks++;
                 continue;
             }
 
-            await Assert.That(gap).IsEqualTo(448).Because($"{label}: round {i + 1} closed {gap} ticks after its decision");
+            await Assert.That(Math.Abs(gap - 448)).IsLessThanOrEqualTo(1)
+                .Because($"{label}: round {i + 1} closed {gap} ticks after its decision");
         }
 
         // A 544 is a half's last round: at most one per 12 regulation rounds and one per overtime half.
