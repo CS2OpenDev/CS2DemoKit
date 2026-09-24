@@ -492,6 +492,24 @@ of every provider after it moved by one in the per-pawn digest layout. A consume
 digest columns by position rather than by provider name needs to rebuild its index; the per-pawn
 fold fixtures moved for the new column.
 
+### `CSmokeGrenadeProjectile` decodes its whole instance baseline (0.13.0)
+
+Through 0.12.0 entity decode stopped collecting field paths at 2,048 per update without a word. A
+smoke's instancebaseline carries 3,214 to 3,482 of them (nearly all `m_VoxelFrameData`), so every
+smoke's baseline was cut off and its values decoded from misaligned bits. Any field the creation
+packet did not re-send kept a garbage value until it next changed: the cell (so `CellToWorld` was
+thousands of units off, sometimes for the smoke's whole life), `m_iTeamNum` (usually 0),
+`m_nBounces`, `m_nEntityId`, `m_hThrower` (unresolved on 11 to 28% of smokes) and
+`m_nSmokeEffectTickBegin`. On build-10896 demos that last one made `VisibilityAnalyzer`'s active
+smoke check and the digest's smoke list count flying smokes as clouds near the map origin, so
+visibility numbers and smoke digests from 0.12 on current demos differ. Other projectile classes
+were never affected. The shipped rulesets read no smoke baseline field, and the rules-output digests
+for the five fixture demos on hand are byte-identical.
+
+The cap is now 16,384, and a demo whose entity carries more paths than that reports an entity decode
+error (`LastEntityError`, `DecodeErrorRaised`) instead of decoding garbage. As with any entity decode
+error, the rest of that packet is skipped. No API changes.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

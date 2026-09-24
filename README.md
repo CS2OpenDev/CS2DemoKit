@@ -243,7 +243,7 @@ structure is rejected, a warning is recorded, and the parse continues.
 | `MinBitsPerEntry` | 3 | Entry count against bits actually present |
 | `MaxInstanceBaselineBytes` | 16 MiB | Declared decompressed size of an instancebaseline blob |
 | `MinBitsPerInstanceBaselineEntry` | 3 | Baseline entry count against bits present |
-| `MaxFieldPaths` | 2048 | Runaway field-path decode on a misaligned entity |
+| `MaxFieldPaths` | 16384 | Runaway field-path decode on a misaligned entity; exceeding it is reported as an entity decode error (`LastEntityError` / `DecodeErrorRaised`, see below) |
 | `MaxWarnings` | 256 | The warning channel itself |
 
 Compressed sizes are checked *before* decompressing, since the declared length is what drives the
