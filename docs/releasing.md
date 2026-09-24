@@ -537,7 +537,8 @@ previously internal to Analysis, is public with the same behaviour. The addition
 binary-compatible except for one case: a consumer that declares its own `ProjectileSample`,
 `ProjectileSampler` or `GrenadeProjectileClasses` and imports `CS2DemoKit.Parser.EntityTracking`
 gets CS0104 (ambiguous reference) until it qualifies the name. The digest and rules output do not
-move.
+move. Analysis's internal `ProjectileSlotIndex` still follows only smoke and molotov slots, the two
+classes the digest reads; `ProjectileSampler` follows all five with its own slot tracking.
 
 ## Credentials
 

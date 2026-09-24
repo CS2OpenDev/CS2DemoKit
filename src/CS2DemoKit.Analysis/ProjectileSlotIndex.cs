@@ -34,6 +34,11 @@ namespace CS2DemoKit.Analysis;
 ///         One index per tracker owner and never shared: it subscribes to a tracker event, and the
 ///         parallel producer gives each chunk worker its own layer, so each gets its own index.
 ///     </para>
+///     <para>
+///         Scoped on purpose to the two classes the digest reads. The public all-five-class walk
+///         is <see cref="ProjectileSampler" />, which follows its own slots; widening this set
+///         would only make the digest visit projectiles it skips.
+///     </para>
 /// </summary>
 internal sealed class ProjectileSlotIndex
 {
