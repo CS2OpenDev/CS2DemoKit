@@ -119,7 +119,7 @@ public sealed record AnalysisOptions
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
-/// <param name="Build">The compiled graph and its metadata (skeleton-render inputs, scanner, chain keys).</param>
+/// <param name="Build">The compiled graph and its metadata (nodes, descriptors, scanner, node maps).</param>
 /// <param name="Timeline">Every chain activation/deactivation, in both modes.</param>
 /// <param name="Snapshots">
 ///     The snapshot-mode result (per-message state rows, materialized players, applied-edge maps), or

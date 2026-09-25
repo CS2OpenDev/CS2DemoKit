@@ -165,8 +165,6 @@ public sealed partial class RuleChainBuilder
         {
             graph.Root
         };
-        Dictionary<string, List<StateNode>> groupMembers = new(StringComparer.OrdinalIgnoreCase);
-        List<ConjunctionNode> conjunctions = new();
         HashSet<Type> relevantTypes = new();
 
         // ── Build player-context index (consumed by CreateEnrichment below) ──
@@ -512,7 +510,7 @@ public sealed partial class RuleChainBuilder
                     continue;
                 }
 
-                BuildSingletonRule(rule, graph, wiring, nodeLookup, allNodes, groupMembers, relevantTypes);
+                BuildSingletonRule(rule, graph, wiring, nodeLookup, allNodes, relevantTypes);
                 if (nodeLookup.TryGetValue(rule.Id, out StateNode? ctxNode))
                 {
                     // Context rules (round_number, gameplay_phase, …) resolve by bare id only.
@@ -550,10 +548,6 @@ public sealed partial class RuleChainBuilder
         relevantTypes.Add(typeof(PlayerDisconnectEvent));
         relevantTypes.Add(typeof(PlayerSpawnEvent));
 
-        List<NodeGroupHint> groupHints = groupMembers
-            .Select(kv => new NodeGroupHint(kv.Key, kv.Value))
-            .ToList();
-
         // Every game-scope row a StateEdge backs, several rows to one edge for a multi-write edge;
         // drives edge graph-breakpoints. By reference, like the descriptors themselves.
         Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking = new(ReferenceEqualityComparer.Instance);
@@ -565,8 +559,8 @@ public sealed partial class RuleChainBuilder
             }
         }
 
-        return new BuildResult(graph, allNodes, wiring.Descriptors, conjunctions,
-            relevantTypes, groupHints, playerContextIndex, entityScanner, null,
+        return new BuildResult(graph, allNodes, wiring.Descriptors,
+            relevantTypes, playerContextIndex, entityScanner,
             edgeBacking.Count > 0 ? edgeBacking : null,
             gameNodesByRuleId.Count > 0 ? gameNodesByRuleId : null,
             v2Outputs.Count > 0 ? v2Outputs : null,
@@ -783,8 +777,7 @@ public sealed partial class RuleChainBuilder
     // ── Singleton rule building ────────────────────────────────────────────
 
     private void BuildSingletonRule(RuleDef rule, StateGraph graph, GraphWiring wiring,
-        Dictionary<string, StateNode> nodeLookup, List<StateNode> allNodes,
-        Dictionary<string, List<StateNode>> groupMembers, HashSet<Type> relevantTypes)
+        Dictionary<string, StateNode> nodeLookup, List<StateNode> allNodes, HashSet<Type> relevantTypes)
     {
         if (rule.Parents is not null && (rule.Triggers is null || rule.Triggers.Count == 0))
         {

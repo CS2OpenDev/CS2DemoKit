@@ -129,14 +129,9 @@ public static class AuthoringGraph
                 continue;
             }
 
-            IReadOnlySet<string> chainIds =
-                build.NodeChains is not null && build.NodeChains.TryGetValue(n, out IReadOnlySet<string>? keys)
-                    ? keys
-                    : _emptyChainKeys;
-
             index[n] = nodeModels.Count;
             nodeModels.Add(new AuthoringGraphNode(
-                n.Name, n.Subtitle, n is RootNode, perPlayer.Contains(n), n.GetDisplayValue(), chainIds));
+                n.Name, n.Subtitle, n is RootNode, perPlayer.Contains(n), n.GetDisplayValue(), _emptyChainKeys));
         }
 
         List<AuthoringGraphEdge> edgeModels = [];

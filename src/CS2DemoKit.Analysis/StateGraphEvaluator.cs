@@ -477,9 +477,9 @@ public sealed class StateGraphEvaluator
         long totalEdgesFired = 0;
         int totalMessages = 0;
 
-        // Fire counters are per-evaluation. Edges/actions registered before this
-        // point (constructor-time MaterializeKnownPlayers included) may carry counts from a
-        // previous run of this evaluator — or of another evaluator over the same shared graph.
+        // Fire counters are per-evaluation. Edges/actions registered before this point may carry
+        // counts from a previous run of this evaluator — or of another evaluator over the same
+        // shared graph.
         ResetFireCounters();
 
         // A1: the highlight sink is per-evaluation too — the emission closures append to the
@@ -1410,11 +1410,10 @@ public sealed class StateGraphEvaluator
 
         foreach (int slot in ExtractPlayerSlots(gameEvent))
         {
-            // 0..63 sentinel guard hoisted from ExtractPlayerSlots' per-case checks so every
-            // yielded slot is covered (-1 = no-player sentinel, >= 64 = 16-bit garbage; VictimSlot
-            // and PlayerSlot previously arrived unguarded and materialized phantom players).
-            // Must precede the seen-set add so sentinels never enter it. Mirrors the range check
-            // in MaterializeKnownPlayers.
+            // Only slots 0 to 63 are players: -1 is the no-player sentinel and anything from 64 up
+            // is 16-bit garbage. The check covers every slot ExtractPlayerSlots yields (VictimSlot
+            // and PlayerSlot once arrived unguarded and materialized phantom players), and it runs
+            // before the seen-set add so a sentinel never enters the set.
             if (slot is < 0 or >= 64)
             {
                 continue;
@@ -2494,5 +2493,5 @@ public sealed record EvaluationResult(
     IReadOnlyList<GraphEdgeDescriptor> MaterializedEdgeDescriptors,
     // For each StateEdge that fired ≥ once, the sorted list of global message indices (into Messages
     // / MessageSnapshots) at which it applied. Drives edge graph-breakpoints — a clicked edge resolves
-    // to its StateEdge via BuildResult.EdgeBacking. Null/empty on the bench Evaluate path.
+    // to its StateEdge through its descriptor's Edge. Null/empty on the bench Evaluate path.
     IReadOnlyDictionary<StateEdge, List<int>>? AppliedMessagesByEdge = null);

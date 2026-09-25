@@ -25,23 +25,14 @@ namespace CS2DemoKit.Analysis.Graphs;
 ///     <see cref="GraphEdgeDescriptor" /> and <see cref="GraphEdgeKind" />). A row can point at one
 ///     of <see cref="ExternalNodes" />. The per-player rows are on each materialised player.
 /// </param>
-/// <param name="Chains">All chain (conjunction) nodes — used by the timeline view.</param>
 /// <param name="RelevantMessageTypes">
 ///     Set of message types the graph subscribes to; the evaluator can short-circuit other
 ///     messages.
 /// </param>
-/// <param name="GroupHints">Hints to the visualization layer for clustering nodes by group name.</param>
 /// <param name="PlayerContextIndex">Per-player context tracking, when any rule needs cross-player state.</param>
 /// <param name="EntityScanner">
 ///     Lazy entity-state scanner; <c>null</c> when no rule references any
 ///     <c>IEntityValueProvider</c>.
-/// </param>
-/// <param name="NodeChains">
-///     Game-scoped node → <c>_chain_{id}</c> membership, a Rulesets v1 chain concept. Always
-///     <c>null</c> since the v1 chain layer was removed — consumers (the Analysis-graph chain
-///     filter) already degrade to per-player scoping on <c>null</c>, which has been the
-///     production behaviour since the v2 cutover. Kept as a slot so the UI plumbing stays
-///     uniform; candidates for a future v2 membership surface.
 /// </param>
 /// <param name="EdgeBacking">
 ///     Maps each game-scope descriptor that a <see cref="StateEdge" /> backs to that edge, by
@@ -72,15 +63,12 @@ public sealed record BuildResult(
     StateGraph Graph,
     IReadOnlyList<StateNode> Nodes,
     IReadOnlyList<GraphEdgeDescriptor> Edges,
-    IReadOnlyList<ConjunctionNode> Chains,
     IReadOnlySet<Type> RelevantMessageTypes,
-    IReadOnlyList<NodeGroupHint> GroupHints,
     PlayerContextIndex? PlayerContextIndex = null,
     // Lazy-activated entity-state scanner — null when no rule references any
     // registered IEntityValueProvider's ContextName. Bench-parity tripwire:
     // EntityIntegrationTests.EntityScanner_NotAllocated_WhenNoRulesReference.
     EntityChangeScanner? EntityScanner = null,
-    IReadOnlyDictionary<StateNode, IReadOnlySet<string>>? NodeChains = null,
     IReadOnlyDictionary<GraphEdgeDescriptor, StateEdge>? EdgeBacking = null,
     IReadOnlyDictionary<string, StateNode>? GameNodesByRuleId = null,
     IReadOnlyList<OutputDef>? Outputs = null,
@@ -155,11 +143,6 @@ public sealed record BuildResult(
     /// </summary>
     public IReadOnlyList<ExternalStateNode> ExternalNodes { get; init; } = [];
 }
-
-/// <summary>Visualization hint: a named cluster grouping a set of nodes for display.</summary>
-/// <param name="GroupName">Cluster label shown in the graph view.</param>
-/// <param name="Members">Nodes that belong to this cluster.</param>
-public sealed record NodeGroupHint(string GroupName, IReadOnlyList<StateNode> Members);
 
 /// <summary>
 ///     Describes one drawn edge of the graph: a source, one destination, and what connects them.
