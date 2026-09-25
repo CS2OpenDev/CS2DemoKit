@@ -101,9 +101,10 @@ its packaging exercised before the tag exists.
 ## Compatibility notes worth carrying into a release
 
 These are the changes a consumer cannot see in a version number. Add to the list rather than
-rewriting it; each entry names the version the change first ships in. For 0.12.0 the entries are
-the reference; the order a consumer meets them in, with the code to write, is
-[`migrating-to-0.12.md`](migrating-to-0.12.md).
+rewriting it; each entry names the version the change first ships in. The entries are the
+reference; the order a consumer meets them in, with the code to write, is
+[`migrating-to-0.12.md`](migrating-to-0.12.md) for 0.12.0 and
+[`migrating-to-0.13.md`](migrating-to-0.13.md) for 0.13.0.
 
 ### `CatalogEnrichment` gained two positional parameters (0.11.0)
 
@@ -389,9 +390,11 @@ counted losses as `count: round_won` with a `where:` naming the other team as th
 shipped `player_stats` did for `CTLosses` / `TLosses` and the `save_rounds` example did, now reads
 0; count `round_lost` instead. A stat about the round rather than its result ("rounds survived")
 counts the new `round_ended` view, which fires for everyone as the unbound `round_won` did. The
-shipped rulesets are migrated and their values are unchanged, but the resolved-identity hashes of
-the four migrated stats change with their view, so a cache keyed on those hashes (a highlight
-fingerprint that reaches them) rebuilds once. At `for: match` both views stay unbound.
+shipped rulesets are migrated and the binding moves none of their values, but the resolved-identity
+hashes of the four migrated stats change with their view, so a cache keyed on those hashes (a
+highlight fingerprint that reaches them) rebuilds once. Their values do move on a round the server
+decides differently from the old derivation, such as a surrender; see the `round_decided` entry
+below. At `for: match` both views stay unbound.
 A subject on neither side (team 0, a slot whose team was never seen, or team 1, a spectator, coach
 or caster) reads neither view: the winner is always 2 or 3, so `round_lost` also requires the
 subject to be on 2 or 3.
@@ -413,16 +416,6 @@ validated and projected zero rows through 0.12.0. It is now a validation error,
 `resolve.show.table-scope-mismatch`, and a `show: scoreboard` outside `for: each_player` is one too,
 `resolve.show.scoreboard-scope`, where it used to throw at build. Composition drops the ruleset, as
 for any other error.
-
-### `tally:` targets belong to their ruleset (0.13.0)
-
-Two `for: each_player` rulesets whose `tally:` thresholds named the same target (the shipped `kast`
-and the `multikill` example both use `rounds_2k` to `rounds_5k`) built and then
-threw at the first player: the second ruleset bound its tally to the first one's counters and never
-registered its own, so its `show:` scoreboard found nothing. Each ruleset now gets its own target
-counters, so `kast.rounds_2k` and `multikill.rounds_2k` are separate nodes with their own values.
-Every example under `Rules/examples/` now runs beside the shipped rulesets. The shipped rulesets on
-their own build and count the same as before.
 
 ### `for: each_team`, and the public types that grew for it (0.13.0)
 
@@ -447,6 +440,26 @@ A third scope builds a ruleset once per side. Additions a consumer compiled agai
   stat anywhere but `compute:`. A team ruleset's `compute:` reads a `for: match` or another
   `for: each_team` ruleset's stat; in a `where:`, `while:`, `capture:`, `sum:`, `tally:` or bucket
   key the read used to validate clean and throw at build.
+- New with the round facts (#61), all additions: `RoundDecidedEvent` in `CS2DemoKit.Analysis.Events`;
+  `RoundDecidedEdge`, `BombPlantSiteEdge` and `SideRosterFreezeEndEdge` in
+  `CS2DemoKit.Analysis.Edges`; `RoundFactIds` in `CS2DemoKit.Analysis.Building`;
+  `CCSGameRulesRoundWinStatusMarker`, `CCSGameRulesRoundWinReasonMarker`,
+  `CCSGameRulesTotalRoundsPlayedMarker`, `CCSGameRulesGamePhaseMarker`,
+  `CCSGameRulesBombPlantedMarker` and `CCSGameRulesRoundTimeMarker` in
+  `CS2DemoKit.Analysis.Plugins.Markers`. A consumer type with one of these names hits CS0104 when
+  it imports the namespace. Members: `BuiltinProviderSpecs.ControllerMoney`, `GameRoundWinStatus`,
+  `GameRoundWinReason`, `GameTotalRoundsPlayed`, `GameGamePhase`, `GameBombPlanted`,
+  `GameRoundTime` and `CreateGameRulesProviders()`; `PlayerContextIndex.DecidedWinnerSide` and
+  `DecidedReason`; and `EntityChangeScanner.PostFrameMessages`, the messages to dispatch after a
+  polled frame's own, so a host that walks the scanner itself with `AdvanceAndPollAt` must read it
+  after each poll to see `round_decided`. `DemoSourceProfile.RoundDecided` is a new virtual that
+  returns null; the built-in profiles bind it through `Cs2GotvProfile`, and a profile that derives
+  `DemoSourceProfile` directly leaves the `round_decided` view unbound until it overrides it (the
+  round-end winner still latches from the synthesized event, which does not go through the
+  binding). In the rules language: the `match.*` game-rules singletons (`round_win_status`,
+  `round_win_reason`, `total_rounds_played`, `game_phase`, `bomb_planted`, `round_time`),
+  `round.bomb.site`, `plant_place` and `site_entity`, `round.team.money` and `round.enemies.money`,
+  and `player.money`.
 
 ### Configured tables project without snapshots (0.13.0)
 
@@ -456,18 +469,23 @@ round rows hold, so the tables agree row for row. Only a per-event output (a tim
 throws without snapshots. A snapshot run projects as before, with one correction: a logic node
 switched off by a round reset now marks its snapshot column, where it used to keep its last `true`
 in every later row. kast's `KASTRounds` table cell is one such node, and at the end of a match it
-now reads null for a player whose last round had no KAST (12 cells across the five fixture demos
-present locally), rather than a stale `true`.
+now reads null for a player whose last round had no KAST, rather than a stale `true`: 45 cells over
+the fifteen fixture demos, 12 on the five first measured and 33 on the other ten (#65).
 
 ### The round's winner is the server's, and `round_decided` is new (0.13.0)
 
 The round-end enrichment (`enrich.round.winner_side` / `winner_team` / `has_winner`) reports the
 winner the game rules declared, latched from the new synthesized `round_decided` event, and derives
 one from bomb state and alive counts only when there is no entity scanner or no win-status provider.
-The two agreed on every round of the demos measured, so no stat value moved; the difference shows on
-rounds the derivation cannot see (a surrender, a draw). `round_decided` is dispatched after the
-frame's own messages, a new ordering special case in the evaluator: it follows the kill that decided
-the round when both arrive in one frame. `$round_end` is unchanged and still the round's close.
+The two differ on a round the derivation cannot see, such as a surrender or a draw, and there stat
+values move. On the fifteen fixture demos that is one round (#65): round 13 of
+`..._0665775997_405` ends in a CT surrender (reason 18, win status 2). The derivation read a CT win
+from alive counts, where the server's verdict is a T win, so `CTWins`, `TWins`, `CTLosses` and
+`TLosses` each move by one for five players, and the final `enrich.round.winner_side` and
+`winner_team` go from 3 to 2. No table row moves, because none of the four is projected. On every
+other round of those demos the two agreed. `round_decided` is dispatched after the frame's own
+messages, a new ordering special case in the evaluator: it follows the kill that decided the round
+when both arrive in one frame. `$round_end` is unchanged and still the round's close.
 
 The three game-rules providers it reads (`entity.game.round_win_status`, `round_win_reason`,
 `total_rounds_played`) are tracked whenever a scanner is built, and `enrich.round.win_reason` is new,
@@ -514,7 +532,7 @@ thousands of units off, sometimes for the smoke's whole life), `m_iTeamNum` (usu
 smoke check and the digest's smoke list count flying smokes as clouds near the map origin, so
 visibility numbers and smoke digests from 0.12 on current demos differ. Other projectile classes
 were never affected. The shipped rulesets read no smoke baseline field, and the rules-output digests
-for the five fixture demos on hand are byte-identical.
+for all fifteen fixture demos are byte-identical (#65).
 
 The cap is now 16,384, and a demo whose entity carries more paths than that reports an entity decode
 error (`LastEntityError`, `DecodeErrorRaised`) instead of decoding garbage. As with any entity decode
@@ -606,6 +624,16 @@ three always-empty members (#50). What changed:
   (game and per player) and resolved-identity hashes do not move. The fifteen rules-output fixtures
   are byte-identical.
 
+### `tally:` targets belong to their ruleset (0.13.0)
+
+Two `for: each_player` rulesets whose `tally:` thresholds named the same target (the shipped `kast`
+and the `multikill` example both use `rounds_2k` to `rounds_5k`) built and then
+threw at the first player: the second ruleset bound its tally to the first one's counters and never
+registered its own, so its `show:` scoreboard found nothing. Each ruleset now gets its own target
+counters, so `kast.rounds_2k` and `multikill.rounds_2k` are separate nodes with their own values.
+Every example under `Rules/examples/` now runs beside the shipped rulesets. The shipped rulesets on
+their own build and count the same as before.
+
 ### A stat that reads a coverage-skipped stat is skipped with it (0.13.0)
 
 A stat whose view does not bind on the demo's profile was skipped and recorded in
@@ -614,9 +642,12 @@ threw `stat reference '...' was hashed before the node it points at` at the firs
 shipped rulesets hit this on `Cs2HltvProfile`, where `blinded_enemy` does not bind and the
 `AvgBlind` compute reads two stats on it. Such a reader is now skipped too, transitively, with its
 own `RulesetCoverageDiagnostic` naming the stat it reads and the view that did not bind, and its
-`show:` column drops as for any other skip. A `rate:` over a skipped bucket was already dropped,
-silently; it is now recorded as well. On HLTV the shipped rulesets now run, with `AvgBlind` absent.
-Output on the other profiles does not move.
+`show:` column drops as for any other skip. A skipped `tally:` takes its threshold targets with it:
+each target is recorded in coverage too, so a `show:` entry naming one drops its column rather than
+failing validation as an unknown reference. A `rate:` over a skipped bucket was already dropped,
+silently; it is now recorded as well. The skip runs within one ruleset: a stat in another ruleset
+that reads a skipped stat is not skipped with it. On HLTV the shipped rulesets now run, with
+`AvgBlind` absent. Output on the other profiles does not move.
 
 ### A `---` rules file loads every ruleset in it (0.13.0)
 
@@ -627,10 +658,11 @@ containment a file gets: a broken document reports its errors and the others sti
 a document after the first carry the label `file.rules.yaml#N` (N counts from 1 at the top of the
 file). A document with no `ruleset:` key is the same "not a rules document" error a single such file
 gets; an empty document, such as a trailing `---`, is skipped. `LoadedFiles` and `FailedFiles` still
-list files, not documents. A file that loaded cleanly before can now report errors or duplicate ids
-from the documents that used to be ignored. `RulesetDocumentLoader.Load` and `TryLoad`, which return
-one ruleset, now refuse a multi-document stream with a diagnostic instead of reading its first
-document. No shipped ruleset uses `---`.
+list files, not documents: an error in any document of a file, a `show:` column collision found
+across the load included, lists the file as failed. A file that loaded cleanly before can now
+report errors or duplicate ids from the documents that used to be ignored.
+`RulesetDocumentLoader.Load` and `TryLoad`, which return one ruleset, now refuse a multi-document
+stream with a diagnostic instead of reading its first document. No shipped ruleset uses `---`.
 
 ## Credentials
 
@@ -639,6 +671,7 @@ None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid
 short-lived key. GitHub Packages uses the built-in `GITHUB_TOKEN`. Both pushes use
 `--skip-duplicate`, so re-running a tag build on the same commit is safe.
 
-That flag has one sharp edge, and it is aimed at the prerelease line. See below.
+That flag has one sharp edge, and it is aimed at the prerelease line: see
+[Never move a prerelease tag, bump the counter](#never-move-a-prerelease-tag-bump-the-counter) above.
 
 Symbol packages ship as a run artifact rather than to GitHub Packages, which rejects `.snupkg`.

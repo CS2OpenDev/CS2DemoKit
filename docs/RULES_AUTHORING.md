@@ -20,6 +20,13 @@ start every file with this line to get editor validation and autocompletion:
 # yaml-language-server: $schema=./cs2demokit-rules.schema.json
 ```
 
+One file may hold several rulesets separated by `---` lines. Each document loads as its own
+ruleset, with its own errors: a broken one reports them and the others still load. An error in a
+document after the first names it as `file.rules.yaml#N`, counting from 1 at the top of the file,
+while `loaded.LoadedFiles` and `loaded.FailedFiles` list files: a file with an error in any of its
+documents is a failed file, though its good documents still load. An empty document, such as a
+trailing `---`, is skipped.
+
 A ruleset whose `ruleset:` id matches a shipped one replaces it wholesale; a new id adds stats
 alongside. To start from a shipped file, extract the shipped tier to disk with
 `YamlConfigLoader.ExtractShippedTo(dir)` and edit the copy.
@@ -414,12 +421,13 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
     matchmaking round, `999` in warmup). Not a countdown.
 
   **Read the status and reason on `round_decided`, not at the round's close.** They go back to
-  `0` at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo, and
-  that is the event `round_ended` (and every round-end stat) fires on, so a read of either there is
-  `0`, except on the match's last round: its close is `cs_win_panel_match`, 193 ticks after the
-  decision on the demos measured, before the status resets, so there the status still reads the
-  winner. At the close the winner and reason are `enrich.round.winner_side` and
-  `enrich.round.win_reason` (the `winner_side` and `win_reason` facets of `round_ended`).
+  `0` at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo (544
+  at the end of a half), and that is the event `round_ended` (and every round-end stat) fires on,
+  so a read of either there is `0`, except on the match's last round: its close is
+  `cs_win_panel_match`, 193 ticks after the decision on the demos measured, before the status
+  resets, so there the status still reads the winner. At the close the winner and reason are
+  `enrich.round.winner_side` and `enrich.round.win_reason` (the `winner_side` and `win_reason` facets
+  of `round_ended`).
 - **Team aggregates (subject-relative):** `round.team.alive` / `round.enemies.alive`,
   `round.team.players` / `round.enemies.players`, `round.team.equipment` /
   `round.enemies.equipment`, `round.team.money` / `round.enemies.money`, `round.alive.in_clutch`.

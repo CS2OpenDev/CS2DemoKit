@@ -13,9 +13,12 @@ namespace CS2DemoKit.Analysis.Yaml;
 ///     The v2 document pipeline entry point: parse a <c>ruleset:</c> YAML string once
 ///     (via the representation model, so nodes carry positions), map it to a
 ///     <see cref="RulesetDoc" />, then run stage-1 Expand (<c>for_each:</c>) and structural
-///     validation. The loader dispatch (<see cref="YamlConfigLoader.TryLoadDirectory" />) uses
-///     <see cref="TryLoad" />, which returns <c>null</c> for any file that is not a v2 ruleset so
-///     the caller can report it (retired-v1 / not-a-rules-document / YAML syntax error).
+///     validation. The directory and in-memory loaders (<see cref="YamlConfigLoader.TryLoadDirectory" />,
+///     <see cref="YamlConfigLoader.LoadDocuments" />) split a source with <c>ParseDocuments</c> and
+///     run each <c>---</c> document through <c>TryLoadRoot</c>, which returns <c>null</c> for a
+///     document that is not a v2 ruleset so the caller can report it (retired-v1 /
+///     not-a-rules-document). A YAML syntax error surfaces from <c>ParseDocuments</c> itself.
+///     <see cref="Load" /> and <see cref="TryLoad" /> take a single-document source.
 /// </summary>
 public static class RulesetDocumentLoader
 {

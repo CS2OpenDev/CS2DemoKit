@@ -187,8 +187,8 @@ internal static class RuleGraphFixtures
     /// <summary>The matrix rulesets, mapped; throws when any document fails to map.</summary>
     internal static IReadOnlyList<RulesetDoc> Matrix()
     {
-        // One ruleset per document: LoadDocuments maps a document to a single ruleset, so a '---'
-        // separated second ruleset in the same text would not load.
+        // One ruleset per labelled document, so each file name below names one ruleset. LoadDocuments
+        // would also load '---' separated rulesets from one text, as their own rulesets.
         RuleConfigLoadResult loaded = YamlConfigLoader.LoadDocuments(
         [
             ("fm_player.rules.yaml", MatrixPlayerYaml),

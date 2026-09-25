@@ -62,9 +62,10 @@ public sealed class RoundEndEnrichmentEdge(
             return false;
         }
 
-        // The server's verdict when it gave one. The derivation below agreed with it on every round
-        // of the two matchmaking demos measured (23 of 23 on each), so this is a hardening for the
-        // rounds it cannot see (a surrender, a draw) rather than a change of value.
+        // The server's verdict when it gave one. The derivation below agrees with it on an ordinary
+        // round (23 of 23 on each of the two matchmaking demos first measured), but it cannot see a
+        // surrender or a draw: on a CT surrender it reads a CT win from alive counts where the server
+        // declared T (#65).
         bool decided = playerContext.DecidedWinnerSide is 2 or 3;
         int winningSide = decided ? playerContext.DecidedWinnerSide : DeriveWinningSide();
         if (winningSide != 2 && winningSide != 3)

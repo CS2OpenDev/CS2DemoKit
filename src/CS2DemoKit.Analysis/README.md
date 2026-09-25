@@ -50,7 +50,8 @@ AnalysisRun run = DemoAnalysis.Run(demo, loaded.Rulesets);
 ```
 
 This is the path for a viewer that seeks and inspects after the run; a consumer coming from
-0.11.0 starts at `docs/migrating-to-0.12.md` in the repository. Per-message node snapshots
+0.12.x starts at `docs/migrating-to-0.13.md` in the repository, and one coming from 0.11.0 at
+`docs/migrating-to-0.12.md` first. Per-message node snapshots
 are on by default over a `ParsedDemo` and off by default over a stream; `AnalysisOptions.CaptureSnapshots`
 overrides either way, and on a stream it retains one row per dispatched message, which is what the
 stream was chosen to avoid. `AnalysisRun.Highlights`, `MaterializedPlayers` and `FinalNodes` are
@@ -126,8 +127,7 @@ rulesets declare the same way is one node, made by the first.
 `RuleGraph.FromBuild(build)` draws a build before any run, previewing each per-player template once.
 The preview runs the builder's per-player factory, so call it before a run over the same build
 starts, never during one; after a run, use `FromRun`. A template that cannot materialise without a
-demo is left out of the preview and named in `Diagnostics`, so check it: the shipped rulesets on the
-HLTV profile currently preview with no per-player nodes for this reason.
+demo is left out of the preview and named in `Diagnostics`, so check it.
 
 ## Clip planning
 
