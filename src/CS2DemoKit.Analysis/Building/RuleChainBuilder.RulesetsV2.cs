@@ -679,11 +679,16 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
         GraphExternals externals = _externals;
 
+        // Provenance does not depend on the slot: the template makes the same nodes in the same order
+        // for every player, which RuleGraph relies on to fold the copies. It is recorded on the first
+        // materialisation and shared by every later one.
+        IReadOnlyList<NodeProvenance>? sharedProvenance = null;
+
         graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, playerName) =>
         {
             Dictionary<string, StateNode> localLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
             List<StateNode> nodes = [];
-            ProvenanceRecorder provenance = new();
+            ProvenanceRecorder? provenance = sharedProvenance is null ? new ProvenanceRecorder() : null;
 
             // This player's edges, rising-edge actions and live computes, in the order the evaluator
             // registers them, each with its descriptors.
@@ -723,7 +728,7 @@ public sealed partial class RuleChainBuilder
             // pass below because it needs a written node + the entity digest.
             InjectB6AliveAggregates(slot, playerName, localLookup, nodes, scope);
             InjectB6EconomyAggregates(slot, playerName, localLookup, nodes, scope);
-            provenance.Stamp(nodes, 0, RuleGraphNodeOrigin.Context);
+            provenance?.Stamp(nodes, 0, RuleGraphNodeOrigin.Context);
 
             // Gap G1 (event-gated per-player aggregate reads): expose THIS slot's per-player context
             // (survived/traded/alive) and B6 aggregate nodes to the condition/value compiler under
@@ -758,7 +763,7 @@ public sealed partial class RuleChainBuilder
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, slot, playerName,
                             localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
-                        provenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
                     }
 
                     // rate: pass — every bucket is now built, so each KeyedRatioNode can pull its of:/per:
@@ -774,7 +779,7 @@ public sealed partial class RuleChainBuilder
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, slot, playerName,
                             localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
-                        provenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
                     }
 
                     foreach (CheckedHighlight highlight in rs.Highlights)
@@ -782,7 +787,7 @@ public sealed partial class RuleChainBuilder
                         int mark = nodes.Count;
                         BuildV2Highlight(rs, highlight, slot, playerName, contextV2ToV1, localLookup, nodes, scope,
                             graph.HighlightSink, nodesByRuleId);
-                        provenance.StampRule(nodes, mark, rs.Id.Id, highlight.HighlightId, nodesByRuleId,
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, highlight.HighlightId, nodesByRuleId,
                             chain: $"_chain_{highlight.HighlightId}");
 
                         // Register the highlight's resolved-identity hash so a deferred compute reading its
@@ -818,7 +823,7 @@ public sealed partial class RuleChainBuilder
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, slot, playerName,
                             localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
-                        provenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
                     }
 
                     // show: scoreboard -> per-player column projection. Run after the
@@ -846,7 +851,7 @@ public sealed partial class RuleChainBuilder
                 LiveComputes: scope.LiveComputes.Count > 0 ? scope.LiveComputes : null,
                 ContextRisingEdgeActions: scope.ContextRisingEdgeActions.Count > 0 ? scope.ContextRisingEdgeActions : null)
             {
-                Provenance = provenance.Aligned(nodes)
+                Provenance = sharedProvenance ??= provenance!.Aligned(nodes)
             };
         }));
 

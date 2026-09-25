@@ -76,7 +76,7 @@ public sealed partial class RuleChainBuilder
     private GraphExternals _externals = new();
 
     // Where the current build made each game-scope node (its team-scope nodes included), stamped
-    // around each block that adds nodes. Set at the start of Build.
+    // around each block that adds nodes. Set at the start of Build and dropped at its end.
     private ProvenanceRecorder _gameProvenance = new();
 
     // Baked map collision for the visibility rising-edge scan, or null when the caller supplied
@@ -576,6 +576,10 @@ public sealed partial class RuleChainBuilder
             }
         }
 
+        // The per-player template keeps this builder alive for as long as the build lives, so the
+        // recorder is dropped once the result has its copy of the entries.
+        IReadOnlyDictionary<StateNode, NodeProvenance> gameProvenance = provenance.ToDictionary();
+        _gameProvenance = new ProvenanceRecorder();
         return new BuildResult(graph, allNodes, wiring.Descriptors,
             relevantTypes, playerContextIndex, entityScanner,
             edgeBacking.Count > 0 ? edgeBacking : null,
@@ -589,7 +593,7 @@ public sealed partial class RuleChainBuilder
             TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
             RoundBoundaryTypes = RoundBoundaryTypes(),
             ExternalNodes = externals.All,
-            Provenance = provenance.ToDictionary()
+            Provenance = gameProvenance
         };
     }
 
