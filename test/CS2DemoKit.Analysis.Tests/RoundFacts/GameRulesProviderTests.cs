@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.TestSupport;
 
 #endregion
@@ -158,6 +159,66 @@ public class GameRulesProviderTests
         await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.status_at_decision")).IsEqualTo("2,3");
         await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.reasons")).IsEqualTo("9,8");
         await Assert.That(RoundFactsCorpusTests.List(run, "game_rules.reason_at_decision")).IsEqualTo("9,8");
+    }
+
+    /// <summary>
+    ///     The six are read on every frame of every run, so a read must not allocate: an int or bool
+    ///     comes back as a shared box, the same object on a second read. The value is the one the
+    ///     boxed indexer read gave before the typed read replaced it. On the sample, every frame.
+    /// </summary>
+    [Test]
+    public async Task Read_ReturnsSharedBoxes_WithTheIndexersValues()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo("sample-de_nuke.dem"));
+        IReadOnlyList<IEntityValueProvider> providers = BuiltinProviderSpecs.CreateGameRulesProviders();
+        EntityStateLayer layer = new() { StoreUnlensedFields = false };
+        int reads = 0, fresh = 0, mismatches = 0;
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            layer.Apply(frame);
+            foreach (IEntityValueProvider provider in providers)
+            {
+                object? first = provider.Read(layer);
+                object? second = provider.Read(layer);
+                if (first is null)
+                {
+                    continue;
+                }
+
+                reads++;
+                if (!ReferenceEquals(first, second))
+                {
+                    fresh++;
+                }
+
+                if (!Equals(first, IndexerRead(layer, (GenericSingletonFieldProvider)provider)))
+                {
+                    mismatches++;
+                }
+            }
+        }
+
+        await Assert.That(reads).IsGreaterThan(0);
+        await Assert.That(fresh).IsEqualTo(0).Because("an int or bool read allocates no box of its own");
+        await Assert.That(mismatches).IsEqualTo(0);
+    }
+
+    // The read as it was before the typed lane read: the boxed indexer and the same coercions.
+    private static object? IndexerRead(EntityStateLayer layer, GenericSingletonFieldProvider provider)
+    {
+        EntityState? entity = layer.Tracker.CurrentEntities.OfClass(provider.EntityClass).FirstOrDefault();
+        object? v = entity?[provider.FieldName];
+        return v switch
+        {
+            null => null,
+            bool b when provider.ValueType == typeof(bool) => b,
+            int i when provider.ValueType == typeof(bool) => i != 0,
+            uint u when provider.ValueType == typeof(bool) => u != 0,
+            int i when provider.ValueType == typeof(int) => i,
+            uint u when provider.ValueType == typeof(int) => (int)u,
+            string s when provider.ValueType == typeof(string) => s,
+            _ => null
+        };
     }
 
     /// <summary>

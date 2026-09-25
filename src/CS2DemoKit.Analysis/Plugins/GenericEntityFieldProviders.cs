@@ -529,6 +529,7 @@ public sealed class GenericSingletonFieldProvider(
     // reference-keyed) exactly like FreezePeriodProvider: the EntityState at an index can be
     // replaced across full packets, so the cache re-validates ClassName each read.
     private int _cachedEntityIndex = -1;
+    private readonly LaneCursor _cursor = new();
 
     /// <summary>The spec this provider reads.</summary>
     public ProviderSpec Spec { get; } = spec;
@@ -563,15 +564,29 @@ public sealed class GenericSingletonFieldProvider(
             return null;
         }
 
-        object? v = entity[Spec.Path];
+        // Read once per frame for every singleton, so the int lane is read unboxed and handed out
+        // as a shared box: the game-rules singletons would otherwise allocate two boxes each per
+        // frame. Anything off the int lane takes the boxed indexer, as before.
+        LaneHit hit = PawnCellCoercion.Probe(entity, Spec.Path, _cursor, out int lane, out _, out object? boxed);
+        if (hit == LaneHit.Int)
+        {
+            if (Spec.ValueType == typeof(bool))
+            {
+                return lane != 0 ? PawnCellBoxes.True : PawnCellBoxes.False;
+            }
+
+            return Spec.ValueType == typeof(int) ? PawnCellBoxes.Int(lane) : null;
+        }
+
+        object? v = hit == LaneHit.Object ? boxed : entity[Spec.Path];
         return v switch
         {
             null => null,
-            bool b when Spec.ValueType == typeof(bool) => b,
-            int i when Spec.ValueType == typeof(bool) => i != 0,
-            uint u when Spec.ValueType == typeof(bool) => u != 0,
-            int i when Spec.ValueType == typeof(int) => i,
-            uint u when Spec.ValueType == typeof(int) => (int)u,
+            bool when Spec.ValueType == typeof(bool) => v,
+            int i when Spec.ValueType == typeof(bool) => i != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
+            uint u when Spec.ValueType == typeof(bool) => u != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
+            int when Spec.ValueType == typeof(int) => v,
+            uint u when Spec.ValueType == typeof(int) => PawnCellBoxes.Int((int)u),
             string s when Spec.ValueType == typeof(string) => s,
             _ => null
         };
