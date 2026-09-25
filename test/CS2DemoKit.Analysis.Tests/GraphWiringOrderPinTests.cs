@@ -27,15 +27,14 @@ namespace CS2DemoKit.Analysis.Tests;
 public class GraphWiringOrderPinTests
 {
     // "{case}/{sequence}" -> "{line count}:{first 16 hex of the sha256}", taken at dc0c6b6. The HLTV
-    // shipped template does not materialise (see RuleGraphFixtures.Cases), so its player sequence is
-    // empty.
+    // shipped template did not materialise there (#68), so its player sequence was pinned with that fix.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
         ["shipped-gotv/game"] = "67:7A54066EF8A22166",
         ["shipped-gotv/player"] = "175:89DB8710380C4966",
         ["shipped-gotv/types"] = "37:15C0DE3C4278A0EC",
         ["shipped-hltv/game"] = "67:DDC55B358BE2531E",
-        ["shipped-hltv/player"] = "0:E3B0C44298FC1C14",
+        ["shipped-hltv/player"] = "168:9EBA3A53627CE1BB",
         ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
         ["matrix-gotv/game"] = "95:4FCB5A171704463B",
         ["matrix-gotv/player"] = "42:6CBDE05D43E642B3",
@@ -51,13 +50,13 @@ public class GraphWiringOrderPinTests
     [MethodDataSource(nameof(CaseNames))]
     public async Task EdgeAndMessageOrder_MatchesPin(string name)
     {
-        (_, Func<BuildResult> make, bool materializes) = RuleGraphFixtures.Cases().Single(c => c.Name == name);
+        (_, Func<BuildResult> make) = RuleGraphFixtures.Cases().Single(c => c.Name == name);
         BuildResult build = make();
 
         List<string> game = [.. build.Graph.Edges.Select(Describe)];
         List<string> types = [.. build.RelevantMessageTypes.Select(t => $"{t.Namespace}.{TypeName(t)}").Order(StringComparer.Ordinal)];
         List<string> perPlayer = [];
-        for (int i = 0; materializes && i < build.Graph.PerPlayerTemplates.Count; i++)
+        for (int i = 0; i < build.Graph.PerPlayerTemplates.Count; i++)
         {
             PerPlayerNodeTemplate.MaterializedPlayer p = build.Graph.PerPlayerTemplates[i].Materialize(0, 0, "p0");
             perPlayer.Add($"# template {i}");
