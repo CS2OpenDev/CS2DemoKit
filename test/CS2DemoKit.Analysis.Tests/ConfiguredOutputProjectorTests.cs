@@ -320,7 +320,7 @@ public class ConfiguredOutputProjectorTests
             [1, 2], [(0, "Alice")], (m, _) => m);
 
         BuildResult build = new(
-            new StateGraph(), [], [], [], new HashSet<Type>(), [],
+            new StateGraph(), [], [], new HashSet<Type>(),
             GameNodesByRuleId: null,
             Outputs:
             [
@@ -351,7 +351,7 @@ public class ConfiguredOutputProjectorTests
 
         OutputDef events = new("my_events", OutputScope.PerEvent, [], ["chain"], ["ace_round"]);
         BuildResult build = new(
-            new StateGraph(), [], [], [], new HashSet<Type>(), [],
+            new StateGraph(), [], [], new HashSet<Type>(),
             Outputs: [PerGameOutput(["player_name"], "kills"), events]);
 
         AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
@@ -371,7 +371,7 @@ public class ConfiguredOutputProjectorTests
             [1], [(0, "Alice")], (_, _) => 0);
 
         BuildResult build = new(
-            new StateGraph(), [], [], [], new HashSet<Type>(), [],
+            new StateGraph(), [], [], new HashSet<Type>(),
             Outputs: [PerGameOutput(["player_name"], "kills")]);
 
         AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
@@ -387,7 +387,7 @@ public class ConfiguredOutputProjectorTests
         (EvaluationResult result, ParsedDemo demo) = BuildScenario(
             [1], [(0, "Alice")], (_, _) => 0);
 
-        BuildResult build = new(new StateGraph(), [], [], [], new HashSet<Type>(), []);
+        BuildResult build = new(new StateGraph(), [], [], new HashSet<Type>());
         AnalysisRun run = new(build, result.Timeline, null) { Demo = DemoDescriptor.From(demo), Provenance = _provenance };
 
         await Assert.That(run.ProjectConfiguredOutputs(demo)).IsEmpty();

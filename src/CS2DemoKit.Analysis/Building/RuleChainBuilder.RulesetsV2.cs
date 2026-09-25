@@ -95,9 +95,9 @@ public sealed partial class RuleChainBuilder
         IReadOnlyList<CheckedRuleset> rulesets,
         RulesetCompilerOptions options,
         StateGraph graph,
+        GraphWiring wiring,
         Dictionary<string, StateNode> nodeLookup,
         List<StateNode> allNodes,
-        List<GraphEdgeDescriptor> edgeDescriptors,
         Dictionary<string, StateNode> gameNodesByRuleId,
         HashSet<Type> relevantTypes,
         List<OutputDef> v2Outputs,
@@ -136,14 +136,14 @@ public sealed partial class RuleChainBuilder
 
         if (gameScope.Count > 0)
         {
-            BuildV2GameScope(gameScope, options, graph, nodeLookup, allNodes, edgeDescriptors,
+            BuildV2GameScope(gameScope, options, graph, wiring, nodeLookup, allNodes,
                 gameNodesByRuleId, relevantTypes);
         }
 
         // After the match rulesets, so a team ruleset's use: of one resolves against its nodes.
         if (teamScope.Count > 0)
         {
-            BuildV2TeamScope(teamScope, options, graph, nodeLookup, allNodes, edgeDescriptors,
+            BuildV2TeamScope(teamScope, options, graph, wiring, nodeLookup, allNodes,
                 gameNodesByRuleId, relevantTypes);
         }
     }
@@ -168,9 +168,9 @@ public sealed partial class RuleChainBuilder
         IReadOnlyList<CheckedRuleset> rulesets,
         RulesetCompilerOptions options,
         StateGraph graph,
+        GraphWiring wiring,
         Dictionary<string, StateNode> nodeLookup,
         List<StateNode> allNodes,
-        List<GraphEdgeDescriptor> edgeDescriptors,
         Dictionary<string, StateNode> gameNodesByRuleId,
         HashSet<Type> relevantTypes)
     {
@@ -206,18 +206,21 @@ public sealed partial class RuleChainBuilder
             MapStatHashSource hashSource = new(statHashesByPath);
             Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
             List<StateNode> nodes = [];
-            List<StateEdge> edges = [];
-            List<GraphEdgeDescriptor> descriptors = [];
-            List<LiveComputeRegistration> liveComputes = [];
 
-            InjectB6SideAggregates(side, sideName, localLookup, nodes, edges);
+            // Collected, and registered on the graph below at the same point as before.
+            GraphWiring scope = new(_registry, wiring.Externals);
+
+            InjectB6SideAggregates(side, sideName, localLookup, nodes, scope);
 
             IntListCaptureNode roster = new($"__slots_side_{side}", sideName);
             nodes.Add(roster);
             if (_playerContextIndex is { } index)
             {
-                edges.Add(new SideRosterFreezeEndEdge(localLookup["root"], index, side, roster));
+                scope.AddEdge(new SideRosterFreezeEndEdge(localLookup["root"], index, side, roster),
+                    GraphEdgeKind.FreezeEndRoster);
             }
+
+            _gameProvenance.Stamp(nodes, 0, RuleGraphNodeOrigin.Context, teamSide: side);
 
             _currentPlayerTeam = null;
             _teamSubjectSide = side;
@@ -244,23 +247,29 @@ public sealed partial class RuleChainBuilder
 
                     foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind is not (RuleNodeKind.Compute or RuleNodeKind.Rate)))
                     {
+                        int mark = nodes.Count;
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
-                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
+                        _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
                     }
 
                     foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Rate))
                     {
+                        int mark = nodes.Count;
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
-                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
+                        _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
                     }
 
                     foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Compute))
                     {
+                        int mark = nodes.Count;
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
-                            localLookup, nodes, edges, descriptors, nodesByRuleId,
-                            statHashesByPath, hashSource, nodesByHash, liveComputes);
+                            localLookup, nodes, scope, nodesByRuleId,
+                            statHashesByPath, hashSource, nodesByHash);
+                        _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
                     }
                 }
             }
@@ -285,18 +294,18 @@ public sealed partial class RuleChainBuilder
                 }
             }
 
-            foreach (StateEdge edge in edges)
+            foreach (StateEdge edge in scope.Edges)
             {
                 graph.AddEdge(edge);
                 relevantTypes.Add(edge.MessageType);
             }
 
-            foreach (LiveComputeRegistration live in liveComputes)
+            foreach (LiveComputeRegistration live in scope.LiveComputes)
             {
                 graph.AddLiveCompute(live.Compute, live.Reads);
             }
 
-            edgeDescriptors.AddRange(descriptors);
+            wiring.Descriptors.AddRange(scope.Descriptors);
             _teamNodesByRuleId[side] = nodesByRuleId;
             _teamRosters[side] = roster;
         }
@@ -309,7 +318,7 @@ public sealed partial class RuleChainBuilder
     ///     refuses them in a team ruleset.
     /// </summary>
     private void InjectB6SideAggregates(int side, string sideName,
-        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, List<StateEdge> edges)
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
     {
         if (_playerContextIndex is not { } index)
         {
@@ -321,6 +330,7 @@ public sealed partial class RuleChainBuilder
             RoundTeamAggregateNode node = RoundTeamAggregateNode.ForSide(ruleId, index, side, kind, sideName);
             localLookup[ruleId] = node;
             nodes.Add(node);
+            wiring.DescribePull(wiring.Externals.PlayerContext, node, ruleId);
         }
 
         Add(B6RuleIds.TeamAlive, RoundTeamAggregateNode.AggregateKind.TeamAlive);
@@ -330,7 +340,8 @@ public sealed partial class RuleChainBuilder
 
         if (BuildEconomySums(sideName, localLookup, nodes) is { Count: > 0 } sums)
         {
-            edges.Add(new PlayerEconomyFreezeEndEdge(localLookup["root"], index, () => side, sums));
+            wiring.AddEdge(new PlayerEconomyFreezeEndEdge(localLookup["root"], index, () => side, sums),
+                GraphEdgeKind.FreezeEndEconomy);
         }
     }
 
@@ -361,9 +372,9 @@ public sealed partial class RuleChainBuilder
         IReadOnlyList<CheckedRuleset> rulesets,
         RulesetCompilerOptions options,
         StateGraph graph,
+        GraphWiring wiring,
         Dictionary<string, StateNode> nodeLookup,
         List<StateNode> allNodes,
-        List<GraphEdgeDescriptor> edgeDescriptors,
         Dictionary<string, StateNode> gameNodesByRuleId,
         HashSet<Type> relevantTypes)
     {
@@ -394,9 +405,9 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
 
         List<StateNode> nodes = [];
-        List<StateEdge> edges = [];
-        List<GraphEdgeDescriptor> descriptors = [];
-        List<LiveComputeRegistration> liveComputes = [];
+
+        // Collected, and registered on the graph below at the same point as before.
+        GraphWiring scope = new(_registry, wiring.Externals);
 
         foreach (CheckedRuleset rs in rulesets)
         {
@@ -430,9 +441,11 @@ public sealed partial class RuleChainBuilder
                     continue;
                 }
 
+                int mark = nodes.Count;
                 BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
-                    localLookup, nodes, edges, descriptors, nodesByRuleId,
+                    localLookup, nodes, scope, nodesByRuleId,
                     statHashesByPath, hashSource, nodesByHash);
+                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
             }
 
             foreach (CheckedStat stat in rs.Stats)
@@ -442,9 +455,11 @@ public sealed partial class RuleChainBuilder
                     continue;
                 }
 
+                int mark = nodes.Count;
                 BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
-                    localLookup, nodes, edges, descriptors, nodesByRuleId,
+                    localLookup, nodes, scope, nodesByRuleId,
                     statHashesByPath, hashSource, nodesByHash);
+                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
             }
 
             foreach (CheckedStat stat in rs.Stats)
@@ -454,9 +469,11 @@ public sealed partial class RuleChainBuilder
                     continue;
                 }
 
+                int mark = nodes.Count;
                 BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
-                    localLookup, nodes, edges, descriptors, nodesByRuleId,
-                    statHashesByPath, hashSource, nodesByHash, liveComputes);
+                    localLookup, nodes, scope, nodesByRuleId,
+                    statHashesByPath, hashSource, nodesByHash);
+                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
             }
         }
 
@@ -482,18 +499,18 @@ public sealed partial class RuleChainBuilder
             }
         }
 
-        foreach (StateEdge edge in edges)
+        foreach (StateEdge edge in scope.Edges)
         {
             graph.AddEdge(edge);
             relevantTypes.Add(edge.MessageType);
         }
 
-        foreach (LiveComputeRegistration live in liveComputes)
+        foreach (LiveComputeRegistration live in scope.LiveComputes)
         {
             graph.AddLiveCompute(live.Compute, live.Reads);
         }
 
-        edgeDescriptors.AddRange(descriptors);
+        wiring.Descriptors.AddRange(scope.Descriptors);
         foreach ((string key, StateNode node) in nodesByRuleId)
         {
             gameNodesByRuleId[key] = node;
@@ -660,16 +677,22 @@ public sealed partial class RuleChainBuilder
         CatalogRoot catalog = CatalogResource.Load();
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
+        GraphExternals externals = _externals;
+
+        // Provenance does not depend on the slot: the template makes the same nodes in the same order
+        // for every player, which RuleGraph relies on to fold the copies. It is recorded on the first
+        // materialisation and shared by every later one.
+        IReadOnlyList<NodeProvenance>? sharedProvenance = null;
 
         graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, playerName) =>
         {
             Dictionary<string, StateNode> localLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
             List<StateNode> nodes = [];
-            List<StateEdge> edges = [];
-            List<GraphEdgeDescriptor> descriptors = [];
-            List<(StateNode Trigger, Action Action, StateNode? Writes)> risingEdgeActions = [];
-            List<(StateNode Trigger, Action<int, int> Action, StateNode? Writes)> contextRisingEdgeActions = [];
-            List<LiveComputeRegistration> liveComputes = [];
+            ProvenanceRecorder? provenance = sharedProvenance is null ? new ProvenanceRecorder() : null;
+
+            // This player's edges, rising-edge actions and live computes, in the order the evaluator
+            // registers them, each with its descriptors.
+            GraphWiring scope = new(_registry, externals);
             List<PerPlayerColumnAssignment> columns = [];
             Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
 
@@ -693,7 +716,7 @@ public sealed partial class RuleChainBuilder
             foreach (RuleDef ctxRule in perPlayerContextRules)
             {
                 BuildPerPlayerRuleNode(ctxRule, slot, playerName, graph, parentNodeLookup,
-                    localLookup, nodes, edges, descriptors);
+                    localLookup, nodes, scope);
             }
 
             // B6 team aggregates (round.team.* / round.enemies.* / round.alive.*): inject the
@@ -703,8 +726,9 @@ public sealed partial class RuleChainBuilder
             // slot (like the per-player contexts above) — cheap pull-nodes with no edges. Economy
             // (round.team.equipment / round.enemies.equipment) is added by the freeze-end maintenance
             // pass below because it needs a written node + the entity digest.
-            InjectB6AliveAggregates(slot, playerName, localLookup, nodes);
-            InjectB6EconomyAggregates(slot, playerName, localLookup, nodes, edges);
+            InjectB6AliveAggregates(slot, playerName, localLookup, nodes, scope);
+            InjectB6EconomyAggregates(slot, playerName, localLookup, nodes, scope);
+            provenance?.Stamp(nodes, 0, RuleGraphNodeOrigin.Context);
 
             // Gap G1 (event-gated per-player aggregate reads): expose THIS slot's per-player context
             // (survived/traded/alive) and B6 aggregate nodes to the condition/value compiler under
@@ -735,9 +759,11 @@ public sealed partial class RuleChainBuilder
                             continue;
                         }
 
+                        int mark = nodes.Count;
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, slot, playerName,
-                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
                     }
 
                     // rate: pass — every bucket is now built, so each KeyedRatioNode can pull its of:/per:
@@ -749,16 +775,20 @@ public sealed partial class RuleChainBuilder
                             continue;
                         }
 
+                        int mark = nodes.Count;
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, slot, playerName,
-                            localLookup, nodes, edges, descriptors, nodesByRuleId,
+                            localLookup, nodes, scope, nodesByRuleId,
                             statHashesByPath, hashSource, nodesByHash);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
                     }
 
                     foreach (CheckedHighlight highlight in rs.Highlights)
                     {
-                        BuildV2Highlight(rs, highlight, slot, playerName, contextV2ToV1, localLookup, nodes, edges,
-                            descriptors, risingEdgeActions, contextRisingEdgeActions, graph.HighlightSink,
-                            nodesByRuleId);
+                        int mark = nodes.Count;
+                        BuildV2Highlight(rs, highlight, slot, playerName, contextV2ToV1, localLookup, nodes, scope,
+                            graph.HighlightSink, nodesByRuleId);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, highlight.HighlightId, nodesByRuleId,
+                            chain: $"_chain_{highlight.HighlightId}");
 
                         // Register the highlight's resolved-identity hash so a deferred compute reading its
                         // `<id>.count` (whose ResolvedReference.StatPath is the highlight id) resolves in the
@@ -789,9 +819,11 @@ public sealed partial class RuleChainBuilder
                             continue;
                         }
 
+                        int mark = nodes.Count;
                         BuildV2Stat(rs, stat, options, views, contextV2ToV1, slot, playerName,
-                            localLookup, nodes, edges, descriptors, nodesByRuleId,
-                            statHashesByPath, hashSource, nodesByHash, liveComputes);
+                            localLookup, nodes, scope, nodesByRuleId,
+                            statHashesByPath, hashSource, nodesByHash);
+                        provenance?.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
                     }
 
                     // show: scoreboard -> per-player column projection. Run after the
@@ -813,11 +845,14 @@ public sealed partial class RuleChainBuilder
             _lastMaterializedV2StatHashes = statHashesByPath;
 
             return new PerPlayerNodeTemplate.MaterializedPlayer(
-                slot, playerName, nodes, edges, columns, descriptors,
-                risingEdgeActions.Count > 0 ? risingEdgeActions : null,
+                slot, playerName, nodes, scope.Edges, columns, scope.Descriptors,
+                scope.RisingEdgeActions.Count > 0 ? scope.RisingEdgeActions : null,
                 NodesByRuleId: nodesByRuleId,
-                LiveComputes: liveComputes.Count > 0 ? liveComputes : null,
-                ContextRisingEdgeActions: contextRisingEdgeActions.Count > 0 ? contextRisingEdgeActions : null);
+                LiveComputes: scope.LiveComputes.Count > 0 ? scope.LiveComputes : null,
+                ContextRisingEdgeActions: scope.ContextRisingEdgeActions.Count > 0 ? scope.ContextRisingEdgeActions : null)
+            {
+                Provenance = sharedProvenance ??= provenance!.Aligned(nodes)
+            };
         }));
 
         // Subscribe the graph to every v2 concrete event (the evaluator short-circuits others).
@@ -842,11 +877,10 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, CatalogView> views, Dictionary<string, string> contextV2ToV1,
         int slot, string playerName,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes,
-        List<StateEdge> edges, List<GraphEdgeDescriptor> descriptors,
+        GraphWiring wiring,
         Dictionary<string, StateNode> nodesByRuleId,
         Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath, MapStatHashSource hashSource,
-        Dictionary<string, StateNode> nodesByHash,
-        List<LiveComputeRegistration>? liveComputes = null)
+        Dictionary<string, StateNode> nodesByHash)
     {
         // Resolved-identity dedup (obligation 3): a hash-equal stat shares the existing node.
         byte[] hash = V2StatHasher.Hash(stat, hashSource);
@@ -866,7 +900,7 @@ public sealed partial class RuleChainBuilder
         // as an always-active EntityValuePullNode (B6-style) registered in localLookup under the read's
         // path, so the compute remap and when-lowering below resolve it as an ordinary graph-node value.
         // Fire-time kinds are untouched — they keep the RewriteEntityReads → CompileEventCondition path.
-        EnsureSettleEntityPullNodes(stat, slot, playerName, localLookup, nodes);
+        EnsureSettleEntityPullNodes(stat, slot, playerName, localLookup, nodes, wiring);
 
         bool roundScoped = stat.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round or ScopeAxis.TeamRound;
         string? condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
@@ -944,9 +978,9 @@ public sealed partial class RuleChainBuilder
 
                 foreach (string ev in stat.ConcreteEvents)
                 {
-                    edges.Add(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Increment, null, condition,
-                        source, node, slot, playerName, null, declaredReads, sourceGate));
-                    descriptors.Add(new GraphEdgeDescriptor(source, node, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Increment, null, condition,
+                            source, node, slot, playerName, null, declaredReads, sourceGate),
+                        GraphEdgeKind.Trigger, ev, condition, GateReads(sourceGate, null));
 
                     // Game-event triggers alone expose evt.GameTick; a net-triggered count records no
                     // first tick (→ null ClipStartTick, the safe lead-in-only fallback).
@@ -954,7 +988,7 @@ public sealed partial class RuleChainBuilder
                         firstTick, slot);
                     if (tickEdge is not null)
                     {
-                        edges.Add(tickEdge);
+                        wiring.AddEdge(tickEdge, GraphEdgeKind.FirstTick, ev, condition);
                     }
                 }
 
@@ -968,9 +1002,9 @@ public sealed partial class RuleChainBuilder
                 string element = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 foreach (string ev in stat.ConcreteEvents)
                 {
-                    edges.Add(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Set, $"node.value + ({element})",
-                        condition, source, node, slot, playerName, null, declaredReads, sourceGate));
-                    descriptors.Add(new GraphEdgeDescriptor(source, node, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Set, $"node.value + ({element})",
+                            condition, source, node, slot, playerName, null, declaredReads, sourceGate),
+                        GraphEdgeKind.Trigger, ev, condition, GateReads(sourceGate, null));
                 }
 
                 break;
@@ -985,8 +1019,8 @@ public sealed partial class RuleChainBuilder
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     EventRegistration reg = RequireGameEvent(ev, stat.StatId);
-                    edges.Add(CreateV2ListAppendEdge(reg, source, node, element, condition, slot, declaredReads));
-                    descriptors.Add(new GraphEdgeDescriptor(source, node, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(CreateV2ListAppendEdge(reg, source, node, element, condition, slot, declaredReads),
+                        GraphEdgeKind.Trigger, ev, condition);
                 }
 
                 break;
@@ -1012,9 +1046,9 @@ public sealed partial class RuleChainBuilder
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     EventRegistration reg = RequireGameEvent(ev, stat.StatId);
-                    edges.Add(CreateV2ScalarReduceEdge(reg, source, node, stat.ValueType, element, condition,
-                        seen, keepMax, slot, declaredReads));
-                    descriptors.Add(new GraphEdgeDescriptor(source, node, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(CreateV2ScalarReduceEdge(reg, source, node, stat.ValueType, element, condition,
+                            seen, keepMax, slot, declaredReads),
+                        GraphEdgeKind.Trigger, ev, condition, [seen], [seen]);
                 }
 
                 break;
@@ -1036,9 +1070,9 @@ public sealed partial class RuleChainBuilder
                         nodes.Add(guard);
                     }
 
-                    edges.Add(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Set, valueExpr, condition,
-                        source, node, slot, playerName, guard, declaredReads, sourceGate));
-                    descriptors.Add(new GraphEdgeDescriptor(source, node, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Set, valueExpr, condition,
+                            source, node, slot, playerName, guard, declaredReads, sourceGate),
+                        GraphEdgeKind.Trigger, ev, condition, GateReads(sourceGate, guard), guard is not null ? [guard] : null);
                 }
 
                 break;
@@ -1120,7 +1154,7 @@ public sealed partial class RuleChainBuilder
                     // is liveReadNodes (the compute's actual graph-node reads). No round-end edge is
                     // emitted — the live recompute subsumes it (it also fires on the round reset that
                     // dirties its round-scoped reads).
-                    liveComputes?.Add(new LiveComputeRegistration(computed, liveReadNodes));
+                    wiring.AddLiveCompute(computed, liveReadNodes);
                 }
                 else
                 {
@@ -1131,7 +1165,8 @@ public sealed partial class RuleChainBuilder
                         {
                             if (_registry.TryResolve(concreteEvent, out Type? eventType))
                             {
-                                edges.Add(new ComputeOnRoundEndEdge(localLookup["root"], [computed], eventType));
+                                wiring.AddEdge(new ComputeOnRoundEndEdge(localLookup["root"], [computed], eventType),
+                                    GraphEdgeKind.RoundEndCompute, concreteEvent, extraReads: liveReadNodes);
                             }
                         }
                     }
@@ -1150,9 +1185,9 @@ public sealed partial class RuleChainBuilder
                 RegisterV2Node(boolNode, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
                 foreach (string ev in stat.ConcreteEvents)
                 {
-                    edges.Add(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Activate, null, condition,
-                        source, boolNode, slot, playerName, null, declaredReads, sourceGate));
-                    descriptors.Add(new GraphEdgeDescriptor(source, boolNode, ev, EdgeEffect.Activate, condition));
+                    wiring.AddEdge(CreateV2TriggerEdge(ev, stat.StatId, TriggerAction.Activate, null, condition,
+                            source, boolNode, slot, playerName, null, declaredReads, sourceGate),
+                        GraphEdgeKind.Trigger, ev, condition, GateReads(sourceGate, null));
                 }
 
                 break;
@@ -1179,7 +1214,7 @@ public sealed partial class RuleChainBuilder
                 RegisterV2Node(logic, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
                 if (roundScoped)
                 {
-                    edges.Add(new RoundScopedLogicNodeReset(logic));
+                    wiring.AddEdge(new RoundScopedLogicNodeReset(logic), GraphEdgeKind.RoundReset);
                 }
 
                 // A when: reading a writer-less EntityValuePullNode (settle-site entity read) has no event
@@ -1187,13 +1222,9 @@ public sealed partial class RuleChainBuilder
                 // flag under any message — it would evaluate once at init and freeze. Drive a round-end
                 // settle recompute (the documented flag-eval settle point) so the flag reflects the
                 // subject's round-end entity value. No-op when the when: reads no entity pull-node.
-                AddEntityFlagSettleEdges(inputs, localLookup, edges);
+                AddEntityFlagSettleEdges(inputs, localLookup, wiring);
 
-                EdgeEffect logicEffect = isDisjunction ? EdgeEffect.Disjunction : EdgeEffect.Conjunction;
-                foreach (IConditionalEdge input in inputs)
-                {
-                    descriptors.Add(new GraphEdgeDescriptor(input.Source, logic, "", logicEffect, input.ConditionLabel));
-                }
+                wiring.DescribeLogicNode(logic, isDisjunction ? EdgeEffect.Disjunction : EdgeEffect.Conjunction, inputs);
 
                 break;
             }
@@ -1215,8 +1246,8 @@ public sealed partial class RuleChainBuilder
                             ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner,
                             _perPlayerEntityProviders, parameterType: typeof(GameEvent))
                         : null;
-                    edges.Add(new WindowedStreakEdge(source, streakNode, reg.EventType, cond));
-                    descriptors.Add(new GraphEdgeDescriptor(source, streakNode, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(new WindowedStreakEdge(source, streakNode, reg.EventType, cond),
+                        GraphEdgeKind.Trigger, ev, condition);
                 }
 
                 break;
@@ -1243,8 +1274,8 @@ public sealed partial class RuleChainBuilder
                             ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner,
                             _perPlayerEntityProviders, parameterType: typeof(GameEvent))
                         : null;
-                    edges.Add(new WindowedHighlightPulseEdge(source, pulseNode, reg.EventType, cond));
-                    descriptors.Add(new GraphEdgeDescriptor(source, pulseNode, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(new WindowedHighlightPulseEdge(source, pulseNode, reg.EventType, cond),
+                        GraphEdgeKind.Trigger, ev, condition);
                 }
 
                 break;
@@ -1272,8 +1303,8 @@ public sealed partial class RuleChainBuilder
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     EventRegistration reg = RequireGameEvent(ev, stat.StatId);
-                    edges.Add(CreateV2KeyedCounterEdge(reg, source, keyedNode, keyParts, bucketValueExpr, condition, slot));
-                    descriptors.Add(new GraphEdgeDescriptor(source, keyedNode, ev, EdgeEffect.SetValue, condition));
+                    wiring.AddEdge(CreateV2KeyedCounterEdge(reg, source, keyedNode, keyParts, bucketValueExpr, condition, slot),
+                        GraphEdgeKind.Trigger, ev, condition);
                 }
 
                 break;
@@ -1282,15 +1313,16 @@ public sealed partial class RuleChainBuilder
             case RuleNodeKind.Tally:
             {
                 RequireNoWhileValueGate(sourceGate, stat.StatId, "tally:");
-                BuildV2Tally(rs, stat, playerName, localLookup, nodes, edges, descriptors, nodesByRuleId);
+                BuildV2Tally(rs, stat, playerName, localLookup, nodes, wiring, nodesByRuleId);
                 break;
             }
 
             case RuleNodeKind.Rate:
             {
                 // rate: of / per (G3) — a per-key ratio over two sibling KeyedCounterNodes. Derived: no
-                // trigger edge, no descriptor (the KeyedRatioNode divides on read). Pull both bucket nodes
-                // from localLookup by their resolved ids (the rate pass runs after every bucket is built).
+                // trigger edge (the KeyedRatioNode divides on read), so it is drawn as two pulls. Pull both
+                // bucket nodes from localLookup by their resolved ids (the rate pass runs after every
+                // bucket is built).
                 if (!localLookup.TryGetValue(stat.RateOf!, out StateNode? ofNode)
                     || ofNode is not KeyedCounterNode ofBucket)
                 {
@@ -1307,6 +1339,8 @@ public sealed partial class RuleChainBuilder
 
                 KeyedRatioNode ratioNode = new(stat.StatId, stat.Label ?? stat.StatId, ofBucket, perBucket, playerName);
                 RegisterV2Node(ratioNode, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
+                wiring.DescribePull(ofBucket, ratioNode, "of");
+                wiring.DescribePull(perBucket, ratioNode, "per");
                 break;
             }
 
@@ -1335,8 +1369,7 @@ public sealed partial class RuleChainBuilder
     private void BuildV2Tally(
         CheckedRuleset rs, CheckedStat stat, string playerName,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes,
-        List<StateEdge> edges, List<GraphEdgeDescriptor> descriptors,
-        Dictionary<string, StateNode> nodesByRuleId)
+        GraphWiring wiring, Dictionary<string, StateNode> nodesByRuleId)
     {
         string sourceId = V1ExpressionWriter.Write(stat.ValueSelector!.Root);
         if (!localLookup.TryGetValue(sourceId, out StateNode? sourceNode) || sourceNode is not ValueNode<int> intSource)
@@ -1380,7 +1413,7 @@ public sealed partial class RuleChainBuilder
         {
             GenericRoundScopedBoolNode guardNode = new($"__seen_tally_{rs.Id.Id}_{stat.StatId}", false, playerName);
             nodes.Add(guardNode);
-            edges.Add(new RoundScopedLogicNodeReset(guardNode));
+            wiring.AddEdge(new RoundScopedLogicNodeReset(guardNode), GraphEdgeKind.RoundReset);
             guard = guardNode;
         }
 
@@ -1392,11 +1425,9 @@ public sealed partial class RuleChainBuilder
                 continue;
             }
 
-            edges.Add(new ThresholdTallyEdge(root, intSource, thresholds, eventType, guard));
-            foreach ((int _, ValueNode<int> target) in thresholds)
-            {
-                descriptors.Add(new GraphEdgeDescriptor(intSource, target, concreteEvent, EdgeEffect.SetValue));
-            }
+            // Drawn from the root, which is the edge's real source, reading the tallied stat.
+            wiring.AddEdge(new ThresholdTallyEdge(root, intSource, thresholds, eventType, guard),
+                GraphEdgeKind.Tally, concreteEvent, extraReads: [intSource]);
         }
     }
 
@@ -1422,9 +1453,7 @@ public sealed partial class RuleChainBuilder
         CheckedRuleset rs, CheckedHighlight highlight, int slot, string playerName,
         Dictionary<string, string> contextV2ToV1,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes,
-        List<StateEdge> edges, List<GraphEdgeDescriptor> descriptors,
-        List<(StateNode Trigger, Action Action, StateNode? Writes)> risingEdgeActions,
-        List<(StateNode Trigger, Action<int, int> Action, StateNode? Writes)> contextRisingEdgeActions,
+        GraphWiring wiring,
         List<HighlightFired> highlightSink,
         Dictionary<string, StateNode> nodesByRuleId)
     {
@@ -1451,14 +1480,10 @@ public sealed partial class RuleChainBuilder
         nodesByRuleId[$"{rs.Id.Id}.{highlight.HighlightId}"] = logic;
         if (highlight.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round)
         {
-            edges.Add(new RoundScopedLogicNodeReset(logic));
+            wiring.AddEdge(new RoundScopedLogicNodeReset(logic), GraphEdgeKind.RoundReset);
         }
 
-        EdgeEffect logicEffect = isDisjunction ? EdgeEffect.Disjunction : EdgeEffect.Conjunction;
-        foreach (IConditionalEdge input in inputs)
-        {
-            descriptors.Add(new GraphEdgeDescriptor(input.Source, logic, "", logicEffect, input.ConditionLabel));
-        }
+        wiring.DescribeLogicNode(logic, isDisjunction ? EdgeEffect.Disjunction : EdgeEffect.Conjunction, inputs);
 
         GenericValueNode<int> countNode = new($"{highlight.HighlightId}.count", playerName);
         countNode.SetValue(0);
@@ -1466,8 +1491,7 @@ public sealed partial class RuleChainBuilder
         localLookup[highlight.CountNodeId] = countNode;
         nodesByRuleId[$"{rs.Id.Id}.{highlight.CountNodeId}"] = countNode;
 
-        risingEdgeActions.Add((logic, () => countNode.SetValue(countNode.Value + 1), countNode));
-        descriptors.Add(new GraphEdgeDescriptor(logic, countNode, "", EdgeEffect.SetValue, "rising edge"));
+        wiring.AddRisingEdgeAction(logic, () => countNode.SetValue(countNode.Value + 1), countNode);
 
         // ── A1 rich emission: the second (context-arm) rising-edge action ──
         // RoundNumber source: the live `round_number` built-in context node (a game-scoped counter,
@@ -1489,7 +1513,7 @@ public sealed partial class RuleChainBuilder
         // The when: reads whose count stats carry a first-tick companion. Read lazily at fire time so
         // a count that only completes here (multikill) has already stamped its first-tick node.
         IReadOnlyList<string> declaredReads = highlight.DeclaredReads;
-        contextRisingEdgeActions.Add((logic, (frameIdx, tick) =>
+        wiring.AddHighlightEmission(logic, (frameIdx, tick) =>
         {
             int round = roundNode?.Value ?? 0;
             highlightSink.Add(new HighlightFired(
@@ -1497,7 +1521,7 @@ public sealed partial class RuleChainBuilder
                 HighlightTitleRenderer.Render(title, playerName, round, localLookup, contextV2ToV1, nodesByRuleId),
                 score, kind, group,
                 ResolveClipStartTick(declaredReads, localLookup)));
-        }, null));
+        });
     }
 
     /// <summary>
@@ -2199,7 +2223,7 @@ public sealed partial class RuleChainBuilder
     ///     index is not available (e.g. a demo-less build).
     /// </summary>
     private void InjectB6AliveAggregates(int slot, string? playerName,
-        Dictionary<string, StateNode> localLookup, List<StateNode> nodes)
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
     {
         if (_playerContextIndex is not { } index)
         {
@@ -2210,6 +2234,7 @@ public sealed partial class RuleChainBuilder
         {
             localLookup[ruleId] = node;
             nodes.Add(node);
+            wiring.DescribePull(wiring.Externals.PlayerContext, node, ruleId);
         }
 
         Add(B6RuleIds.TeamAlive,
@@ -2239,7 +2264,7 @@ public sealed partial class RuleChainBuilder
     ///     scanner is guaranteed to snapshot it and <c>GetPreFrameValue</c> never throws.
     /// </summary>
     private void InjectB6EconomyAggregates(int slot, string? playerName,
-        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, List<StateEdge> edges)
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
     {
         if (_playerContextIndex is not { } index)
         {
@@ -2248,8 +2273,9 @@ public sealed partial class RuleChainBuilder
 
         if (BuildEconomySums(playerName, localLookup, nodes) is { Count: > 0 } sums)
         {
-            edges.Add(new PlayerEconomyFreezeEndEdge(
-                localLookup["root"], index, () => index.GetCurrentTeam(slot), sums));
+            wiring.AddEdge(new PlayerEconomyFreezeEndEdge(
+                    localLookup["root"], index, () => index.GetCurrentTeam(slot), sums),
+                GraphEdgeKind.FreezeEndEconomy);
         }
     }
 
@@ -2305,7 +2331,7 @@ public sealed partial class RuleChainBuilder
     ///     than a fixed rule id. No-op for a stat with no settle-site entity reads (v1-identical).
     /// </summary>
     private void EnsureSettleEntityPullNodes(CheckedStat stat, int slot, string? playerName,
-        Dictionary<string, StateNode> localLookup, List<StateNode> nodes)
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
     {
         bool settleSite = stat.Kind == RuleNodeKind.Compute
                           || stat.Kind == RuleNodeKind.Flag && stat.ConcreteEvents.Count == 0;
@@ -2334,6 +2360,7 @@ public sealed partial class RuleChainBuilder
             EntityValuePullNode pull = CreateEntityPullNode(read.ProviderName, slot, playerName);
             localLookup[read.Path] = pull;
             nodes.Add(pull);
+            wiring.DescribePull(wiring.Externals.EntityState, pull, read.Path);
         }
     }
 
@@ -2357,7 +2384,7 @@ public sealed partial class RuleChainBuilder
     ///     sibling/context flag path).
     /// </summary>
     private void AddEntityFlagSettleEdges(
-        List<IConditionalEdge> inputs, Dictionary<string, StateNode> localLookup, List<StateEdge> edges)
+        List<IConditionalEdge> inputs, Dictionary<string, StateNode> localLookup, GraphWiring wiring)
     {
         List<StateNode> pullNodes = [];
         foreach (IConditionalEdge input in inputs)
@@ -2388,7 +2415,8 @@ public sealed partial class RuleChainBuilder
         {
             if (_registry.TryResolve(concreteEvent, out Type? eventType))
             {
-                edges.Add(new EntityPullNodeSettleEdge(root, pulls, eventType));
+                wiring.AddEdge(new EntityPullNodeSettleEdge(root, pulls, eventType), GraphEdgeKind.EntitySettle,
+                    concreteEvent);
             }
         }
     }

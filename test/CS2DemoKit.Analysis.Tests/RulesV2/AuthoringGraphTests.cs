@@ -18,7 +18,7 @@ namespace CS2DemoKit.Analysis.Tests.RulesV2;
 ///     Gates the demo-less authoring graph (<see cref="AuthoringGraph" />) the Workbench renders while
 ///     editing: it materializes per-player templates, anchors on the ruleset's declared outputs, and keeps
 ///     only those anchors plus their upstream inputs — so a bare stat is a couple of nodes, not the whole
-///     engine's ~36-node shared scaffolding.
+///     engine's shared scaffolding.
 /// </summary>
 public class AuthoringGraphTests
 {
@@ -68,6 +68,73 @@ public class AuthoringGraphTests
             .Because("the highlight's conjunction chain node is surfaced (not just the scoreboard columns)");
         await Assert.That(rich.Nodes.Any(n => n.Name.Contains("multi", StringComparison.Ordinal) && n.IsPerPlayer)).IsTrue()
             .Because("the highlight's per-player count node is surfaced and flagged per-player");
+    }
+
+    [Test]
+    public async Task TallyTarget_ReachesItsSourceStat_ThroughARead()
+    {
+        // A tally fires from the root at round end and reads its stat; the read is what connects the
+        // bucket to the stat, and it is drawn as its own edge.
+        AuthoringGraph.AuthoringGraphModel model = BuildAuthoring(
+            """
+            ruleset: t
+            for: each_player
+            stats:
+              kills:
+                count: kill
+                per: round
+              multi:
+                tally: kills
+                thresholds:
+                  - { min: 2, target: rounds_2k }
+                per: match
+            """);
+
+        int kills = IndexOf(model, "kills");
+        int bucket = IndexOf(model, "rounds_2k");
+        await Assert.That(model.Edges.Any(e => e.Source == kills && e.Destination == bucket && e.IsRead)).IsTrue()
+            .Because("the bucket's tally reads the kills stat");
+        await Assert.That(model.Edges.Any(e => model.Nodes[e.Source].IsRoot && e.Destination == bucket && !e.IsRead)).IsTrue()
+            .Because("the tally fires from the root");
+    }
+
+    [Test]
+    public async Task HighlightInputs_CarryTheHighlightChain()
+    {
+        AuthoringGraph.AuthoringGraphModel model = BuildAuthoring(
+            """
+            ruleset: rich
+            for: each_player
+            stats:
+              kills:
+                count: kill
+                per: round
+            highlights:
+              multi:
+                when: kills >= 2
+                per: match
+                title: "multi"
+            """);
+
+        foreach (string name in (string[])["kills", "_chain_multi", "multi.count"])
+        {
+            await Assert.That(model.Nodes[IndexOf(model, name)].ChainIds).Contains("_chain_multi");
+        }
+
+        await Assert.That(model.Nodes.Single(n => n.IsRoot).ChainIds).IsEmpty();
+    }
+
+    private static int IndexOf(AuthoringGraph.AuthoringGraphModel model, string name)
+    {
+        for (int i = 0; i < model.Nodes.Count; i++)
+        {
+            if (model.Nodes[i].Name == name)
+            {
+                return i;
+            }
+        }
+
+        throw new InvalidOperationException($"no node '{name}' in [{string.Join(", ", model.Nodes.Select(n => n.Name))}]");
     }
 
     private static AuthoringGraph.AuthoringGraphModel BuildAuthoring(string yaml)

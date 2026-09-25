@@ -86,6 +86,49 @@ unknown-ruleset errors; the upload path is
 `BuildResult.RulesetDiagnostics` and `.ExcludedRulesets` surface what composition dropped —
 check them, or a ruleset that stopped compiling is indistinguishable from feats that never fired.
 
+## Drawing the rule graph
+
+`RuleGraph.FromRun(run)` is the graph a run ran: the build's game scope, its three external nodes
+and every materialised player, each node with a stable `Key` (`g/{i}`, `x/{name}`,
+`p{slot}/t{template}/{ordinal}`) and each edge already resolved to two of the view's nodes. Key
+selections and breakpoints by `Key`; names repeat across players and rulesets.
+`.CollapsePlayers()` folds the per-player copies into one node per template position
+(`t{template}/{ordinal}`) and one edge per template edge (`t{template}/e{ordinal}`), each with every
+player's copy in `Instances`, which is what a skeleton view draws. Game, team and external nodes
+and edges pass through unchanged, keys included.
+
+Every `StateEdge` the builder adds has at least one `GraphEdgeDescriptor`, drawn from its real
+source, and so does the wiring that is not an edge. `Descriptor.Kind` says which. The per-player
+state (team, alive, clutch) and the entity scanner live outside the node graph, so the edges that
+write them and the nodes that pull from them are drawn to and from the `player_context` and
+`entity_state` external nodes; a highlight's emission goes to `highlights`. An edge that writes
+several nodes has a row per node. Fire counts and applied messages belong to
+`Descriptor.Edge`: read them there and do not add them up across its rows. On a collapsed edge,
+`Descriptor.Edge` is the lowest slot's copy; the template edge's count is the sum over the `Edge` of
+each of its `Instances`, one engine edge per player.
+
+```csharp
+RuleGraph skeleton = RuleGraph.FromRun(run).CollapsePlayers();
+foreach (RuleGraphEdge edge in skeleton.Edges)
+{
+    int fires = edge.Instances.Sum(d => d.Edge?.FireCount ?? 0);
+    Draw(edge.Source.Key, edge.Destination.Key, edge.Descriptor.Label, edge.Descriptor.ConditionLabel, fires);
+}
+```
+
+`RuleGraphNode.HighlightChains` holds the `_chain_{highlight}` names of the highlights a node feeds
+(what `RuleChainEvent.ChainName` carries). `Ruleset` and `Owners` say which ruleset and which
+stats made a node, for clustering; a table column's `PerPlayerColumnAssignment.ChainId` is the
+`_chain_{ruleset}` key of the ruleset that declared the column, a different space from the
+highlight chains. That ruleset is one of the node's `Owners`, not always its `Ruleset`: a stat two
+rulesets declare the same way is one node, made by the first.
+
+`RuleGraph.FromBuild(build)` draws a build before any run, previewing each per-player template once.
+The preview runs the builder's per-player factory, so call it before a run over the same build
+starts, never during one; after a run, use `FromRun`. A template that cannot materialise without a
+demo is left out of the preview and named in `Diagnostics`, so check it: the shipped rulesets on the
+HLTV profile currently preview with no per-player nodes for this reason.
+
 ## Clip planning
 
 `CS2DemoKit.Analysis.Clips` turns highlights into clip windows entirely in frame clock:
