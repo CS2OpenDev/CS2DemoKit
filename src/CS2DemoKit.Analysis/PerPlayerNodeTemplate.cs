@@ -69,7 +69,14 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
         int TemplateIndex = 0,
         IReadOnlyDictionary<string, StateNode>? NodesByRuleId = null,
         IReadOnlyList<LiveComputeRegistration>? LiveComputes = null,
-        IReadOnlyList<(StateNode Trigger, Action<int, int> Action, StateNode? Writes)>? ContextRisingEdgeActions = null);
+        IReadOnlyList<(StateNode Trigger, Action<int, int> Action, StateNode? Writes)>? ContextRisingEdgeActions = null)
+    {
+        /// <summary>
+        ///     Where the builder made each of <see cref="Nodes" />, aligned with it; <c>null</c> for a
+        ///     hand-built template. Read by <see cref="RuleGraph" />.
+        /// </summary>
+        internal IReadOnlyList<NodeProvenance>? Provenance { get; init; }
+    }
 }
 
 /// <summary>Maps a per-player node to a named column in the player stats table.</summary>
@@ -77,9 +84,12 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
 /// <param name="ColumnName">Display label for the column header.</param>
 /// <param name="GroupName">Optional group name used to cluster related columns.</param>
 /// <param name="ChainId">
-///     Optional <c>_chain_{id}</c> join-key of the per-player chain that declared this column.
-///     Lets the graph-filter feature emphasize / inert a chain's columns without a relayout.
-///     <c>null</c> for columns not associated with a chain.
+///     The <c>_chain_{ruleset}</c> join key of the ruleset that declared this column, so a view can
+///     emphasize one ruleset's columns without a relayout. This is the ruleset's key, which matches
+///     <see cref="Graphs.RuleGraphNode.Ruleset" />, not a highlight's <c>_chain_{highlight}</c>
+///     name in <see cref="Graphs.RuleGraphNode.HighlightChains" />; a ruleset and a highlight that
+///     share an id give the same string with different meanings. <c>null</c> for a hand-built
+///     column.
 /// </param>
 /// <param name="IsRoundScoped">
 ///     True when the column's node resets at round boundaries — either the node itself is

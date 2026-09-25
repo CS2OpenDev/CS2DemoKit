@@ -75,6 +75,10 @@ public sealed partial class RuleChainBuilder
     // under an already-registered template.
     private GraphExternals _externals = new();
 
+    // Where the current build made each game-scope node (its team-scope nodes included), stamped
+    // around each block that adds nodes. Set at the start of Build.
+    private ProvenanceRecorder _gameProvenance = new();
+
     // Baked map collision for the visibility rising-edge scan, or null when the caller supplied
     // none. Null is not an error: it means enemy_spotted cannot be produced for this run, which is
     // the same shape as a profile that does not bind an event.
@@ -153,6 +157,8 @@ public sealed partial class RuleChainBuilder
         // Every game-scope edge and its descriptors go through here, forwarded to the graph in call
         // order.
         GraphWiring wiring = new(_registry, externals, graph);
+        ProvenanceRecorder provenance = new();
+        _gameProvenance = provenance;
         _teamNodesByRuleId.Clear();
         _teamRosters.Clear();
         _gameStatHashes.Clear();
@@ -165,6 +171,7 @@ public sealed partial class RuleChainBuilder
         {
             graph.Root
         };
+        provenance.Stamp(allNodes, 0, RuleGraphNodeOrigin.Root);
         HashSet<Type> relevantTypes = new();
 
         // ── Build player-context index (consumed by CreateEnrichment below) ──
@@ -397,6 +404,7 @@ public sealed partial class RuleChainBuilder
             }
 
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
+            int entityMark = allNodes.Count;
             List<(IEntityValueProvider, StateNode)> trackedForScanner = new(matched.Count);
             foreach (IEntityValueProvider provider in matched)
             {
@@ -408,6 +416,8 @@ public sealed partial class RuleChainBuilder
                 wiring.DescribeEntityValue(valueNode, provider.ContextName);
                 trackedForScanner.Add((provider, valueNode));
             }
+
+            provenance.Stamp(allNodes, entityMark, RuleGraphNodeOrigin.EntityValue);
 
             entityScanner = new EntityChangeScanner(
                 new EntityStateLayer { StoreUnlensedFields = false },
@@ -482,7 +492,9 @@ public sealed partial class RuleChainBuilder
             _enrichmentNodes[key] = node;
         }
 
+        int enrichmentMark = allNodes.Count;
         allNodes.AddRange(enrichment.Nodes);
+        provenance.Stamp(allNodes, enrichmentMark, RuleGraphNodeOrigin.Enrichment);
         foreach (StateEdge edge in enrichment.Edges)
         {
             // The bookkeeping edges write per-player state only; the rest write enrichment nodes.
@@ -494,13 +506,16 @@ public sealed partial class RuleChainBuilder
 
         if (roundFactsNeeded)
         {
+            int factsMark = allNodes.Count;
             BuildRoundFacts(graph, wiring, nodeLookup, allNodes, gameNodesByRuleId, relevantTypes, entityScanner);
+            provenance.Stamp(allNodes, factsMark, RuleGraphNodeOrigin.RoundFact);
         }
 
         List<RuleChainDef> gameContexts = builtinContexts.Where(c => c.Scope == ChainScope.Game).ToList();
         List<RuleChainDef> perPlayerContexts = builtinContexts.Where(c => c.Scope == ChainScope.PerPlayer).ToList();
 
         // ── Build game-scoped context rules ────────────────────────────────
+        int contextMark = allNodes.Count;
         foreach (RuleChainDef ctx in gameContexts)
         {
             foreach (RuleDef rule in ctx.Rules)
@@ -518,6 +533,8 @@ public sealed partial class RuleChainBuilder
                 }
             }
         }
+
+        provenance.Stamp(allNodes, contextMark, RuleGraphNodeOrigin.Context);
 
         // ── Rulesets v2: build v2 nodes onto the same graph ──
         // After the context/enrichment graph is wired, so the game contexts (incl. bomb_was_planted)
@@ -571,7 +588,8 @@ public sealed partial class RuleChainBuilder
             TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
             TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
             RoundBoundaryTypes = RoundBoundaryTypes(),
-            ExternalNodes = externals.All
+            ExternalNodes = externals.All,
+            Provenance = provenance.ToDictionary()
         };
     }
 

@@ -142,6 +142,12 @@ public sealed record BuildResult(
     ///     together, or a row that writes per-player state is dropped.
     /// </summary>
     public IReadOnlyList<ExternalStateNode> ExternalNodes { get; init; } = [];
+
+    /// <summary>
+    ///     Where the builder made each node of <see cref="Nodes" />; <c>null</c> for a hand-built
+    ///     result. Read by <see cref="RuleGraph" />.
+    /// </summary>
+    internal IReadOnlyDictionary<StateNode, NodeProvenance>? Provenance { get; init; }
 }
 
 /// <summary>

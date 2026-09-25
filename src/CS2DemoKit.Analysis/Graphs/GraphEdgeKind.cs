@@ -95,7 +95,7 @@ public enum GraphEdgeKind
     EntitySettle,
 
     /// <summary>
-    ///     An edge on the graph with no descriptor, which a view over the graph draws so it is not
+    ///     An edge on the graph with no descriptor, which <see cref="RuleGraph" /> draws so it is not
     ///     lost. The builder never produces one; a hand-built graph can.
     /// </summary>
     Undescribed
