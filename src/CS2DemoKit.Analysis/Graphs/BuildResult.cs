@@ -19,7 +19,12 @@ namespace CS2DemoKit.Analysis.Graphs;
 /// </summary>
 /// <param name="Graph">The fully-wired <see cref="StateGraph" /> with all nodes and edges registered.</param>
 /// <param name="Nodes">All nodes in the graph in dependency-sorted order.</param>
-/// <param name="Edges">Visualization descriptors for every edge.</param>
+/// <param name="Edges">
+///     The game scope's descriptors: at least one for every edge on <see cref="Graph" />, drawn from
+///     its real source, plus the game-scope wiring that is not an edge (see
+///     <see cref="GraphEdgeDescriptor" /> and <see cref="GraphEdgeKind" />). A row can point at one
+///     of <see cref="ExternalNodes" />. The per-player rows are on each materialised player.
+/// </param>
 /// <param name="Chains">All chain (conjunction) nodes — used by the timeline view.</param>
 /// <param name="RelevantMessageTypes">
 ///     Set of message types the graph subscribes to; the evaluator can short-circuit other
@@ -39,12 +44,12 @@ namespace CS2DemoKit.Analysis.Graphs;
 ///     uniform; candidates for a future v2 membership surface.
 /// </param>
 /// <param name="EdgeBacking">
-///     Maps each game-scoped graph-edge descriptor to the <see cref="StateEdge" /> the evaluator
-///     fires for it, by reference identity (the two are created together in the build loop). Only
-///     trigger-backed graph edges appear — conjunction/disjunction/rising-edge descriptors have no
-///     <see cref="StateEdge" /> and are absent. Drives edge graph-breakpoints (descriptor →
-///     <see cref="StateEdge" /> → <c>EvaluationResult.AppliedMessagesByEdge</c>). Per-player table
-///     edges are out of scope and not mapped. <c>null</c> when no edge was backed.
+///     Maps each game-scope descriptor that a <see cref="StateEdge" /> backs to that edge, by
+///     reference identity; several rows map to one edge when it writes several nodes. Wiring with no
+///     edge (logic inputs, rising-edge actions, pulls) is absent. Drives edge graph-breakpoints
+///     (descriptor → <see cref="StateEdge" /> → <c>EvaluationResult.AppliedMessagesByEdge</c>).
+///     <see cref="GraphEdgeDescriptor.Edge" /> carries the same edge on the row itself, and on the
+///     per-player rows this map does not cover. <c>null</c> when no edge was backed.
 /// </param>
 /// <param name="GameNodesByRuleId">
 ///     Game-scoped rule-id → node map for configured-output metric resolution. Keys are bare rule
@@ -141,6 +146,14 @@ public sealed record BuildResult(
     ///     configured tables just before these, which is where a snapshot run's round rows come from.
     /// </summary>
     public IReadOnlySet<Type> RoundBoundaryTypes { get; init; } = new HashSet<Type>();
+
+    /// <summary>
+    ///     The stand-ins for state kept outside the node graph (<see cref="ExternalState" />), one of
+    ///     each, which descriptors in <see cref="Edges" /> and in the materialised players can point
+    ///     at. They are not in <see cref="Nodes" />: join descriptors to <see cref="Nodes" /> and these
+    ///     together, or a row that writes per-player state is dropped.
+    /// </summary>
+    public IReadOnlyList<ExternalStateNode> ExternalNodes { get; init; } = [];
 }
 
 /// <summary>Visualization hint: a named cluster grouping a set of nodes for display.</summary>
@@ -148,7 +161,35 @@ public sealed record BuildResult(
 /// <param name="Members">Nodes that belong to this cluster.</param>
 public sealed record NodeGroupHint(string GroupName, IReadOnlyList<StateNode> Members);
 
-/// <summary>Describes one edge to the visualization layer.</summary>
+/// <summary>
+///     Describes one drawn edge of the graph: a source, one destination, and what connects them.
+///     <para>
+///         The builder records at least one for every <see cref="StateEdge" /> it adds, with the
+///         edge's real <see cref="StateEdge.Source" />, and one for each piece of wiring that is not
+///         a <see cref="StateEdge" /> (a logic input, a rising-edge action, a live compute's read, an
+///         entity value, an on-demand pull). <see cref="Kind" /> says which.
+///     </para>
+///     <para>
+///         An edge that writes several nodes fans out to one descriptor per written node, in the
+///         order <see cref="StateEdge.WrittenNode" />, <see cref="StateEdge.AdditionalWrittenNodes" />,
+///         then what the builder knows the edge also writes: the first-wins guard a trigger sets, and
+///         <see cref="ExternalState.PlayerContext" /> for an edge that updates per-player state. An
+///         edge that writes no node at all is drawn to <see cref="ExternalState.PlayerContext" />, and
+///         a round reset is a self-loop. So <see cref="Destination" /> is never null, and may be one of
+///         <see cref="BuildResult.ExternalNodes" />.
+///     </para>
+///     <para>
+///         Several descriptors can share one <see cref="Edge" />. Its <see cref="StateEdge.FireCount" />
+///         and its applied messages belong to the edge, not the row: resolve them through
+///         <see cref="Edge" /> and do not sum them across the rows of one edge.
+///     </para>
+///     <para>
+///         <see cref="Label" /> is the event the edge fires on, as the rule named it where the rule
+///         did (the concrete event of a logical one), otherwise the registered name of the edge's
+///         dispatch type, otherwise that type's name in snake case. A round reset is labelled
+///         <c>round reset</c>; wiring with no event has an empty label.
+///     </para>
+/// </summary>
 /// <param name="Source">Edge source node.</param>
 /// <param name="Destination">Edge destination node.</param>
 /// <param name="Label">Display label shown on the edge.</param>
@@ -159,4 +200,23 @@ public sealed record GraphEdgeDescriptor(
     StateNode Destination,
     string Label,
     EdgeEffect Effect,
-    string? ConditionLabel = null);
+    string? ConditionLabel = null)
+{
+    /// <summary>What this row draws. Defaults to <see cref="GraphEdgeKind.Trigger" /> for a hand-built descriptor.</summary>
+    public GraphEdgeKind Kind { get; init; }
+
+    /// <summary>
+    ///     The <see cref="StateEdge" /> this row draws, whose <see cref="StateEdge.FireCount" /> and
+    ///     applied messages are the row's; <c>null</c> for wiring that is not a
+    ///     <see cref="StateEdge" /> (see <see cref="GraphEdgeKind" />).
+    /// </summary>
+    public StateEdge? Edge { get; init; }
+
+    /// <summary>
+    ///     The nodes the edge reads besides <see cref="Source" />: its declared reads, the sources of
+    ///     its <c>while:</c> gate, the guard it checks, the stat a tally or a round-end compute reads,
+    ///     and the external state it consults. Empty when it reads nothing else. It does not model the
+    ///     identifiers a compiled condition resolves by name at fire time.
+    /// </summary>
+    public IReadOnlyList<StateNode> Reads { get; init; } = [];
+}

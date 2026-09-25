@@ -31,7 +31,12 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
     /// <param name="Nodes">Concrete state nodes produced by the template for this player.</param>
     /// <param name="Edges">Concrete state edges wiring the nodes together.</param>
     /// <param name="ColumnAssignments">Mappings from nodes to player-table columns.</param>
-    /// <param name="EdgeDescriptors">Visualization descriptors for the produced edges.</param>
+    /// <param name="EdgeDescriptors">
+    ///     This player's descriptors: at least one for every edge in <paramref name="Edges" />, carrying
+    ///     it in <see cref="GraphEdgeDescriptor.Edge" />, plus the wiring that is not an edge (logic
+    ///     inputs, rising-edge actions, live-compute reads, on-demand pulls). Rows can point at game
+    ///     nodes and at <see cref="BuildResult.ExternalNodes" />, not only at <paramref name="Nodes" />.
+    /// </param>
     /// <param name="RisingEdgeActions">Optional rising-edge callbacks installed against trigger nodes.</param>
     /// <param name="ContextRisingEdgeActions">
     ///     Optional context-arm rising-edge callbacks (A1 highlight emission): the evaluator invokes

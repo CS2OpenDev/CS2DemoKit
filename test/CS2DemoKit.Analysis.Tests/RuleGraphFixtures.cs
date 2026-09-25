@@ -203,6 +203,36 @@ internal static class RuleGraphFixtures
         return loaded.Rulesets;
     }
 
+    /// <summary>Every example under <c>Rules/examples/</c>, by file name.</summary>
+    internal static IEnumerable<string> ExampleFiles()
+    {
+        string? dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "CS2DemoKit.slnx")))
+        {
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        string examples = Path.Combine(dir ?? throw new InvalidOperationException("repo root not found"),
+            "src", "CS2DemoKit.Analysis", "Rules", "examples");
+        return Directory.EnumerateFiles(examples, "*.rules.yaml", SearchOption.AllDirectories).Order(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    ///     The example at <paramref name="path" /> on its own. Not beside the shipped rulesets: there
+    ///     the multikill example's tally targets collide with kast's in the shared template, and its
+    ///     scoreboard then fails to materialise, which is a separate defect.
+    /// </summary>
+    internal static IReadOnlyList<RulesetDoc> Example(string path)
+    {
+        RuleConfigLoadResult loaded = YamlConfigLoader.LoadDocuments([(Path.GetFileName(path), File.ReadAllText(path))]);
+        if (loaded.Errors.Count > 0)
+        {
+            throw new InvalidOperationException("example failed to load: " + string.Join("; ", loaded.Errors));
+        }
+
+        return loaded.Rulesets;
+    }
+
     /// <summary>
     ///     Builds <paramref name="docs" /> for <paramref name="profile" /> at 64 ticks, and fails loudly
     ///     when composition dropped anything: a build that silently lost a ruleset would pin less than
@@ -234,4 +264,11 @@ internal static class RuleGraphFixtures
         yield return ("matrix-gotv", () => Build(Matrix(), new Cs2GotvProfile()), true);
         yield return ("matrix-hltv", () => Build(Matrix(), new Cs2HltvProfile()), true);
     }
+
+    /// <summary>The pinned cases, plus each example on GOTV.</summary>
+    internal static IEnumerable<(string Name, Func<BuildResult> Build, bool Materializes)> CoverageCases() =>
+        Cases().Concat(ExampleFiles().Select(path => (
+            "example-" + Path.GetFileName(path).Replace(".rules.yaml", "", StringComparison.Ordinal),
+            (Func<BuildResult>)(() => Build(Example(path), new Cs2GotvProfile())),
+            true)));
 }

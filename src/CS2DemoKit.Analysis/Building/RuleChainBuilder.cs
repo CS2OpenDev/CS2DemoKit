@@ -70,6 +70,11 @@ public sealed partial class RuleChainBuilder
     private EntityChangeScanner? _entityScanner;
     private PlayerContextIndex? _playerContextIndex;
 
+    // The current build's stand-ins for the state outside the graph. Set at the start of Build; the
+    // per-player template factory captures its own reference, so a later Build cannot swap them
+    // under an already-registered template.
+    private GraphExternals _externals = new();
+
     // Baked map collision for the visibility rising-edge scan, or null when the caller supplied
     // none. Null is not an error: it means enemy_spotted cannot be produced for this run, which is
     // the same shape as a profile that does not bind an event.
@@ -142,6 +147,12 @@ public sealed partial class RuleChainBuilder
         }
 
         StateGraph graph = new();
+        GraphExternals externals = new();
+        _externals = externals;
+
+        // Every game-scope edge and its descriptors go through here, forwarded to the graph in call
+        // order.
+        GraphWiring wiring = new(_registry, externals, graph);
         _teamNodesByRuleId.Clear();
         _teamRosters.Clear();
         _gameStatHashes.Clear();
@@ -154,11 +165,6 @@ public sealed partial class RuleChainBuilder
         {
             graph.Root
         };
-        List<GraphEdgeDescriptor> edgeDescriptors = new();
-        // descriptor → backing StateEdge, by reference identity. Populated only where a real
-        // trigger edge is created alongside its descriptor (BuildSingletonRule); drives edge
-        // graph-breakpoints. Logic/per-player descriptors stay absent.
-        Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking = new(ReferenceEqualityComparer.Instance);
         Dictionary<string, List<StateNode>> groupMembers = new(StringComparer.OrdinalIgnoreCase);
         List<ConjunctionNode> conjunctions = new();
         HashSet<Type> relevantTypes = new();
@@ -401,6 +407,7 @@ public sealed partial class RuleChainBuilder
                 nodeLookup[provider.ContextName] = valueNode;
                 _enrichmentNodes[provider.ContextName] = valueNode;
                 allNodes.Add(valueNode);
+                wiring.DescribeEntityValue(valueNode, provider.ContextName);
                 trackedForScanner.Add((provider, valueNode));
             }
 
@@ -480,12 +487,16 @@ public sealed partial class RuleChainBuilder
         allNodes.AddRange(enrichment.Nodes);
         foreach (StateEdge edge in enrichment.Edges)
         {
-            graph.AddEdge(edge);
+            // The bookkeeping edges write per-player state only; the rest write enrichment nodes.
+            GraphEdgeKind kind = edge.WrittenNode is null && edge.AdditionalWrittenNodes is null
+                ? GraphEdgeKind.PlayerState
+                : GraphEdgeKind.Enrichment;
+            wiring.AddEdge(edge, kind);
         }
 
         if (roundFactsNeeded)
         {
-            BuildRoundFacts(graph, nodeLookup, allNodes, gameNodesByRuleId, relevantTypes, entityScanner);
+            BuildRoundFacts(graph, wiring, nodeLookup, allNodes, gameNodesByRuleId, relevantTypes, entityScanner);
         }
 
         List<RuleChainDef> gameContexts = builtinContexts.Where(c => c.Scope == ChainScope.Game).ToList();
@@ -501,7 +512,7 @@ public sealed partial class RuleChainBuilder
                     continue;
                 }
 
-                BuildSingletonRule(rule, graph, nodeLookup, allNodes, edgeDescriptors, edgeBacking, groupMembers, relevantTypes);
+                BuildSingletonRule(rule, graph, wiring, nodeLookup, allNodes, groupMembers, relevantTypes);
                 if (nodeLookup.TryGetValue(rule.Id, out StateNode? ctxNode))
                 {
                     // Context rules (round_number, gameplay_phase, …) resolve by bare id only.
@@ -525,7 +536,7 @@ public sealed partial class RuleChainBuilder
                 .SelectMany(c => c.Rules)
                 .Where(RequiresSatisfied)
                 .ToList();
-            BuildRulesetsV2(rulesets, options, graph, nodeLookup, allNodes, edgeDescriptors,
+            BuildRulesetsV2(rulesets, options, graph, wiring, nodeLookup, allNodes,
                 gameNodesByRuleId, relevantTypes, v2Outputs, perPlayerContextRules);
         }
 
@@ -543,7 +554,18 @@ public sealed partial class RuleChainBuilder
             .Select(kv => new NodeGroupHint(kv.Key, kv.Value))
             .ToList();
 
-        return new BuildResult(graph, allNodes, edgeDescriptors, conjunctions,
+        // Every game-scope row a StateEdge backs, several rows to one edge for a multi-write edge;
+        // drives edge graph-breakpoints. By reference, like the descriptors themselves.
+        Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking = new(ReferenceEqualityComparer.Instance);
+        foreach (GraphEdgeDescriptor descriptor in wiring.Descriptors)
+        {
+            if (descriptor.Edge is { } backing)
+            {
+                edgeBacking[descriptor] = backing;
+            }
+        }
+
+        return new BuildResult(graph, allNodes, wiring.Descriptors, conjunctions,
             relevantTypes, groupHints, playerContextIndex, entityScanner, null,
             edgeBacking.Count > 0 ? edgeBacking : null,
             gameNodesByRuleId.Count > 0 ? gameNodesByRuleId : null,
@@ -554,7 +576,8 @@ public sealed partial class RuleChainBuilder
             Events = _registry,
             TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
             TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
-            RoundBoundaryTypes = RoundBoundaryTypes()
+            RoundBoundaryTypes = RoundBoundaryTypes(),
+            ExternalNodes = externals.All
         };
     }
 
@@ -588,7 +611,7 @@ public sealed partial class RuleChainBuilder
     ///     lookups under their node ids, so a v2 read of <c>round.bomb.site</c> resolves through the
     ///     catalog context table like any other context. Only built when a ruleset reads one.
     /// </summary>
-    private void BuildRoundFacts(StateGraph graph, Dictionary<string, StateNode> nodeLookup,
+    private void BuildRoundFacts(StateGraph graph, GraphWiring wiring, Dictionary<string, StateNode> nodeLookup,
         List<StateNode> allNodes, Dictionary<string, StateNode> gameNodesByRuleId, HashSet<Type> relevantTypes,
         EntityChangeScanner? scanner)
     {
@@ -611,7 +634,8 @@ public sealed partial class RuleChainBuilder
             ? slot => scanner!.GetPreFrameValue(place, slot) as string
             : null;
 
-        graph.AddEdge(new BombPlantSiteEdge(graph.Root, site, plantPlace, siteEntity, readPlace));
+        wiring.AddEdge(new BombPlantSiteEdge(graph.Root, site, plantPlace, siteEntity, readPlace), GraphEdgeKind.RoundFact,
+            extraReads: readPlace is not null ? [wiring.Externals.EntityState] : null);
         relevantTypes.Add(typeof(BombPlantedEvent));
     }
 
@@ -708,7 +732,7 @@ public sealed partial class RuleChainBuilder
         RuleDef rule, int slot, string playerName, StateGraph graph,
         Dictionary<string, StateNode> parentNodeLookup,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes,
-        List<StateEdge> edges, List<GraphEdgeDescriptor> descriptors)
+        GraphWiring wiring)
     {
         if (rule.Parents is not null && (rule.Triggers is null || rule.Triggers.Count == 0))
         {
@@ -718,26 +742,10 @@ public sealed partial class RuleChainBuilder
 
             if (rule.ResetOnRound && logicNode is BoolNode boolLogic)
             {
-                edges.Add(new RoundScopedLogicNodeReset(boolLogic));
+                wiring.AddEdge(new RoundScopedLogicNodeReset(boolLogic), GraphEdgeKind.RoundReset);
             }
 
-            if (logicNode is ConjunctionNode cj)
-            {
-                foreach (IConditionalEdge input in cj.Inputs)
-                {
-                    descriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, cj, "", EdgeEffect.Conjunction, input.ConditionLabel));
-                }
-            }
-            else if (logicNode is DisjunctionNode dj)
-            {
-                foreach (IConditionalEdge input in dj.Inputs)
-                {
-                    descriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, dj, "", EdgeEffect.Disjunction, input.ConditionLabel));
-                }
-            }
-
+            DescribeLogicNode(logicNode, wiring);
             return;
         }
 
@@ -757,7 +765,7 @@ public sealed partial class RuleChainBuilder
                 TriggerDef trigger = rule.Triggers[triggerIdx];
                 ExpandedTrigger expansion = ExpandTrigger(rule, trigger, triggerIdx,
                     g => nodes.Add(g),
-                    edges.Add,
+                    e => wiring.AddEdge(e, GraphEdgeKind.RoundReset),
                     playerName);
 
                 foreach (TriggerDef expanded in expansion.Triggers)
@@ -765,10 +773,7 @@ public sealed partial class RuleChainBuilder
                     StateEdge? edge = CreateEdge(expanded, sourceNode, node, slot, playerName, expansion.SuppressionGuard, sourceGate);
                     if (edge is not null)
                     {
-                        edges.Add(edge);
-                        descriptors.Add(new GraphEdgeDescriptor(
-                            sourceNode, node, expanded.On,
-                            MapAction(expanded.Action), expanded.Condition));
+                        AddTriggerEdge(wiring, edge, expanded, sourceGate, expansion.SuppressionGuard);
                     }
                 }
             }
@@ -777,10 +782,8 @@ public sealed partial class RuleChainBuilder
 
     // ── Singleton rule building ────────────────────────────────────────────
 
-    private void BuildSingletonRule(RuleDef rule, StateGraph graph,
-        Dictionary<string, StateNode> nodeLookup,
-        List<StateNode> allNodes, List<GraphEdgeDescriptor> edgeDescriptors,
-        Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking,
+    private void BuildSingletonRule(RuleDef rule, StateGraph graph, GraphWiring wiring,
+        Dictionary<string, StateNode> nodeLookup, List<StateNode> allNodes,
         Dictionary<string, List<StateNode>> groupMembers, HashSet<Type> relevantTypes)
     {
         if (rule.Parents is not null && (rule.Triggers is null || rule.Triggers.Count == 0))
@@ -797,22 +800,13 @@ public sealed partial class RuleChainBuilder
             if (logicNode is ConjunctionNode cj)
             {
                 graph.AddConjunction(cj);
-                foreach (IConditionalEdge input in cj.Inputs)
-                {
-                    edgeDescriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, cj, "", EdgeEffect.Conjunction, input.ConditionLabel));
-                }
             }
             else if (logicNode is DisjunctionNode dj)
             {
                 graph.AddDisjunction(dj);
-                foreach (IConditionalEdge input in dj.Inputs)
-                {
-                    edgeDescriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, dj, "", EdgeEffect.Disjunction, input.ConditionLabel));
-                }
             }
 
+            DescribeLogicNode(logicNode, wiring);
             return;
         }
 
@@ -837,24 +831,57 @@ public sealed partial class RuleChainBuilder
                 TriggerDef trigger = rule.Triggers[triggerIdx];
                 ExpandedTrigger expansion = ExpandTrigger(rule, trigger, triggerIdx,
                     g => allNodes.Add(g),
-                    e => graph.AddEdge(e));
+                    e => wiring.AddEdge(e, GraphEdgeKind.RoundReset));
 
                 foreach (TriggerDef expanded in expansion.Triggers)
                 {
                     StateEdge? edge = CreateEdge(expanded, sourceNode, node, null, null, expansion.SuppressionGuard, sourceGate);
                     if (edge is not null)
                     {
-                        graph.AddEdge(edge);
+                        AddTriggerEdge(wiring, edge, expanded, sourceGate, expansion.SuppressionGuard);
                         relevantTypes.Add(edge.MessageType);
-                        GraphEdgeDescriptor descriptor = new(
-                            sourceNode, node, expanded.On,
-                            MapAction(expanded.Action), expanded.Condition);
-                        edgeDescriptors.Add(descriptor);
-                        // Pair descriptor ↔ backing edge for graph-breakpoint resolution.
-                        edgeBacking[descriptor] = edge;
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    ///     Adds a context rule's trigger edge through <paramref name="wiring" />: labelled with the
+    ///     concrete event, reading its <c>when:</c> gate's sources and its first-wins guard, and drawn
+    ///     to the guard it sets as well as to its node.
+    /// </summary>
+    private static void AddTriggerEdge(GraphWiring wiring, StateEdge edge, TriggerDef expanded,
+        IConditionalEdge? sourceGate, BoolNode? guard) =>
+        wiring.AddEdge(edge, GraphEdgeKind.Trigger, expanded.On, expanded.Condition,
+            GateReads(sourceGate, guard), guard is not null ? [guard] : null, MapAction(expanded.Action));
+
+    /// <summary>
+    ///     The nodes an edge reads through its gate and guard rather than its declared reads: every
+    ///     source of the <c>while:</c> gate, and the first-wins guard it checks. <c>null</c> for
+    ///     neither.
+    /// </summary>
+    private static IReadOnlyList<StateNode>? GateReads(IConditionalEdge? sourceGate, StateNode? guard)
+    {
+        if (sourceGate is null)
+        {
+            return guard is null ? null : [guard];
+        }
+
+        return guard is null ? sourceGate.Sources : [.. sourceGate.Sources, guard];
+    }
+
+    /// <summary>Draws each input source of a conjunction or disjunction; no-op for any other node.</summary>
+    private static void DescribeLogicNode(StateNode logicNode, GraphWiring wiring)
+    {
+        switch (logicNode)
+        {
+            case ConjunctionNode cj:
+                wiring.DescribeLogicNode(cj, EdgeEffect.Conjunction, cj.Inputs);
+                break;
+            case DisjunctionNode dj:
+                wiring.DescribeLogicNode(dj, EdgeEffect.Disjunction, dj.Inputs);
+                break;
         }
     }
 
