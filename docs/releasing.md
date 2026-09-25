@@ -540,6 +540,53 @@ gets CS0104 (ambiguous reference) until it qualifies the name. The digest and ru
 move. Analysis's internal `ProjectileSlotIndex` still follows only smoke and molotov slots, the two
 classes the digest reads; `ProjectileSampler` follows all five with its own slot tracking.
 
+### The rule graph a consumer reads is the graph that runs (0.13.0)
+
+Through 0.12.x a consumer drawing the rule graph got descriptors only for rule trigger edges, and
+three always-empty members (#50). What changed:
+
+- **Breaking.** `BuildResult` lost `Chains`, `GroupHints` and `NodeChains`, which were always empty
+  or null, and `NodeGroupHint` is gone. The positional constructor and `Deconstruct` are now
+  `(Graph, Nodes, Edges, RelevantMessageTypes, PlayerContextIndex, EntityScanner, EdgeBacking,
+  GameNodesByRuleId, Outputs, RulesetCoverage)`. Source that reads, constructs or deconstructs the
+  removed members no longer compiles, and a binary built against 0.12.x fails with
+  `MissingMethodException` on any of those accesses, a plain property read included. Highlight
+  membership is now `RuleGraphNode.HighlightChains` (the `_chain_{highlight}` names a
+  `RuleChainEvent.ChainName` carries); clustering is `RuleGraphNode.Ruleset`, `Owners` and
+  `RuleIds`.
+- **The descriptor lists grew.** `BuildResult.Edges` describes every game-scope edge, one row per
+  written node: the enrichments, the per-player bookkeeping, first-wins guard writes and the entity
+  value dispatch included. `MaterializedPlayer.EdgeDescriptors` and
+  `EvaluationResult.MaterializedEdgeDescriptors` gained the first-tick, round-end compute, round
+  reset, tally, economy, settle, pull (the rate buckets included) and live-compute rows, every
+  source of a multi-source `when:` input, and the highlight emission. On the shipped rulesets on
+  GOTV the game scope went from 43 to 134 rows and one player from 107 to 211. A write to
+  per-player state is drawn to `ExternalStateNode` `player_context`, one of the three
+  `BuildResult.ExternalNodes`, which are not in `Nodes`: a consumer that joins `build.Edges` to
+  `build.Nodes` alone drops those rows. Join to `Nodes` and `ExternalNodes`, or use `RuleGraph`.
+  Several rows can share one edge, so a fire count must not be summed across them.
+- `GraphEdgeDescriptor` gained `Kind`, `Edge` and `Reads` as init-only members. Source- and
+  binary-compatible, but record equality and `ToString` now include them, so a value-equality set
+  of descriptors sees the rows of a multi-write edge as distinct. `GraphEdgeKind` may gain members
+  in a minor release; handle unknown values.
+- `EdgeBacking` maps every game-scope row a `StateEdge` backs, several rows to one edge for a
+  multi-write edge. `GraphEdgeDescriptor.Edge` carries the same edge on the row itself and covers
+  the per-player rows too.
+- A `tally:` is drawn from the root, which is where it fires from, with the tallied stat in
+  `Reads`. It was drawn from the stat.
+- `AuthoringGraph` follows reads (`AuthoringGraphEdge.IsRead`) and anchors a highlight's `.count`
+  and a tally's targets. `AuthoringGraphNode.ChainIds` is now filled, with highlight chains, not the
+  `_chain_{ruleset}` join key a table column's `PerPlayerColumnAssignment.ChainId` carries.
+- New in `CS2DemoKit.Analysis.Graphs`: `RuleGraph`, `RuleGraphNode`, `RuleGraphEdge`,
+  `RuleGraphScope`, `RuleGraphNodeOrigin`, `NodeTemplateKey`, `EdgeTemplateKey`, `GraphEdgeKind`,
+  `ExternalStateNode` and `ExternalState`. A consumer type with one of these names hits CS0104 when
+  it imports the namespace. `RuleGraph.FromBuild` with templates runs the builder's per-player
+  factory, which keeps state on the builder while it runs: never call it while a run over the same
+  build is going.
+- Rules output, node counts, snapshot columns, the decode plan, the order edges are registered in
+  (game and per player) and resolved-identity hashes do not move. The fifteen rules-output fixtures
+  are byte-identical.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

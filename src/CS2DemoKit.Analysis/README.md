@@ -86,6 +86,32 @@ unknown-ruleset errors; the upload path is
 `BuildResult.RulesetDiagnostics` and `.ExcludedRulesets` surface what composition dropped —
 check them, or a ruleset that stopped compiling is indistinguishable from feats that never fired.
 
+## Drawing the rule graph
+
+`RuleGraph.FromRun(run)` is the graph a run ran: the build's game scope, its three external nodes
+and every materialised player, each node with a stable `Key` (`g/{i}`, `x/{name}`,
+`p{slot}/t{template}/{ordinal}`) and each edge already resolved to two of the view's nodes. Key
+selections and breakpoints by `Key`; names repeat across players and rulesets.
+`.CollapsePlayers()` folds the per-player copies into one node per template position
+(`t{template}/{ordinal}`), with every copy in `Instances`, which is what a skeleton view draws.
+
+Every `StateEdge` the builder adds has at least one `GraphEdgeDescriptor`, drawn from its real
+source, and so does the wiring that is not an edge. `Descriptor.Kind` says which. The per-player
+state (team, alive, clutch) and the entity scanner live outside the node graph, so the edges that
+write them and the nodes that pull from them are drawn to and from the `player_context` and
+`entity_state` external nodes; a highlight's emission goes to `highlights`. An edge that writes
+several nodes has a row per node. Fire counts and applied messages belong to
+`Descriptor.Edge`: read them there and do not add them up across its rows.
+
+`RuleGraphNode.HighlightChains` holds the `_chain_{highlight}` names of the highlights a node feeds
+(what `RuleChainEvent.ChainName` carries). `Ruleset` and `Owners` say which ruleset and which
+stats made a node, for clustering; a table column's `PerPlayerColumnAssignment.ChainId` is the
+ruleset's `_chain_{ruleset}` key, a different space from the highlight chains.
+
+`RuleGraph.FromBuild(build)` draws a build before any run, previewing each per-player template once.
+The preview runs the builder's per-player factory, so call it before a run over the same build
+starts, never during one; after a run, use `FromRun`.
+
 ## Clip planning
 
 `CS2DemoKit.Analysis.Clips` turns highlights into clip windows entirely in frame clock:
