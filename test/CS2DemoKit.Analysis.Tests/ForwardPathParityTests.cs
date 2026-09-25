@@ -222,6 +222,9 @@ public class ForwardPathParityTests
         RuleConfigLoadResult shipped = YamlConfigLoader.LoadShippedEmbedded();
         RuleConfigLoadResult extra = YamlConfigLoader.LoadDocuments([("parity.rules.yaml", TableRulesets)]);
         await Assert.That(extra.Errors.Count).IsEqualTo(0);
+        await Assert.That(string.Join(", ", extra.Rulesets.Select(r => r.Id)))
+            .IsEqualTo("parity_sides, parity_match")
+            .Because("both '---' documents load, so the for: match table is compared too");
         List<RulesetsV2.Model.RulesetDoc> rules = [.. shipped.Rulesets, .. extra.Rulesets];
 
         AnalysisRun snapshots = DemoAnalysis.Run(demo, rules, new AnalysisOptions { CaptureSnapshots = true });
@@ -234,6 +237,7 @@ public class ForwardPathParityTests
 
         string expected = RunDigest.Render(snapshots);
         await Assert.That(expected).Contains("== parity_sides_round");
+        await Assert.That(expected).Contains("== parity_match");
         await Assert.That(RunDigest.Render(bare)).IsEqualTo(expected);
         await Assert.That(RunDigest.Render(streamed)).IsEqualTo(expected);
     }

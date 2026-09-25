@@ -618,6 +618,20 @@ own `RulesetCoverageDiagnostic` naming the stat it reads and the view that did n
 silently; it is now recorded as well. On HLTV the shipped rulesets now run, with `AvgBlind` absent.
 Output on the other profiles does not move.
 
+### A `---` rules file loads every ruleset in it (0.13.0)
+
+Through 0.12.0 a rules YAML holding several rulesets separated by `---` loaded only the first, and
+dropped the rest without an error. `YamlConfigLoader.TryLoadDirectory`, `LoadDocuments` and the
+overlay loaders built on them now load each document as its own ruleset, with the same error
+containment a file gets: a broken document reports its errors and the others still load. Errors in
+a document after the first carry the label `file.rules.yaml#N` (N counts from 1 at the top of the
+file). A document with no `ruleset:` key is the same "not a rules document" error a single such file
+gets; an empty document, such as a trailing `---`, is skipped. `LoadedFiles` and `FailedFiles` still
+list files, not documents. A file that loaded cleanly before can now report errors or duplicate ids
+from the documents that used to be ignored. `RulesetDocumentLoader.Load` and `TryLoad`, which return
+one ruleset, now refuse a multi-document stream with a diagnostic instead of reading its first
+document. No shipped ruleset uses `---`.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
