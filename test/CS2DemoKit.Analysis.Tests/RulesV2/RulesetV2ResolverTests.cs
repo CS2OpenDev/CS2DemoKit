@@ -287,6 +287,65 @@ public class RulesetV2ResolverTests
         await Assert.That(gotv.Ruleset!.Coverage.Count).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task ReadersOfASkippedStat_AreSkippedWithIt_Transitively()
+    {
+        // #68: a compute over a coverage-skipped stat was built anyway, and the planner threw when it
+        // hashed the dangling reference. It is skipped too, and so is everything that reads it.
+        const string Yaml = """
+                            ruleset: flashes
+                            for: each_player
+                            stats:
+                              blinds:
+                                count: blinded
+                                per: match
+                              kills:
+                                count: kill
+                                per: match
+                              blinds_per_kill:
+                                compute: "blinds / kills"
+                                per: match
+                              doubled:
+                                compute: "blinds_per_kill * 2"
+                                per: match
+                              kills_while_blinding:
+                                count: kill
+                                while: "blinds > 0"
+                                per: match
+                            highlights:
+                              flashy:
+                                when: "blinds > 2"
+                                title: "flashy"
+                            show:
+                              scoreboard:
+                                - { stat: kills }
+                                - { stat: blinds_per_kill }
+                                - { stat: doubled }
+                            """;
+
+        RulesetResolveResult result = CheckedRulesetDraft.Load(Doc(Yaml), _adapter).Build(64.0, "Cs2HltvProfile");
+
+        await Assert.That(result.Success).IsTrue();
+        CheckedRuleset rs = result.Ruleset!;
+        await Assert.That(string.Join(",", rs.Stats.Select(s => s.StatId).Order(StringComparer.Ordinal)))
+            .IsEqualTo("kills");
+        await Assert.That(rs.Highlights.Count).IsEqualTo(0);
+        await Assert.That(string.Join(",", rs.Coverage.Select(c => c.NodeId).Order(StringComparer.Ordinal)))
+            .IsEqualTo("blinds,blinds_per_kill,doubled,flashy,kills_while_blinding");
+        foreach (RulesetCoverageDiagnostic coverage in rs.Coverage)
+        {
+            await Assert.That(coverage.ViewName).IsEqualTo("blinded");
+        }
+
+        RulesetCoverageDiagnostic compute = rs.Coverage.Single(c => c.NodeId == "blinds_per_kill");
+        await Assert.That(compute.Message.Contains("'blinds'", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(ShowReferenceValidator.Validate(rs).Count).IsEqualTo(0);
+
+        RulesetResolveResult gotv = CheckedRulesetDraft.Load(Doc(Yaml), _adapter).Build(64.0, Gotv);
+        await Assert.That(gotv.Ruleset!.Stats.Count).IsEqualTo(5);
+        await Assert.That(gotv.Ruleset!.Coverage.Count).IsEqualTo(0);
+    }
+
     // ── `this` self-reference ──────────────────────────────────────────────────
 
     [Test]
