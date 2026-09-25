@@ -233,10 +233,7 @@ public static class YamlConfigLoader
         foreach (RuleConfigError collision in FindShowColumnCollisions(merged, userIds))
         {
             errors.Add(collision);
-            if (collision.FilePath is { } file && loadedFiles.Remove(file))
-            {
-                failedFiles.Add(file);
-            }
+            MoveToFailed(collision.FilePath, loadedFiles, failedFiles);
         }
 
         return new RuleConfigLoadResult(errors, loadedFiles, failedFiles)
@@ -394,16 +391,44 @@ public static class YamlConfigLoader
         foreach (RuleConfigError collision in FindShowColumnCollisions(allRulesets))
         {
             errors.Add(collision);
-            if (collision.FilePath is { } file && loadedFiles.Remove(file))
-            {
-                failedFiles.Add(file);
-            }
+            MoveToFailed(collision.FilePath, loadedFiles, failedFiles);
         }
 
         return new RuleConfigLoadResult(errors, loadedFiles, failedFiles)
         {
             Rulesets = allRulesets
         };
+    }
+
+    /// <summary>
+    ///     Moves the file an error names from <paramref name="loadedFiles" /> to
+    ///     <paramref name="failedFiles" />. An error in a document after the first carries that
+    ///     document's <c>file#N</c> label, while the file lists hold the file itself, so a label not
+    ///     found as written is retried without its <c>#N</c> suffix.
+    /// </summary>
+    private static void MoveToFailed(string? label, List<string> loadedFiles, List<string> failedFiles)
+    {
+        if (label is null)
+        {
+            return;
+        }
+
+        string file = label;
+        if (!loadedFiles.Contains(file))
+        {
+            int hash = label.LastIndexOf('#');
+            if (hash <= 0 || hash == label.Length - 1 || label.AsSpan(hash + 1).ContainsAnyExceptInRange('0', '9'))
+            {
+                return;
+            }
+
+            file = label[..hash];
+        }
+
+        if (loadedFiles.Remove(file))
+        {
+            failedFiles.Add(file);
+        }
     }
 
     /// <summary>

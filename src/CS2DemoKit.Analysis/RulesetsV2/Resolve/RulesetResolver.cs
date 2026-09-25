@@ -1708,8 +1708,20 @@ public static class RulesetResolver
                         continue;
                     }
 
+                    RulesetCoverageDiagnostic cause = skipped[missing];
                     skipped.TryAdd(stat.StatId,
-                        RecordDependencySkip("stat", stat.StatId, missing, skipped[missing], stat.Position));
+                        RecordDependencySkip("stat", stat.StatId, missing, cause, stat.Position));
+                    if (stat.TallyThresholds is { } thresholds)
+                    {
+                        // A tally emits under its targets' ids, not its own, and those are what a show:
+                        // entry or a reader names. Each is recorded too, or the show validator would take
+                        // an entry naming one for an unknown ref and exclude the whole ruleset.
+                        foreach ((int _, string target) in thresholds)
+                        {
+                            skipped.TryAdd(target, RecordTallyTargetSkip(target, stat, cause));
+                        }
+                    }
+
                     stats.RemoveAt(i);
                     changed = true;
                 }
@@ -1757,6 +1769,16 @@ public static class RulesetResolver
         private RulesetCoverageDiagnostic RecordDependencySkip(string what, string nodeId,
             RulesetCoverageDiagnostic cause, SourcePosition position) =>
             RecordDependencySkip(what, nodeId, cause.NodeId, cause, position);
+
+        private RulesetCoverageDiagnostic RecordTallyTargetSkip(string target, CheckedStat tally,
+            RulesetCoverageDiagnostic cause)
+        {
+            RulesetCoverageDiagnostic record = new(_rulesetId, target, cause.ViewName, _ctx.ProfileId!,
+                $"tally target '{target}' is emitted by tally '{tally.StatId}', which is skipped on source "
+                + $"profile '{_ctx.ProfileId}' (view '{cause.ViewName}' does not bind) — skipped", tally.Position);
+            _coverage.Add(record);
+            return record;
+        }
 
         private RulesetCoverageDiagnostic RecordDependencySkip(string what, string nodeId, string missing,
             RulesetCoverageDiagnostic cause, SourcePosition position)
