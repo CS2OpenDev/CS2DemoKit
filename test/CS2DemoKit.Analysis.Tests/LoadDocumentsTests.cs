@@ -237,4 +237,57 @@ public class LoadDocumentsTests
             .IsEquivalentTo(shipped.Rulesets.Where(r => r.Enabled).Select(r => r.Id).ToList())
             .Because("an empty overlay is not an error — the enabled shipped tier comes back unchanged");
     }
+
+    [Test]
+    public async Task MultiDocumentStream_LoadsEveryDocumentAsItsOwnRuleset_BothWays()
+    {
+        const string twoRulesets = Healthy + "\n---\n" + AlsoHealthy + "\n---\n";
+
+        (RuleConfigLoadResult fromDirectory, RuleConfigLoadResult fromMemory) =
+            LoadBothWays(("two.rules.yaml", twoRulesets));
+
+        foreach (RuleConfigLoadResult result in new[] { fromDirectory, fromMemory })
+        {
+            await Assert.That(result.Errors.Count).IsEqualTo(0)
+                .Because("a trailing '---' is an empty document, not a broken one");
+            await Assert.That(string.Join(", ", result.Rulesets.Select(r => r.Id)))
+                .IsEqualTo("healthy, also_healthy")
+                .Because("every '---' document is its own ruleset, not only the first (#69)");
+            await Assert.That(string.Join(", ", result.LoadedFiles.Select(Path.GetFileName)))
+                .IsEqualTo("two.rules.yaml");
+        }
+    }
+
+    [Test]
+    public async Task MultiDocumentStream_ABrokenSecondDocument_KeepsTheFirstAndNamesTheSecond()
+    {
+        const string firstGoodSecondBroken = Healthy + "\n---\n" + NotARuleset + "\n---\n" + DuplicateId;
+
+        (RuleConfigLoadResult fromDirectory, RuleConfigLoadResult fromMemory) =
+            LoadBothWays(("mixed.rules.yaml", firstGoodSecondBroken));
+
+        foreach (RuleConfigLoadResult result in new[] { fromDirectory, fromMemory })
+        {
+            await Assert.That(string.Join(", ", result.Rulesets.Select(r => r.Id)))
+                .IsEqualTo("healthy");
+            await Assert.That(string.Join(", ", result.Errors.Select(e => Path.GetFileName(e.FilePath))))
+                .IsEqualTo("mixed.rules.yaml#2, mixed.rules.yaml#3")
+                .Because("each error names the document it came from");
+            await Assert.That(result.Errors[0].Message).Contains("not a rules document");
+            await Assert.That(result.Errors[1].Message).Contains("duplicate ruleset id 'healthy'");
+            await Assert.That(string.Join(", ", result.FailedFiles.Select(Path.GetFileName)))
+                .IsEqualTo("mixed.rules.yaml");
+        }
+    }
+
+    [Test]
+    public async Task SingleDocumentLoader_RefusesAMultiDocumentStream_InsteadOfTruncating()
+    {
+        RulesetDocumentLoader.Outcome outcome =
+            RulesetDocumentLoader.Load(Healthy + "\n---\n" + AlsoHealthy, "two.rules.yaml");
+
+        await Assert.That(outcome.Doc).IsNull();
+        await Assert.That(outcome.Diagnostics.Count).IsEqualTo(1);
+        await Assert.That(outcome.Diagnostics[0].Message).Contains("2 '---' documents");
+    }
 }
