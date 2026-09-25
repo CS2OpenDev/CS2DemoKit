@@ -50,7 +50,7 @@ public static class VisibilityAnalyzer
     ///     the digest while the walk oracle still found them, and a sightline through a cloud that
     ///     was never recorded reads as a spot.
     /// </summary>
-    internal const string SmokeClass = "CSmokeGrenadeProjectile";
+    internal const string SmokeClass = GrenadeProjectileClasses.Smoke;
 
     /// <summary>Extracts a live pawn's vantage. Null when position can't be reconstructed (dormant/pre-spawn).</summary>
     public static Vantage? TryVantage(int slot, EntityState pawn, Func<EntityState, Vector3?> resolvePosition)

@@ -34,10 +34,13 @@ public static class PawnLookup
     }
 
     /// <summary>
-    ///     Invokes <paramref name="onPawn" /> once for each live player pawn paired with its
-    ///     resolved player slot. Skips pawns with no controller handle (just-spawned, not yet
-    ///     bound to a controller). One sweep of the entity set, so a caller wanting several
-    ///     values per pawn should read them all inside the callback rather than sweep per value.
+    ///     Invokes <paramref name="onPawn" /> once for each player pawn bound to a controller, dead
+    ///     or alive, paired with its resolved player slot. A dead player's pawn keeps its controller
+    ///     handle and keeps coming through for the rest of the round, so a caller that wants only
+    ///     the living filters with <see cref="IsAlive" />. Skips pawns with no controller handle
+    ///     (just-spawned, not yet bound to a controller). One sweep of the entity set, so a caller
+    ///     wanting several values per pawn should read them all inside the callback rather than
+    ///     sweep per value.
     /// </summary>
     public static void ForEachLivePawn(EntityTracker tracker, Action<int, EntityState> onPawn) =>
         ForEachLivePawn(tracker, onPawn, static (callback, slot, pawn) => callback(slot, pawn));
@@ -45,12 +48,12 @@ public static class PawnLookup
     /// <summary>
     ///     The <see cref="ForEachLivePawn(EntityTracker, Action{int, EntityState})" /> sweep with a
     ///     caller-supplied state argument, so a per-frame caller can pass a static callback and
-    ///     allocate no closure per sweep.
+    ///     allocate no closure per sweep. Yields the same pawns, dead ones included.
     /// </summary>
     /// <typeparam name="TState">The state handed back to every callback.</typeparam>
     /// <param name="tracker">The tracker whose entity set to sweep.</param>
     /// <param name="state">Passed through unchanged to every <paramref name="onPawn" /> call.</param>
-    /// <param name="onPawn">Invoked once per live pawn with the state, the player slot and the pawn.</param>
+    /// <param name="onPawn">Invoked once per controller-bound pawn, dead or alive, with the state, the player slot and the pawn.</param>
     public static void ForEachLivePawn<TState>(EntityTracker tracker, TState state, Action<TState, int, EntityState> onPawn)
     {
         foreach ((int _, EntityState ent) in tracker.CurrentEntities.AllIndexed())
@@ -87,6 +90,27 @@ public static class PawnLookup
     }
 
     /// <summary>
+    ///     Whether <paramref name="pawn" /> is a living player: <c>m_lifeState</c> is
+    ///     <c>LIFE_ALIVE</c> (0) and <c>m_iHealth</c> is above zero. The wire also carries
+    ///     <c>LIFE_DYING</c> (1) and <c>LIFE_DEAD</c> (2), both of which read false, and a pawn
+    ///     with either field unseen reads false. This is the filter for the dead pawns
+    ///     <see cref="ForEachLivePawn(EntityTracker, Action{int, EntityState})" /> yields.
+    ///     <para>
+    ///         Measured on the sample and five matchmaking demos, joined by frame index: no pawn
+    ///         reads alive on or after the frame carrying its <c>player_death</c>. The reverse does
+    ///         not hold everywhere: a player who disconnects leaves a pawn that reads dead with
+    ///         health above zero and no <c>player_death</c>, so this can say dead where an
+    ///         event-derived alive flag says alive.
+    ///     </para>
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="pawn" /> is null.</exception>
+    public static bool IsAlive(EntityState pawn)
+    {
+        ArgumentNullException.ThrowIfNull(pawn);
+        return pawn.TryGet<int>("m_lifeState") is 0 && pawn.TryGet<int>("m_iHealth") is > 0;
+    }
+
+    /// <summary>
     ///     Resolves an entity-handle value to the live entity it points to. Returns <c>null</c>
     ///     when the handle points at nothing (see <see cref="IndexOf" />) or the slot is empty.
     /// </summary>
@@ -98,6 +122,44 @@ public static class PawnLookup
     {
         int index = IndexOf(handle);
         return index < 0 ? null : tracker.CurrentEntities[index];
+    }
+
+    /// <summary>
+    ///     Resolves a projectile's thrower to a player slot through the chain
+    ///     <c>m_hThrower -> pawn -> m_hController -> slot</c> (slot = controller index - 1). Returns
+    ///     <c>-1</c> when the handle is missing or does not resolve to a controller-bound pawn.
+    ///     <para>
+    ///         The value is live, read from the tracker's current state: once the thrower dies, its
+    ///         pawn's controller handle goes invalid and this returns <c>-1</c> for the rest of the
+    ///         projectile's flight. <see cref="ProjectileSampler" /> holds the first resolved slot for
+    ///         that reason. The controller is not identity-checked, so an index that names a
+    ///         recycled non-controller still maps to a slot; the digest's molotov thrower cells are
+    ///         pinned to this behaviour.
+    ///     </para>
+    /// </summary>
+    /// <param name="tracker">The tracker whose current entity set the handles resolve against.</param>
+    /// <param name="projectile">An entity carrying <c>m_hThrower</c>, normally one of <see cref="GrenadeProjectileClasses" />.</param>
+    public static int ResolveThrowerSlot(EntityTracker tracker, EntityState projectile)
+    {
+        ArgumentNullException.ThrowIfNull(tracker);
+        ArgumentNullException.ThrowIfNull(projectile);
+
+        if (!TryReadHandle(projectile, "m_hThrower", out uint throwerHandle))
+        {
+            return -1;
+        }
+
+        EntityState? pawn = ResolveHandle(tracker, throwerHandle);
+        if (pawn is null || !TryReadHandle(pawn, "m_hController", out uint controllerHandle))
+        {
+            return -1;
+        }
+
+        // Must go through IndexOf. A dead pawn's m_hController is the 24-bit invalid handle, and
+        // masking it raw yields slot 16382, which this method's contract says should be -1. Nothing
+        // downstream re-checks, and unlike a table lookup there is no empty slot to save it.
+        int controllerIdx = IndexOf(controllerHandle);
+        return controllerIdx <= 0 ? -1 : controllerIdx - 1;
     }
 
     /// <summary>

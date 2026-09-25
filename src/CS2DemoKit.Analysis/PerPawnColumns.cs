@@ -242,12 +242,39 @@ internal sealed class PerPawnColumns
     }
 }
 
-/// <summary>The two boxed bools, so boxing a bool column never allocates.</summary>
+/// <summary>
+///     Shared boxes for bools and small ints, so boxing a cell read every frame does not allocate.
+///     The int range and the reasoning that sharing is safe are the parser's
+///     <c>CS2DemoKit.Parser.EntityTracking.Boxes</c>, which this mirrors because that class is
+///     internal to the parser.
+/// </summary>
 internal static class PawnCellBoxes
 {
+    private const int IntMin = -128;
+    private const int IntCount = 1152; // [-128, 1023]
+    private static readonly object[] s_ints = CreateInts();
+
     /// <summary>Boxed <c>true</c>.</summary>
     public static readonly object True = true;
 
     /// <summary>Boxed <c>false</c>.</summary>
     public static readonly object False = false;
+
+    /// <summary>A boxed <paramref name="value" />, shared when it is in range and freshly allocated otherwise.</summary>
+    public static object Int(int value)
+    {
+        uint index = (uint)(value - IntMin);
+        return index < IntCount ? s_ints[index] : value;
+    }
+
+    private static object[] CreateInts()
+    {
+        object[] table = new object[IntCount];
+        for (int i = 0; i < IntCount; i++)
+        {
+            table[i] = i + IntMin;
+        }
+
+        return table;
+    }
 }

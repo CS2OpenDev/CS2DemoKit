@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=../cs2demokit-rules.schema.json
+#
+# Round facts: one row per round per side. What each side bought and had left, how the round was
+# decided, where and when the bomb went down, and the kill timeline with the man-count after each
+# kill. Every tick is on the frame clock (event.frame_tick), the clock a clip or a DemoFrame index is
+# on, so a consumer can seek to them directly; the table's ColumnClocks says so per column.
+#
+# The buy-type thresholds are params, so an install can move the bands without editing the stats.
+# Join a row to the players through its `slots` dimension: the slots on that side at that round's
+# freeze end.
+#
+# A tick column of a thing that did not happen that round reads 0. PlantSite on a round with no
+# plant projects as null, not "" (the expression reads "", and an empty string capture comes out
+# null). A round decided in freeze time (a surrender vote) still gets its own two rows: the engine
+# opens it at the decision, so its freeze-end columns are sampled on the decision's frame.
+ruleset: round_facts
+title: Round facts
+summary: Per-round, per-side economy, outcome, plant and kill timeline.
+for: each_team
+
+params:
+  eco_max_equipment:
+    type: int
+    default: 5000
+  full_buy_min_equipment:
+    type: int
+    default: 20000
+
+stats:
+  # ── Economy at freeze end: after the freeze-time buys ──
+  equipment:
+    capture: round.team.equipment
+    on: raw.round_freeze_end
+    per: round
+  money:
+    capture: round.team.money
+    on: raw.round_freeze_end
+    per: round
+  enemy_equipment:
+    capture: round.enemies.equipment
+    on: raw.round_freeze_end
+    per: round
+  eco:
+    flag:
+      when: "equipment < params.eco_max_equipment"
+    per: round
+  full_buy:
+    flag:
+      when: "equipment >= params.full_buy_min_equipment"
+    per: round
+
+  # ── The decision: the server's verdict, the frame it was reached, and the round's close ──
+  won:
+    count: round_won
+    per: round
+  winner_side:
+    capture: event.Winner
+    on: round_decided
+    per: round
+  # 1 the bomb exploded, 7 defused, 8 / 9 elimination, 12 time ran out, 17 / 18 a surrender.
+  win_reason:
+    capture: event.Reason
+    on: round_decided
+    per: round
+  decided_at:
+    capture: event.frame_tick
+    on: round_decided
+    per: round
+  ended_at:
+    capture: event.frame_tick
+    on: round_ended
+    per: round
+
+  # ── The bomb ──
+  plant_site:
+    capture: round.bomb.site
+    on: round_ended
+    per: round
+  planted_at:
+    capture: event.frame_tick
+    on: bomb_planted
+    per: round
+  defused_at:
+    capture: event.frame_tick
+    on: bomb_defused
+    per: round
+  exploded_at:
+    capture: event.frame_tick
+    on: raw.bomb_exploded
+    per: round
+
+  # ── Kills: this side's, and every kill with each side's man-count after it ──
+  kills:
+    count: kill
+    match: { enemy: true }
+    per: round
+  kill_ticks:
+    capture: event.frame_tick
+    on: kill
+    match: { actor: any }
+    keep: list
+    per: round
+  alive_after_kill:
+    capture: round.team.alive
+    on: kill
+    match: { actor: any }
+    keep: list
+    per: round
+  enemies_alive_after_kill:
+    capture: round.enemies.alive
+    on: kill
+    match: { actor: any }
+    keep: list
+    per: round
+
+show:
+  tables:
+    round_facts:
+      per: team_round
+      columns:
+        - { stat: equipment, label: Equipment }
+        - { stat: money, label: Money }
+        - { stat: enemy_equipment, label: EnemyEquipment }
+        - { stat: eco, label: Eco }
+        - { stat: full_buy, label: FullBuy }
+        - { stat: won, label: Won }
+        - { stat: winner_side, label: WinnerSide }
+        - { stat: win_reason, label: WinReason }
+        - { stat: decided_at, label: DecidedTick }
+        - { stat: ended_at, label: EndedTick }
+        - { stat: plant_site, label: PlantSite }
+        - { stat: planted_at, label: PlantTick }
+        - { stat: defused_at, label: DefuseTick }
+        - { stat: exploded_at, label: ExplodeTick }
+        - { stat: kills, label: Kills }
+        - { stat: kill_ticks, label: KillTicks }
+        - { stat: alive_after_kill, label: AliveAfterKill }
+        - { stat: enemies_alive_after_kill, label: EnemiesAliveAfterKill }

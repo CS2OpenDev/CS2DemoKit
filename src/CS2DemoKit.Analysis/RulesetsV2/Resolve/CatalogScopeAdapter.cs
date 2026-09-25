@@ -23,7 +23,10 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Resolve;
 ///             sticky <c>round.bomb.was_planted</c>;
 ///         </item>
 ///         <item><c>enrich.*</c> from the enrichment family;</item>
-///         <item><c>event.*</c> per wire event (its fields + the injected <c>event.tick</c> instant);</item>
+///         <item>
+///             <c>event.*</c> per wire event (its fields + the injected <c>event.tick</c> and
+///             <c>event.frame_tick</c> instants);
+///         </item>
 ///         <item>role-handle members (the per-player provider set) for B5 <c>victim.*</c>/<c>killer.*</c>/… reads.</item>
 ///     </list>
 ///     Every type is derived through <see cref="FriendlyTypeMap" />, so an unmapped friendly type is
@@ -34,6 +37,18 @@ public sealed class CatalogScopeAdapter
 {
     /// <summary>The injected sticky per-round bomb-planted gate path.</summary>
     public const string BombWasPlantedPath = "round.bomb.was_planted";
+
+    /// <summary>
+    ///     The injected <c>event.frame_tick</c> member: the event's frame-clock tick
+    ///     (<c>GameEvent.GameTick</c>), on every event, wire or synthesized.
+    /// </summary>
+    public const string FrameTickMember = "frame_tick";
+
+    /// <summary>
+    ///     The injected <c>team.side</c> member of a <c>for: each_team</c> ruleset: the side the
+    ///     instance is for, 2 (T) or 3 (CT). A constant per instance; the planner substitutes it.
+    /// </summary>
+    public const string TeamSidePath = "team.side";
 
     private readonly Dictionary<string, CatalogEnrichment> _enrichmentsByName;
 
@@ -57,6 +72,7 @@ public sealed class CatalogScopeAdapter
         Round = round;
         Match = match;
         Enrich = enrich;
+        Team = ScopeSymbol.Namespace("team", [ScopeSymbol.Value("side", RulesType.Int)]);
         _eventNamespaces = eventNamespaces;
         _netMessageNamespaces = netMessageNamespaces;
         _roleMembers = roleMembers;
@@ -77,6 +93,12 @@ public sealed class CatalogScopeAdapter
 
     /// <summary>The <c>enrich.*</c> root: the enrichment family as a nested namespace tree.</summary>
     public IScopeSymbol Enrich { get; }
+
+    /// <summary>
+    ///     The <c>team.*</c> root, in scope only for a <c>for: each_team</c> ruleset: <c>team.side</c>,
+    ///     the side the instance is for.
+    /// </summary>
+    public IScopeSymbol Team { get; }
 
     /// <summary>Builds an adapter from the embedded catalog (<see cref="CatalogResource.Load" />).</summary>
     /// <returns>The adapter.</returns>
@@ -268,7 +290,14 @@ public sealed class CatalogScopeAdapter
 
     private static ScopeSymbol BuildEventNamespaceCore(IReadOnlyList<CatalogField> fields)
     {
-        List<IScopeSymbol> members = [ScopeSymbol.Value("tick", RulesType.Instant)];
+        // Two clocks, both injected: `tick` is the server clock a wire event is stamped with (the
+        // frame clock on a synthesized event, which has no server stamp), `frame_tick` is always the
+        // frame clock a DemoFrame, a timeline event and a highlight are indexed by.
+        List<IScopeSymbol> members =
+        [
+            ScopeSymbol.Value("tick", RulesType.Instant),
+            ScopeSymbol.Value(FrameTickMember, RulesType.Instant)
+        ];
         foreach (CatalogField field in fields)
         {
             members.Add(ScopeSymbol.Value(field.Name, FriendlyTypeMap.Map(field.Type)));

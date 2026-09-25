@@ -31,7 +31,12 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
     /// <param name="Nodes">Concrete state nodes produced by the template for this player.</param>
     /// <param name="Edges">Concrete state edges wiring the nodes together.</param>
     /// <param name="ColumnAssignments">Mappings from nodes to player-table columns.</param>
-    /// <param name="EdgeDescriptors">Visualization descriptors for the produced edges.</param>
+    /// <param name="EdgeDescriptors">
+    ///     This player's descriptors: at least one for every edge in <paramref name="Edges" />, carrying
+    ///     it in <see cref="GraphEdgeDescriptor.Edge" />, plus the wiring that is not an edge (logic
+    ///     inputs, rising-edge actions, live-compute reads, on-demand pulls). Rows can point at game
+    ///     nodes and at <see cref="BuildResult.ExternalNodes" />, not only at <paramref name="Nodes" />.
+    /// </param>
     /// <param name="RisingEdgeActions">Optional rising-edge callbacks installed against trigger nodes.</param>
     /// <param name="ContextRisingEdgeActions">
     ///     Optional context-arm rising-edge callbacks (A1 highlight emission): the evaluator invokes
@@ -64,7 +69,14 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
         int TemplateIndex = 0,
         IReadOnlyDictionary<string, StateNode>? NodesByRuleId = null,
         IReadOnlyList<LiveComputeRegistration>? LiveComputes = null,
-        IReadOnlyList<(StateNode Trigger, Action<int, int> Action, StateNode? Writes)>? ContextRisingEdgeActions = null);
+        IReadOnlyList<(StateNode Trigger, Action<int, int> Action, StateNode? Writes)>? ContextRisingEdgeActions = null)
+    {
+        /// <summary>
+        ///     Where the builder made each of <see cref="Nodes" />, aligned with it; <c>null</c> for a
+        ///     hand-built template. Read by <see cref="RuleGraph" />.
+        /// </summary>
+        internal IReadOnlyList<NodeProvenance>? Provenance { get; init; }
+    }
 }
 
 /// <summary>Maps a per-player node to a named column in the player stats table.</summary>
@@ -72,9 +84,13 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
 /// <param name="ColumnName">Display label for the column header.</param>
 /// <param name="GroupName">Optional group name used to cluster related columns.</param>
 /// <param name="ChainId">
-///     Optional <c>_chain_{id}</c> join-key of the per-player chain that declared this column.
-///     Lets the graph-filter feature emphasize / inert a chain's columns without a relayout.
-///     <c>null</c> for columns not associated with a chain.
+///     The <c>_chain_{ruleset}</c> join key of the ruleset that declared this column, so a view can
+///     emphasize one ruleset's columns without a relayout. This is the declaring ruleset's key, the
+///     ruleset part of one of <see cref="Graphs.RuleGraphNode.Owners" /> (the same as
+///     <see cref="Graphs.RuleGraphNode.Ruleset" /> only when no other ruleset shares the stat's node),
+///     not a highlight's <c>_chain_{highlight}</c> name in
+///     <see cref="Graphs.RuleGraphNode.HighlightChains" />; a ruleset and a highlight that share an id
+///     give the same string with different meanings. <c>null</c> for a hand-built column.
 /// </param>
 /// <param name="IsRoundScoped">
 ///     True when the column's node resets at round boundaries — either the node itself is

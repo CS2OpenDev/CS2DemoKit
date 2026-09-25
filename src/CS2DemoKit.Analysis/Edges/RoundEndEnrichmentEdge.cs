@@ -10,13 +10,16 @@ namespace CS2DemoKit.Analysis.Edges;
 
 /// <summary>
 ///     Enrichment edge that fires on a round-end event (one instance per concrete
-///     event in the active profile's <c>$round_end</c> binding) and derives the
-///     winning side from bomb state and alive counts. Because CS2's internal
-///     team_num IS the side (2=T, 3=CT) and players' team_num swaps at halftime
-///     via <c>player_team</c> events, the "winner team" the YAML rules compare
-///     against is simply the winning side number. Idempotent: writes the same
-///     transient values regardless of which concrete event triggers it, so no
-///     first-wins guard is needed.
+///     event in the active profile's <c>$round_end</c> binding) and reports the
+///     round's winning side and reason. The winner is the server's own verdict when
+///     the round was decided on the game rules (<see cref="PlayerContextIndex.DecidedWinnerSide" />,
+///     latched from the synthesized <c>round_decided</c>); only without one (no entity
+///     scanner, or a demo whose game-rules entity never names a winner) is it derived
+///     from bomb state and alive counts. Because CS2's internal team_num IS the side
+///     (2=T, 3=CT) and players' team_num swaps at halftime via <c>player_team</c>
+///     events, the "winner team" the YAML rules compare against is simply the winning
+///     side number. Idempotent: writes the same transient values regardless of which
+///     concrete event triggers it, so no first-wins guard is needed.
 /// </summary>
 public sealed class RoundEndEnrichmentEdge(
     StateNode source,
@@ -24,10 +27,11 @@ public sealed class RoundEndEnrichmentEdge(
     TransientBoolNode hasWinner,
     TransientValueNode<int> winnerTeam,
     TransientValueNode<int> winnerSide,
+    TransientValueNode<int> winReason,
     Type messageType) : StateEdge(source)
 {
     /// <inheritdoc />
-    public override IReadOnlyList<StateNode>? AdditionalWrittenNodes => [winnerTeam, winnerSide];
+    public override IReadOnlyList<StateNode>? AdditionalWrittenNodes => [winnerTeam, winnerSide, winReason];
 
     /// <inheritdoc />
     public override EdgeEffect? DeclaredEffect => EdgeEffect.Activate;
@@ -58,7 +62,12 @@ public sealed class RoundEndEnrichmentEdge(
             return false;
         }
 
-        int winningSide = DeriveWinningSide();
+        // The server's verdict when it gave one. The derivation below agrees with it on an ordinary
+        // round (23 of 23 on each of the two matchmaking demos first measured), but it cannot see a
+        // surrender or a draw: on a CT surrender it reads a CT win from alive counts where the server
+        // declared T (#65).
+        bool decided = playerContext.DecidedWinnerSide is 2 or 3;
+        int winningSide = decided ? playerContext.DecidedWinnerSide : DeriveWinningSide();
         if (winningSide != 2 && winningSide != 3)
         {
             return false;
@@ -67,6 +76,7 @@ public sealed class RoundEndEnrichmentEdge(
         hasWinner.Activate();
         winnerTeam.SetValue(winningSide);
         winnerSide.SetValue(winningSide);
+        winReason.SetValue(decided ? playerContext.DecidedReason : 0);
         return true;
     }
 

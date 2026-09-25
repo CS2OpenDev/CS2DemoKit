@@ -32,6 +32,19 @@ public sealed class PlayerContextIndex
     public int RoundNumber { get; set; }
 
     /// <summary>
+    ///     The side the server declared the round's winner (2 or 3), latched from the synthesized
+    ///     <c>round_decided</c>; 0 until the round is decided. Cleared by <see cref="ResetRoundState" />.
+    ///     The round-end enrichment reports this in preference to deriving a winner.
+    /// </summary>
+    public int DecidedWinnerSide { get; set; }
+
+    /// <summary>
+    ///     The engine's round-end reason latched with <see cref="DecidedWinnerSide" />; 0 until the
+    ///     round is decided. Cleared by <see cref="ResetRoundState" />.
+    /// </summary>
+    public int DecidedReason { get; set; }
+
+    /// <summary>
     ///     The one per-round anchor the aim metrics read that does NOT live on a
     ///     <see cref="PlayerContext" />: <see cref="VisibilityTransitionScanner" />'s pair state and
     ///     crosshair-arrival stamps. Everything else these metrics latch — <c>LastSpotTick</c>,
@@ -277,6 +290,8 @@ public sealed class PlayerContextIndex
         BombPlanted = false;
         BombExploded = false;
         BombDefused = false;
+        DecidedWinnerSide = 0;
+        DecidedReason = 0;
         VisibilityTransitions?.Reset();
 
         foreach (PlayerContext ctx in _slots.Values)

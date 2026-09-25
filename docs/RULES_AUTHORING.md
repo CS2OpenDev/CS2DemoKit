@@ -20,6 +20,13 @@ start every file with this line to get editor validation and autocompletion:
 # yaml-language-server: $schema=./cs2demokit-rules.schema.json
 ```
 
+One file may hold several rulesets separated by `---` lines. Each document loads as its own
+ruleset, with its own errors: a broken one reports them and the others still load. An error in a
+document after the first names it as `file.rules.yaml#N`, counting from 1 at the top of the file,
+while `loaded.LoadedFiles` and `loaded.FailedFiles` list files: a file with an error in any of its
+documents is a failed file, though its good documents still load. An empty document, such as a
+trailing `---`, is skipped.
+
 A ruleset whose `ruleset:` id matches a shipped one replaces it wholesale; a new id adds stats
 alongside. To start from a shipped file, extract the shipped tier to disk with
 `YamlConfigLoader.ExtractShippedTo(dir)` and edit the copy.
@@ -57,7 +64,8 @@ text, an in-expression `(line, column)` span, and ranked "did you mean" candidat
 
 A **ruleset** is a named bundle of **stats**. Each stat is one measurement. You choose:
 
-- **`for:`** — do you want this *per player* (`each_player`) or for the *whole match* (`match`)?
+- **`for:`** — do you want this *per player* (`each_player`), *per side* (`each_team`: one for the
+  terrorists, one for the counter-terrorists) or for the *whole match* (`match`)?
 - **the kind** — *how* to measure (count events, sum a value, keep a max, compute a formula, …).
 - **the source** — *what* to measure (a "view" like `kill`, or another stat).
 - **`per:`** — the window it resets over: `round` or `match`.
@@ -98,7 +106,29 @@ know the CS2 conventions. Common views:
 
 `kill` · `death` · `assist` · `damage_dealt` · `shot` · `blinded_enemy` ·
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
-`round_won` · `round_lost`
+`round_won` · `round_lost` · `round_decided` · `round_ended`
+
+A round ends twice. **`round_decided`** fires on the frame the server decides the round, read off
+the game rules' round-win status: its facets are `winner_side` (2 = T, 3 = CT), `reason` (the
+engine's round-end reason: 1 the bomb exploded, 7 bomb defused, 8 and 9 elimination, 12 time
+ran out, 17 and 18 a surrender) and `rounds_played`. It is synthesized from entity state, so its `event.tick` is the frame clock, and
+it is dispatched after the frame's own events, so it follows the kill that decided the round.
+**`round_ended`** is the round's close (`round_officially_ended` on a matchmaking demo, 448 ticks
+later; 544 at the end of a half, when the break is waited out first; either can land a tick early or
+late, which is the server's timer, so do not match on the exact gap; the match's last round has no
+`round_officially_ended` and closes on `cs_win_panel_match`, 193 ticks after the decision on the
+demos measured), bound to nobody: its facets
+are `winner_side`, `winner_team`, `has_winner` and `win_reason`. Every round-end stat (survived,
+KAST) is timed on the close. The winner at the close is the server's verdict from the decision,
+not a guess from who is left alive.
+
+A round the server decides without it ever leaving freeze time (a surrender vote that passes in the
+freeze period, or a side with nobody left to play) has no `round_freeze_end`, and `round.number`
+only moves on one. So when a second `round_decided` arrives with no freeze end since the first,
+the engine opens the round itself: it dispatches a synthesized `round_freeze_end` on the decision's
+frame, just before the `round_decided`, which moves `round.number`, resets the round's stats and
+samples the freeze-end economy and rosters like a real one. That round gets its own rows, and
+`round.number` stays level with `rounds_played`. A `raw.round_freeze_end` stat sees it too.
 
 `enemy_spotted` is a view as well, but it is *synthesized* from recomputed visibility rather than
 read off the wire, so it only fires on a run set up for it — read "Facets that need a map bake" in
@@ -118,6 +148,16 @@ stats:
 For `for: each_player`, a view automatically binds to *this* player (the `kill` view counts *this
 player's* kills). At `for: match`, there's no subject, so `count: kill` counts *everyone's* kills
 (a match total).
+
+`round_won` and `round_lost` bind by team: for `for: each_player` they fire on the round's close
+only for the players whose team (their live team, so the halftime swap is followed) won or lost
+it, so `count: round_won` is this player's round wins and `count: round_won` + `count: round_lost`
+is one per decided round for a player on a side. A player on neither side (a spectator, a coach, a
+slot whose team has not been seen) reads neither. A stat about the round rather than its result, such as "rounds survived",
+counts `round_ended` instead, which fires for everyone. (Before 0.13.0 the binding was not applied
+and both views fired for every player, so a ruleset that counted losses as `round_won` with a
+`where:` on the winner now reads 0: count `round_lost`.) At `for: match` both views fire on every
+close, like any view without a subject.
 
 If you need a raw event with no view, use `raw.<event>`; net messages are `net.<Message>`. Views
 are almost always what you want.
@@ -234,12 +274,19 @@ eco_kills:
 when: [enemy_kills > 0, player.survived]     # same as "enemy_kills > 0 and player.survived"
 ```
 
-**`event.tick` is not one clock across views.** On a wire event (`kill`, `shot`, `bomb_planted`,
-...) it is the absolute server tick. On the two views the engine synthesizes from entity state,
-`enemy_spotted` and `molotov`, there is no wire stamp and it is the frame clock instead, lower by
-the demo's `ServerStartTick` (about 20,000 ticks on a typical GOTV demo). A `where:` that
-differences a molotov or spot tick against a kill tick is off by that much and nothing reports it.
-For timing across views use the `ticks_since_*` facets, which the engine computes on one clock.
+**Two clocks: `event.tick` and `event.frame_tick`.** A demo carries two clocks. `event.frame_tick`
+is the frame clock on every event: the index `DemoFrame`, timeline events and highlights use, and
+the one a video or clip consumer seeks by. `event.tick` is the absolute server tick on a wire event
+(`kill`, `shot`, `bomb_planted`, ...), higher by the demo's `ServerStartTick` (about 20,000 ticks on
+a typical GOTV demo). On the views the engine synthesizes from entity state (`enemy_spotted`,
+`molotov`, `round_decided`) there is no server stamp, and `event.tick` is the frame clock too.
+
+Capture `event.frame_tick` when the tick is going to a consumer, and whenever you compare ticks
+across views: it is one clock everywhere, so a `where:` that differences a molotov tick against a
+kill tick is only right on the frame clock. A table says which clock each tick column is on
+(`MetricTable.ColumnClocks`: `frame` or `server`), for a bare `event.tick` or `event.frame_tick`
+capture; a column computed from a tick has no entry. The `ticks_since_*` facets are already
+durations and need neither.
 
 ### Facets that carry a sentinel
 
@@ -343,21 +390,63 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
 
 - **Per-player (this player):** `player.survived`, `player.traded`, `player.alive`.
 - **Round facts:** `round.number`, `round.active`, `round.no_deaths_yet`, `round.bomb_status`,
-  `round.bomb.was_planted`, `round.clutch.size`. (Winning a round is a *view* — `round_won` /
+  `round.bomb.was_planted`, `round.clutch.size`.
+- **Where the bomb went down:** set at the plant, held until the next round's freeze end, so they
+  read the same at `round_ended` as at the plant.
+  - `round.bomb.site` — `"A"` or `"B"`, from the planter's nav place at the plant (`BombsiteA` /
+    `BombsiteB`); `""` before a plant, or on a map whose nav mesh names its sites differently.
+  - `round.bomb.plant_place` — the planter's place as read (`"BombsiteA"`, or whatever the map
+    calls it); `""` before a plant.
+  - `round.bomb.site_entity` — `bomb_planted.Site`, the bomb target's entity index (e.g. `173` and
+    `236` on nuke), not a letter; `-1` before a plant. (Winning a round is a *view* — `round_won` /
   `round_lost` — not a context.)
 - **Match facts:** `match.map`, `match.phase`, `match.live`, `match.half_state`,
   `match.regulation_status`, `match.freeze_period`.
+- **Game rules:** the server's own round state, read straight off the game-rules entity. One value
+  for the whole game, so they read the same in every scope.
+  - `match.round_win_status` — `0` while the round is undecided, `2` once the terrorists have won
+    it, `3` once the counter-terrorists have.
+  - `match.round_win_reason` — the engine's round-end reason, set with the status: `1` target
+    bombed (the bomb exploded), `7` bomb defused, `8` counter-terrorists eliminated the terrorists,
+    `9` terrorists eliminated the counter-terrorists, `12` target saved (time ran out), `17` the
+    terrorists surrendered, `18` the counter-terrorists surrendered. `0` while undecided. Those are
+    the reasons seen on the matchmaking demos measured, not the engine's whole list, so a filter
+    meant to cover every outcome should not enumerate reasons.
+  - `match.total_rounds_played` — rounds decided so far this match; `0` before round 1. It
+    increments on the frame a round is decided, not when the next one starts.
+  - `match.game_phase` — `2` first half, `4` the halftime break, `3` second half, `5` match over.
+  - `match.bomb_planted` — true from the plant; cleared by a defuse as well as at the round's close,
+    so "was the bomb planted this round" is `round.bomb.was_planted`, not this.
+  - `match.round_time` — the length the round is configured to run, in seconds (`115` in a live
+    matchmaking round, `999` in warmup). Not a countdown.
+
+  **Read the status and reason on `round_decided`, not at the round's close.** They go back to
+  `0` at `round_officially_ended`, 448 ticks after the round is decided on a matchmaking demo (544
+  at the end of a half), and that is the event `round_ended` (and every round-end stat) fires on,
+  so a read of either there is `0`, except on the match's last round: its close is
+  `cs_win_panel_match`, 193 ticks after the decision on the demos measured, before the status
+  resets, so there the status still reads the winner. At the close the winner and reason are
+  `enrich.round.winner_side` and `enrich.round.win_reason` (the `winner_side` and `win_reason` facets
+  of `round_ended`).
 - **Team aggregates (subject-relative):** `round.team.alive` / `round.enemies.alive`,
   `round.team.players` / `round.enemies.players`, `round.team.equipment` /
-  `round.enemies.equipment`, `round.alive.in_clutch`.
+  `round.enemies.equipment`, `round.team.money` / `round.enemies.money`, `round.alive.in_clutch`.
+  The economy sums are sampled once per round, at `round_freeze_end`: the equipment the side
+  carries and the cash it has left after the freeze-time buys. A purchase later in buy time is in
+  neither. Bound-check a money sum before a rule leans on it (`round.team.money <= 5 * 16000`);
+  it is a sum of wire values and a decode fault would show there first. (Issue #54 reported
+  $3,400 to $4,300 per player in round 1 of one build-10231 demo; read through the engine at this
+  sample point the sides of that round hold $2,600 and $750, the pistol round's leftovers.)
 - **Entity state:** `player.health` / `player.armor` / `player.equipment_value` /
-  `player.active_weapon_clip` / `player.active_weapon_class` / `player.place` — the player's live
-  pawn state. (`active_weapon_clip` is the magazine count of the currently held weapon — under the
+  `player.active_weapon_clip` / `player.active_weapon_class` / `player.place` / `player.money` —
+  the player's live pawn state (`money` is the controller's cash, the one read here not on the
+  pawn). (`active_weapon_clip` is the magazine count of the currently held weapon — under the
   pre-frame timing below, at a kill event it is the clip BEFORE the killing shot, so "last bullet"
-  reads `== 1`; no-magazine weapons like knives read `-1`. `place` is the human-readable nav-mesh
+  reads `== 1`; knives, grenades and the C4 read `-1`, and an empty magazine reads `0`. `place` is the human-readable nav-mesh
   place name the pawn last occupied — `"BombsiteA"`, `"TSpawn"`, `"Ramp"`, … — a string; names come
   from the map's nav mesh, so gate on the standard ones
-  (`BombsiteA`/`BombsiteB`/`CTSpawn`/`TSpawn`) for map-portable rules.)
+  (`BombsiteA`/`BombsiteB`/`CTSpawn`/`TSpawn`) for map-portable rules. Outside any named area it
+  reads `""`, not null.)
 - **Position:** `player.pos_x` / `player.pos_y` / `player.pos_z` — the pawn's world origin in map
   units. That is its FEET, not its eyes; eye height is origin plus a stance-dependent offset.
 - **Movement and aim state:** the pawn and active-weapon reads the shot-anchored aim metrics are
@@ -421,8 +510,11 @@ time*. Both are useful — pick the site that matches the question. (Under an ev
 read a role's entity state, using the role name in place of `player`: `victim.health` in a
 `kill`-view `where:`.)
 
-Contexts are per-player, so they're only available in a `for: each_player` ruleset. A `for: match`
-ruleset has no subject and cannot read `player.*` or the team aggregates.
+The `round.*` and `match.*` contexts read the same in every scope. `player.*` needs a player, so
+only a `for: each_player` ruleset has it. The team aggregates (`round.team.*` / `round.enemies.*`)
+are relative to a subject: the player's team in `for: each_player`, the ruleset's side in
+`for: each_team`; `round.alive.in_clutch` and `round.clutch.size` need a player. A `for: match`
+ruleset has no subject and cannot read any of them.
 
 ---
 
@@ -431,8 +523,13 @@ ruleset has no subject and cannot read `player.*` or the team aggregates.
 - **`scoreboard:`** — per-player columns. `{ stat: <name or highlight.count>, label:, group: }`.
   `group:` is usually `round` (per-round columns) or `game` (match totals).
 - **`tables:`** — richer per-round or per-match tables, written as a **named map**
-  (`tables: { <table-name>: { per:, columns: [...] } }`). Use `per: match` on a table (in a
-  `for: match` ruleset) for a single match-level row.
+  (`tables: { <table-name>: { per:, columns: [...] } }`). The `per:` has to match the ruleset's
+  `for:`, or validation reports `resolve.show.table-scope-mismatch`: `player_round` /
+  `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`, and
+  `match` (a single match-level row) in `for: match`.
+- **Which clock a tick column is on.** A table lists its bare tick columns in
+  `MetricTable.ColumnClocks` (`frame` or `server`), so a consumer knows whether to subtract the
+  demo's `ServerStartTick` without knowing which views are synthesized.
 - **`as: ticks | seconds | time`** on a column reformats a tick-valued stat (raw ticks, seconds, or
   `m:ss`).
 
@@ -494,7 +591,7 @@ ruleset: match_totals
 for: match
 stats:
   total_kills:  { count: kill, per: match }
-  total_rounds: { count: round_won, per: match }
+  total_rounds: { count: round_ended, per: match }
 show:
   tables:
     match_summary:                         # tables: is a named map: <table-name>: { per, columns }
@@ -503,6 +600,56 @@ show:
         - { stat: total_kills, label: TotalK }
         - { stat: total_rounds, label: Rounds }
 ```
+
+### Per-side stats — `for: each_team`
+When the question is about a side rather than a player (what a side bought, whether it won, how its
+kills fell across the round), use `for: each_team`. The ruleset runs twice, once for the terrorists
+(`team.side == 2`) and once for the counter-terrorists (`team.side == 3`), and its tables have one
+row per side: `per: team_round` gives one row per round per side, `per: team_match` one per side.
+
+- An actor view binds to the side: `count: kill` counts the kills by players on the side *in that
+  round* (their live team, so the halftime swap is followed). `match: { actor: any }` counts
+  everyone's, as in `for: match`.
+- `round_won` / `round_lost` fire for the side that won / lost the round.
+- `round.team.*` / `round.enemies.*` read relative to the side: `round.team.equipment`,
+  `round.team.money`, `round.team.alive`, and the enemies' twins.
+- `team.side` is the side, `2` or `3`. `player.*` is not in scope, and neither are
+  `round.alive.in_clutch` / `round.clutch.size`, whose subject is a player.
+- A `team_round` table carries two dimensions besides the round: `side`, and `slots`, the
+  comma-joined slots of the side's connected players at that round's freeze end. `slots` is the join
+  key to a per-player table: it says which side a player was on *in that round*, where a
+  `player_round` table's `team` is the side the player finished the match on.
+- No `highlights:` and no `scoreboard:` (both are attributed to players). It may `use:` a
+  `for: match` or another `for: each_team` ruleset, but not a per-player one, and it reads the used
+  ruleset's stats in `compute:` only: a read in `where:`, `while:`, `capture:`, `sum:`, `tally:` or
+  a bucket key is a validation error (`resolve.team-scope.unsupported`).
+
+```yaml
+ruleset: side_economy
+for: each_team
+stats:
+  equipment: { capture: round.team.equipment, on: raw.round_freeze_end, per: round }
+  money:     { capture: round.team.money,     on: raw.round_freeze_end, per: round }
+  kills:     { count: kill, match: { enemy: true }, per: round }
+  won:       { count: round_won, per: round }
+show:
+  tables:
+    side_rounds:
+      per: team_round
+      columns:
+        - { stat: equipment, label: Equipment }
+        - { stat: money, label: Money }
+        - { stat: kills, label: Kills }
+        - { stat: won, label: Won }
+```
+
+`src/CS2DemoKit.Analysis/Rules/examples/round_facts.rules.yaml` is a complete one: the side's buy
+(with its thresholds as `params:`), the decision, the plant, and the kill timeline with the
+man-count after each kill, per round per side, every tick on the frame clock. A tick column of a
+thing that did not happen that round reads `0`. A string column does not read `""`: a capture of
+`round.bomb.site` or `round.bomb.plant_place` on a round with no plant projects as null (the
+expression reads `""`, and an empty string capture comes out null), so test a table cell for null,
+or use the int twin `round.bomb.site_entity`, which projects `-1`.
 
 ### Reusing another ruleset — `use:` / `exports:`
 A stat can read `otherRuleset.stat` if your file declares `use: [otherRuleset]` and that ruleset

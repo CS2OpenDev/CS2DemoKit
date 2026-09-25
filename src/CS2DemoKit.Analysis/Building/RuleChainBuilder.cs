@@ -49,6 +49,10 @@ public sealed partial class RuleChainBuilder
     // throws on an un-snapshotted provider, is never reached).
     private IPerPlayerEntityValueProvider? _b6EquipmentProvider;
 
+    // The per-player cash provider, set (and snapshotted) only when a v2 ruleset reads
+    // round.team.money / round.enemies.money. The same freeze-end edge sums it.
+    private IPerPlayerEntityValueProvider? _b6MoneyProvider;
+
     private int? _currentPlayerTeam;
 
     // Combined lookup passed to ExpressionCompiler. Initialised from
@@ -65,6 +69,15 @@ public sealed partial class RuleChainBuilder
     // when no entity providers are registered). Read by per-player compile sites in CreateGameEventEdge.
     private EntityChangeScanner? _entityScanner;
     private PlayerContextIndex? _playerContextIndex;
+
+    // The current build's stand-ins for the state outside the graph. Set at the start of Build; the
+    // per-player template factory captures its own reference, so a later Build cannot swap them
+    // under an already-registered template.
+    private GraphExternals _externals = new();
+
+    // Where the current build made each game-scope node (its team-scope nodes included), stamped
+    // around each block that adds nodes. Set at the start of Build and dropped at its end.
+    private ProvenanceRecorder _gameProvenance = new();
 
     // Baked map collision for the visibility rising-edge scan, or null when the caller supplied
     // none. Null is not an error: it means enemy_spotted cannot be produced for this run, which is
@@ -138,6 +151,17 @@ public sealed partial class RuleChainBuilder
         }
 
         StateGraph graph = new();
+        GraphExternals externals = new();
+        _externals = externals;
+
+        // Every game-scope edge and its descriptors go through here, forwarded to the graph in call
+        // order.
+        GraphWiring wiring = new(_registry, externals, graph);
+        ProvenanceRecorder provenance = new();
+        _gameProvenance = provenance;
+        _teamNodesByRuleId.Clear();
+        _teamRosters.Clear();
+        _gameStatHashes.Clear();
         Dictionary<string, StateNode> nodeLookup = new(StringComparer.OrdinalIgnoreCase)
         {
             ["root"] = graph.Root
@@ -147,13 +171,7 @@ public sealed partial class RuleChainBuilder
         {
             graph.Root
         };
-        List<GraphEdgeDescriptor> edgeDescriptors = new();
-        // descriptor → backing StateEdge, by reference identity. Populated only where a real
-        // trigger edge is created alongside its descriptor (BuildSingletonRule); drives edge
-        // graph-breakpoints. Logic/per-player descriptors stay absent.
-        Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking = new(ReferenceEqualityComparer.Instance);
-        Dictionary<string, List<StateNode>> groupMembers = new(StringComparer.OrdinalIgnoreCase);
-        List<ConjunctionNode> conjunctions = new();
+        provenance.Stamp(allNodes, 0, RuleGraphNodeOrigin.Root);
         HashSet<Type> relevantTypes = new();
 
         // ── Build player-context index (consumed by CreateEnrichment below) ──
@@ -161,6 +179,10 @@ public sealed partial class RuleChainBuilder
         _playerContextIndex = playerContextIndex;
 
         List<RuleChainDef> builtinContexts = BuiltinContexts.GenerateContextRules();
+
+        // A ruleset that is not per-player has no template to materialize players through, yet its
+        // enrichments (enemy facets, the round-end winner) read live teams and alive state.
+        graph.TracksPlayers = rulesets.Any(rs => rs.For != RulesetsV2.Model.RulesetScope.EachPlayer);
 
         // Rule-id → node map exposed for configured-output metric resolution (game scope).
         // Bare rule ids mirror nodeLookup; "chain.rule" qualified aliases are added per chain.
@@ -249,13 +271,19 @@ public sealed partial class RuleChainBuilder
         // costs nothing at build time and everything at read time — the node stays registered and
         // reports its default.
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
-        bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false;
+        bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false, b6MoneyNeeded = false;
+
+        // The plant-site round facts read the planter's place: an indirect need like the hurt
+        // enrichments', so a ruleset naming any of the three gates the place column in.
+        bool roundFactsNeeded = RoundFactIds.Members.Any(m => IsReferencedByV2Reads(m.V2Name, rulesets));
         if (_perPlayerEntityProviders is { All.Count: > 0 })
         {
             // B6 relative economy: a v2 read of round.team.equipment / round.enemies.equipment needs the
             // per-player equipment provider snapshotted so the freeze-end maintenance edge can sum it.
             b6EquipmentNeeded = IsReferencedByV2Reads("round.team.equipment", rulesets)
                                 || IsReferencedByV2Reads("round.enemies.equipment", rulesets);
+            b6MoneyNeeded = IsReferencedByV2Reads("round.team.money", rulesets)
+                            || IsReferencedByV2Reads("round.enemies.money", rulesets);
             healthNeeded = IsReferencedByV2Reads("enrich.hurt.victim_health_before", rulesets)
                            || IsReferencedByV2Reads("enrich.hurt.capped_damage", rulesets);
             weaponNeeded = IsReferencedByV2Reads("enrich.hurt.attacker_active_weapon", rulesets);
@@ -267,6 +295,8 @@ public sealed partial class RuleChainBuilder
                     "entity.pawn.health" => healthNeeded,
                     "entity.pawn.active_weapon_class" => weaponNeeded,
                     "entity.pawn.equipment_value" => b6EquipmentNeeded,
+                    "entity.controller.money" => b6MoneyNeeded,
+                    "entity.pawn.place" => roundFactsNeeded,
                     _ => false
                 };
 
@@ -346,11 +376,35 @@ public sealed partial class RuleChainBuilder
         }
 
         // Per-player templates seed each slot's team from its controller entity, so an each_player
-        // ruleset needs the scanner even when it reads no entity value.
-        bool perPlayerRulesets = rulesets.Any(rs => rs.For == RulesetsV2.Model.RulesetScope.EachPlayer);
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || perPlayerRulesets)
+        // ruleset needs the scanner even when it reads no entity value. A ruleset built onto the
+        // graph (for: match) needs the same live teams for its enrichments and the round-end
+        // winner, so any ruleset forces it.
+        bool trackPlayers = rulesets.Count > 0;
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || trackPlayers)
         {
+            // The round's winner is the server's verdict: the scanner synthesizes round_decided
+            // from these three game-rules singletons, and the round-end enrichment reports the
+            // latched winner rather than deriving one. So whenever there is a scanner they are
+            // tracked, read or not: three indexed reads per frame on a cached proxy index. One no
+            // rule reads is tracked silently: its value node updates, but no change marker is
+            // dispatched for it, so a build that does not read them dispatches no extra messages.
+            HashSet<IEntityValueProvider> silent = new(ReferenceEqualityComparer.Instance);
+            foreach (string contextName in (ReadOnlySpan<string>)
+                     [
+                         EntityChangeScanner.RoundWinStatusContext,
+                         EntityChangeScanner.RoundWinReasonContext,
+                         EntityChangeScanner.TotalRoundsPlayedContext
+                     ])
+            {
+                if (_entityProviders?.Get(contextName) is { } provider && !matched.Contains(provider))
+                {
+                    matched.Add(provider);
+                    silent.Add(provider);
+                }
+            }
+
             _entityContextNodes = new Dictionary<string, StateNode>(StringComparer.OrdinalIgnoreCase);
+            int entityMark = allNodes.Count;
             List<(IEntityValueProvider, StateNode)> trackedForScanner = new(matched.Count);
             foreach (IEntityValueProvider provider in matched)
             {
@@ -359,8 +413,11 @@ public sealed partial class RuleChainBuilder
                 nodeLookup[provider.ContextName] = valueNode;
                 _enrichmentNodes[provider.ContextName] = valueNode;
                 allNodes.Add(valueNode);
+                wiring.DescribeEntityValue(valueNode, provider.ContextName);
                 trackedForScanner.Add((provider, valueNode));
             }
+
+            provenance.Stamp(allNodes, entityMark, RuleGraphNodeOrigin.EntityValue);
 
             entityScanner = new EntityChangeScanner(
                 new EntityStateLayer { StoreUnlensedFields = false },
@@ -368,7 +425,8 @@ public sealed partial class RuleChainBuilder
                 perPlayerList,
                 emitMolotov,
                 vantageScanner,
-                transitionScanner);
+                transitionScanner,
+                silent);
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve
@@ -384,6 +442,9 @@ public sealed partial class RuleChainBuilder
         // economy edge) when unreferenced or when the scanner wasn't built.
         _b6EquipmentProvider = b6EquipmentNeeded && entityScanner is not null
             ? _perPlayerEntityProviders?.Get("entity.pawn.equipment_value")
+            : null;
+        _b6MoneyProvider = b6MoneyNeeded && entityScanner is not null
+            ? _perPlayerEntityProviders?.Get("entity.controller.money")
             : null;
 
         // ── Create enrichment infrastructure ──────────────────────────────
@@ -431,16 +492,30 @@ public sealed partial class RuleChainBuilder
             _enrichmentNodes[key] = node;
         }
 
+        int enrichmentMark = allNodes.Count;
         allNodes.AddRange(enrichment.Nodes);
+        provenance.Stamp(allNodes, enrichmentMark, RuleGraphNodeOrigin.Enrichment);
         foreach (StateEdge edge in enrichment.Edges)
         {
-            graph.AddEdge(edge);
+            // The bookkeeping edges write per-player state only; the rest write enrichment nodes.
+            GraphEdgeKind kind = edge.WrittenNode is null && edge.AdditionalWrittenNodes is null
+                ? GraphEdgeKind.PlayerState
+                : GraphEdgeKind.Enrichment;
+            wiring.AddEdge(edge, kind);
+        }
+
+        if (roundFactsNeeded)
+        {
+            int factsMark = allNodes.Count;
+            BuildRoundFacts(graph, wiring, nodeLookup, allNodes, gameNodesByRuleId, relevantTypes, entityScanner);
+            provenance.Stamp(allNodes, factsMark, RuleGraphNodeOrigin.RoundFact);
         }
 
         List<RuleChainDef> gameContexts = builtinContexts.Where(c => c.Scope == ChainScope.Game).ToList();
         List<RuleChainDef> perPlayerContexts = builtinContexts.Where(c => c.Scope == ChainScope.PerPlayer).ToList();
 
         // ── Build game-scoped context rules ────────────────────────────────
+        int contextMark = allNodes.Count;
         foreach (RuleChainDef ctx in gameContexts)
         {
             foreach (RuleDef rule in ctx.Rules)
@@ -450,7 +525,7 @@ public sealed partial class RuleChainBuilder
                     continue;
                 }
 
-                BuildSingletonRule(rule, graph, nodeLookup, allNodes, edgeDescriptors, edgeBacking, groupMembers, relevantTypes);
+                BuildSingletonRule(rule, graph, wiring, nodeLookup, allNodes, relevantTypes);
                 if (nodeLookup.TryGetValue(rule.Id, out StateNode? ctxNode))
                 {
                     // Context rules (round_number, gameplay_phase, …) resolve by bare id only.
@@ -458,6 +533,8 @@ public sealed partial class RuleChainBuilder
                 }
             }
         }
+
+        provenance.Stamp(allNodes, contextMark, RuleGraphNodeOrigin.Context);
 
         // ── Rulesets v2: build v2 nodes onto the same graph ──
         // After the context/enrichment graph is wired, so the game contexts (incl. bomb_was_planted)
@@ -474,7 +551,7 @@ public sealed partial class RuleChainBuilder
                 .SelectMany(c => c.Rules)
                 .Where(RequiresSatisfied)
                 .ToList();
-            BuildRulesetsV2(rulesets, options, graph, nodeLookup, allNodes, edgeDescriptors,
+            BuildRulesetsV2(rulesets, options, graph, wiring, nodeLookup, allNodes,
                 gameNodesByRuleId, relevantTypes, v2Outputs, perPlayerContextRules);
         }
 
@@ -488,20 +565,94 @@ public sealed partial class RuleChainBuilder
         relevantTypes.Add(typeof(PlayerDisconnectEvent));
         relevantTypes.Add(typeof(PlayerSpawnEvent));
 
-        List<NodeGroupHint> groupHints = groupMembers
-            .Select(kv => new NodeGroupHint(kv.Key, kv.Value))
-            .ToList();
+        // Every game-scope row a StateEdge backs, several rows to one edge for a multi-write edge;
+        // drives edge graph-breakpoints. By reference, like the descriptors themselves.
+        Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking = new(ReferenceEqualityComparer.Instance);
+        foreach (GraphEdgeDescriptor descriptor in wiring.Descriptors)
+        {
+            if (descriptor.Edge is { } backing)
+            {
+                edgeBacking[descriptor] = backing;
+            }
+        }
 
-        return new BuildResult(graph, allNodes, edgeDescriptors, conjunctions,
-            relevantTypes, groupHints, playerContextIndex, entityScanner, null,
+        // The per-player template keeps this builder alive for as long as the build lives, so the
+        // recorder is dropped once the result has its copy of the entries.
+        IReadOnlyDictionary<StateNode, NodeProvenance> gameProvenance = provenance.ToDictionary();
+        _gameProvenance = new ProvenanceRecorder();
+        return new BuildResult(graph, allNodes, wiring.Descriptors,
+            relevantTypes, playerContextIndex, entityScanner,
             edgeBacking.Count > 0 ? edgeBacking : null,
             gameNodesByRuleId.Count > 0 ? gameNodesByRuleId : null,
             v2Outputs.Count > 0 ? v2Outputs : null,
             v2Coverage.Count > 0 ? v2Coverage : null)
         {
             Profile = Profile,
-            Events = _registry
+            Events = _registry,
+            TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
+            TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
+            RoundBoundaryTypes = RoundBoundaryTypes(),
+            ExternalNodes = externals.All,
+            Provenance = gameProvenance
         };
+    }
+
+    /// <summary>
+    ///     The dispatch types that can move <c>round_number</c> (see
+    ///     <see cref="BuildResult.RoundBoundaryTypes" />): the concrete events of the logical events its
+    ///     own triggers and its <c>match_live</c> parent's triggers name, plus the two events the
+    ///     evaluator itself treats as boundaries.
+    /// </summary>
+    private HashSet<Type> RoundBoundaryTypes()
+    {
+        HashSet<Type> types = [typeof(RoundFreezeEndEvent), typeof(BeginNewMatchEvent)];
+        foreach (string logical in (string[])["round_freeze_end", "match_start", "match_end"])
+        {
+            foreach (string concrete in _logicalResolver.Resolve(logical)?.ConcreteEventNames ?? [])
+            {
+                if (_registry.TryResolve(concrete, out Type? type))
+                {
+                    types.Add(type);
+                }
+            }
+        }
+
+        return types;
+    }
+
+    /// <summary>
+    ///     Builds the plant-site round facts (<see cref="RoundFactIds" />): three round-scoped value
+    ///     nodes and the <see cref="BombPlantSiteEdge" /> that writes them on <c>bomb_planted</c>.
+    ///     Registered as graph rule nodes, so the evaluator resets them at each freeze end, and in the
+    ///     lookups under their node ids, so a v2 read of <c>round.bomb.site</c> resolves through the
+    ///     catalog context table like any other context. Only built when a ruleset reads one.
+    /// </summary>
+    private void BuildRoundFacts(StateGraph graph, GraphWiring wiring, Dictionary<string, StateNode> nodeLookup,
+        List<StateNode> allNodes, Dictionary<string, StateNode> gameNodesByRuleId, HashSet<Type> relevantTypes,
+        EntityChangeScanner? scanner)
+    {
+        GenericRoundScopedValueNode<string> site = new(RoundFactIds.BombSite, "", null);
+        GenericRoundScopedValueNode<string> plantPlace = new(RoundFactIds.BombPlantPlace, "", null);
+        GenericRoundScopedValueNode<int> siteEntity = new(RoundFactIds.BombSiteEntity, -1, null);
+
+        foreach (StateNode node in (StateNode[])[site, plantPlace, siteEntity])
+        {
+            nodeLookup[node.Name] = node;
+            _enrichmentNodes![node.Name] = node;
+            gameNodesByRuleId[node.Name] = node;
+            allNodes.Add(node);
+            graph.AddRuleNode(node);
+        }
+
+        // The place provider was gated in by roundFactsNeeded, so the scanner snapshots it.
+        IPerPlayerEntityValueProvider? place = scanner is not null ? _perPlayerEntityProviders?.Get("entity.pawn.place") : null;
+        Func<int, string?>? readPlace = place is not null
+            ? slot => scanner!.GetPreFrameValue(place, slot) as string
+            : null;
+
+        wiring.AddEdge(new BombPlantSiteEdge(graph.Root, site, plantPlace, siteEntity, readPlace), GraphEdgeKind.RoundFact,
+            extraReads: readPlace is not null ? [wiring.Externals.EntityState] : null);
+        relevantTypes.Add(typeof(BombPlantedEvent));
     }
 
     internal static string ResolveContextId(string contextPath)
@@ -597,7 +748,7 @@ public sealed partial class RuleChainBuilder
         RuleDef rule, int slot, string playerName, StateGraph graph,
         Dictionary<string, StateNode> parentNodeLookup,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes,
-        List<StateEdge> edges, List<GraphEdgeDescriptor> descriptors)
+        GraphWiring wiring)
     {
         if (rule.Parents is not null && (rule.Triggers is null || rule.Triggers.Count == 0))
         {
@@ -607,26 +758,10 @@ public sealed partial class RuleChainBuilder
 
             if (rule.ResetOnRound && logicNode is BoolNode boolLogic)
             {
-                edges.Add(new RoundScopedLogicNodeReset(boolLogic));
+                wiring.AddEdge(new RoundScopedLogicNodeReset(boolLogic), GraphEdgeKind.RoundReset);
             }
 
-            if (logicNode is ConjunctionNode cj)
-            {
-                foreach (IConditionalEdge input in cj.Inputs)
-                {
-                    descriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, cj, "", EdgeEffect.Conjunction, input.ConditionLabel));
-                }
-            }
-            else if (logicNode is DisjunctionNode dj)
-            {
-                foreach (IConditionalEdge input in dj.Inputs)
-                {
-                    descriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, dj, "", EdgeEffect.Disjunction, input.ConditionLabel));
-                }
-            }
-
+            DescribeLogicNode(logicNode, wiring);
             return;
         }
 
@@ -646,7 +781,7 @@ public sealed partial class RuleChainBuilder
                 TriggerDef trigger = rule.Triggers[triggerIdx];
                 ExpandedTrigger expansion = ExpandTrigger(rule, trigger, triggerIdx,
                     g => nodes.Add(g),
-                    edges.Add,
+                    e => wiring.AddEdge(e, GraphEdgeKind.RoundReset),
                     playerName);
 
                 foreach (TriggerDef expanded in expansion.Triggers)
@@ -654,10 +789,7 @@ public sealed partial class RuleChainBuilder
                     StateEdge? edge = CreateEdge(expanded, sourceNode, node, slot, playerName, expansion.SuppressionGuard, sourceGate);
                     if (edge is not null)
                     {
-                        edges.Add(edge);
-                        descriptors.Add(new GraphEdgeDescriptor(
-                            sourceNode, node, expanded.On,
-                            MapAction(expanded.Action), expanded.Condition));
+                        AddTriggerEdge(wiring, edge, expanded, sourceGate, expansion.SuppressionGuard);
                     }
                 }
             }
@@ -666,11 +798,8 @@ public sealed partial class RuleChainBuilder
 
     // ── Singleton rule building ────────────────────────────────────────────
 
-    private void BuildSingletonRule(RuleDef rule, StateGraph graph,
-        Dictionary<string, StateNode> nodeLookup,
-        List<StateNode> allNodes, List<GraphEdgeDescriptor> edgeDescriptors,
-        Dictionary<GraphEdgeDescriptor, StateEdge> edgeBacking,
-        Dictionary<string, List<StateNode>> groupMembers, HashSet<Type> relevantTypes)
+    private void BuildSingletonRule(RuleDef rule, StateGraph graph, GraphWiring wiring,
+        Dictionary<string, StateNode> nodeLookup, List<StateNode> allNodes, HashSet<Type> relevantTypes)
     {
         if (rule.Parents is not null && (rule.Triggers is null || rule.Triggers.Count == 0))
         {
@@ -686,22 +815,13 @@ public sealed partial class RuleChainBuilder
             if (logicNode is ConjunctionNode cj)
             {
                 graph.AddConjunction(cj);
-                foreach (IConditionalEdge input in cj.Inputs)
-                {
-                    edgeDescriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, cj, "", EdgeEffect.Conjunction, input.ConditionLabel));
-                }
             }
             else if (logicNode is DisjunctionNode dj)
             {
                 graph.AddDisjunction(dj);
-                foreach (IConditionalEdge input in dj.Inputs)
-                {
-                    edgeDescriptors.Add(new GraphEdgeDescriptor(
-                        input.Source, dj, "", EdgeEffect.Disjunction, input.ConditionLabel));
-                }
             }
 
+            DescribeLogicNode(logicNode, wiring);
             return;
         }
 
@@ -726,24 +846,57 @@ public sealed partial class RuleChainBuilder
                 TriggerDef trigger = rule.Triggers[triggerIdx];
                 ExpandedTrigger expansion = ExpandTrigger(rule, trigger, triggerIdx,
                     g => allNodes.Add(g),
-                    e => graph.AddEdge(e));
+                    e => wiring.AddEdge(e, GraphEdgeKind.RoundReset));
 
                 foreach (TriggerDef expanded in expansion.Triggers)
                 {
                     StateEdge? edge = CreateEdge(expanded, sourceNode, node, null, null, expansion.SuppressionGuard, sourceGate);
                     if (edge is not null)
                     {
-                        graph.AddEdge(edge);
+                        AddTriggerEdge(wiring, edge, expanded, sourceGate, expansion.SuppressionGuard);
                         relevantTypes.Add(edge.MessageType);
-                        GraphEdgeDescriptor descriptor = new(
-                            sourceNode, node, expanded.On,
-                            MapAction(expanded.Action), expanded.Condition);
-                        edgeDescriptors.Add(descriptor);
-                        // Pair descriptor ↔ backing edge for graph-breakpoint resolution.
-                        edgeBacking[descriptor] = edge;
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    ///     Adds a context rule's trigger edge through <paramref name="wiring" />: labelled with the
+    ///     concrete event, reading its <c>when:</c> gate's sources and its first-wins guard, and drawn
+    ///     to the guard it sets as well as to its node.
+    /// </summary>
+    private static void AddTriggerEdge(GraphWiring wiring, StateEdge edge, TriggerDef expanded,
+        IConditionalEdge? sourceGate, BoolNode? guard) =>
+        wiring.AddEdge(edge, GraphEdgeKind.Trigger, expanded.On, expanded.Condition,
+            GateReads(sourceGate, guard), guard is not null ? [guard] : null, MapAction(expanded.Action));
+
+    /// <summary>
+    ///     The nodes an edge reads through its gate and guard rather than its declared reads: every
+    ///     source of the <c>while:</c> gate, and the first-wins guard it checks. <c>null</c> for
+    ///     neither.
+    /// </summary>
+    private static IReadOnlyList<StateNode>? GateReads(IConditionalEdge? sourceGate, StateNode? guard)
+    {
+        if (sourceGate is null)
+        {
+            return guard is null ? null : [guard];
+        }
+
+        return guard is null ? sourceGate.Sources : [.. sourceGate.Sources, guard];
+    }
+
+    /// <summary>Draws each input source of a conjunction or disjunction; no-op for any other node.</summary>
+    private static void DescribeLogicNode(StateNode logicNode, GraphWiring wiring)
+    {
+        switch (logicNode)
+        {
+            case ConjunctionNode cj:
+                wiring.DescribeLogicNode(cj, EdgeEffect.Conjunction, cj.Inputs);
+                break;
+            case DisjunctionNode dj:
+                wiring.DescribeLogicNode(dj, EdgeEffect.Disjunction, dj.Inputs);
+                break;
         }
     }
 

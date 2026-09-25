@@ -179,20 +179,30 @@ per entity with `new TrackerEntityWorld(tracker).CreateReader(binding, state)`).
 `EntityTracker.DecodeDiagnosticSink` (`Action<string>`, defaults to `Console.WriteLine`) — redirect
 or silence it per tracker in batch services. `PositionUtil.CellToWorld` (namespace
 `CS2DemoKit.Parser.EntityTracking`) is the oracle-pinned pawn cell→world reconstruction and
-`PawnLookup` beside it resolves pawn↔slot. `TickMapper` and `TickBoundaries.FrameIndices` cover
-demo-tick mapping and tick-boundary frame indexing.
+`PawnLookup` beside it resolves pawn↔slot; `PawnLookup.ResolveThrowerSlot` resolves a grenade
+projectile's `m_hThrower` to a player slot the same way. `TickMapper` and
+`TickBoundaries.FrameIndices` cover demo-tick mapping and tick-boundary frame indexing.
 
 ### Player trajectories
 
 `PositionSampler.Walk` is those pieces assembled: it steps the tracker one frame at a time,
-enumerates live pawns, resolves each to a slot, and reconstructs world position.
+enumerates every controller-bound pawn (dead or alive: a dead player's pawn keeps sampling for the
+rest of the round), resolves each to a slot, and reconstructs world position. Each sample carries
+the pawn's team (`m_iTeamNum`, 2 = T, 3 = CT) and `IsAlive` (`PawnLookup.IsAlive`: life state alive
+and health above zero), so `.Where(s => s.IsAlive)` keeps the living only.
 
 ```csharp
 foreach (PositionSample s in PositionSampler.Walk(demo, frameStride: 8))
 {
-    // s.FrameIndex, s.Tick, s.PlayerSlot, s.Position (Vector3), s.Place
+    // s.FrameIndex, s.Tick, s.PlayerSlot, s.Position (Vector3), s.Place, s.Team, s.IsAlive
 }
 ```
+
+`Tick` is the frame clock, `DemoFrame.ServerTick`, the same clock as `GameEvent.GameTick`.
+`GameEvent.ServerTick` is that plus `ParsedDemo.ServerStartTick`. An event can be stamped one tick
+below the frame that delivered it (`weapon_fire`, `player_hurt` and footsteps often are), so to join
+samples to events exactly, compare `GameEvent.FrameNumber` with `PositionSample.FrameIndex`.
+`Place` is the empty string, not null, when the pawn is outside any named nav area.
 
 `frameStride` subsamples the output only. Every frame is still decoded, because entity state is
 delta-encoded and skipping a frame's deltas corrupts the frames after it, so the stride buys memory
@@ -212,6 +222,62 @@ Do **not** reach for the `player.pos_x/y/z` rule providers to extract paths. The
 digest per change, which is 26x the cells of the whole shipped provider set for one axis and 100x
 for all three (`docs/perf/baseline.md`). Coordinates in rules are for predicates at events; this
 walk is for trajectories.
+
+### Grenade projectiles
+
+`ProjectileSampler.Walk` does for grenades what `PositionSampler.Walk` does for pawns. It yields one
+`ProjectileSample` per projectile per frame over the five classes in `GrenadeProjectileClasses`
+(smoke, molotov, HE, flashbang, decoy), from the frame the projectile appears to the frame it goes.
+Incendiary grenades arrive as `CMolotovProjectile`, and the wire does not reliably say which of the
+two was thrown.
+
+```csharp
+foreach (ProjectileSample s in ProjectileSampler.Walk(demo, frameStride: 8))
+{
+    // s.FrameIndex, s.Tick, s.EntityIndex, s.Serial, s.ClassName, s.ThrowerSlot,
+    // s.Position, s.InitialPosition, s.InitialVelocity, s.Bounces, s.Created, s.Removed
+}
+
+// Forward, without retaining the frames:
+using DemoReader reader = DemoReader.OpenFile(path, new ParseOptions { Plan = DecodePlan.EntityReplay });
+foreach (ProjectileSample s in ProjectileSampler.Walk(reader)) { /* ... */ }
+```
+
+`(EntityIndex, Serial)` identifies one projectile. Its first sample has `Created` set, and on the
+frame its slot is found empty or taken by another entity it gets one more sample with `Removed`
+set. That sample carries the removal frame's `FrameIndex` and `Tick` and the last values seen, so
+its `Position` is where the projectile ended. When one frame swaps a projectile for another entity
+in the same slot, the Removed sample comes first. A projectile still alive when the walk stops gets
+no Removed sample.
+
+`ThrowerSlot` is -1 until `PawnLookup.ResolveThrowerSlot` first resolves and is then held for the
+rest of the projectile's life. The live chain goes through the thrower's pawn, and once the thrower
+dies that pawn's controller handle is invalid, so a re-read would drop the attribution mid-flight.
+On a build-10231 de_nuke and a build-10924 de_dust2 that happens to 4 of 54 and 8 of 91 HEs and to 20
+of 57 and 25 of 72 smokes, and a later live read never names a different player.
+
+`frameStride` thins in-flight samples only: Created and Removed samples always come out on their
+own frame, since a molotov can live 20 frames. A strided walk is the stride-1 walk filtered to
+`FrameIndex % frameStride == 0 || Created || Removed`, which is not how `PositionSampler`'s stride
+behaves. `Tick` is the frame clock, as for `PositionSample`, and `maxFrames` stops the walk early
+with no way to start it late.
+
+Every Created sample is a throw except one kind: projectiles already in flight when the recording
+began appear as Created on the first frame that carries entities, with `Position` far from
+`InitialPosition` (a build-10924 de_dust2 opens with five decoys 1,557 to 3,699 units from their
+release points). For a real throw, `InitialPosition` sits 35 to 80 units from the thrower's pawn and
+the first `Position` within 17 units of `InitialPosition`.
+
+`Position` is null when a cell index is 0, which would put the projectile outside every map. It is a
+guard behind the #56 fix to the smoke creation decode, not the fix itself: before 0.13.0 every
+smoke's first cell was wrong, and on a build-10924 de_dust2 7 of 72 were wrong without being zero.
+
+What stays with the consumer: the release tick (the `weapon_fire` event, 7 to 15 ticks before
+creation), joining a projectile to its detonation event, and jump-throw classification.
+
+Measured on a 154,869-frame de_nuke, Release, warm: 229 projectiles and 148,495 samples at stride 1
+in 0.54 s and 98 MB over a retained `ParsedDemo`, after a 0.25 s, 578 MB parse; 0.7 s and 251 MB end
+to end through `DemoReader` with `DecodePlan.EntityReplay`.
 
 ## Working with raw net messages
 
@@ -244,5 +310,6 @@ precedence, so existing scripts keep working.
 
 ## License
 
-MIT. Contains code adapted from [demofile-net](https://github.com/saul/demofile-net) (MIT) —
-see `THIRD-PARTY-NOTICES.md` in the repo for the full attribution and file list.
+MIT. Contains code adapted from [demofile-net](https://github.com/saul/demofile-net) (MIT) and
+[demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) (MIT) — see
+`THIRD-PARTY-NOTICES.md` in the repo for the full attribution and file list.

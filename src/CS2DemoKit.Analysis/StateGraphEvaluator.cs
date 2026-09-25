@@ -79,6 +79,10 @@ public sealed class StateGraphEvaluator
     // before any of the player's edges can dispatch. One restorer per value-bearing node; nodes
     // with nothing match-accumulated (round-scoped, live derivations, pulls) capture none.
     private readonly List<(StateNode Node, Action Restore)> _matchRestartBaselines = [];
+
+    // The same baselines for the graph's static ruleset nodes, captured once per graph from their
+    // build-time values (StateGraph.RuleNodeBaselines).
+    private readonly IReadOnlyList<(StateNode Node, Action Restore)> _ruleNodeBaselines;
     private readonly Dictionary<StateNode, int> _nodeIds = new(ReferenceEqualityComparer.Instance);
 
     // ── Opt-in LIVE computes ─────────────────────────────────────────────────
@@ -115,6 +119,11 @@ public sealed class StateGraphEvaluator
     private readonly HashSet<StateNode> _risingEdgeFiredThisMessage = new(ReferenceEqualityComparer.Instance);
     private readonly List<IRoundScopedNode> _roundScopedNodes = [];
 
+    // Whether a round_decided has been dispatched since the last round_freeze_end (or match
+    // restart). A second decision with no freeze end between is a round the server decided in
+    // freeze time, and the evaluator opens it before dispatching the decision.
+    private bool _roundDecidedSinceFreezeEnd;
+
     // ── Dispatch filtering ─────────────────────────────────────────────────
     private readonly Dictionary<StateNode, HashSet<Type>> _sourceToDispatchKeys = new(ReferenceEqualityComparer.Instance);
 
@@ -132,6 +141,13 @@ public sealed class StateGraphEvaluator
     // The roster and names the evaluation resolves against: the source's view once an
     // evaluation starts, the constructor demo's before then.
     private IDemoEnrichmentView? _enrichment;
+
+    /// <summary>
+    ///     An observer told of every message before and after it is dispatched, of every player
+    ///     materialized, and of the end of the run. Null (the default) costs one null check per
+    ///     message. The forward path's configured-output recorder is the one user.
+    /// </summary>
+    internal Output.IEvaluationObserver? Observer { get; set; }
 
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
@@ -176,6 +192,19 @@ public sealed class StateGraphEvaluator
         {
             RegisterLiveCompute(reg.Compute, reg.Reads);
         }
+
+        // Static ruleset nodes get what a materialized node gets: round-scoped ones reset at each
+        // round boundary (a for: match `per: round` count otherwise read the match total), and all
+        // of them return to their build-time value on a match restart (see ResetForMatchRestart).
+        foreach (StateNode node in graph.RuleNodes)
+        {
+            if (node is IRoundScopedNode rsNode)
+            {
+                _roundScopedNodes.Add(rsNode);
+            }
+        }
+
+        _ruleNodeBaselines = graph.RuleNodeBaselines(CreateMatchRestartRestorer);
 
         foreach (StateEdge edge in graph.Edges)
         {
@@ -448,9 +477,9 @@ public sealed class StateGraphEvaluator
         long totalEdgesFired = 0;
         int totalMessages = 0;
 
-        // Fire counters are per-evaluation. Edges/actions registered before this
-        // point (constructor-time MaterializeKnownPlayers included) may carry counts from a
-        // previous run of this evaluator — or of another evaluator over the same shared graph.
+        // Fire counters are per-evaluation. Edges/actions registered before this point may carry
+        // counts from a previous run of this evaluator — or of another evaluator over the same
+        // shared graph.
         ResetFireCounters();
 
         // A1: the highlight sink is per-evaluation too — the emission closures append to the
@@ -462,6 +491,14 @@ public sealed class StateGraphEvaluator
         HighlightsFired = [];
         RoundOfficiallyEndedSeen = 0;
         CsPreRestartSeen = 0;
+        _roundDecidedSinceFreezeEnd = false;
+
+        // Static ruleset nodes start from their build-time values, so evaluating one build twice
+        // does not carry the first run's totals into the second. A no-op on a fresh build.
+        foreach ((StateNode _, Action restore) in _ruleNodeBaselines)
+        {
+            restore();
+        }
 
         bool logStart = _log.IsEnabled(LogLevel.Information);
         if (trace || logStart)
@@ -556,6 +593,7 @@ public sealed class StateGraphEvaluator
                 for (int s = 0; s < synthesized.Count; s++)
                 {
                     NetMessage syntheticMsg = synthesized[s];
+                    Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
 
                     // Synthesized game events (molotov_thrown) must materialize
                     // their player exactly like real-message events below — a player whose first
@@ -581,6 +619,7 @@ public sealed class StateGraphEvaluator
                         trace, ref sLogic, snap);
 
                     FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
+                    Observer?.AfterMessage();
                 }
             }
 
@@ -593,6 +632,10 @@ public sealed class StateGraphEvaluator
                 Type key = GetDispatchKey(message);
                 long msgStart = trace ? Stopwatch.GetTimestamp() : 0;
 
+                // Before materialization and the round reset: the state it sees is the state after
+                // the previous message, which is what a snapshot row holds.
+                Observer?.BeforeMessage(key);
+
                 if (message is GameEventMessage gem)
                 {
                     MaterializeNewPlayers(gem.DecodedEvent);
@@ -601,11 +644,13 @@ public sealed class StateGraphEvaluator
 
                 if (key == typeof(RoundFreezeEndEvent))
                 {
-                    ResetRoundScopedNodes();
+                    _roundDecidedSinceFreezeEnd = false;
+                    ResetRoundScopedNodes(snap);
                     snap?.MarkRoundScopedDirty(_roundScopedNodes);
                 }
                 else if (key == typeof(BeginNewMatchEvent))
                 {
+                    _roundDecidedSinceFreezeEnd = false;
                     ResetForMatchRestart(snap);
                 }
                 else if (key == typeof(RoundOfficiallyEndedEvent))
@@ -632,6 +677,67 @@ public sealed class StateGraphEvaluator
                 }
 
                 FinishMessage(message, edgesEvaluated, edgesFired, logicRecomputed);
+                Observer?.AfterMessage();
+            }
+
+            // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
+            //    messages because the kill that decided the round often arrives in this same frame,
+            //    and "decided" must follow it. Same materialize / track / finish path as the
+            //    pre-frame synthesized messages above, so snapshot rows and forward/retained parity
+            //    hold. ──
+            if (_entityScanner is not null)
+            {
+                IReadOnlyList<NetMessage> postFrame = _entityScanner.PostFrameMessages;
+                for (int p = 0; p < postFrame.Count; p++)
+                {
+                    NetMessage postMsg = postFrame[p];
+                    if (postMsg is GameEventMessage { DecodedEvent: RoundDecidedEvent decided })
+                    {
+                        // A second decision since the last freeze end is a round that never left
+                        // freeze time: a surrender vote passing in the freeze period, or a side
+                        // forfeiting with nobody left to play. round_number moves only on
+                        // round_freeze_end, so without one both decisions would land in the same
+                        // round row. Open the round first, with a synthesized freeze end on the
+                        // decision's frame, through the same reset a real one runs.
+                        if (_roundDecidedSinceFreezeEnd)
+                        {
+                            DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(new GameEvent(
+                                "round_freeze_end", -1, decided.FrameNumber, decided.ServerTick, decided.GameTick,
+                                new RoundFreezeEndEvent())));
+                        }
+
+                        _roundDecidedSinceFreezeEnd = true;
+                    }
+
+                    DispatchPostFrame(postMsg);
+                }
+            }
+
+            void DispatchPostFrame(NetMessage postMsg)
+            {
+                Type pKey = GetDispatchKey(postMsg);
+                Observer?.BeforeMessage(pKey);
+                if (postMsg is GameEventMessage pgem)
+                {
+                    MaterializeNewPlayers(pgem.DecodedEvent);
+                    snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                }
+
+                if (pKey == typeof(RoundFreezeEndEvent))
+                {
+                    ResetRoundScopedNodes(snap);
+                    snap?.MarkRoundScopedDirty(_roundScopedNodes);
+                }
+
+                int pEvaluated = 0, pFired = 0, pLogic = 0;
+                EvaluateEdgesInstrumented(new EvaluationContext(postMsg, frame), pKey,
+                    trace, ref pEvaluated, ref pFired,
+                    snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
+                CheckLogicNodesInstrumented(events, pKey, frameIdx, frame.ServerTick,
+                    trace, ref pLogic, snap);
+
+                FinishMessage(postMsg, pEvaluated, pFired, pLogic);
+                Observer?.AfterMessage();
             }
 
             if (timeFrame)
@@ -659,6 +765,7 @@ public sealed class StateGraphEvaluator
 
         FramesConsumed = frameIdx;
         MessagesConsumed = totalMessages;
+        Observer?.Finish();
 
         // A1: snapshot the collected highlight firings for this evaluation (copy — the graph's
         // sink is cleared by the NEXT evaluation over this graph, ours must stay stable).
@@ -1293,18 +1400,20 @@ public sealed class StateGraphEvaluator
 
     private void MaterializeNewPlayers(GameEvent gameEvent)
     {
-        if (_perPlayerTemplates.Count == 0)
+        // A build with no per-player template still registers each player's context when a
+        // ruleset built onto the graph needs live teams and alive state (StateGraph.TracksPlayers):
+        // without it a for: match build derived every round's winner from nobody alive.
+        if (_perPlayerTemplates.Count == 0 && !_graph.TracksPlayers)
         {
             return;
         }
 
         foreach (int slot in ExtractPlayerSlots(gameEvent))
         {
-            // 0..63 sentinel guard hoisted from ExtractPlayerSlots' per-case checks so every
-            // yielded slot is covered (-1 = no-player sentinel, >= 64 = 16-bit garbage; VictimSlot
-            // and PlayerSlot previously arrived unguarded and materialized phantom players).
-            // Must precede the seen-set add so sentinels never enter it. Mirrors the range check
-            // in MaterializeKnownPlayers.
+            // Only slots 0 to 63 are players: -1 is the no-player sentinel and anything from 64 up
+            // is 16-bit garbage. The check covers every slot ExtractPlayerSlots yields (VictimSlot
+            // and PlayerSlot once arrived unguarded and materialized phantom players), and it runs
+            // before the seen-set add so a sentinel never enters the set.
             if (slot is < 0 or >= 64)
             {
                 continue;
@@ -1428,6 +1537,7 @@ public sealed class StateGraphEvaluator
 
             _materializedPlayers.Add(result);
             _materializedNodeList.AddRange(result.Nodes);
+            Observer?.OnMaterialized(result);
             _materializedEdgeDescriptors.AddRange(result.EdgeDescriptors);
 
             if (EvaluatorEventSource.Log.IsEnabled())
@@ -1509,7 +1619,11 @@ public sealed class StateGraphEvaluator
         }
     }
 
-    private void RecomputeDirtyLogicNodes()
+    // A logic node this recompute switches off gets its snapshot column marked, like a flip in
+    // RecomputeLogicNode. Unmarked, a node that is not round-scoped itself but reads a round-scoped
+    // input (a per-match highlight over a per-round flag) kept its last `true` in every later
+    // snapshot row while the live node read false.
+    private void RecomputeDirtyLogicNodes(SnapshotState? snap)
     {
         foreach ((StateNode node, List<object> dependents) in _nodeToLogicDependents)
         {
@@ -1519,11 +1633,19 @@ public sealed class StateGraphEvaluator
                 {
                     cj.MarkInputsDirty();
                     cj.Recompute();
+                    if (!cj.IsActive)
+                    {
+                        snap?.MarkDirty(cj);
+                    }
                 }
                 else if (dep is DisjunctionNode { IsActive: true } dj)
                 {
                     dj.MarkInputsDirty();
                     dj.Recompute();
+                    if (!dj.IsActive)
+                    {
+                        snap?.MarkDirty(dj);
+                    }
                 }
             }
         }
@@ -1726,7 +1848,7 @@ public sealed class StateGraphEvaluator
 
     // ── Round-scoped reset ────────────────────────────────────────────────────
 
-    private void ResetRoundScopedNodes()
+    private void ResetRoundScopedNodes(SnapshotState? snap)
     {
         foreach (IRoundScopedNode node in _roundScopedNodes)
         {
@@ -1746,7 +1868,7 @@ public sealed class StateGraphEvaluator
             }
         }
 
-        RecomputeDirtyLogicNodes();
+        RecomputeDirtyLogicNodes(snap);
 
         RebuildLiveDispatchKeys();
 
@@ -1771,19 +1893,19 @@ public sealed class StateGraphEvaluator
     ///     knife round's kills, deaths and round win otherwise count into the real match's totals
     ///     (a 24-round match scored 14–11 across "25" rounds).
     ///     <para>
-    ///         Scope: per-player template nodes, round-scoped state, and
+    ///         Scope: per-player template nodes, the static nodes rulesets built onto the graph
+    ///         (<see cref="StateGraph.RuleNodes" />: <c>for: match</c> and <c>for: each_team</c>
+    ///         stats, restored to their build-time values), round-scoped state, and
     ///         <see cref="PlayerContextIndex" /> round state. Game-scoped built-in context rules
     ///         reset declaratively via their own <c>$match_start</c> triggers (see
-    ///         <c>BuiltinContexts</c>). Game-scoped v2 (<c>for: match</c>) stats are deliberately
-    ///         untouched — no baseline exists for them, and fabricating one is worse than
-    ///         documenting the gap.
+    ///         <c>BuiltinContexts</c>).
     ///     </para>
     /// </summary>
     private void ResetForMatchRestart(SnapshotState? snap)
     {
         // Round machinery first: round-scoped nodes, first-wins guards, and their logic
         // dependents re-arm exactly as at a round boundary.
-        ResetRoundScopedNodes();
+        ResetRoundScopedNodes(snap);
         snap?.MarkRoundScopedDirty(_roundScopedNodes);
 
         foreach ((StateNode node, Action restore) in _matchRestartBaselines)
@@ -1794,7 +1916,15 @@ public sealed class StateGraphEvaluator
             snap?.MarkDirty(node);
         }
 
-        RecomputeDirtyLogicNodes();
+        foreach ((StateNode node, Action restore) in _ruleNodeBaselines)
+        {
+            restore();
+            MarkLogicDependentsDirty(node);
+            MarkLiveComputeDirty(node);
+            snap?.MarkDirty(node);
+        }
+
+        RecomputeDirtyLogicNodes(snap);
         RebuildLiveDispatchKeys();
 
         _playerContextIndex?.ResetForMatchRestart();
@@ -2363,5 +2493,5 @@ public sealed record EvaluationResult(
     IReadOnlyList<GraphEdgeDescriptor> MaterializedEdgeDescriptors,
     // For each StateEdge that fired ≥ once, the sorted list of global message indices (into Messages
     // / MessageSnapshots) at which it applied. Drives edge graph-breakpoints — a clicked edge resolves
-    // to its StateEdge via BuildResult.EdgeBacking. Null/empty on the bench Evaluate path.
+    // to its StateEdge through its descriptor's Edge. Null/empty on the bench Evaluate path.
     IReadOnlyDictionary<StateEdge, List<int>>? AppliedMessagesByEdge = null);

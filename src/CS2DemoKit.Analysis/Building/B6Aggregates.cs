@@ -20,6 +20,12 @@ public static class B6RuleIds
     /// <summary><c>round.team.equipment</c> — freeze-end equipment sum for the subject's team.</summary>
     public const string TeamEquipment = "round_team_equipment";
 
+    /// <summary><c>round.team.money</c> — freeze-end cash sum for the subject's team.</summary>
+    public const string TeamMoney = "round_team_money";
+
+    /// <summary><c>round.enemies.money</c> — freeze-end cash sum for the opposing team.</summary>
+    public const string EnemiesMoney = "round_enemies_money";
+
     /// <summary><c>round.enemies.alive</c> — alive+connected players on the opposing team.</summary>
     public const string EnemiesAlive = "round_enemies_alive";
 
@@ -39,17 +45,20 @@ public static class B6RuleIds
     ///     The B6 member set (v2 dotted name → v1 rule id + rule type). <c>RuleType</c> uses the
     ///     catalog context-rule spelling: <c>"Counter"</c> (→ Int in the scope tree) for the integer
     ///     aggregates, <c>"Bool"</c> for the clutch facet. The digest-sampled economy members
-    ///     (<c>round.team.equipment</c> / <c>round.enemies.equipment</c>) are appended alongside their
-    ///     freeze-end maintenance edge so the catalog only ever exposes members the runtime can lower.
+    ///     (<c>round.team.equipment</c> / <c>round.enemies.equipment</c>, <c>round.team.money</c> /
+    ///     <c>round.enemies.money</c>) are appended alongside their freeze-end maintenance edge so the
+    ///     catalog only ever exposes members the runtime can lower.
     /// </summary>
     public static IReadOnlyList<B6Member> Members { get; } =
     [
         new("round.team.alive", TeamAlive, "Counter"),
         new("round.team.players", TeamPlayers, "Counter"),
         new("round.team.equipment", TeamEquipment, "Counter"),
+        new("round.team.money", TeamMoney, "Counter"),
         new("round.enemies.alive", EnemiesAlive, "Counter"),
         new("round.enemies.players", EnemiesPlayers, "Counter"),
         new("round.enemies.equipment", EnemiesEquipment, "Counter"),
+        new("round.enemies.money", EnemiesMoney, "Counter"),
         new("round.alive.in_clutch", AliveInClutch, "Bool"),
         new("round.clutch.size", ClutchSize, "Counter")
     ];

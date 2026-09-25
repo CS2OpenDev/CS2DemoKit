@@ -119,7 +119,7 @@ public sealed record AnalysisOptions
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
-/// <param name="Build">The compiled graph and its metadata (skeleton-render inputs, scanner, chain keys).</param>
+/// <param name="Build">The compiled graph and its metadata (nodes, descriptors, scanner, node maps).</param>
 /// <param name="Timeline">Every chain activation/deactivation, in both modes.</param>
 /// <param name="Snapshots">
 ///     The snapshot-mode result (per-message state rows, materialized players, applied-edge maps), or
@@ -140,6 +140,12 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 
     /// <summary>The demo's facts at the end of the run, detached from whichever source produced it.</summary>
     public required DemoDescriptor Demo { get; init; }
+
+    /// <summary>
+    ///     What a run without snapshots recorded for its configured tables, sampled at the round
+    ///     boundaries; null on a snapshot run, or when the build has no table to project.
+    /// </summary>
+    internal ProjectionSource? Recorded { get; init; }
 
     /// <summary>Which source, profile and digest producer ran, and how much was consumed.</summary>
     public required AnalysisProvenance Provenance { get; init; }
@@ -181,8 +187,14 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     ///     Optional match identifier for the <c>match_id</c> dimension (typically the demo filename);
     ///     omitted per row when null.
     /// </param>
+    /// <remarks>
+    ///     A snapshot run projects from its snapshot rows. A run without snapshots projects from what
+    ///     it recorded at the round boundaries, which reads the same state, so the tables agree row for
+    ///     row; the one exception is an output that logs timeline events (<see cref="OutputScope.PerEvent" />),
+    ///     which only a snapshot run can project.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">
-    ///     The run captured no snapshots. Projection reads the snapshot vectors.
+    ///     The run captured no snapshots and an output logs timeline events.
     /// </exception>
     public IReadOnlyList<MetricTable> ProjectConfiguredOutputs(DemoDescriptor demo, string? matchId = null)
     {
@@ -192,11 +204,16 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
             return [];
         }
 
-        if (Snapshots is null)
+        if (Snapshots is null && outputs.Any(o => o.Enabled && o.Scope == OutputScope.PerEvent))
         {
             throw new InvalidOperationException(
-                "Configured outputs require snapshot mode — run with AnalysisOptions.CaptureSnapshots = true.");
+                "A configured output that logs timeline events (per-event) requires snapshot mode — run with "
+                + "AnalysisOptions.CaptureSnapshots = true.");
         }
+
+        ProjectionSource? recorded = Snapshots is null
+            ? Recorded ?? new ProjectionSource([], null, MaterializedPlayers)
+            : null;
 
         List<MetricTable> tables = new(outputs.Count);
         foreach (OutputDef output in outputs)
@@ -208,9 +225,13 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 
             ConfiguredOutputProjector projector = new(output, Build.GameNodesByRuleId)
             {
-                MatchId = matchId
+                MatchId = matchId,
+                TeamNodesByRuleId = Build.TeamNodesByRuleId,
+                TeamRosterNodes = Build.TeamRosterNodes
             };
-            tables.AddRange(projector.Project(Snapshots, demo));
+            tables.AddRange(Snapshots is not null
+                ? projector.Project(Snapshots, demo)
+                : projector.Project(recorded!, demo));
         }
 
         return tables;
@@ -632,8 +653,16 @@ public static class DemoAnalysis
 
         RuleChainTimeline timeline;
         EvaluationResult? result = null;
+        ConfiguredOutputRecorder? recorder = null;
         if (!capture)
         {
+            // Without snapshots the configured tables are sampled at the round boundaries instead.
+            if (ConfiguredOutputRecorder.Serves(build))
+            {
+                recorder = new ConfiguredOutputRecorder(build);
+                evaluator.Observer = recorder;
+            }
+
             timeline = evaluator.Evaluate(source, options.MaxDegreeOfParallelism, options.CancellationToken);
         }
         else
@@ -646,6 +675,7 @@ public static class DemoAnalysis
 
         return new AnalysisRun(build, timeline, result)
         {
+            Recorded = recorder?.ToSource(),
             Highlights = evaluator.HighlightsFired,
             Demo = source.Enrichment.Snapshot(),
             MaterializedPlayers = evaluator.MaterializedPlayers,

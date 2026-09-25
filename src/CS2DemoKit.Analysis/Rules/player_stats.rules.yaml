@@ -238,9 +238,10 @@ stats:
     where: "event.UserId == player.slot"
     per: match
 
-  # ── Rounds survived: v1 counter on $round_end gated by context.player.alive ──
+  # ── Rounds survived: every round's close ($round_end) gated by player.alive ──
+  # round_ended, not round_won: round_won is bound to the rounds this player's team won.
   rounds_survived:
-    count: round_won
+    count: round_ended
     while: player.alive
     per: match
 
@@ -261,20 +262,22 @@ stats:
     match: { enemy: true }              # enrich.blind.was_enemy_flash
     per: match
 
-  # ── Clutch win (v1 counter on $round_end; enrichment gate + winner slot, no view/facet) ──
+  # ── Clutch win (every round's close; enrichment gate + winner slot, no view/facet) ──
   clutch_won:
-    count: round_won
+    count: round_ended
     where: "enrich.clutch.was_clutch_won && enrich.clutch.winner_slot == player.slot"
     per: match
 
-  # ── Round wins (side-aware; round_end enrichments winner_side/winner_team, player.team) ──
+  # ── Round wins and losses (side-aware). round_won counts the rounds this player's team won and
+  # round_lost the rounds it lost (the view compares the round's winner with the player's live
+  # team); the where: picks the side the player was on. ──
   CTWins:
     count: round_won
     where: "enrich.round.has_winner && enrich.round.winner_team == player.team && enrich.round.winner_side == 3"
     per: match
 
   CTLosses:
-    count: round_won
+    count: round_lost
     where: "enrich.round.has_winner && enrich.round.winner_team != player.team && enrich.round.winner_side == 2"
     per: match
 
@@ -284,7 +287,7 @@ stats:
     per: match
 
   TLosses:
-    count: round_won
+    count: round_lost
     where: "enrich.round.has_winner && enrich.round.winner_team != player.team && enrich.round.winner_side == 3"
     per: match
 

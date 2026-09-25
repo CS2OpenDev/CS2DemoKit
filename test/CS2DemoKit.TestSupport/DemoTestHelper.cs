@@ -18,7 +18,10 @@ namespace CS2DemoKit.TestSupport;
 ///         <b>Discovery order</b> (first match wins):
 ///         <list type="number">
 ///             <item>The <c>DEMO_PATH</c> environment variable, if it points at an existing file.</item>
-///             <item><see cref="ReferenceDemoFileName" />, wherever the named-file lookup finds it.</item>
+///             <item>
+///                 <see cref="ReferenceDemoFileName" />, wherever the named-file lookup finds it. The
+///                 named lookup also reads the folder <see cref="CorpusDirectoryVariable" /> names.
+///             </item>
 ///             <item>The first <c>*.dem</c> by ordinal filename under <c>TestData/</c> next to the test assembly.</item>
 ///             <item>
 ///                 The first <c>*.dem</c> by ordinal filename under <c>&lt;repo-root&gt;/demos/benchmarks/</c>
@@ -249,6 +252,18 @@ public static class DemoTestHelper
             }
         }
 
+        // 2b. The opt-in corpus folder outside the repo. Named lookup only: a demo named outright
+        // cannot redirect a test that asked for whatever is present, so this never feeds the
+        // first-sorted fallback in FindDemoPath().
+        if (CorpusDirectory() is { } corpus)
+        {
+            string direct = Path.Combine(corpus, filename);
+            if (File.Exists(direct))
+            {
+                return direct;
+            }
+        }
+
         // 3. tests/assets, unconditionally rather than behind AllowSampleDemo. That flag governs
         // whether the sample may be SUBSTITUTED for an absent full match; naming a file outright is
         // not a substitution, so it cannot silently redirect anything.
@@ -284,6 +299,23 @@ public static class DemoTestHelper
             $"Required demo '{filename}' was not found. " +
             $"Place it under <repo-root>/demos/ (recursive lookup) or " +
             $"under TestData/ next to the test assembly.");
+
+    /// <summary>
+    ///     The environment variable naming a demo folder outside the repository, such as the Steam
+    ///     replays folder, for runs that need demos the repo's <c>demos/</c> tree does not hold.
+    /// </summary>
+    public const string CorpusDirectoryVariable = "CS2DEMOKIT_CORPUS_DIR";
+
+    /// <summary>
+    ///     The folder <see cref="CorpusDirectoryVariable" /> names, or null when it is unset or does not
+    ///     exist. The folder is only ever read: tests enumerate and open demos in it and never write,
+    ///     move or delete anything there, because it is usually somebody's real replays folder.
+    /// </summary>
+    public static string? CorpusDirectory()
+    {
+        string? dir = Environment.GetEnvironmentVariable(CorpusDirectoryVariable);
+        return !string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) ? dir : null;
+    }
 
     /// <summary>
     ///     The committed sample demo: a four-round <c>de_nuke</c> trim, small enough to live in git.

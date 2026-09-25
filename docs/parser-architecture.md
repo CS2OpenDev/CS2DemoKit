@@ -414,6 +414,35 @@ The parser's own `Models/` directory holds only `SubTickEvent.cs`,
 `SubTickExtractor.cs`, `TickGroup.cs` — see
 [`Models/SubTickExtractor.cs`](../src/CS2DemoKit.Parser/Models/SubTickExtractor.cs).
 
+`SubTickExtractor` reads commands through
+[`EntityTracking/UserCmdReconstructor.cs`](../src/CS2DemoKit.Parser/EntityTracking/UserCmdReconstructor.cs),
+which sits in `EntityTracking` because, like the tracker, it keeps per-slot
+state across frames. Since build 10896 almost every `CMsgServerUserCmd`
+carries `delta_data` against the same slot's previous command rather than a
+full `data` message. The reconstructor keeps each slot's latest command and
+applies each delta to a copy through
+[`UserCmdDelta.cs`](../src/CS2DemoKit.Parser/EntityTracking/UserCmdDelta.cs),
+a port of demoinfocs-golang's merge for Valve's `codegen_delta_encoder`
+format (wire type 7 resets a field, repeated message fields are patched by
+index). Commands inside a `DEM_FullPacket` are snapshots of each slot's
+latest command: they prime a slot that is empty or behind (which is what
+lets a seek start at a full packet), are compared with the rebuild when
+they repeat it, and are never emitted. A delta with no baseline is counted
+and skipped, never decoded against defaults. The parse path is untouched:
+the user-command store keeps the raw payloads, and only a consumer that asks
+for input pays for the rebuild.
+
+Issue #53 also asked for a delta-share counter in the parse diagnostics, so
+that "no input" could be told apart from "input not decoded". It was left out
+on purpose. The parser never looks inside a payload, and counting deltas
+would mean walking every command's wire bytes on every parse, including the
+many that never read input. Nor is it a warning: the parser loses nothing, it
+stores every payload as before. The two questions it was meant to answer have
+answers without it: `DemoFrame.UserCmdsPayloadCount` says whether a demo
+carries input at all, and `UserCmdReconstructor.Stats` says how much of it
+arrived as deltas (`Delta` against `Full`) and how much was not rebuilt
+(`MissingBaseline`, `DecodeFailed`, `OutOfOrder`).
+
 ---
 
 ## 4. Bit-level primitives
@@ -625,6 +654,19 @@ in place. The tree is built once at static-class init.
 has a `null` Reader — that's the sentinel meaning "no more field paths in this
 entity".
 
+`EntityTracker.CollectFieldPaths` reads ops until that finish op, up to
+`EntityTracker.MaxFieldPaths` (16,384) paths per update. Going over the cap
+throws `InvalidDataException`, which reaches `LastEntityError` and
+`DecodeErrorRaised` like any other entity decode error; it never truncates.
+The largest real update is the `CSmokeGrenadeProjectile` instancebaseline,
+3,214 to 3,482 paths (builds 10231 and 10896), almost all of them
+`m_VoxelFrameData` elements; the other projectile baselines carry 134 or 135
+and nothing else measured goes above 1,500. Until 0.13.0 the cap was 2,048
+and hitting it stopped collection silently, so the smoke baseline's values
+were read from bits that were really path ops. The cap still has to exist:
+`BitBuffer` reads zeros past its end, and the all-zero code is `PlusOne`, so a
+misaligned stream would never reach a finish op.
+
 ### `FieldDecoder` and `FieldDecoderFactory`
 
 [`FieldDecoder.cs`](../src/CS2DemoKit.Parser/EntityTracking/FieldDecoder.cs)
@@ -648,7 +690,13 @@ The factory handles every CS2 wire-encoded scalar type:
   (bc<32 quantised, bc≥32 raw — the raw case is easy to get wrong and
   produces plausible-looking garbage when you do).
 - Complex (boxed) — strings, `Vector`/`QAngle`, `Color`, encoder-specific
-  paths (`coord`, `simtime`, `runetime`).
+  paths (`coord`, `simtime`, `runetime`, `minusone`).
+
+Some fields carry an `MNetworkSerializer` attribute that the flattened-serializer
+proto never sends, so the factory fills the encoder in from a small name-keyed
+table: `m_flSimulationTime`/`m_flAnimTime` → `simtime`, `m_iClip1`/`m_iClip2` → `minusone`
+(an unsigned varint holding value + 1). A proto-declared encoder always wins. The engine also marks
+`m_hSequence` `minusone`; it is not in the table, so it reads one high, and nothing here reads it.
 
 ### `EntitySet` and `EntityState`
 
@@ -1053,6 +1101,10 @@ Direct ports of demofile-net code (MIT) in our parser:
 | [`HuffmanNode.cs`](../src/CS2DemoKit.Parser/EntityTracking/HuffmanNode.cs) | adapted |
 | [`FieldDecoderFactory.cs`](../src/CS2DemoKit.Parser/EntityTracking/FieldDecoderFactory.cs) | adapted from `FieldDecode.cs` |
 | `EntityTracker.cs` | adapted from `DemoParser.Entities.cs` |
+
+One file is ported from [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang)
+(MIT) instead: [`UserCmdDelta.cs`](../src/CS2DemoKit.Parser/EntityTracking/UserCmdDelta.cs),
+from `pkg/demoinfocs/s2_usercmd_delta.go`.
 
 `THIRD-PARTY-NOTICES.md` at the repo root carries the authoritative
 attribution and file list.

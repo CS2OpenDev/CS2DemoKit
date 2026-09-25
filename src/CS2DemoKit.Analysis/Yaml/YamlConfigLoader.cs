@@ -233,10 +233,7 @@ public static class YamlConfigLoader
         foreach (RuleConfigError collision in FindShowColumnCollisions(merged, userIds))
         {
             errors.Add(collision);
-            if (collision.FilePath is { } file && loadedFiles.Remove(file))
-            {
-                failedFiles.Add(file);
-            }
+            MoveToFailed(collision.FilePath, loadedFiles, failedFiles);
         }
 
         return new RuleConfigLoadResult(errors, loadedFiles, failedFiles)
@@ -357,37 +354,33 @@ public static class YamlConfigLoader
             }
 
             int errorsBefore = errors.Count;
-
-            RulesetDocumentLoader.Outcome? v2 = RulesetDocumentLoader.TryLoad(yaml, label);
-            if (v2 is null)
+            IReadOnlyList<(int Index, YamlNode Root)> documents;
+            try
             {
-                // Not a `ruleset:` document. Classify for a legible error: a YAML syntax error
-                // is reported with its position; the retired v1 format (`chains:`/`outputs:`)
-                // gets its own explicit diagnostic so a pre-existing v1 overlay file fails
-                // loudly, never silently.
-                AppendNonRulesetError(yaml, label, errors);
+                documents = RulesetDocumentLoader.ParseDocuments(yaml);
+            }
+            catch (YamlException ex)
+            {
+                errors.Add(new RuleConfigError(label, ex.InnerException?.Message ?? ex.Message,
+                    Line: (int)ex.Start.Line, Column: (int)ex.Start.Column));
                 failedFiles.Add(label);
                 continue;
             }
 
-            foreach (RulesetDiagnostic diagnostic in v2.Diagnostics)
+            if (documents.Count == 0)
             {
-                errors.Add(ToRuleConfigError(label, diagnostic, v2.Doc?.Id));
+                AppendNonRulesetError(null, label, errors);
+                failedFiles.Add(label);
+                continue;
             }
 
-            if (v2.Doc is not null)
+            // Each '---' document is its own ruleset with its own error containment: a broken
+            // document contributes errors and the others still load. Documents after the first
+            // are labelled "file#N" so an error names the document it came from.
+            foreach ((int index, YamlNode root) in documents)
             {
-                if (rulesetIdToFile.TryGetValue(v2.Doc.Id, out string? firstRulesetFile))
-                {
-                    errors.Add(new RuleConfigError(label,
-                        $"duplicate ruleset id '{v2.Doc.Id}' (first defined in {Path.GetFileName(firstRulesetFile)})",
-                        v2.Doc.Id));
-                }
-                else
-                {
-                    rulesetIdToFile[v2.Doc.Id] = label;
-                    allRulesets.Add(v2.Doc);
-                }
+                string documentLabel = index == 1 ? label : $"{label}#{index}";
+                LoadDocument(root, documentLabel, errors, allRulesets, rulesetIdToFile);
             }
 
             (errors.Count == errorsBefore ? loadedFiles : failedFiles).Add(label);
@@ -398,16 +391,44 @@ public static class YamlConfigLoader
         foreach (RuleConfigError collision in FindShowColumnCollisions(allRulesets))
         {
             errors.Add(collision);
-            if (collision.FilePath is { } file && loadedFiles.Remove(file))
-            {
-                failedFiles.Add(file);
-            }
+            MoveToFailed(collision.FilePath, loadedFiles, failedFiles);
         }
 
         return new RuleConfigLoadResult(errors, loadedFiles, failedFiles)
         {
             Rulesets = allRulesets
         };
+    }
+
+    /// <summary>
+    ///     Moves the file an error names from <paramref name="loadedFiles" /> to
+    ///     <paramref name="failedFiles" />. An error in a document after the first carries that
+    ///     document's <c>file#N</c> label, while the file lists hold the file itself, so a label not
+    ///     found as written is retried without its <c>#N</c> suffix.
+    /// </summary>
+    private static void MoveToFailed(string? label, List<string> loadedFiles, List<string> failedFiles)
+    {
+        if (label is null)
+        {
+            return;
+        }
+
+        string file = label;
+        if (!loadedFiles.Contains(file))
+        {
+            int hash = label.LastIndexOf('#');
+            if (hash <= 0 || hash == label.Length - 1 || label.AsSpan(hash + 1).ContainsAnyExceptInRange('0', '9'))
+            {
+                return;
+            }
+
+            file = label[..hash];
+        }
+
+        if (loadedFiles.Remove(file))
+        {
+            failedFiles.Add(file);
+        }
     }
 
     /// <summary>
@@ -700,31 +721,61 @@ public static class YamlConfigLoader
     }
 
     /// <summary>
-    ///     Produces the attributed error for a file that is not a <c>ruleset:</c> document:
-    ///     a YAML syntax error (with position), the retired v1 format (<c>chains:</c> /
-    ///     <c>outputs:</c> — its own explicit diagnostic), or a generic not-a-ruleset error.
+    ///     Loads one parsed document of a source: classifies a non-ruleset document, attributes
+    ///     every diagnostic to <paramref name="label" />, and dedupes the ruleset id across the
+    ///     whole load unit.
     /// </summary>
-    /// <param name="yaml">The file contents.</param>
-    /// <param name="file">The absolute file path.</param>
-    /// <param name="errors">The error list to append to.</param>
-    private static void AppendNonRulesetError(string yaml, string file, List<RuleConfigError> errors)
+    private static void LoadDocument(
+        YamlNode root,
+        string label,
+        List<RuleConfigError> errors,
+        List<RulesetDoc> allRulesets,
+        Dictionary<string, string> rulesetIdToFile)
     {
-        YamlMappingNode? root;
-        try
+        RulesetDocumentLoader.Outcome? v2 = RulesetDocumentLoader.TryLoadRoot(root, label);
+        if (v2 is null)
         {
-            YamlStream stream = [];
-            using StringReader reader = new(yaml);
-            stream.Load(reader);
-            root = stream.Documents.Count > 0 ? stream.Documents[0].RootNode as YamlMappingNode : null;
-        }
-        catch (YamlException ex)
-        {
-            errors.Add(new RuleConfigError(file, ex.InnerException?.Message ?? ex.Message,
-                Line: (int)ex.Start.Line, Column: (int)ex.Start.Column));
+            // Not a `ruleset:` document. The retired v1 format (`chains:`/`outputs:`) gets its
+            // own explicit diagnostic so a pre-existing v1 overlay file fails loudly, never
+            // silently.
+            AppendNonRulesetError(root, label, errors);
             return;
         }
 
-        if (root is not null && root.Children.Keys.OfType<YamlScalarNode>()
+        foreach (RulesetDiagnostic diagnostic in v2.Diagnostics)
+        {
+            errors.Add(ToRuleConfigError(label, diagnostic, v2.Doc?.Id));
+        }
+
+        if (v2.Doc is null)
+        {
+            return;
+        }
+
+        if (rulesetIdToFile.TryGetValue(v2.Doc.Id, out string? firstRulesetFile))
+        {
+            errors.Add(new RuleConfigError(label,
+                $"duplicate ruleset id '{v2.Doc.Id}' (first defined in {Path.GetFileName(firstRulesetFile)})",
+                v2.Doc.Id));
+        }
+        else
+        {
+            rulesetIdToFile[v2.Doc.Id] = label;
+            allRulesets.Add(v2.Doc);
+        }
+    }
+
+    /// <summary>
+    ///     Produces the attributed error for a document that is not a <c>ruleset:</c> document:
+    ///     the retired v1 format (<c>chains:</c> /
+    ///     <c>outputs:</c> — its own explicit diagnostic), or a generic not-a-ruleset error.
+    /// </summary>
+    /// <param name="root">The document root, or <c>null</c> when the file holds no document.</param>
+    /// <param name="file">The file path or document label.</param>
+    /// <param name="errors">The error list to append to.</param>
+    private static void AppendNonRulesetError(YamlNode? root, string file, List<RuleConfigError> errors)
+    {
+        if (root is YamlMappingNode map && map.Children.Keys.OfType<YamlScalarNode>()
                 .Any(k => k.Value is "chains" or "outputs"))
         {
             errors.Add(new RuleConfigError(file,

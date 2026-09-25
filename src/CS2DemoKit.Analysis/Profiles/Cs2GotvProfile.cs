@@ -206,6 +206,14 @@ public class Cs2GotvProfile : DemoSourceProfile
         LogicalEventBinding.Of("player_team");
 
     /// <inheritdoc />
+    public override LogicalEventBinding? RoundDecided =>
+        // Synthesized by EntityChangeScanner from CCSGameRules.m_iRoundWinStatus, so every source
+        // that records the game-rules entity carries it; bound here and inherited by every profile.
+        // Not a replacement for $round_end: that stays the round's close, which every round-end
+        // stat (survived, KAST) is timed on.
+        LogicalEventBinding.Of("round_decided");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? RoundEnd =>
         // Final round of a match has no round_officially_ended; cs_win_panel_match
         // (Valve's match-summary marker) serves as the terminal fallback for

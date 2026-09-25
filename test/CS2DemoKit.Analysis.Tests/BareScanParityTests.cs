@@ -39,10 +39,10 @@ public class BareScanParityTests
         string snapshotDigest = ForwardPathParityTests.RunDigest.Render(snapshot);
         string bareAgainDigest = ForwardPathParityTests.RunDigest.Render(bareAgain);
 
-        // The snapshot rendering has a [tables] tail the bare one cannot; everything before it must match.
-        int tables = snapshotDigest.IndexOf("[tables]", StringComparison.Ordinal);
-        await Assert.That(tables).IsGreaterThan(0);
-        await Assert.That(bareDigest).IsEqualTo(snapshotDigest[..tables]);
+        // The configured tables included: the bare run projects them from what it recorded at the
+        // round boundaries, the snapshot run from its rows, and they must agree.
+        await Assert.That(snapshotDigest).Contains("[tables]");
+        await Assert.That(bareDigest).IsEqualTo(snapshotDigest);
         await Assert.That(bareAgainDigest).IsEqualTo(bareDigest)
             .Because("a second evaluation over one build must not start from the first run's terminal state");
 

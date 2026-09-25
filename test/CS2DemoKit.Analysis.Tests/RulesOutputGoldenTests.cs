@@ -32,7 +32,17 @@ public class RulesOutputGoldenTests
 {
     private const string UpdateVariable = "CS2DEMOKIT_UPDATE_RULES_GOLDEN";
 
-    /// <summary>Every <c>.dem</c> under the repo's <c>demos/</c> tree, ordered for determinism.</summary>
+    /// <summary>
+    ///     Every <c>.dem</c> under the repo's <c>demos/</c> tree, ordered for determinism, followed by
+    ///     the demos in the <see cref="DemoTestHelper.CorpusDirectoryVariable" /> folder that have a
+    ///     rules-output fixture.
+    ///     <para>
+    ///         The outside folder is filtered to fixtures because it is usually a Steam replays folder
+    ///         holding hundreds of demos: pointing the variable at it re-drives the pinned set, and
+    ///         does not write a fixture for every unrelated match when goldens are regenerated. The
+    ///         folder is only enumerated; nothing in it is written, moved or deleted.
+    ///     </para>
+    /// </summary>
     public static IEnumerable<string> CorpusDemos()
     {
         string? root = RepoRoot();
@@ -41,17 +51,33 @@ public class RulesOutputGoldenTests
             yield break;
         }
 
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
         string demos = Path.Combine(root, "demos");
-        if (!Directory.Exists(demos))
+        if (Directory.Exists(demos))
+        {
+            foreach (string path in Directory.EnumerateFiles(demos, "*.dem", SearchOption.AllDirectories)
+                         .OrderBy(p => p, StringComparer.Ordinal)
+                         .Take(25))
+            {
+                seen.Add(Path.GetFileName(path));
+                yield return path;
+            }
+        }
+
+        if (DemoTestHelper.CorpusDirectory() is not { } corpus)
         {
             yield break;
         }
 
-        foreach (string path in Directory.EnumerateFiles(demos, "*.dem", SearchOption.AllDirectories)
-                     .OrderBy(p => p, StringComparer.Ordinal)
-                     .Take(25))
+        string fixtures = Path.Combine(root, "tests", "fixtures", "rules-output");
+        foreach (string path in Directory.EnumerateFiles(corpus, "*.dem", SearchOption.TopDirectoryOnly)
+                     .OrderBy(p => p, StringComparer.Ordinal))
         {
-            yield return path;
+            if (!seen.Contains(Path.GetFileName(path))
+                && File.Exists(Path.Combine(fixtures, Path.GetFileNameWithoutExtension(path) + ".digest.txt")))
+            {
+                yield return path;
+            }
         }
     }
 

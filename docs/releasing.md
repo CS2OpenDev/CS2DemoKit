@@ -101,9 +101,10 @@ its packaging exercised before the tag exists.
 ## Compatibility notes worth carrying into a release
 
 These are the changes a consumer cannot see in a version number. Add to the list rather than
-rewriting it; each entry names the version the change first ships in. For 0.12.0 the entries are
-the reference; the order a consumer meets them in, with the code to write, is
-[`migrating-to-0.12.md`](migrating-to-0.12.md).
+rewriting it; each entry names the version the change first ships in. The entries are the
+reference; the order a consumer meets them in, with the code to write, is
+[`migrating-to-0.12.md`](migrating-to-0.12.md) for 0.12.0 and
+[`migrating-to-0.13.md`](migrating-to-0.13.md) for 0.13.0.
 
 ### `CatalogEnrichment` gained two positional parameters (0.11.0)
 
@@ -342,6 +343,327 @@ reads a handle without boxing. `EntityTracker.StoreUnlensedFields`, off in the a
 drops the fallback dictionary for fields no lens rule names, and `AdoptSchemaState` shares one
 parsed schema between trackers.
 
+### `m_iClip1` decodes with the minusone serializer (0.13.0)
+
+Through 0.12.0, `m_iClip1` was read as a zigzag varint. The engine sends it with the `minusone`
+serializer, an unsigned varint holding clip + 1, so every reader got the zigzag reading of clip + 1:
+the value alternated in sign, came out one high in magnitude, and a knife read 0. That covers
+`EntityState` reads of the field, the SDK's `BasePlayerWeapon.Clip1` and the
+`player.active_weapon_clip` column (`entity.pawn.active_weapon_clip`). They now return the rounds in
+the magazine, with -1 for a weapon that has none (knives, grenades, the C4) and 0 for an empty
+magazine. There is no compile error to flag it: a rule written against the old numbers changes
+meaning, and per-pawn digests or outputs cached from 0.12 differ on this column. Row and cell counts
+do not change, because both readings are one-to-one on the same wire value and change on the same
+frames.
+
+`m_iClip2` uses the same serializer and gets the same fix. No CS2 weapon has a secondary clip, so
+it read 0 on every weapon through 0.12.0 and reads -1 now. Only `EntityState` reads of the field and
+the SDK's `BasePlayerWeapon.Clip2` see it; no built-in column or provider reads it.
+
+### `SubTickExtractor` rebuilds `delta_data` commands (0.13.0)
+
+Since build 10896 servers send about 99.8% of user commands as `CMsgServerUserCmd.delta_data`
+against the player's previous command. Through 0.12.0 `SubTickExtractor.Extract` parsed `data`
+only and skipped the rest without a word, so on a current demo it returned the keyframes' moves:
+15 events on a build-10896 matchmaking demo that now gives 60,503. It also treated the command
+snapshots that current `DEM_FullPacket` frames carry as new input and counted each of them twice;
+those now produce no events. Demos from before the switch (all `data`, no snapshots) give the same
+events as before. The event shape and the sort by `When` are unchanged, but anything calibrated on
+0.12.0 counts from a current demo sees different numbers.
+
+Decode failures used to be swallowed by a catch-all; they are now counted. New public types:
+`UserCmdReconstructor`, `ReconstructedUserCmd`, `UserCmdApplyStatus` and
+`UserCmdReconstructionStats` in `CS2DemoKit.Parser.EntityTracking`, and an
+`Extract(IEnumerable<DemoFrame>, UserCmdReconstructor)` overload that exposes the stats. Nothing
+was removed. `DecodeProvenance`, the `ParseWarning` catalogue and the parse itself are unchanged:
+the raw payloads are stored as before, and only callers that ask for input pay for the rebuild
+(about 2 to 2.5 s on a full current demo). There is no delta-share counter in the parse
+diagnostics; `UserCmdReconstructor.Stats` carries the delta share, and
+`docs/parser-architecture.md` says why the parse does not count it.
+
+### `round_won` and `round_lost` filter by team (0.13.0)
+
+`views.yaml` has always said `round_won` fires for the players whose live team won the round and
+`round_lost` for the rest. Through 0.12.0 the planner never applied that binding: both views fired
+for every player at every round end, so `count: round_won` counted every round. A ruleset that
+counted losses as `count: round_won` with a `where:` naming the other team as the winner, as the
+shipped `player_stats` did for `CTLosses` / `TLosses` and the `save_rounds` example did, now reads
+0; count `round_lost` instead. A stat about the round rather than its result ("rounds survived")
+counts the new `round_ended` view, which fires for everyone as the unbound `round_won` did. The
+shipped rulesets are migrated and the binding moves none of their values, but the resolved-identity
+hashes of the four migrated stats change with their view, so a cache keyed on those hashes (a
+highlight fingerprint that reaches them) rebuilds once. Their values do move on a round the server
+decides differently from the old derivation, such as a surrender; see the `round_decided` entry
+below. At `for: match` both views stay unbound.
+A subject on neither side (team 0, a slot whose team was never seen, or team 1, a spectator, coach
+or caster) reads neither view: the winner is always 2 or 3, so `round_lost` also requires the
+subject to be on 2 or 3.
+
+### `for: match` stats reset per round, and restart with the match (0.13.0)
+
+A `per: round` stat in a `for: match` ruleset never reset through 0.12.0: it read the match total.
+It now resets at each freeze end, and every `for: match` stat returns to its build-time value on a
+repeated `begin_new_match`, as a per-player stat always has. A match-only build also tracks players
+now (it forces the entity scanner, as an each_player build already did), so its enrichments see live
+teams: a match-only round-end winner used to be derived from nobody alive and read CT every round.
+No shipped ruleset is `for: match`; a user ruleset that is gets different, correct numbers.
+
+### A `show:` table must match its ruleset's scope (0.13.0)
+
+A table whose `per:` does not belong to the ruleset's `for:` (`player_round` / `player_match` in
+`for: each_player`, `team_round` / `team_match` in `for: each_team`, `match` in `for: match`)
+validated and projected zero rows through 0.12.0. It is now a validation error,
+`resolve.show.table-scope-mismatch`, and a `show: scoreboard` outside `for: each_player` is one too,
+`resolve.show.scoreboard-scope`, where it used to throw at build. Composition drops the ruleset, as
+for any other error.
+
+### `for: each_team`, and the public types that grew for it (0.13.0)
+
+A third scope builds a ruleset once per side. Additions a consumer compiled against 0.12.0 meets:
+
+- `RulesetScope.EachTeam`; `OutputScope.PerTeamPerRound` and `PerTeamPerGame`; in
+  `CS2DemoKit.Analysis.Rules`, `ScopeAxis.TeamRound` and `TeamMatch`. A `switch` over any of these
+  enums that throws on an unknown member throws on the new ones. The hasher names the axes, so every
+  existing resolved-identity hash is unchanged.
+- `MetricRef` gained an optional positional parameter, `TickClock Clock = TickClock.None`: the
+  binary, source and equality consequences described under `CatalogEnrichment` above apply.
+- `MetricTable.ColumnClocks`, `BuildResult.TeamNodesByRuleId`, `TeamRosterNodes` and
+  `RoundBoundaryTypes`, `ConfiguredOutputProjector.TeamNodesByRuleId` and `TeamRosterNodes`, and
+  `CheckedStat.Clock` are init-only or trailing optional members; `CheckedStat` is a positional
+  record, so its constructor changed shape too.
+- `EntityProviderReference` gained a trailing positional parameter, `bool IsSingleton = false`, for
+  the singleton reads described below: its constructor and `Deconstruct` changed shape, and the
+  binary, source and equality consequences described under `CatalogEnrichment` above apply.
+- New resolve codes: `resolve.show.table-scope-mismatch`, `resolve.show.scoreboard-scope`,
+  `resolve.team-scope.unsupported`. The last covers the clutch reads (`round.alive.in_clutch`,
+  `round.clutch.size`) in any stat, a `tally:` source included, and a read of another ruleset's
+  stat anywhere but `compute:`. A team ruleset's `compute:` reads a `for: match` or another
+  `for: each_team` ruleset's stat; in a `where:`, `while:`, `capture:`, `sum:`, `tally:` or bucket
+  key the read used to validate clean and throw at build.
+- New with the round facts (#61), all additions: `RoundDecidedEvent` in `CS2DemoKit.Analysis.Events`;
+  `RoundDecidedEdge`, `BombPlantSiteEdge` and `SideRosterFreezeEndEdge` in
+  `CS2DemoKit.Analysis.Edges`; `RoundFactIds` in `CS2DemoKit.Analysis.Building`;
+  `CCSGameRulesRoundWinStatusMarker`, `CCSGameRulesRoundWinReasonMarker`,
+  `CCSGameRulesTotalRoundsPlayedMarker`, `CCSGameRulesGamePhaseMarker`,
+  `CCSGameRulesBombPlantedMarker` and `CCSGameRulesRoundTimeMarker` in
+  `CS2DemoKit.Analysis.Plugins.Markers`. A consumer type with one of these names hits CS0104 when
+  it imports the namespace. Members: `BuiltinProviderSpecs.ControllerMoney`, `GameRoundWinStatus`,
+  `GameRoundWinReason`, `GameTotalRoundsPlayed`, `GameGamePhase`, `GameBombPlanted`,
+  `GameRoundTime` and `CreateGameRulesProviders()`; `PlayerContextIndex.DecidedWinnerSide` and
+  `DecidedReason`; and `EntityChangeScanner.PostFrameMessages`, the messages to dispatch after a
+  polled frame's own, so a host that walks the scanner itself with `AdvanceAndPollAt` must read it
+  after each poll to see `round_decided`. `DemoSourceProfile.RoundDecided` is a new virtual that
+  returns null; the built-in profiles bind it through `Cs2GotvProfile`, and a profile that derives
+  `DemoSourceProfile` directly leaves the `round_decided` view unbound until it overrides it (the
+  round-end winner still latches from the synthesized event, which does not go through the
+  binding). In the rules language: the `match.*` game-rules singletons (`round_win_status`,
+  `round_win_reason`, `total_rounds_played`, `game_phase`, `bomb_planted`, `round_time`),
+  `round.bomb.site`, `plant_place` and `site_entity`, `round.team.money` and `round.enemies.money`,
+  and `player.money`.
+
+### Configured tables project without snapshots (0.13.0)
+
+`AnalysisRun.ProjectConfiguredOutputs` threw on a run without snapshots through 0.12.0. It now
+projects from what the run recorded at each round boundary, which is the state a snapshot run's
+round rows hold, so the tables agree row for row. Only a per-event output (a timeline log) still
+throws without snapshots. A snapshot run projects as before, with one correction: a logic node
+switched off by a round reset now marks its snapshot column, where it used to keep its last `true`
+in every later row. kast's `KASTRounds` table cell is one such node, and at the end of a match it
+now reads null for a player whose last round had no KAST, rather than a stale `true`: 45 cells over
+the fifteen fixture demos, 12 on the five first measured and 33 on the other ten (#65).
+
+### The round's winner is the server's, and `round_decided` is new (0.13.0)
+
+The round-end enrichment (`enrich.round.winner_side` / `winner_team` / `has_winner`) reports the
+winner the game rules declared, latched from the new synthesized `round_decided` event, and derives
+one from bomb state and alive counts only when there is no entity scanner or no win-status provider.
+The two differ on a round the derivation cannot see, such as a surrender or a draw, and there stat
+values move. On the fifteen fixture demos that is one round (#65): round 13 of
+`..._0665775997_405` ends in a CT surrender (reason 18, win status 2). The derivation read a CT win
+from alive counts, where the server's verdict is a T win, so `CTWins`, `TWins`, `CTLosses` and
+`TLosses` each move by one for five players, and the final `enrich.round.winner_side` and
+`winner_team` go from 3 to 2. No table row moves, because none of the four is projected. On every
+other round of those demos the two agreed. `round_decided` is dispatched after the frame's own
+messages, a new ordering special case in the evaluator: it follows the kill that decided the round
+when both arrive in one frame. `$round_end` is unchanged and still the round's close.
+
+The three game-rules providers it reads (`entity.game.round_win_status`, `round_win_reason`,
+`total_rounds_played`) are tracked whenever a scanner is built, and `enrich.round.win_reason` is new,
+so every build carries four more static nodes: the rules-output fixtures moved by `nodeCount + 4` and
+their hash, and a consumer that counts `BuildResult.Nodes` or snapshot columns sees them. One that no
+rule reads is tracked silently: its node updates, but no change marker is dispatched for it, so the
+only new messages are the `round_decided` events themselves (three on the sample, one per decided
+round), each of which adds one to `MessagesConsumed` and, on a snapshot run, one snapshot row.
+
+A round the server decides without a freeze end (a surrender vote passing in freeze time, or a side
+with nobody left to play) is opened at its decision: when a second `round_decided` arrives with no
+`round_freeze_end` since the first, the evaluator dispatches a synthesized `round_freeze_end` on the
+decision's frame just before it. `round.number` moves only on a freeze end, so without that the
+round's decision and close landed in the previous round's rows (a side's `round_won` read 2 and the
+other's `round_lost` 2), and on a demo where it happens mid-match every later round was numbered one
+short of the server's `m_totalRoundsPlayed`. It happens on 8 of the 282 matchmaking demos measured
+(reasons 17 and 18, the surrenders, and 8 on the mid-match one). A rule that counts
+`raw.round_freeze_end` sees the synthesized one, and the round-scoped reset, the freeze-end economy
+and the side rosters run on it as on a real one. On a demo with no such round nothing changes.
+
+`RoundEndEnrichmentEdge` writes the reason too, so its constructor gained a required parameter,
+`TransientValueNode<int> winReason`, between `winnerSide` and `messageType`. Code that constructs the
+edge itself no longer compiles against 0.13.0, and a binary built against 0.12.0 fails with
+`MissingMethodException`; pass the node `enrich.round.win_reason` writes.
+
+### Singleton reads build, and a new per-player column shifts the digest (0.13.0)
+
+A `match.*` read of a singleton provider (`capture: match.freeze_period`) threw at build through
+0.12.0; it now reads the provider's value. The new per-player provider `entity.controller.money`
+(`player.money`) sits before the angle and position columns in both registries, so the column index
+of every provider after it moved by one in the per-pawn digest layout. A consumer that indexes
+digest columns by position rather than by provider name needs to rebuild its index; the per-pawn
+fold fixtures moved for the new column.
+
+### `CSmokeGrenadeProjectile` decodes its whole instance baseline (0.13.0)
+
+Through 0.12.0 entity decode stopped collecting field paths at 2,048 per update without a word. A
+smoke's instancebaseline carries 3,214 to 3,482 of them (nearly all `m_VoxelFrameData`), so every
+smoke's baseline was cut off and its values decoded from misaligned bits. Any field the creation
+packet did not re-send kept a garbage value until it next changed: the cell (so `CellToWorld` was
+thousands of units off, sometimes for the smoke's whole life), `m_iTeamNum` (usually 0),
+`m_nBounces`, `m_nEntityId`, `m_hThrower` (unresolved on 11 to 28% of smokes) and
+`m_nSmokeEffectTickBegin`. On build-10896 demos that last one made `VisibilityAnalyzer`'s active
+smoke check and the digest's smoke list count flying smokes as clouds near the map origin, so
+visibility numbers and smoke digests from 0.12 on current demos differ. Other projectile classes
+were never affected. The shipped rulesets read no smoke baseline field, and the rules-output digests
+for all fifteen fixture demos are byte-identical (#65).
+
+The cap is now 16,384, and a demo whose entity carries more paths than that reports an entity decode
+error (`LastEntityError`, `DecodeErrorRaised`) instead of decoding garbage. As with any entity decode
+error, the rest of that packet is skipped. No API changes.
+
+### `PositionSample` carries `Team` and `IsAlive` (0.13.0)
+
+`PositionSample` gained two trailing positional members, `int Team` (the pawn's `m_iTeamNum`, 0 when
+unseen) and `bool IsAlive` (`m_lifeState` alive and `m_iHealth` above zero). Its constructor and
+`Deconstruct` changed shape: code that constructs or deconstructs the five-member form no longer
+compiles against 0.13.0, and a binary built against 0.12.0 that constructs one fails with
+`MissingMethodException`. Record equality now includes the new members. There are no defaults on
+purpose, since any default for `IsAlive` would be wrong for some pawn.
+
+`PositionSampler.Walk` yields the same samples as through 0.12.0. That includes dead pawns, which it
+always yielded although its docs and `PawnLookup.ForEachLivePawn`'s said "live": a dead player's
+pawn stays bound to its controller for the rest of the round (385 of 2,069 one-second rows on a
+build-10231 de_nuke carry one). Filter on `IsAlive` for the living only. `ForEachLivePawn`'s
+behaviour is unchanged and its doc is corrected; `PawnLookup.IsAlive(EntityState)` is new and holds
+the rule. The docs also now say that `PositionSample.Tick` is the frame clock (`GameEvent.GameTick`,
+not `GameEvent.ServerTick`) and that `Place` is the empty string, not null, outside a named nav area.
+
+### Grenade projectiles have a sampler (0.13.0)
+
+New in `CS2DemoKit.Parser.EntityTracking`: `ProjectileSampler.Walk`, over a `ParsedDemo` or a forward
+`IDemoFrameSource`, yields a `ProjectileSample` per grenade projectile per frame with its thrower
+slot, position, initial position and velocity, bounces and Created/Removed flags.
+`GrenadeProjectileClasses` names the five projectile classes, and `PawnLookup.ResolveThrowerSlot`,
+previously internal to Analysis, is public with the same behaviour. The additions are source- and
+binary-compatible except for one case: a consumer that declares its own `ProjectileSample`,
+`ProjectileSampler` or `GrenadeProjectileClasses` and imports `CS2DemoKit.Parser.EntityTracking`
+gets CS0104 (ambiguous reference) until it qualifies the name. The digest and rules output do not
+move. Analysis's internal `ProjectileSlotIndex` still follows only smoke and molotov slots, the two
+classes the digest reads; `ProjectileSampler` follows all five with its own slot tracking.
+
+### The rule graph a consumer reads is the graph that runs (0.13.0)
+
+Through 0.12.x a consumer drawing the rule graph got descriptors only for rule trigger edges, and
+three always-empty members (#50). What changed:
+
+- **Breaking.** `BuildResult` lost `Chains`, `GroupHints` and `NodeChains`, which were always empty
+  or null, and `NodeGroupHint` is gone. The positional constructor and `Deconstruct` are now
+  `(Graph, Nodes, Edges, RelevantMessageTypes, PlayerContextIndex, EntityScanner, EdgeBacking,
+  GameNodesByRuleId, Outputs, RulesetCoverage)`. Source that reads, constructs or deconstructs the
+  removed members no longer compiles, and a binary built against 0.12.x fails with
+  `MissingMethodException` on any of those accesses, a plain property read included. Highlight
+  membership is now `RuleGraphNode.HighlightChains` (the `_chain_{highlight}` names a
+  `RuleChainEvent.ChainName` carries); clustering is `RuleGraphNode.Ruleset`, `Owners` and
+  `RuleIds`.
+- **The descriptor lists grew.** `BuildResult.Edges` describes every game-scope edge, one row per
+  written node: the enrichments, the per-player bookkeeping, first-wins guard writes and the entity
+  value dispatch included. `MaterializedPlayer.EdgeDescriptors` and
+  `EvaluationResult.MaterializedEdgeDescriptors` gained the first-tick, round-end compute, round
+  reset, tally, economy, settle, pull (the rate buckets included) and live-compute rows, every
+  source of a multi-source `when:` input, and the highlight emission. On the shipped rulesets on
+  GOTV the game scope went from 43 to 134 rows and one player from 107 to 211. A write to
+  per-player state is drawn to `ExternalStateNode` `player_context`, one of the three
+  `BuildResult.ExternalNodes`, which are not in `Nodes`: a consumer that joins `build.Edges` to
+  `build.Nodes` alone drops those rows. Join to `Nodes` and `ExternalNodes`, or use `RuleGraph`.
+  Several rows can share one edge, so a fire count must not be summed across them.
+- `GraphEdgeDescriptor` gained `Kind`, `Edge` and `Reads` as init-only members. Source- and
+  binary-compatible, but record equality and `ToString` now include them, so a value-equality set
+  of descriptors sees the rows of a multi-write edge as distinct. `GraphEdgeKind` may gain members
+  in a minor release; handle unknown values.
+- `EdgeBacking` maps every game-scope row a `StateEdge` backs, several rows to one edge for a
+  multi-write edge. `GraphEdgeDescriptor.Edge` carries the same edge on the row itself and covers
+  the per-player rows too.
+- A `tally:` is drawn from the root, which is where it fires from, with the tallied stat in
+  `Reads`. It was drawn from the stat.
+- `AuthoringGraph` follows reads (`AuthoringGraphEdge.IsRead`) and anchors a highlight's `.count`
+  and a tally's targets. `AuthoringGraphNode.ChainIds` is now filled, with highlight chains, not the
+  `_chain_{ruleset}` join key a table column's `PerPlayerColumnAssignment.ChainId` carries.
+- New in `CS2DemoKit.Analysis.Graphs`: `RuleGraph`, `RuleGraphNode`, `RuleGraphEdge`,
+  `RuleGraphScope`, `RuleGraphNodeOrigin`, `NodeTemplateKey`, `EdgeTemplateKey`, `GraphEdgeKind`,
+  `ExternalStateNode` and `ExternalState`. A consumer type with one of these names hits CS0104 when
+  it imports the namespace. `RuleGraph.FromBuild` with templates runs the builder's per-player
+  factory, which keeps state on the builder while it runs: never call it while a run over the same
+  build is going. A template that cannot materialise without a demo is left out of that preview
+  and named in `RuleGraph.Diagnostics`.
+- `RuleGraph.CollapsePlayers` folds only per-player copies, by template position: game, team and
+  external edges pass through with their keys. A collapsed edge's `Descriptor` is the lowest slot's
+  copy and `RuleGraphEdge.Instances` holds every player's, so a template edge's fire count is the
+  sum over their `Edge`s, not `Descriptor.Edge.FireCount`.
+- A hand-built `GraphEdgeDescriptor` with no `Edge`, as a 0.12 consumer builds one, is matched to
+  the graph edge from its source that writes its destination, and `RuleGraph` draws that edge once
+  with a copy of the descriptor that carries it. Without a match the edge is drawn as
+  `Undescribed` beside the descriptor's row, and reported.
+- Rules output, node counts, snapshot columns, the decode plan, the order edges are registered in
+  (game and per player) and resolved-identity hashes do not move. The fifteen rules-output fixtures
+  are byte-identical.
+
+### `tally:` targets belong to their ruleset (0.13.0)
+
+Two `for: each_player` rulesets whose `tally:` thresholds named the same target (the shipped `kast`
+and the `multikill` example both use `rounds_2k` to `rounds_5k`) built and then
+threw at the first player: the second ruleset bound its tally to the first one's counters and never
+registered its own, so its `show:` scoreboard found nothing. Each ruleset now gets its own target
+counters, so `kast.rounds_2k` and `multikill.rounds_2k` are separate nodes with their own values.
+Every example under `Rules/examples/` now runs beside the shipped rulesets. The shipped rulesets on
+their own build and count the same as before.
+
+### A stat that reads a coverage-skipped stat is skipped with it (0.13.0)
+
+A stat whose view does not bind on the demo's profile was skipped and recorded in
+`RulesetCoverage`, but a stat, `rate:` or highlight that read it was still built, and the planner
+threw `stat reference '...' was hashed before the node it points at` at the first player (#68). The
+shipped rulesets hit this on `Cs2HltvProfile`, where `blinded_enemy` does not bind and the
+`AvgBlind` compute reads two stats on it. Such a reader is now skipped too, transitively, with its
+own `RulesetCoverageDiagnostic` naming the stat it reads and the view that did not bind, and its
+`show:` column drops as for any other skip. A skipped `tally:` takes its threshold targets with it:
+each target is recorded in coverage too, so a `show:` entry naming one drops its column rather than
+failing validation as an unknown reference. A `rate:` over a skipped bucket was already dropped,
+silently; it is now recorded as well. The skip runs within one ruleset: a stat in another ruleset
+that reads a skipped stat is not skipped with it. On HLTV the shipped rulesets now run, with
+`AvgBlind` absent. Output on the other profiles does not move.
+
+### A `---` rules file loads every ruleset in it (0.13.0)
+
+Through 0.12.0 a rules YAML holding several rulesets separated by `---` loaded only the first, and
+dropped the rest without an error. `YamlConfigLoader.TryLoadDirectory`, `LoadDocuments` and the
+overlay loaders built on them now load each document as its own ruleset, with the same error
+containment a file gets: a broken document reports its errors and the others still load. Errors in
+a document after the first carry the label `file.rules.yaml#N` (N counts from 1 at the top of the
+file). A document with no `ruleset:` key is the same "not a rules document" error a single such file
+gets; an empty document, such as a trailing `---`, is skipped. `LoadedFiles` and `FailedFiles` still
+list files, not documents: an error in any document of a file, a `show:` column collision found
+across the load included, lists the file as failed. A file that loaded cleanly before can now
+report errors or duplicate ids from the documents that used to be ignored.
+`RulesetDocumentLoader.Load` and `TryLoad`, which return one ruleset, now refuse a multi-document
+stream with a diagnostic instead of reading its first document. No shipped ruleset uses `---`.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
@@ -349,6 +671,7 @@ None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid
 short-lived key. GitHub Packages uses the built-in `GITHUB_TOKEN`. Both pushes use
 `--skip-duplicate`, so re-running a tag build on the same commit is safe.
 
-That flag has one sharp edge, and it is aimed at the prerelease line. See below.
+That flag has one sharp edge, and it is aimed at the prerelease line: see
+[Never move a prerelease tag, bump the counter](#never-move-a-prerelease-tag-bump-the-counter) above.
 
 Symbol packages ship as a run artifact rather than to GitHub Packages, which rejects `.snupkg`.

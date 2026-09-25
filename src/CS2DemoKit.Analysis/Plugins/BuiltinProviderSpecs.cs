@@ -46,8 +46,10 @@ public static class BuiltinProviderSpecs
     /// <summary>
     ///     entity.pawn.active_weapon_clip — two-hop read (Tier C): the pawn's active-weapon
     ///     handle → the weapon entity's <c>m_iClip1</c> (rounds currently in the magazine).
-    ///     Null (slot skipped) when the pawn has no active weapon or the clip is unseen; 0 and
-    ///     -1 (no-magazine weapons like knives) are real observations and emit as-is. NOTE:
+    ///     Null (slot skipped) when the pawn has no active weapon or the clip is unseen. 0 is an
+    ///     empty magazine; -1 is a weapon with no magazine (knives, grenades, the C4), which the
+    ///     engine's <c>minusone</c> serializer sends as 0 on the wire. Both are real observations
+    ///     and emit as-is. NOTE:
     ///     rule-site reads are PRE-FRAME (the scanner snapshots the previous frame), so at a
     ///     kill event this is the clip BEFORE the killing shot — "last bullet" is <c>== 1</c>,
     ///     not <c>== 0</c>.
@@ -63,9 +65,9 @@ public static class BuiltinProviderSpecs
     ///     entity.pawn.place — the pawn's <c>m_szLastPlaceName</c>: the human-readable nav-mesh
     ///     place the player was last located in (e.g. <c>BombsiteA</c>, <c>CTSpawn</c>). A
     ///     <c>char[18]</c> on the wire; the tracker decodes fixed char arrays as a single UTF-8
-    ///     string on the object lane, so this is a plain string read. Null (slot skipped) when
-    ///     the field has never been networked for the pawn; maps without named nav areas simply
-    ///     never populate it.
+    ///     string on the object lane, so this is a plain string read. The empty string when the
+    ///     pawn stands outside any named nav area, and on maps without named areas. Null (slot
+    ///     skipped) only when the field has never been networked for the pawn.
     /// </summary>
     public static ProviderSpec PawnPlace { get; } = new(
         "entity.pawn.place", "CCSPlayerPawn",
@@ -187,11 +189,89 @@ public static class BuiltinProviderSpecs
             SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
             SchemaNames.CCSWeaponBase.AccuracyPenalty));
 
+    /// <summary>
+    ///     entity.controller.money: the player's cash, <c>m_pInGameMoneyServices.m_iAccount</c> on the
+    ///     controller, reached from the pawn through its <c>m_hController</c> handle (the same
+    ///     two-hop shape as the active-weapon clip). The account lives on the controller, not the
+    ///     pawn, because it survives death and respawn. Read pre-frame like every per-player column,
+    ///     so at an event it is the balance before anything the event's frame changed. Null (slot
+    ///     skipped) when the pawn has no controller handle or the account was never networked.
+    /// </summary>
+    public static ProviderSpec ControllerMoney { get; } = new(
+        "entity.controller.money", "CCSPlayerPawn",
+        "", typeof(int),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.Controller,
+            SchemaNames.CCSPlayerController.InGameMoneyServices + "."
+                                                                + SchemaNames.CCSPlayerControllerInGameMoneyServices.Account));
+
     /// <summary>entity.game.freeze_period — the singleton freeze-period poll.</summary>
     public static ProviderSpec GameFreezePeriod { get; } = new(
         "entity.game.freeze_period", "CCSGameRulesProxy",
         SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.FreezePeriod,
         typeof(bool));
+
+    /// <summary>
+    ///     entity.game.round_win_status: who won the round, set the instant the server decides it.
+    ///     <c>0</c> while the round is undecided, <c>2</c> when the terrorists won, <c>3</c> when the
+    ///     counter-terrorists did. Measured on the build-10231 nuke and build-10924 dust2 demos: it
+    ///     goes 0→2/3 on the frame the round is decided and back to 0 at
+    ///     <c>round_officially_ended</c>, 448 ticks later (544 at the end of a half; either can land a
+    ///     tick early or late), so at the round's close it has already reset. The engine's
+    ///     <c>round_decided</c> event is synthesized from this transition.
+    /// </summary>
+    public static ProviderSpec GameRoundWinStatus { get; } = new(
+        "entity.game.round_win_status", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.RoundWinStatus,
+        typeof(int));
+
+    /// <summary>
+    ///     entity.game.round_win_reason: the engine's round-end reason, set with
+    ///     <see cref="GameRoundWinStatus" /> and cleared with it. 7 bomb defused, 8 counter-terrorists
+    ///     eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target
+    ///     saved (the clock ran out).
+    /// </summary>
+    public static ProviderSpec GameRoundWinReason { get; } = new(
+        "entity.game.round_win_reason", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.RoundWinReason,
+        typeof(int));
+
+    /// <summary>
+    ///     entity.game.total_rounds_played: rounds decided so far this match. 0 before round 1;
+    ///     it increments on the frame a round is decided, with <see cref="GameRoundWinStatus" />.
+    /// </summary>
+    public static ProviderSpec GameTotalRoundsPlayed { get; } = new(
+        "entity.game.total_rounds_played", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.TotalRoundsPlayed,
+        typeof(int));
+
+    /// <summary>
+    ///     entity.game.game_phase: the match phase. Measured: 2 through the first half, 4 over the
+    ///     halftime break, 3 through the second half, 5 once the match is over.
+    /// </summary>
+    public static ProviderSpec GameGamePhase { get; } = new(
+        "entity.game.game_phase", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.GamePhase,
+        typeof(int));
+
+    /// <summary>
+    ///     entity.game.bomb_planted: true from the frame the bomb is planted. Cleared by a defuse
+    ///     as well as at <c>round_officially_ended</c>, so it is not "the bomb was planted this
+    ///     round"; that is the <c>round.bomb.was_planted</c> context.
+    /// </summary>
+    public static ProviderSpec GameBombPlanted { get; } = new(
+        "entity.game.bomb_planted", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.BombPlanted,
+        typeof(bool));
+
+    /// <summary>
+    ///     entity.game.round_time: the length the round is configured to run, in seconds; not a
+    ///     countdown. 115 in a live matchmaking round, 999 during warmup.
+    /// </summary>
+    public static ProviderSpec GameRoundTime { get; } = new(
+        "entity.game.round_time", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.RoundTime,
+        typeof(int));
 
     /// <summary>
     ///     The generic per-player providers equivalent to
@@ -224,6 +304,8 @@ public static class BuiltinProviderSpecs
         new GenericPerPlayerFieldProvider(PawnFlashDuration),
         new GenericPerPlayerFieldProvider(WeaponRecoilIndex),
         new GenericPerPlayerFieldProvider(WeaponAccuracyPenalty),
+        // The controller's cash, at the same position on both sides of the parity gate.
+        new GenericPerPlayerFieldProvider(ControllerMoney),
         // Angle components. QAngle has no scalar leaf to name and the rules language has no
         // vector type, so these are hand-written classes with no spec form, registered
         // identically on both sides of the parity gate exactly like the position trio.
@@ -239,6 +321,28 @@ public static class BuiltinProviderSpecs
         new PawnPositionProvider(PawnPositionAxis.X),
         new PawnPositionProvider(PawnPositionAxis.Y),
         new PawnPositionProvider(PawnPositionAxis.Z)
+    ];
+
+    /// <summary>
+    ///     The game-rules singletons read straight off <c>CCSGameRulesProxy.m_pGameRules</c>, in
+    ///     registration order. Spec-constructed with no hand-written twin. Each emits a change event
+    ///     only on a rise from its default, like the freeze-period poll; the value node follows every
+    ///     change either way, and that is what a rule reads.
+    /// </summary>
+    public static IReadOnlyList<IEntityValueProvider> CreateGameRulesProviders() =>
+    [
+        new GenericSingletonFieldProvider(GameRoundWinStatus, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesRoundWinStatusMarker), 0),
+        new GenericSingletonFieldProvider(GameRoundWinReason, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesRoundWinReasonMarker), 0),
+        new GenericSingletonFieldProvider(GameTotalRoundsPlayed, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesTotalRoundsPlayedMarker), 0),
+        new GenericSingletonFieldProvider(GameGamePhase, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesGamePhaseMarker), 0),
+        new GenericSingletonFieldProvider(GameBombPlanted, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesBombPlantedMarker), false),
+        new GenericSingletonFieldProvider(GameRoundTime, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesRoundTimeMarker), 0)
     ];
 
     /// <summary>The generic singleton provider equivalent to <see cref="FreezePeriodProvider" />.</summary>

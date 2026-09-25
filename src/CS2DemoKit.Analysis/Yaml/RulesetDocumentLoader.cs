@@ -13,16 +13,22 @@ namespace CS2DemoKit.Analysis.Yaml;
 ///     The v2 document pipeline entry point: parse a <c>ruleset:</c> YAML string once
 ///     (via the representation model, so nodes carry positions), map it to a
 ///     <see cref="RulesetDoc" />, then run stage-1 Expand (<c>for_each:</c>) and structural
-///     validation. The loader dispatch (<see cref="YamlConfigLoader.TryLoadDirectory" />) uses
-///     <see cref="TryLoad" />, which returns <c>null</c> for any file that is not a v2 ruleset so
-///     the caller can report it (retired-v1 / not-a-rules-document / YAML syntax error).
+///     validation. The directory and in-memory loaders (<see cref="YamlConfigLoader.TryLoadDirectory" />,
+///     <see cref="YamlConfigLoader.LoadDocuments" />) split a source with <c>ParseDocuments</c> and
+///     run each <c>---</c> document through <c>TryLoadRoot</c>, which returns <c>null</c> for a
+///     document that is not a v2 ruleset so the caller can report it (retired-v1 /
+///     not-a-rules-document). A YAML syntax error surfaces from <c>ParseDocuments</c> itself.
+///     <see cref="Load" /> and <see cref="TryLoad" /> take a single-document source.
 /// </summary>
 public static class RulesetDocumentLoader
 {
     /// <summary>
     ///     Attempts the v2 pipeline over a YAML string. Returns <c>null</c> when the document is not
     ///     a v2 ruleset — its root is not a mapping, it has no top-level <c>ruleset:</c> key, or it
-    ///     failed to parse — so the caller can classify and report the file.
+    ///     failed to parse — so the caller can classify and report the file. A stream holding more
+    ///     than one <c>---</c> document is not one ruleset: it gets an outcome with no doc and a
+    ///     diagnostic pointing at <see cref="YamlConfigLoader.LoadDocuments" />, which loads each
+    ///     document as its own ruleset, instead of silently reading only the first.
     /// </summary>
     /// <param name="yaml">The document source.</param>
     /// <param name="file">The absolute source path, or <c>null</c> for in-memory YAML.</param>
@@ -30,14 +36,21 @@ public static class RulesetDocumentLoader
     public static Outcome? TryLoad(string yaml, string? file)
     {
         ArgumentNullException.ThrowIfNull(yaml);
-        YamlMappingNode? root = TryGetRulesetRoot(yaml);
-        return root is null ? null : LoadFromRoot(root, file);
+        IReadOnlyList<(int Index, YamlNode Root)>? documents = TryParse(yaml);
+        if (documents is { Count: > 1 })
+        {
+            return MultiDocumentOutcome(documents.Count, file);
+        }
+
+        return documents is [(_, YamlNode root)] ? TryLoadRoot(root, file) : null;
     }
 
     /// <summary>
     ///     Runs the v2 pipeline over a YAML string, always attempting the v2 mapping. When the
     ///     document is not a v2 ruleset, returns an outcome carrying a single explanatory
     ///     diagnostic. Intended for tests and tools that already know the input is a ruleset.
+    ///     A stream holding more than one <c>---</c> document gets the same refusal as
+    ///     <see cref="TryLoad" />.
     /// </summary>
     /// <param name="yaml">The document source.</param>
     /// <param name="file">The absolute source path, or <c>null</c> for in-memory YAML.</param>
@@ -45,16 +58,96 @@ public static class RulesetDocumentLoader
     public static Outcome Load(string yaml, string? file)
     {
         ArgumentNullException.ThrowIfNull(yaml);
-        YamlMappingNode? root = TryGetRulesetRoot(yaml);
-        return root is null
-            ? new Outcome(null,
-            [
-                new RulesetDiagnostic(RulesetDiagnosticCodes.Missing,
-                    "not a v2 ruleset document — the root must be a map with a 'ruleset:' id",
-                    new SourcePosition(file, 0, 0))
-            ])
-            : LoadFromRoot(root, file);
+        IReadOnlyList<(int Index, YamlNode Root)>? documents = TryParse(yaml);
+        if (documents is { Count: > 1 })
+        {
+            return MultiDocumentOutcome(documents.Count, file);
+        }
+
+        Outcome? outcome = documents is [(_, YamlNode root)] ? TryLoadRoot(root, file) : null;
+        return outcome ?? new Outcome(null,
+        [
+            new RulesetDiagnostic(RulesetDiagnosticCodes.Missing,
+                "not a v2 ruleset document — the root must be a map with a 'ruleset:' id",
+                new SourcePosition(file, 0, 0))
+        ]);
     }
+
+    /// <summary>
+    ///     Parses a YAML stream into its documents, skipping empty ones (a trailing <c>---</c>, a
+    ///     comment-only document) so they neither load nor fail. Each document keeps its 1-based
+    ///     position in the stream, empty ones counted, so a label built from it names the
+    ///     document an author sees.
+    /// </summary>
+    /// <param name="yaml">The stream source.</param>
+    /// <returns>The non-empty documents with their 1-based stream positions.</returns>
+    /// <exception cref="YamlException">The stream is not well-formed YAML.</exception>
+    internal static IReadOnlyList<(int Index, YamlNode Root)> ParseDocuments(string yaml)
+    {
+        YamlStream stream = [];
+        using StringReader reader = new(yaml);
+        stream.Load(reader);
+        List<(int, YamlNode)> documents = new(stream.Documents.Count);
+        for (int i = 0; i < stream.Documents.Count; i++)
+        {
+            YamlNode root = stream.Documents[i].RootNode;
+            if (root is YamlScalarNode { Value: null or "" } scalar && scalar.Tag.IsEmpty)
+            {
+                continue;
+            }
+
+            documents.Add((i + 1, root));
+        }
+
+        return documents;
+    }
+
+    /// <summary>
+    ///     Runs the v2 pipeline over one already-parsed document root. Returns <c>null</c> when the
+    ///     root is not a map with a top-level <c>ruleset:</c> key.
+    /// </summary>
+    /// <param name="root">The document root.</param>
+    /// <param name="file">The label diagnostics are attributed to.</param>
+    /// <returns>The v2 outcome, or <c>null</c> when the document is not a v2 ruleset.</returns>
+    internal static Outcome? TryLoadRoot(YamlNode root, string? file)
+    {
+        if (root is not YamlMappingNode map)
+        {
+            return null;
+        }
+
+        foreach (YamlNode key in map.Children.Keys)
+        {
+            if (key is YamlScalarNode { Value: "ruleset" })
+            {
+                return LoadFromRoot(map, file);
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<(int Index, YamlNode Root)>? TryParse(string yaml)
+    {
+        try
+        {
+            return ParseDocuments(yaml);
+        }
+        catch (YamlException)
+        {
+            return null;
+        }
+    }
+
+    private static Outcome MultiDocumentOutcome(int count, string? file) =>
+        new(null,
+        [
+            new RulesetDiagnostic(RulesetDiagnosticCodes.WrongShape,
+                $"this YAML holds {count} '---' documents, and this entry point loads one ruleset; "
+                + "load it through YamlConfigLoader.LoadDocuments or TryLoadDirectory, which load "
+                + "each document as its own ruleset",
+                new SourcePosition(file, 0, 0))
+        ]);
 
     private static Outcome LoadFromRoot(YamlMappingNode root, string? file)
     {
@@ -72,34 +165,6 @@ public static class RulesetDocumentLoader
             ? structural
             : [.. mapped.Diagnostics, .. structural];
         return new Outcome(expanded, all);
-    }
-
-    private static YamlMappingNode? TryGetRulesetRoot(string yaml)
-    {
-        try
-        {
-            YamlStream stream = [];
-            using StringReader reader = new(yaml);
-            stream.Load(reader);
-            if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode root)
-            {
-                return null;
-            }
-
-            foreach (YamlNode key in root.Children.Keys)
-            {
-                if (key is YamlScalarNode { Value: "ruleset" })
-                {
-                    return root;
-                }
-            }
-
-            return null;
-        }
-        catch (YamlException)
-        {
-            return null;
-        }
     }
 
     /// <summary>The outcome of loading one v2 ruleset document.</summary>

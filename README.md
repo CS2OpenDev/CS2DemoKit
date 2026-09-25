@@ -63,8 +63,8 @@ the packet structure is recorded; `Everything`, `StructureOnly`, `GameEventsOnly
 fires that never appeared on the wire) carry a null payload, which is why the pattern match is the
 access route rather than a cast.
 
-A viewer that seeks and inspects after the run keeps everything instead (a consumer on 0.11.0
-starts at `docs/migrating-to-0.12.md`):
+A viewer that seeks and inspects after the run keeps everything instead (a consumer on 0.12.x
+starts at `docs/migrating-to-0.13.md`, and one on 0.11.0 at `docs/migrating-to-0.12.md` first):
 
 ```csharp
 ParsedDemo demo = MemoryMappedDemoSource.ParseFile("match.dem");
@@ -134,21 +134,61 @@ CS2 demos carry two clocks and mixing them produces results that look plausible 
 `GameEvent.GameTick`, `RuleChainEvent.Tick` and `HighlightFired.Tick` are already frame clock. Do
 not subtract `ServerStartTick` from them.
 
+In a ruleset, `event.frame_tick` is the frame clock and `event.tick` the server clock (the frame
+clock on a synthesized event, which has no server stamp). A configured table names the clock of
+each tick column in `MetricTable.ColumnClocks`, so a consumer does not have to know which views are
+synthesized.
+
 ## Player input (`svc_UserCmds`)
 
 `svc_UserCmds` is about 90% of the net messages in a demo (1.15 million on a 290 MB file) and is
 read by almost nothing. It does not appear in `DemoFrame.InnerMessages`. Each payload is stored
 verbatim in shared blocks on the frame.
 
-For the interpreted view, `SubTickExtractor` reads the subtick move steps out of them:
+Since about July 2026 (build 10896) servers send almost every command as `delta_data`: a patch
+against the same player's previous command, in Valve's own delta encoding rather than protobuf.
+Only an occasional command carries a full `data` message. On current matchmaking demos 99.8% to
+99.9% of commands are deltas, so reading `data` alone sees a fraction of a percent of the input.
+
+`UserCmdReconstructor` rebuilds every command. Feed it frames in order, from frame 0 or from a
+`DEM_FullPacket`; it works the same on `DemoReader.ReadFrames()` and on `ParsedDemo.Frames`, as
+long as the decode plan includes `MessageCategories.UserCmds`:
 
 ```csharp
-List<SubTickEvent> input = SubTickExtractor.Extract(demo.Frames);
+using CS2DemoKit.Parser.EntityTracking;
+
+var input = new UserCmdReconstructor();
+foreach (DemoFrame frame in reader.ReadFrames())
+{
+    foreach (ReconstructedUserCmd cmd in input.AdvanceOneFrame(frame))
+    {
+        CSGOUserCmdPB full = cmd.Command;   // view angles, buttons, movement, subtick moves, ...
+    }
+}
 ```
 
-Subtick moves are only one field of the message. It also carries view angles, movement, buttons,
-weapon select, mouse deltas and the pawn handle, so for anything beyond subtick input take the raw
-wire bytes and decode them yourself:
+The returned list is reused on the next call; the commands in it are not, so keep them if you
+need to, but treat them as read-only, since each one is its slot's baseline for the next delta.
+
+For subtick moves only, `SubTickExtractor` does the same walk and returns one event per move step:
+
+```csharp
+List<SubTickEvent> moves = SubTickExtractor.Extract(demo.Frames);
+```
+
+**Full packets and seeking.** On current demos every `DEM_FullPacket` repeats each player's latest
+command in full. The reconstructor uses those snapshots to prime a player it has no baseline for
+and to check its own rebuild, and never returns them as input. To seek, call `Reset()` and start
+feeding at the nearest `DEM_FullPacket` at or before the target, the way entity seeking does.
+
+**Input present but not rebuilt.** A delta with no baseline (a walk that started mid-stream) is
+skipped, not decoded against defaults. `reconstructor.Stats` counts every case: `Full`, `Delta`,
+`MissingBaseline`, `DecodeFailed`, `OutOfOrder`, and three self-checks that are zero on every demo
+measured (`CheckpointMismatches`, `ClientTickMismatches`, `UnknownFieldsSkipped`). A nonzero
+self-check means the format moved. `frame.UserCmdsPayloadCount` says whether a frame carries input
+at all.
+
+The raw wire bytes stay available:
 
 ```csharp
 for (int i = 0; i < frame.UserCmdsPayloadCount; i++)
@@ -156,6 +196,9 @@ for (int i = 0; i < frame.UserCmdsPayloadCount; i++)
     var cmds = CSVCMsg_UserCommands.Parser.ParseFrom(frame.GetUserCmdsPayload(i));
 }
 ```
+
+`CSGOUserCmdPB.Parser.ParseFrom(cmd.Data)` on those decodes the keyframes only; pass each
+`CMsgServerUserCmd` to `reconstructor.Apply` to rebuild the rest.
 
 The reason for the split is GC, not decode cost. A payload-per-message representation means one
 surviving object per message, and collection cost scales with the number of live objects rather
@@ -200,7 +243,7 @@ structure is rejected, a warning is recorded, and the parse continues.
 | `MinBitsPerEntry` | 3 | Entry count against bits actually present |
 | `MaxInstanceBaselineBytes` | 16 MiB | Declared decompressed size of an instancebaseline blob |
 | `MinBitsPerInstanceBaselineEntry` | 3 | Baseline entry count against bits present |
-| `MaxFieldPaths` | 2048 | Runaway field-path decode on a misaligned entity |
+| `MaxFieldPaths` | 16384 | Runaway field-path decode on a misaligned entity; exceeding it is reported as an entity decode error (`LastEntityError` / `DecodeErrorRaised`, see below) |
 | `MaxWarnings` | 256 | The warning channel itself |
 
 Compressed sizes are checked *before* decompressing, since the declared length is what drives the
@@ -237,6 +280,13 @@ highlights, which events carry which clock, and the facets that read a sentinel 
 when there was nothing to measure. The geometry-backed views (`enemy_spotted` and what hangs off it)
 need the engine wired in first; see the quick start above.
 
+A ruleset is `for: each_player` (one instance per player), `for: each_team` (one per side, for
+per-round, per-side facts such as a side's buy or whether it won) or `for: match`. Its `show: tables`
+project through `run.ProjectConfiguredOutputs()` on either path: a snapshot run projects from its
+rows, and a forward run without snapshots from the state it sampled at each round boundary, which is
+the same state, so the two agree row for row. Only a per-event output (a timeline log) still needs
+snapshots.
+
 ## Building
 
 ```sh
@@ -265,6 +315,12 @@ already cover, so size is a poor proxy to select on. `MultiDemoCanaryTests` swee
 
 This is local-only for now. CI still runs on the committed sample alone, so a corpus run before
 opening a PR is worth the minute it costs.
+
+Demos that live elsewhere, such as the Steam replays folder, can be used without copying them in:
+set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, and the corpus
+tests (`RulesOutputGoldenTests`, the forward-path parity sweep) take the demos in it that have a
+fixture under `tests/fixtures/rules-output/`, so a folder of hundreds of matches re-runs the pinned
+set rather than all of them. The folder is only read; nothing in it is written, moved or deleted.
 
 Tests whose expectations are specific to one match name that demo through
 `RequireDemo(DemoTestHelper.ReferenceDemoFileName)` rather than taking whatever is in `demos/`, so
@@ -368,6 +424,8 @@ and a zero-padded counter, because both are load-bearing.
 ## Licence
 
 MIT. Portions of the bit-level decoder are adapted from
-[demofile-net](https://github.com/saul/demofile-net) (also MIT) — see `THIRD-PARTY-NOTICES.md`.
+[demofile-net](https://github.com/saul/demofile-net) (also MIT), and the user-command delta decoder
+from [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) (also MIT) — see
+`THIRD-PARTY-NOTICES.md`.
 Counter-Strike and Counter-Strike 2 are trademarks of Valve Corporation; this project is not
 affiliated with or endorsed by Valve.

@@ -324,6 +324,36 @@ public class ScoreboardLabelCollisionTests
         await Assert.That(loaded.LoadedFiles.Select(f => Path.GetFileName(f) ?? "")).Contains("a_totals.rules.yaml");
     }
 
+    [Test]
+    public async Task ACollisionInALaterDocument_FailsTheFile_AndNamesTheDocument()
+    {
+        // The error carries the document's "file#N" label, while the file lists hold the file: the
+        // file stayed in LoadedFiles and never reached FailedFiles.
+        const string both = MatchStatKills + "\n---\n" + MatchStatKillsAgain;
+
+        RuleConfigLoadResult loaded = YamlConfigLoader.LoadDocuments([("totals.rules.yaml", both)]);
+
+        RuleConfigError collision = loaded.Errors.Single();
+        await Assert.That(collision.ChainId).IsEqualTo("b_more_totals");
+        await Assert.That(collision.FilePath).IsEqualTo("totals.rules.yaml#2");
+        await Assert.That(loaded.FailedFiles).Contains("totals.rules.yaml");
+        await Assert.That(loaded.LoadedFiles).DoesNotContain("totals.rules.yaml");
+    }
+
+    [Test]
+    public async Task ShippedOverlay_ACollisionInALaterDocument_FailsTheUserFile()
+    {
+        const string both = MatchStatKills + "\n---\n" + UserTotalK;
+
+        RuleConfigLoadResult loaded = YamlConfigLoader.LoadShippedWithOverlay([("mine.rules.yaml", both)]);
+
+        RuleConfigError collision = loaded.Errors.Single();
+        await Assert.That(collision.ChainId).IsEqualTo("my_totals");
+        await Assert.That(collision.FilePath).IsEqualTo("mine.rules.yaml#2");
+        await Assert.That(loaded.FailedFiles).Contains("mine.rules.yaml");
+        await Assert.That(loaded.LoadedFiles).DoesNotContain("mine.rules.yaml");
+    }
+
     private sealed class TempDir : IDisposable
     {
         public TempDir(params (string Name, string Content)[] files)

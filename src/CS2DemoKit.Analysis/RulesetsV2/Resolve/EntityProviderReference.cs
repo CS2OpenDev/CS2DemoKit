@@ -25,11 +25,18 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Resolve;
 ///     rather than the ruleset player's. Null for a <see cref="PlayerSubject" /> read (whose slot is the
 ///     per-player chain's compile-time constant, emitted as <c>player.&lt;ProviderName&gt;</c>).
 /// </param>
+/// <param name="IsSingleton">
+///     True for a read of a singleton provider (<c>match.freeze_period</c> →
+///     <c>entity.game.freeze_period</c>): one value for the whole game, keyed by no slot. The planner
+///     reads it off the provider's value node by its context name rather than through a player's
+///     pre-frame digest.
+/// </param>
 public sealed record EntityProviderReference(
     string Path,
     string ProviderName,
     string Subject,
-    string? RoleSlotField = null)
+    string? RoleSlotField = null,
+    bool IsSingleton = false)
 {
     /// <summary>The <see cref="Subject" /> sentinel for a read keyed by the ruleset's own player.</summary>
     public const string PlayerSubject = "player";

@@ -97,6 +97,13 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Resolve;
 ///     reads it), so two computes differing only in <c>format:</c> are behaviorally interchangeable and
 ///     dedup — exactly like <see cref="Label" />.
 /// </param>
+/// <param name="Clock">
+///     Which clock the stat's value is on when it is a bare tick read: <see cref="TickClock.Server" />
+///     for <c>event.tick</c> on a wire event, <see cref="TickClock.Frame" /> for
+///     <c>event.frame_tick</c>, or for <c>event.tick</c> on a synthesized event. <see cref="TickClock.None" />
+///     for everything else, arithmetic over a tick included. Metadata only: outside node identity,
+///     like <see cref="Label" />, since the two reads already resolve to different paths.
+/// </param>
 public sealed record CheckedStat(
     RulesetId Ruleset,
     string StatId,
@@ -122,4 +129,5 @@ public sealed record CheckedStat(
     bool Live = false,
     string? RateOf = null,
     string? RatePer = null,
-    string? Format = null);
+    string? Format = null,
+    TickClock Clock = TickClock.None);

@@ -287,6 +287,117 @@ public class RulesetV2ResolverTests
         await Assert.That(gotv.Ruleset!.Coverage.Count).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task ReadersOfASkippedStat_AreSkippedWithIt_Transitively()
+    {
+        // #68: a compute over a coverage-skipped stat was built anyway, and the planner threw when it
+        // hashed the dangling reference. It is skipped too, and so is everything that reads it.
+        const string Yaml = """
+                            ruleset: flashes
+                            for: each_player
+                            stats:
+                              blinds:
+                                count: blinded
+                                per: match
+                              kills:
+                                count: kill
+                                per: match
+                              blinds_per_kill:
+                                compute: "blinds / kills"
+                                per: match
+                              doubled:
+                                compute: "blinds_per_kill * 2"
+                                per: match
+                              kills_while_blinding:
+                                count: kill
+                                while: "blinds > 0"
+                                per: match
+                            highlights:
+                              flashy:
+                                when: "blinds > 2"
+                                title: "flashy"
+                            show:
+                              scoreboard:
+                                - { stat: kills }
+                                - { stat: blinds_per_kill }
+                                - { stat: doubled }
+                            """;
+
+        RulesetResolveResult result = CheckedRulesetDraft.Load(Doc(Yaml), _adapter).Build(64.0, "Cs2HltvProfile");
+
+        await Assert.That(result.Success).IsTrue();
+        CheckedRuleset rs = result.Ruleset!;
+        await Assert.That(string.Join(",", rs.Stats.Select(s => s.StatId).Order(StringComparer.Ordinal)))
+            .IsEqualTo("kills");
+        await Assert.That(rs.Highlights.Count).IsEqualTo(0);
+        await Assert.That(string.Join(",", rs.Coverage.Select(c => c.NodeId).Order(StringComparer.Ordinal)))
+            .IsEqualTo("blinds,blinds_per_kill,doubled,flashy,kills_while_blinding");
+        foreach (RulesetCoverageDiagnostic coverage in rs.Coverage)
+        {
+            await Assert.That(coverage.ViewName).IsEqualTo("blinded");
+        }
+
+        RulesetCoverageDiagnostic compute = rs.Coverage.Single(c => c.NodeId == "blinds_per_kill");
+        await Assert.That(compute.Message.Contains("'blinds'", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(ShowReferenceValidator.Validate(rs).Count).IsEqualTo(0);
+
+        RulesetResolveResult gotv = CheckedRulesetDraft.Load(Doc(Yaml), _adapter).Build(64.0, Gotv);
+        await Assert.That(gotv.Ruleset!.Stats.Count).IsEqualTo(5);
+        await Assert.That(gotv.Ruleset!.Coverage.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ASkippedTally_SkipsItsTargets_AndItsShowColumnsDrop()
+    {
+        // A tally emits under its targets' ids. When the tally was skipped for reading a skipped stat,
+        // a show: entry naming a target was taken for an unknown ref, and the whole ruleset was
+        // excluded on the profile the skip was meant to tolerate.
+        const string Yaml = """
+                            ruleset: flash_rounds
+                            for: each_player
+                            stats:
+                              kills:
+                                count: kill
+                                per: round
+                              blinds:
+                                count: blinded
+                                per: round
+                              blind_rounds:
+                                tally: blinds
+                                thresholds:
+                                  - { min: 3, target: rounds_3_blinds }
+                                  - { min: 1, target: rounds_1_blind }
+                                per: match
+                            show:
+                              scoreboard:
+                                - { stat: kills }
+                                - { stat: rounds_3_blinds }
+                              tables:
+                                totals:
+                                  per: player_match
+                                  columns:
+                                    - { stat: kills }
+                                    - { stat: rounds_1_blind }
+                            """;
+
+        RulesetResolveResult result = CheckedRulesetDraft.Load(Doc(Yaml), _adapter).Build(64.0, "Cs2HltvProfile");
+
+        await Assert.That(result.Success).IsTrue();
+        CheckedRuleset rs = result.Ruleset!;
+        await Assert.That(string.Join(",", rs.Stats.Select(s => s.StatId))).IsEqualTo("kills");
+        await Assert.That(string.Join(",", rs.Coverage.Select(c => c.NodeId).Order(StringComparer.Ordinal)))
+            .IsEqualTo("blind_rounds,blinds,rounds_1_blind,rounds_3_blinds");
+        RulesetCoverageDiagnostic target = rs.Coverage.Single(c => c.NodeId == "rounds_3_blinds");
+        await Assert.That(target.ViewName).IsEqualTo("blinded");
+        await Assert.That(target.Message.Contains("'blind_rounds'", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(ShowReferenceValidator.Validate(rs).Count).IsEqualTo(0);
+
+        RulesetComposition.Result composed =
+            RulesetComposition.Compose([Doc(Yaml)], _adapter, 64.0, "Cs2HltvProfile");
+        await Assert.That(composed.Excluded.Count).IsEqualTo(0);
+        await Assert.That(composed.Rulesets.Count).IsEqualTo(1);
+    }
+
     // ── `this` self-reference ──────────────────────────────────────────────────
 
     [Test]

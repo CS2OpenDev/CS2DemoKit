@@ -24,10 +24,11 @@
     "for": {
       "enum": [
         "match",
-        "each_player"
+        "each_player",
+        "each_team"
       ],
       "default": "match",
-      "markdownDescription": "Materialization scope. \u0060each_player\u0060 instantiates one ruleset per player and binds actor-anchored views (kill, damage_dealt, ...) to that player; \u0060match\u0060 is one instance for the whole demo with no implicit player binding."
+      "markdownDescription": "Materialization scope. \u0060each_player\u0060 instantiates one ruleset per player and binds actor-anchored views (kill, damage_dealt, ...) to that player; \u0060each_team\u0060 instantiates one per side (T and CT), binds an actor-anchored view to the actor\u0027s live side and round_won / round_lost to the round\u0027s winner, and reads round.team.* / round.enemies.* relative to the side (team.side is the side, 2 or 3); \u0060match\u0060 is one instance for the whole demo with no implicit binding."
     },
     "enabled": {
       "type": "boolean",
@@ -99,14 +100,38 @@
           "$ref": "#/$defs/providerRead"
         }
       ],
-      "markdownDescription": "A v2 expression (docs/rules-v2/rules-v2-spec.md). Resolves against the slot\u0027s scope: \u0060event.*\u0060 fields, per-player providers \u0060player.*\u0060, B5 role handles \u0060victim.*\u0060 / \u0060killer.*\u0060 / \u0060assister.*\u0060 under event views, \u0060round.*\u0060 / \u0060match.*\u0060 contexts, sibling stats (bare), \u0060this\u0060, and cross-ruleset \u0060ruleset.stat\u0060. Duration literals \u006010s\u0060 / \u00600.5s\u0060 / \u0060500ms\u0060 are live. Closed function set: min, max, abs, contains, startswith. Map-valued \u0060define:\u0060 lookups \u0060ref[key]\u0060 (value | null) are live. B6 team aggregates are live: \u0060round.team.alive\u0060 / \u0060round.team.players\u0060 / \u0060round.enemies.alive\u0060 / \u0060round.enemies.players\u0060 (int, subject-relative alive/connected counts, disconnect-aware), \u0060round.team.equipment\u0060 / \u0060round.enemies.equipment\u0060 (int, freeze-end team economy sums) and \u0060round.alive.in_clutch\u0060 (bool); read them in \u0060when:\u0060 / \u0060while:\u0060 / \u0060compute:\u0060. The \u0060player.*\u0060 / \u0060match.*\u0060 entity reads are enumerated with their types, units and caveats in \u0060$defs/providerRead\u0060 - read the caveat before thresholding one: several are raw engine accumulators, not quantities."
+      "markdownDescription": "A v2 expression (docs/rules-v2/rules-v2-spec.md). Resolves against the slot\u0027s scope: \u0060event.*\u0060 fields, per-player providers \u0060player.*\u0060, B5 role handles \u0060victim.*\u0060 / \u0060killer.*\u0060 / \u0060assister.*\u0060 under event views, \u0060round.*\u0060 / \u0060match.*\u0060 contexts, sibling stats (bare), \u0060this\u0060, and cross-ruleset \u0060ruleset.stat\u0060 (a \u0060for: each_team\u0060 ruleset reads one in \u0060compute:\u0060 only). Duration literals \u006010s\u0060 / \u00600.5s\u0060 / \u0060500ms\u0060 are live. Closed function set: min, max, abs, contains, startswith. Map-valued \u0060define:\u0060 lookups \u0060ref[key]\u0060 (value | null) are live. B6 team aggregates are live: \u0060round.team.alive\u0060 / \u0060round.team.players\u0060 / \u0060round.enemies.alive\u0060 / \u0060round.enemies.players\u0060 (int, subject-relative alive/connected counts, disconnect-aware), \u0060round.team.equipment\u0060 / \u0060round.enemies.equipment\u0060 and \u0060round.team.money\u0060 / \u0060round.enemies.money\u0060 (int, freeze-end team economy sums) and \u0060round.alive.in_clutch\u0060 (bool); read them in \u0060when:\u0060 / \u0060while:\u0060 / \u0060compute:\u0060. The subject is the player in \u0060for: each_player\u0060 and the side in \u0060for: each_team\u0060, where \u0060team.side\u0060 (2 = T, 3 = CT) is in scope and the clutch reads are not. The plant site: \u0060round.bomb.site\u0060 (\u0022A\u0022 / \u0022B\u0022) and \u0060round.bomb.plant_place\u0060 (string, \u0022\u0022 before a plant) and \u0060round.bomb.site_entity\u0060 (int, -1 before a plant). Event clocks: \u0060event.tick\u0060 (the event\u0027s own clock) and \u0060event.frame_tick\u0060 (the frame clock a DemoFrame or a clip is on). The \u0060player.*\u0060 / \u0060match.*\u0060 entity reads are enumerated with their types, units and caveats in \u0060$defs/providerRead\u0060 - read the caveat before thresholding one: several are raw engine accumulators, not quantities."
     },
     "providerRead": {
       "markdownDescription": "An entity-value provider read. GENERATED from the catalog\u0027s providers family: these are the \u0060player.*\u0060 and \u0060match.*\u0060 names a rule expression may read off the entity state, with the unit and the caveat each one carries.",
       "oneOf": [
         {
+          "const": "match.bomb_planted",
+          "markdownDescription": "\u0060match.bomb_planted\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.game.bomb_planted\u0060. True from the frame the bomb is planted, and cleared by a defuse as well as at round_officially_ended, so it is not \u0022the bomb was planted this round\u0022: that is \u0060round.bomb.was_planted\u0060, which stays true to the round\u0027s end."
+        },
+        {
           "const": "match.freeze_period",
           "markdownDescription": "\u0060match.freeze_period\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.game.freeze_period\u0060."
+        },
+        {
+          "const": "match.game_phase",
+          "markdownDescription": "\u0060match.game_phase\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.game_phase\u0060. The match phase. Measured on matchmaking demos: 2 through the first half, 4 over the halftime break, 3 through the second half, 5 once the match is over."
+        },
+        {
+          "const": "match.round_time",
+          "markdownDescription": "\u0060match.round_time\u0060 (type \u0060int\u0060, in seconds) - an entity read, from \u0060entity.game.round_time\u0060. The length the round is configured to run, not a countdown: 115 in a live matchmaking round, 999 during warmup."
+        },
+        {
+          "const": "match.round_win_reason",
+          "markdownDescription": "\u0060match.round_win_reason\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_reason\u0060. The engine\u0027s round-end reason, set with round_win_status and cleared with it: 1 target bombed (the bomb exploded), 7 bomb defused, 8 counter-terrorists eliminated the terrorists, 9 terrorists eliminated the counter-terrorists, 12 target saved (time ran out), 17 the terrorists surrendered, 18 the counter-terrorists surrendered. 0 while the round is undecided. Those are the reasons measured on matchmaking demos, not the engine\u0027s whole list. Read it on the \u0060round_decided\u0060 view (its \u0060reason\u0060 facet) or between the decision and the round\u0027s close, not on \u0060round_ended\u0060, where it has already reset to 0 (except on the match\u0027s last round, closed by cs_win_panel_match before the reset); there, \u0060enrich.round.win_reason\u0060 carries it."
+        },
+        {
+          "const": "match.round_win_status",
+          "markdownDescription": "\u0060match.round_win_status\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.round_win_status\u0060. 0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos (544 at the end of a half; either can land a tick early or late), so on \u0060round_ended\u0060 it reads 0, except on the match\u0027s last round: that one closes on cs_win_panel_match, 193 ticks after the decision on the demos measured, before the reset, and reads the winner. The \u0060round_decided\u0060 view fires on the step, and at the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+        },
+        {
+          "const": "match.total_rounds_played",
+          "markdownDescription": "\u0060match.total_rounds_played\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.game.total_rounds_played\u0060. Rounds decided so far this match: 0 before round 1, and it increments on the frame a round is decided, not when the next one starts."
         },
         {
           "const": "player.active_weapon_class",
@@ -151,6 +176,10 @@
         {
           "const": "player.max_speed",
           "markdownDescription": "\u0060player.max_speed\u0060 (type \u0060float\u0060, in units/second) - an entity read, from \u0060entity.pawn.max_speed\u0060. Read at a rule site from the frame BEFORE the triggering event. Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
+        },
+        {
+          "const": "player.money",
+          "markdownDescription": "\u0060player.money\u0060 (type \u0060int\u0060, in dollars) - an entity read, from \u0060entity.controller.money\u0060. Read at a rule site from the frame BEFORE the triggering event. The player\u0027s cash, off the controller. Read before the event\u0027s frame, like every player column. At round_freeze_end it is the money left after the freeze-time buys, the same sample point as round.team.money; a purchase later in buy time is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold more than 5 x 16000)."
         },
         {
           "const": "player.place",
@@ -207,6 +236,8 @@
         "he_grenade",
         "kill",
         "molotov",
+        "round_decided",
+        "round_ended",
         "round_lost",
         "round_won",
         "shot",
@@ -273,7 +304,7 @@
           "markdownDescription": "Facet \u0060flick_error_deg\u0060 (type \u0060float\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060). Reads \u0060-1000\u0060 when there was nothing to measure: gate on it before a \u0060sum:\u0060 over it."
         },
         "has_winner": {
-          "markdownDescription": "Facet \u0060has_winner\u0060 (type \u0060bool\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060has_winner\u0060 (type \u0060bool\u0060). Exposed by: round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "headshot": {
           "markdownDescription": "Facet \u0060headshot\u0060 (type \u0060bool\u0060). Exposed by: death, kill. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -287,8 +318,14 @@
         "no_scope": {
           "markdownDescription": "Facet \u0060no_scope\u0060 (type \u0060bool\u0060). Exposed by: death, kill, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "reason": {
+          "markdownDescription": "Facet \u0060reason\u0060 (type \u0060int\u0060). Exposed by: round_decided. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "recoil_index": {
           "markdownDescription": "Facet \u0060recoil_index\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "rounds_played": {
+          "markdownDescription": "Facet \u0060rounds_played\u0060 (type \u0060int\u0060). Exposed by: round_decided. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "silenced": {
           "markdownDescription": "Facet \u0060silenced\u0060 (type \u0060bool\u0060). Exposed by: shot. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -350,11 +387,14 @@
         "weapon": {
           "markdownDescription": "Facet \u0060weapon\u0060 (type \u0060string\u0060). Exposed by: assist, damage_dealt, damage_taken, death, kill, shot. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "win_reason": {
+          "markdownDescription": "Facet \u0060win_reason\u0060 (type \u0060int\u0060). Exposed by: round_ended. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "winner_side": {
-          "markdownDescription": "Facet \u0060winner_side\u0060 (type \u0060int\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060winner_side\u0060 (type \u0060int\u0060). Exposed by: round_decided, round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "winner_team": {
-          "markdownDescription": "Facet \u0060winner_team\u0060 (type \u0060int\u0060). Exposed by: round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+          "markdownDescription": "Facet \u0060winner_team\u0060 (type \u0060int\u0060). Exposed by: round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "actor": {
           "enum": [
@@ -1233,6 +1273,72 @@
               {
                 "properties": {
                   "on": {
+                    "const": "round_decided"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "round_decided"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_round_decided"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "round_ended"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "round_ended"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_round_ended"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
                     "const": "round_lost"
                   }
                 },
@@ -1651,9 +1757,11 @@
           "enum": [
             "player_round",
             "player_match",
-            "match"
+            "match",
+            "team_round",
+            "team_match"
           ],
-          "description": "The export dimension (the closed table registry). \u0060player_round\u0060 / \u0060player_match\u0060 are per-player (for: each_player); \u0060match\u0060 is a single match-level row (for: match)."
+          "description": "The export dimension (the closed table registry), which must match the ruleset\u0027s for:. \u0060player_round\u0060 / \u0060player_match\u0060 are per-player (for: each_player); \u0060team_round\u0060 / \u0060team_match\u0060 are per-side (for: each_team), and team_round carries a \u0060side\u0060 and a \u0060slots\u0060 dimension (the side\u0027s players at that round\u0027s freeze end); \u0060match\u0060 is a single match-level row (for: match)."
         },
         "columns": {
           "type": "array",
@@ -1969,6 +2077,53 @@
       "additionalProperties": false,
       "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_round_decided": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060round_decided\u0060 (event \u0060round_decided\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo (544 at the end of a half; either can land a tick early or late).",
+      "properties": {
+        "reason": {
+          "markdownDescription": "\u0060reason\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
+        },
+        "rounds_played": {
+          "markdownDescription": "\u0060rounds_played\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
+        },
+        "winner_side": {
+          "markdownDescription": "\u0060winner_side\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_round_ended": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060round_ended\u0060 (event \u0060round_end\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "properties": {
+        "has_winner": {
+          "markdownDescription": "\u0060has_winner\u0060 (type \u0060bool\u0060) on view \u0060round_ended\u0060."
+        },
+        "win_reason": {
+          "markdownDescription": "\u0060win_reason\u0060 (type \u0060int\u0060) on view \u0060round_ended\u0060."
+        },
+        "winner_side": {
+          "markdownDescription": "\u0060winner_side\u0060 (type \u0060int\u0060) on view \u0060round_ended\u0060."
+        },
+        "winner_team": {
+          "markdownDescription": "\u0060winner_team\u0060 (type \u0060int\u0060) on view \u0060round_ended\u0060."
+        },
         "actor": {
           "enum": [
             "any"

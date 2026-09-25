@@ -59,16 +59,29 @@ public static class RulesetResolver
 
         private const int DefaultStreakMinStreak = 2;
 
+        /// <summary>The round-end enrichments a <c>binding: team</c> view's subject binding reads.</summary>
+        private const string TeamBindingHasWinner = "enrich.round.has_winner";
+
+        private const string TeamBindingWinnerTeam = "enrich.round.winner_team";
+
         /// <summary>The neutral ranking weight a highlight inherits when <c>score:</c> is unspecified.</summary>
         private const int DefaultHighlightScore = 50;
         private readonly CatalogScopeAdapter _adapter;
         private readonly List<RulesetCoverageDiagnostic> _coverage = [];
+
+        // count: over a sibling flag. The flag is not an expression reference, so the dependency
+        // is kept here for SkipDependentsOfSkipped.
+        private readonly Dictionary<string, string> _flagSourceByCount = new(StringComparer.Ordinal);
         private readonly ResolveContext _ctx;
         private readonly Dictionary<string, DefineDef> _definesByName;
         private readonly List<RulesetDiagnostic> _diagnostics = [];
         private readonly RulesetDoc _doc;
         private readonly RulesetExportGraph? _exports;
         private readonly bool _forEachPlayer;
+
+        // for: each_team — one instance per side. The player root is out of scope (the subject is a
+        // side, not a player); the team root (team.side) is in.
+        private readonly bool _forEachTeam;
         private readonly Dictionary<string, ParamDef> _paramDefsByName = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, ExpressionNode> _paramLiterals = new(StringComparer.Ordinal);
@@ -84,6 +97,10 @@ public static class RulesetResolver
 
         private readonly Dictionary<string, CatalogView> _viewsByName;
 
+        // Wire events the analysis layer synthesizes from entity state. They carry no server stamp,
+        // so their event.tick is the frame clock; see ResolveTickClock.
+        private readonly HashSet<string> _synthesizedEvents;
+
         internal Session(RulesetDoc doc, CatalogScopeAdapter adapter, ResolveContext ctx, RulesetExportGraph? exports)
         {
             _doc = doc;
@@ -92,8 +109,11 @@ public static class RulesetResolver
             _exports = exports;
             _rulesetId = new RulesetId(doc.Id, doc.For);
             _forEachPlayer = doc.For == RulesetScope.EachPlayer;
+            _forEachTeam = doc.For == RulesetScope.EachTeam;
 
             _viewsByName = adapter.Catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
+            _synthesizedEvents = new HashSet<string>(
+                adapter.Catalog.Events.Where(e => e.Synthesized).Select(e => e.Name), StringComparer.Ordinal);
             _definesByName = doc.Defines.ToDictionary(d => d.Name, StringComparer.Ordinal);
             _statsById = doc.Stats.ToDictionary(s => s.Id, StringComparer.Ordinal);
             _providerByV2Name = adapter.Catalog.Providers
@@ -170,6 +190,8 @@ public static class RulesetResolver
             {
                 return new RulesetResolveResult(null, _diagnostics);
             }
+
+            SkipDependentsOfSkipped(stats, highlights);
 
             CheckedRuleset ruleset = new(_rulesetId, _doc.Title, _doc.For, stats, highlights, _coverage, _doc.Show);
             return new RulesetResolveResult(ruleset, _diagnostics);
@@ -477,9 +499,20 @@ public static class RulesetResolver
 
             CheckedExpression? whileGate = BuildWhileGate(stat, trigger, thisType, reads);
 
+            // A team-bound view (round_won / round_lost) filters on the round-end winner against the
+            // subject's team. The planner writes that condition, so the reads are declared here: they
+            // are what orders the round-end enrichment edge ahead of the stat's edge.
+            if (trigger.View is { Binding: "team" } && (_forEachPlayer || _forEachTeam) && !trigger.ActorAny)
+            {
+                reads.Declare(TeamBindingHasWinner);
+                reads.Declare(TeamBindingWinnerTeam);
+            }
+
+            RejectPlayerSubjectReads(stat, reads);
+
             RuleNodeKind kind = MapNodeKind(stat.Kind);
             KeepKind keep = MapKeep(stat);
-            ScopeAxis scope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis scope = ComputeScope(stat.Per);
 
             // streak/burst kind-args (row 8): fold the window to concrete ticks and default the two so
             // the node's identity is fully determined (an explicit window:640 and its default hash alike).
@@ -563,7 +596,45 @@ public static class RulesetResolver
                 // Carry the compute's display format: through for the planner to stamp on the
                 // ComputedStatNode. Presentation only — the hasher never reads it (V2StatHasher.Descriptor
                 // omits it), so it is outside node identity, exactly like the display Label.
-                Format: stat.Format);
+                Format: stat.Format,
+                Clock: stat.Kind == StatKind.Capture ? ResolveTickClock(valueSelector, trigger) : TickClock.None);
+        }
+
+        /// <summary>
+        ///     Which clock a capture's value is on, when the value is a bare tick read. Only the two bare
+        ///     reads are classified: <c>event.frame_tick</c> is always the frame clock, and
+        ///     <c>event.tick</c> is the server clock on a wire event and the frame clock on one the
+        ///     analysis layer synthesizes (it has no server stamp, so every tick slot carries the frame
+        ///     clock). Anything derived from a tick, a difference included, is left unclassified rather
+        ///     than guessed at.
+        /// </summary>
+        private TickClock ResolveTickClock(CheckedExpression? valueSelector, ResolvedTrigger trigger)
+        {
+            if (valueSelector?.Root is not ReferenceNode reference)
+            {
+                return TickClock.None;
+            }
+
+            if (string.Equals(reference.Path, "event." + CatalogScopeAdapter.FrameTickMember, StringComparison.Ordinal))
+            {
+                return TickClock.Frame;
+            }
+
+            if (!string.Equals(reference.Path, "event.tick", StringComparison.Ordinal))
+            {
+                return TickClock.None;
+            }
+
+            // A net-message payload has no tick envelope; leave it unclassified.
+            if (trigger.IsNet)
+            {
+                return TickClock.None;
+            }
+
+            string? wireEvent = trigger.View?.Event ?? trigger.RawOrNetName;
+            return wireEvent is not null && _synthesizedEvents.Contains(wireEvent)
+                ? TickClock.Frame
+                : TickClock.Server;
         }
 
         /// <summary>
@@ -735,6 +806,7 @@ public static class RulesetResolver
             }
 
             reads.Collect(source);
+            RejectPlayerSubjectReads(stat, reads);
 
             List<(int Min, string Target)> tallyThresholds = [];
             foreach (TallyThreshold threshold in thresholds)
@@ -751,7 +823,7 @@ public static class RulesetResolver
                 tallyThresholds.Add((minValue, threshold.Target));
             }
 
-            ScopeAxis tallyScope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis tallyScope = ComputeScope(stat.Per);
 
             return new CheckedStat(
                 _rulesetId,
@@ -813,6 +885,15 @@ public static class RulesetResolver
             if (!checkedById.TryGetValue(ofId, out CheckedStat? ofStat)
                 || !checkedById.TryGetValue(perId, out CheckedStat? perStat))
             {
+                // Recorded like any other coverage skip, so a show: entry for the rate drops its column.
+                RulesetCoverageDiagnostic? cause = _coverage.FirstOrDefault(c =>
+                    string.Equals(c.NodeId, ofId, StringComparison.Ordinal)
+                    || string.Equals(c.NodeId, perId, StringComparison.Ordinal));
+                if (cause is not null)
+                {
+                    RecordDependencySkip("stat", stat.Id, cause, stat.Position);
+                }
+
                 return null;
             }
 
@@ -848,7 +929,7 @@ public static class RulesetResolver
             }
 
             reads.Collect(ratio);
-            ScopeAxis rateScope = ComputeScope(stat.Per, _forEachPlayer);
+            ScopeAxis rateScope = ComputeScope(stat.Per);
 
             return new CheckedStat(
                 _rulesetId,
@@ -1292,8 +1373,19 @@ public static class RulesetResolver
             }
 
             reads.Collect(when);
-            ScopeAxis scopeAxis = ComputeScope(highlight.Per, _forEachPlayer);
-            ScopeAxis countScope = _forEachPlayer ? ScopeAxis.PlayerMatch : ScopeAxis.Match;
+            if (_forEachTeam)
+            {
+                // A highlight is a per-round rising edge attributed to a player on the timeline; a
+                // side has no player to attribute it to.
+                Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                    $"highlight '{highlight.Id}': a for: each_team ruleset cannot declare highlights (a "
+                    + "highlight is attributed to a player); count the moments with a stat instead",
+                    highlight.Position);
+                return null;
+            }
+
+            ScopeAxis scopeAxis = ComputeScope(highlight.Per);
+            ScopeAxis countScope = ComputeScope(PerScope.Match);
 
             int score = highlight.Score ?? DefaultHighlightScore;
             HighlightKind kind = ResolveHighlightKind(highlight);
@@ -1413,6 +1505,11 @@ public static class RulesetResolver
             {
                 resolved.FlagSource = name;
                 resolved.Ok = true;
+                if (!silent)
+                {
+                    _flagSourceByCount[stat.Id] = name;
+                }
+
                 return;
             }
 
@@ -1572,6 +1669,127 @@ public static class RulesetResolver
 
         // ── Concrete events / coverage ─────────────────────────────────────────────
 
+        /// <summary>
+        ///     Drops every stat and highlight that reads a coverage-skipped node, transitively, and
+        ///     records each one in coverage. A skipped node is never built, so a surviving reader
+        ///     would leave the planner a reference to hash with nothing behind it (#68). The cause
+        ///     carried forward is the root skip, so every record names the view that did not bind.
+        /// </summary>
+        private void SkipDependentsOfSkipped(List<CheckedStat> stats, List<CheckedHighlight> highlights)
+        {
+            if (_coverage.Count == 0)
+            {
+                return;
+            }
+
+            Dictionary<string, RulesetCoverageDiagnostic> skipped = new(StringComparer.Ordinal);
+            foreach (RulesetCoverageDiagnostic coverage in _coverage)
+            {
+                skipped.TryAdd(coverage.NodeId, coverage);
+            }
+
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (int i = stats.Count - 1; i >= 0; i--)
+                {
+                    CheckedStat stat = stats[i];
+                    string? missing = FirstSkippedReference(skipped, stat.TriggerCondition, stat.ValueSelector,
+                        stat.WhileGate);
+                    if (missing is null && _flagSourceByCount.TryGetValue(stat.StatId, out string? flag)
+                                        && skipped.ContainsKey(flag))
+                    {
+                        missing = flag;
+                    }
+
+                    if (missing is null)
+                    {
+                        continue;
+                    }
+
+                    RulesetCoverageDiagnostic cause = skipped[missing];
+                    skipped.TryAdd(stat.StatId,
+                        RecordDependencySkip("stat", stat.StatId, missing, cause, stat.Position));
+                    if (stat.TallyThresholds is { } thresholds)
+                    {
+                        // A tally emits under its targets' ids, not its own, and those are what a show:
+                        // entry or a reader names. Each is recorded too, or the show validator would take
+                        // an entry naming one for an unknown ref and exclude the whole ruleset.
+                        foreach ((int _, string target) in thresholds)
+                        {
+                            skipped.TryAdd(target, RecordTallyTargetSkip(target, stat, cause));
+                        }
+                    }
+
+                    stats.RemoveAt(i);
+                    changed = true;
+                }
+
+                for (int i = highlights.Count - 1; i >= 0; i--)
+                {
+                    CheckedHighlight highlight = highlights[i];
+                    if (FirstSkippedReference(skipped, highlight.When) is not { } missing)
+                    {
+                        continue;
+                    }
+
+                    RulesetCoverageDiagnostic record = RecordDependencySkip("highlight", highlight.HighlightId,
+                        missing, skipped[missing], highlight.Position);
+                    skipped.TryAdd(highlight.HighlightId, record);
+                    skipped.TryAdd(highlight.CountNodeId, record);
+                    highlights.RemoveAt(i);
+                    changed = true;
+                }
+            }
+        }
+
+        private static string? FirstSkippedReference(Dictionary<string, RulesetCoverageDiagnostic> skipped,
+            params CheckedExpression?[] expressions)
+        {
+            foreach (CheckedExpression? expression in expressions)
+            {
+                if (expression is null)
+                {
+                    continue;
+                }
+
+                foreach (ResolvedReference reference in expression.References)
+                {
+                    if (reference is { IsStatReference: true, StatPath: { } target } && skipped.ContainsKey(target))
+                    {
+                        return target;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private RulesetCoverageDiagnostic RecordDependencySkip(string what, string nodeId,
+            RulesetCoverageDiagnostic cause, SourcePosition position) =>
+            RecordDependencySkip(what, nodeId, cause.NodeId, cause, position);
+
+        private RulesetCoverageDiagnostic RecordTallyTargetSkip(string target, CheckedStat tally,
+            RulesetCoverageDiagnostic cause)
+        {
+            RulesetCoverageDiagnostic record = new(_rulesetId, target, cause.ViewName, _ctx.ProfileId!,
+                $"tally target '{target}' is emitted by tally '{tally.StatId}', which is skipped on source "
+                + $"profile '{_ctx.ProfileId}' (view '{cause.ViewName}' does not bind) — skipped", tally.Position);
+            _coverage.Add(record);
+            return record;
+        }
+
+        private RulesetCoverageDiagnostic RecordDependencySkip(string what, string nodeId, string missing,
+            RulesetCoverageDiagnostic cause, SourcePosition position)
+        {
+            RulesetCoverageDiagnostic record = new(_rulesetId, nodeId, cause.ViewName, _ctx.ProfileId!,
+                $"{what} '{nodeId}' reads '{missing}', which is skipped on source profile '{_ctx.ProfileId}' "
+                + $"(view '{cause.ViewName}' does not bind) — skipped", position);
+            _coverage.Add(record);
+            return record;
+        }
+
         private IReadOnlyList<string>? ResolveConcreteEvents(ResolvedTrigger trigger, StatDef stat)
         {
             if (trigger.RawOrNetName is { } rawOrNet)
@@ -1655,6 +1873,11 @@ public static class RulesetResolver
             if (_forEachPlayer)
             {
                 AddRoot(roots, _adapter.Player);
+            }
+
+            if (_forEachTeam)
+            {
+                AddRoot(roots, _adapter.Team);
             }
 
             AddRoot(roots, _adapter.Round);
@@ -1848,7 +2071,8 @@ public static class RulesetResolver
             // player.* / match.* entity provider (singleton or per-player keyed by the ruleset player).
             if (_providerByV2Name.TryGetValue(reference.Path, out CatalogProvider? provider))
             {
-                entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject);
+                entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject,
+                    IsSingleton: string.Equals(provider.Scope, "singleton", StringComparison.Ordinal));
                 return true;
             }
 
@@ -1905,14 +2129,39 @@ public static class RulesetResolver
             };
         }
 
-        private static ScopeAxis ComputeScope(PerScope per, bool forEachPlayer) =>
-            (forEachPlayer, per) switch
+        private ScopeAxis ComputeScope(PerScope per) =>
+            (_doc.For, per) switch
             {
-                (true, PerScope.Match) => ScopeAxis.PlayerMatch,
-                (true, _) => ScopeAxis.PlayerRound,
-                (false, PerScope.Match) => ScopeAxis.Match,
+                (RulesetScope.EachPlayer, PerScope.Match) => ScopeAxis.PlayerMatch,
+                (RulesetScope.EachPlayer, _) => ScopeAxis.PlayerRound,
+                (RulesetScope.EachTeam, PerScope.Match) => ScopeAxis.TeamMatch,
+                (RulesetScope.EachTeam, _) => ScopeAxis.TeamRound,
+                (_, PerScope.Match) => ScopeAxis.Match,
                 _ => ScopeAxis.Round
             };
+
+        /// <summary>
+        ///     In a <c>for: each_team</c> ruleset, refuses the two team-aggregate reads whose subject
+        ///     has to be a player: <c>round.alive.in_clutch</c> (is THIS player the lone survivor) and
+        ///     <c>round.clutch.size</c> (the N of THIS player's 1vN). A side is not in a clutch.
+        /// </summary>
+        private void RejectPlayerSubjectReads(StatDef stat, ReadCollector reads)
+        {
+            if (!_forEachTeam)
+            {
+                return;
+            }
+
+            foreach (string read in reads.DeclaredReads)
+            {
+                if (read is "round.alive.in_clutch" or "round.clutch.size")
+                {
+                    Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                        $"stat '{stat.Id}' reads '{read}', whose subject is a player (the clutching player); "
+                        + "a for: each_team ruleset's subject is a side", stat.Position);
+                }
+            }
+        }
 
         private static string LastSegment(string path)
         {
@@ -1949,6 +2198,15 @@ public static class RulesetResolver
             internal IReadOnlyList<string> DeclaredReads => _reads;
 
             internal IReadOnlyList<EntityProviderReference> EntityReads => _entities;
+
+            /// <summary>Declares a read the planner performs on the stat's behalf (no expression carries it).</summary>
+            internal void Declare(string path)
+            {
+                if (_seen.Add(path))
+                {
+                    _reads.Add(path);
+                }
+            }
 
             internal void Collect(CheckedExpression? expression)
             {

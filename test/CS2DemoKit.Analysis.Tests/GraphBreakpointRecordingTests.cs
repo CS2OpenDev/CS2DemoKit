@@ -3,6 +3,7 @@
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
@@ -17,12 +18,12 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     load-bearing pieces the rest of the feature builds on:
 ///     <list type="number">
 ///         <item>
-///             <b>The descriptor → <see cref="StateEdge" /> bridge</b> (<see cref="BuildResult.EdgeBacking" />).
+///             <b>The descriptor → <see cref="StateEdge" /> bridge</b> (<see cref="BuildResult.EdgeBacking" />,
+///             and <see cref="GraphEdgeDescriptor.Edge" /> on every row).
 ///             The visualization layer hands back a <see cref="GraphEdgeDescriptor" /> when an edge is
 ///             clicked; an edge breakpoint must resolve that to the runtime <see cref="StateEdge" /> whose
-///             fires were recorded. The descriptor never holds the edge — the two are born in the same
-///             build-loop iteration sharing <c>Source</c>/<c>Destination</c> node refs — so this asserts
-///             the map is built and is coverage-correct.
+///             fires were recorded. The two are born in the same wiring call, so this asserts the map
+///             is built and is coverage-correct.
 ///         </item>
 ///         <item>
 ///             <b>The applied-index recording</b> (<see cref="EvaluationResult.AppliedMessagesByEdge" />).
@@ -70,11 +71,21 @@ public class GraphBreakpointRecordingTests
         await Assert.That(ReferenceEquals(edge.Source, triggerDesc.Source)).IsTrue();
         await Assert.That(ReferenceEquals(edge.WrittenNode, triggerDesc.Destination)).IsTrue();
 
-        // Global coverage invariant: EVERY entry in the map shares node refs with its descriptor.
+        // Global coverage invariant: EVERY entry in the map is the descriptor's own edge, drawn from
+        // the edge's source to a node the edge writes. A multi-write edge backs one row per written
+        // node: its declared writes, a guard it sets, the per-player state it updates, or, for a
+        // round reset, the node it clears.
         foreach ((GraphEdgeDescriptor desc, StateEdge backing) in build.EdgeBacking!)
         {
+            await Assert.That(ReferenceEquals(desc.Edge, backing)).IsTrue();
             await Assert.That(ReferenceEquals(backing.Source, desc.Source)).IsTrue();
-            await Assert.That(ReferenceEquals(backing.WrittenNode, desc.Destination)).IsTrue();
+            bool written = ReferenceEquals(backing.WrittenNode, desc.Destination)
+                           || (backing.AdditionalWrittenNodes?.Any(n => ReferenceEquals(n, desc.Destination)) ?? false)
+                           || desc.Destination is ExternalStateNode
+                           || (backing is RoundScopedLogicNodeReset reset && ReferenceEquals(reset.WrappedNode, desc.Destination))
+                           || desc.Reads.Any(r => ReferenceEquals(r, desc.Destination));
+            await Assert.That(written).IsTrue()
+                .Because($"{desc.Source.Name} -> {desc.Destination.Name} ({backing.GetType().Name}) must point at a node its edge writes");
         }
 
         // Exclusion: logic-input descriptors (conjunction/disjunction) have no backing StateEdge,

@@ -56,7 +56,83 @@ public static class CrossRulesetReferenceValidator
             }
         }
 
+        if (doc.For == RulesetScope.EachTeam)
+        {
+            RejectTeamReadsOutsideCompute(doc, use, localIds, graph, diagnostics);
+        }
+
         return diagnostics;
+    }
+
+    /// <summary>
+    ///     A <c>for: each_team</c> ruleset reads another ruleset's stat in <c>compute:</c> only. The
+    ///     team build resolves a qualified read through the side's node lookup, which a compute reads
+    ///     and an event condition or value selector (<c>where:</c>, <c>while:</c>, <c>capture:</c>,
+    ///     <c>sum:</c>, <c>tally:</c>, a bucket key) does not, so those failed at build with "Unknown
+    ///     identifier" after validating clean. Reported here instead, once per stat and read.
+    /// </summary>
+    private static void RejectTeamReadsOutsideCompute(RulesetDoc doc, HashSet<string> use,
+        HashSet<string> localIds, RulesetExportGraph graph, List<RulesetDiagnostic> diagnostics)
+    {
+        foreach (StatDef stat in doc.Stats)
+        {
+            List<(string Text, SourcePosition Pos)> slots = [];
+            if (stat.KindArg is { } kindArg && stat.Kind != StatKind.Compute)
+            {
+                slots.Add((kindArg, stat.Position));
+            }
+
+            slots.AddRange(TriggerExpressions(stat.Trigger));
+            slots.AddRange(TriggerExpressions(stat.OffTrigger));
+            if (stat.BucketKey is { } key)
+            {
+                slots.Add((key, stat.Position));
+            }
+
+            if (stat.BucketValue is { } value)
+            {
+                slots.Add((value, stat.Position));
+            }
+
+            foreach (string part in stat.BucketKeys ?? [])
+            {
+                slots.Add((part, stat.Position));
+            }
+
+            HashSet<string> reported = new(StringComparer.Ordinal);
+            foreach ((string text, SourcePosition pos) in slots)
+            {
+                LanguageResult<ExpressionNode> parsed = ExpressionParser.Parse(text);
+                if (!parsed.Success)
+                {
+                    continue;
+                }
+
+                foreach (ReferenceNode reference in CollectReferences(parsed.Require()))
+                {
+                    if (reference.Segments.Length < 2)
+                    {
+                        continue;
+                    }
+
+                    string head = reference.Segments[0];
+                    if (string.Equals(head, doc.Id, StringComparison.Ordinal) || localIds.Contains(head)
+                        || !use.Contains(head) || !graph.ContainsRuleset(head))
+                    {
+                        continue;
+                    }
+
+                    string read = $"{head}.{reference.Segments[1]}";
+                    if (reported.Add(read))
+                    {
+                        diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.TeamScopeUnsupported,
+                            $"stat '{stat.Id}' reads '{read}' outside compute: — a for: each_team ruleset reads "
+                            + "another ruleset's stat only in a compute:",
+                            pos));
+                    }
+                }
+            }
+        }
     }
 
     private static void Classify(ReferenceNode reference, RulesetDoc doc, HashSet<string> use,
@@ -120,13 +196,26 @@ public static class CrossRulesetReferenceValidator
             return;
         }
 
-        // Read-scope rule: same-scope and per-player→match reads are legal; a match→per-player
-        // read is an error — no player binding exists at match scope.
+        // Read-scope rule: same-scope reads and reads of a match ruleset are legal. A read across
+        // subjects is an error: match has no player or side to bind a per-player or per-side stat
+        // to, a player's stat is not a side's, and a side's is not a player's.
         if (doc.For == RulesetScope.Match && entry.For == RulesetScope.EachPlayer)
         {
             diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
                 $"match-scoped ruleset '{doc.Id}' may not read per-player stat '{head}.{stat}' — "
                 + "no player binding exists at match scope", pos));
+        }
+        else if (entry.For == RulesetScope.EachTeam && doc.For != RulesetScope.EachTeam)
+        {
+            diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
+                $"ruleset '{doc.Id}' may not read per-side stat '{head}.{stat}' — only a for: each_team "
+                + "ruleset has a side to bind it to", pos));
+        }
+        else if (doc.For == RulesetScope.EachTeam && entry.For == RulesetScope.EachPlayer)
+        {
+            diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
+                $"per-side ruleset '{doc.Id}' may not read per-player stat '{head}.{stat}' — a side is "
+                + "not a player", pos));
         }
     }
 
