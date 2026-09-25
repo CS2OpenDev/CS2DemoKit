@@ -96,7 +96,7 @@ public sealed class EntityChangeScanner
     private readonly List<NetMessage> _scratch = new(8);
 
     // Messages the evaluator dispatches AFTER the frame's own messages (round_decided). Refilled per
-    // consumed frame; see TakePostFrameMessages.
+    // consumed frame; see PostFrameMessages.
     private readonly List<NetMessage> _postFrame = new(1);
 
     // Where in _tracked the three game-rules singletons round_decided is read from sit, or -1 when
@@ -269,10 +269,14 @@ public sealed class EntityChangeScanner
     /// <summary>
     ///     The messages to dispatch AFTER the frame just polled with <see cref="AdvanceAndPollAt" />
     ///     has dispatched its own: the synthesized <c>round_decided</c>, which must follow the kill
-    ///     delivered in the same frame that decided the round. Empty on most frames. The list is
-    ///     refilled on the next poll, so read it before then.
+    ///     delivered in the same frame that decided the round. Empty on most frames.
+    ///     <para>
+    ///         Reading it does not consume anything. It is the scanner's own list, valid until the
+    ///         next <see cref="AdvanceAndPollAt" />, which clears and refills it; a caller that walks
+    ///         the scanner itself reads it once after each poll and copies what it keeps.
+    ///     </para>
     /// </summary>
-    public IReadOnlyList<NetMessage> TakePostFrameMessages() => _postFrame;
+    public IReadOnlyList<NetMessage> PostFrameMessages => _postFrame;
 
     /// <summary>
     ///     Entity-state layer owned by this scanner. Exposed for per-event reads in edges that

@@ -86,6 +86,34 @@ public class ProjectileCreationDecodeTests
         await Assert.That(forward.Describe()).IsEqualTo(retained.Describe());
     }
 
+    /// <summary>
+    ///     The per-update field-path high-water mark is a test seam and is kept only while profiling
+    ///     is on, so a default replay does not compare and store it on every entity update.
+    /// </summary>
+    [Test]
+    public async Task MaxFieldPathCount_IsKeptOnlyWhileProfiling()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+        bool wasProfiling = Profiling.Enabled;
+        ProjectileTally quiet;
+        ProjectileTally profiled;
+        try
+        {
+            Profiling.Enabled = false;
+            quiet = ProjectileTally.Walk(demo.Frames);
+            Profiling.Enabled = true;
+            profiled = ProjectileTally.Walk(demo.Frames);
+        }
+        finally
+        {
+            Profiling.Enabled = wasProfiling;
+        }
+
+        await Assert.That(quiet.MaxFieldPathCount).IsEqualTo(0);
+        await Assert.That(profiled.MaxFieldPathCount).IsGreaterThan(0);
+        await Assert.That(profiled.MaxFieldPathCount).IsLessThanOrEqualTo(EntityTracker.MaxFieldPaths);
+    }
+
     private static ProjectileTally RetainedSampleTally()
     {
         string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);

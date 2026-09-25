@@ -74,7 +74,7 @@ public class RoundDecidedTests
             IReadOnlyList<NetMessage> preFrame = scanner.AdvanceAndPollAt(frame, 100 + frame);
             await Assert.That(preFrame.Any(m => m is GameEventMessage { DecodedEvent: RoundDecidedEvent })).IsFalse()
                 .Because("round_decided rides the post-frame list, never the pre-frame one");
-            decided.AddRange(scanner.TakePostFrameMessages().OfType<GameEventMessage>()
+            decided.AddRange(scanner.PostFrameMessages.OfType<GameEventMessage>()
                 .Select(m => m.DecodedEvent).OfType<RoundDecidedEvent>());
         }
 
@@ -94,10 +94,32 @@ public class RoundDecidedTests
         for (int frame = 0; frame < 4; frame++)
         {
             scanner.AdvanceAndPollAt(frame, frame);
-            count += scanner.TakePostFrameMessages().Count;
+            count += scanner.PostFrameMessages.Count;
         }
 
         await Assert.That(count).IsEqualTo(1);
+    }
+
+    /// <summary>
+    ///     Reading the post-frame messages consumes nothing: a second read of the same frame sees the
+    ///     same decision, and only the next poll clears it.
+    /// </summary>
+    [Test]
+    public async Task PostFrameMessages_HoldUntilTheNextPoll()
+    {
+        EntityChangeScanner scanner = LatchScanner();
+        scanner.InjectDigests([Digest(0, 0, 0), Digest(3, 8, 1), Digest(3, 8, 1)]);
+
+        scanner.AdvanceAndPollAt(0, 0);
+        await Assert.That(scanner.PostFrameMessages.Count).IsEqualTo(0);
+
+        scanner.AdvanceAndPollAt(1, 1);
+        await Assert.That(scanner.PostFrameMessages.Count).IsEqualTo(1);
+        await Assert.That(scanner.PostFrameMessages.Count).IsEqualTo(1)
+            .Because("reading the list does not take the messages out of it");
+
+        scanner.AdvanceAndPollAt(2, 2);
+        await Assert.That(scanner.PostFrameMessages.Count).IsEqualTo(0);
     }
 
     /// <summary>
@@ -201,7 +223,7 @@ public class RoundDecidedTests
         for (int frame = 0; frame < 3; frame++)
         {
             markers += scanner.AdvanceAndPollAt(frame, frame).OfType<EntityChangeMessage>().Count();
-            decided += scanner.TakePostFrameMessages().Count;
+            decided += scanner.PostFrameMessages.Count;
         }
 
         await Assert.That(markers).IsEqualTo(0);
@@ -215,7 +237,6 @@ public class RoundDecidedTests
         for (int frame = 0; frame < 3; frame++)
         {
             loudMarkers += loud.AdvanceAndPollAt(frame, frame).OfType<EntityChangeMessage>().Count();
-            loud.TakePostFrameMessages();
         }
 
         await Assert.That(loudMarkers).IsGreaterThan(0);

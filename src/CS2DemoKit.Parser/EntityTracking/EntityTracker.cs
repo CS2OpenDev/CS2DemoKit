@@ -2775,13 +2775,14 @@ public sealed class EntityTracker
         paths.Clear();
 
         CollectFieldPaths(ref buf, paths, MaxFieldPaths, state.ClassName, updateKind, this);
-        if (paths.Count > MaxFieldPathCountForTest)
-        {
-            MaxFieldPathCountForTest = paths.Count;
-        }
 
         if (prof)
         {
+            if (paths.Count > MaxFieldPathCountForTest)
+            {
+                MaxFieldPathCountForTest = paths.Count;
+            }
+
             fvStart = Stopwatch.GetTimestamp();
             fvAlloc = GC.GetAllocatedBytesForCurrentThread();
             _profFieldPathTicks += fvStart - fpStart;
@@ -2831,9 +2832,11 @@ public sealed class EntityTracker
     internal const int MaxFieldPaths = 16_384;
 
     /// <summary>
-    ///     The largest number of field paths any single update decoded on this tracker. Test-only:
-    ///     the projectile corpus test prints it so the headroom under <see cref="MaxFieldPaths" /> is
-    ///     visible per demo.
+    ///     The largest number of field paths any single update decoded on this tracker while
+    ///     <see cref="Profiling.Enabled" /> was on, and zero when no profiled decode has run.
+    ///     Test-only: the projectile corpus test turns profiling on and prints it so the headroom
+    ///     under <see cref="MaxFieldPaths" /> is visible per demo. It is kept inside the profiling
+    ///     branch the field read already takes, so a default replay does not pay for it.
     /// </summary>
     internal int MaxFieldPathCountForTest { get; private set; }
 

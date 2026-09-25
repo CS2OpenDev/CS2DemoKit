@@ -687,7 +687,7 @@ public sealed class StateGraphEvaluator
             //    hold. ──
             if (_entityScanner is not null)
             {
-                IReadOnlyList<NetMessage> postFrame = _entityScanner.TakePostFrameMessages();
+                IReadOnlyList<NetMessage> postFrame = _entityScanner.PostFrameMessages;
                 for (int p = 0; p < postFrame.Count; p++)
                 {
                     NetMessage postMsg = postFrame[p];

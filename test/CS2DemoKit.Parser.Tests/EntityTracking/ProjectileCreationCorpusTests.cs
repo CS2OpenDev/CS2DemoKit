@@ -70,9 +70,17 @@ public class ProjectileCreationCorpusTests
 
         byte[] bytes = await File.ReadAllBytesAsync(path);
         ProjectileTally tally;
-        using (DemoReader reader = DemoReader.Open(bytes.AsMemory(), new ParseOptions { Plan = DecodePlan.EntityReplay }))
+        // The field-path high-water mark printed below is only kept while profiling is on.
+        bool wasProfiling = Profiling.Enabled;
+        try
         {
+            Profiling.Enabled = true;
+            using DemoReader reader = DemoReader.Open(bytes.AsMemory(), new ParseOptions { Plan = DecodePlan.EntityReplay });
             tally = ProjectileTally.Walk(ProjectileTally.ReadAll(reader));
+        }
+        finally
+        {
+            Profiling.Enabled = wasProfiling;
         }
 
         Console.WriteLine($"{Path.GetFileName(path)} maxFieldPaths={tally.MaxFieldPathCount} " +
