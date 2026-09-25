@@ -68,11 +68,11 @@ public class GraphDescriptorCoverageTests
         [typeof(EntityPullNodeSettleEdge)] = GraphEdgeKind.EntitySettle
     };
 
-    // Each build's descriptor sets as the builder drew them at dc0c6b6, before this work: sorted
-    // "G|P" + source + destination + label + effect + condition, the tally rows left out (they were
-    // drawn from the tallied stat and are now drawn from the root). Every one of them must still be
-    // drawn the same way. The HLTV shipped template did not materialise at dc0c6b6 (#68), so its
-    // player rows were added to that pin with the fix.
+    // Each build's descriptor sets as the builder drew them before every edge was described (#50):
+    // sorted "G|P" + source + destination + label + effect + condition, the tally rows left out (they
+    // were drawn from the tallied stat and are now drawn from the root). Every one of them must still
+    // be drawn the same way. The HLTV shipped template did not materialise then (#68), so its player
+    // rows were added to that pin with the fix.
     private static readonly Dictionary<string, string> _baselineRows = new(StringComparer.Ordinal)
     {
         ["shipped-gotv"] = "142:2DD1650AAB0812F2",

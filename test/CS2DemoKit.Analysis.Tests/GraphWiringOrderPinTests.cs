@@ -26,8 +26,9 @@ namespace CS2DemoKit.Analysis.Tests;
 [Category("Unit")]
 public class GraphWiringOrderPinTests
 {
-    // "{case}/{sequence}" -> "{line count}:{first 16 hex of the sha256}", taken at dc0c6b6. The HLTV
-    // shipped template did not materialise there (#68), so its player sequence was pinned with that fix.
+    // "{case}/{sequence}" -> "{line count}:{first 16 hex of the sha256}", taken before every edge was
+    // described (#50). The HLTV shipped template did not materialise then (#68), so its player
+    // sequence was pinned with that fix.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
         ["shipped-gotv/game"] = "67:7A54066EF8A22166",
