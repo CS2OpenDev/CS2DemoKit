@@ -582,7 +582,16 @@ three always-empty members (#50). What changed:
   `ExternalStateNode` and `ExternalState`. A consumer type with one of these names hits CS0104 when
   it imports the namespace. `RuleGraph.FromBuild` with templates runs the builder's per-player
   factory, which keeps state on the builder while it runs: never call it while a run over the same
-  build is going.
+  build is going. A template that cannot materialise without a demo is left out of that preview
+  and named in `RuleGraph.Diagnostics`; the shipped rulesets on HLTV are one today.
+- `RuleGraph.CollapsePlayers` folds only per-player copies, by template position: game, team and
+  external edges pass through with their keys. A collapsed edge's `Descriptor` is the lowest slot's
+  copy and `RuleGraphEdge.Instances` holds every player's, so a template edge's fire count is the
+  sum over their `Edge`s, not `Descriptor.Edge.FireCount`.
+- A hand-built `GraphEdgeDescriptor` with no `Edge`, as a 0.12 consumer builds one, is matched to
+  the graph edge from its source that writes its destination, and `RuleGraph` draws that edge once
+  with a copy of the descriptor that carries it. Without a match the edge is drawn as
+  `Undescribed` beside the descriptor's row, and reported.
 - Rules output, node counts, snapshot columns, the decode plan, the order edges are registered in
   (game and per player) and resolved-identity hashes do not move. The fifteen rules-output fixtures
   are byte-identical.
