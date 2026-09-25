@@ -218,9 +218,8 @@ internal static class RuleGraphFixtures
     }
 
     /// <summary>
-    ///     The example at <paramref name="path" /> on its own. Not beside the shipped rulesets: there
-    ///     the multikill example's tally targets collide with kast's in the shared template, and its
-    ///     scoreboard then fails to materialise, which is a separate defect.
+    ///     The example at <paramref name="path" /> on its own. <see cref="TallyTargetScopeTests" /> runs
+    ///     them all beside the shipped rulesets.
     /// </summary>
     internal static IReadOnlyList<RulesetDoc> Example(string path)
     {
