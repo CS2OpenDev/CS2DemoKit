@@ -218,9 +218,8 @@ internal static class RuleGraphFixtures
     }
 
     /// <summary>
-    ///     The example at <paramref name="path" /> on its own. Not beside the shipped rulesets: there
-    ///     the multikill example's tally targets collide with kast's in the shared template, and its
-    ///     scoreboard then fails to materialise, which is a separate defect.
+    ///     The example at <paramref name="path" /> on its own. <see cref="TallyTargetScopeTests" /> runs
+    ///     them all beside the shipped rulesets.
     /// </summary>
     internal static IReadOnlyList<RulesetDoc> Example(string path)
     {
@@ -250,25 +249,18 @@ internal static class RuleGraphFixtures
         return build;
     }
 
-    /// <summary>
-    ///     The named builds the pinned tests run over. <c>Materializes</c> is false for the one build
-    ///     whose per-player template cannot materialise: on HLTV the shipped <c>player_stats</c>
-    ///     computes read <c>blinded_enemy</c> stats that coverage skipped on that profile, and the
-    ///     planner throws on the dangling reference. That is a separate defect; its game scope is
-    ///     still pinned.
-    /// </summary>
-    internal static IEnumerable<(string Name, Func<BuildResult> Build, bool Materializes)> Cases()
+    /// <summary>The named builds the pinned tests run over.</summary>
+    internal static IEnumerable<(string Name, Func<BuildResult> Build)> Cases()
     {
-        yield return ("shipped-gotv", () => Build(Shipped(), new Cs2GotvProfile()), true);
-        yield return ("shipped-hltv", () => Build(Shipped(), new Cs2HltvProfile()), false);
-        yield return ("matrix-gotv", () => Build(Matrix(), new Cs2GotvProfile()), true);
-        yield return ("matrix-hltv", () => Build(Matrix(), new Cs2HltvProfile()), true);
+        yield return ("shipped-gotv", () => Build(Shipped(), new Cs2GotvProfile()));
+        yield return ("shipped-hltv", () => Build(Shipped(), new Cs2HltvProfile()));
+        yield return ("matrix-gotv", () => Build(Matrix(), new Cs2GotvProfile()));
+        yield return ("matrix-hltv", () => Build(Matrix(), new Cs2HltvProfile()));
     }
 
     /// <summary>The pinned cases, plus each example on GOTV.</summary>
-    internal static IEnumerable<(string Name, Func<BuildResult> Build, bool Materializes)> CoverageCases() =>
+    internal static IEnumerable<(string Name, Func<BuildResult> Build)> CoverageCases() =>
         Cases().Concat(ExampleFiles().Select(path => (
             "example-" + Path.GetFileName(path).Replace(".rules.yaml", "", StringComparison.Ordinal),
-            (Func<BuildResult>)(() => Build(Example(path), new Cs2GotvProfile())),
-            true)));
+            (Func<BuildResult>)(() => Build(Example(path), new Cs2GotvProfile())))));
 }

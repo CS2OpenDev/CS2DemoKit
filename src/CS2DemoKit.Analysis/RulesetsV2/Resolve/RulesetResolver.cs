@@ -68,6 +68,10 @@ public static class RulesetResolver
         private const int DefaultHighlightScore = 50;
         private readonly CatalogScopeAdapter _adapter;
         private readonly List<RulesetCoverageDiagnostic> _coverage = [];
+
+        // count: over a sibling flag. The flag is not an expression reference, so the dependency
+        // is kept here for SkipDependentsOfSkipped.
+        private readonly Dictionary<string, string> _flagSourceByCount = new(StringComparer.Ordinal);
         private readonly ResolveContext _ctx;
         private readonly Dictionary<string, DefineDef> _definesByName;
         private readonly List<RulesetDiagnostic> _diagnostics = [];
@@ -186,6 +190,8 @@ public static class RulesetResolver
             {
                 return new RulesetResolveResult(null, _diagnostics);
             }
+
+            SkipDependentsOfSkipped(stats, highlights);
 
             CheckedRuleset ruleset = new(_rulesetId, _doc.Title, _doc.For, stats, highlights, _coverage, _doc.Show);
             return new RulesetResolveResult(ruleset, _diagnostics);
@@ -879,6 +885,15 @@ public static class RulesetResolver
             if (!checkedById.TryGetValue(ofId, out CheckedStat? ofStat)
                 || !checkedById.TryGetValue(perId, out CheckedStat? perStat))
             {
+                // Recorded like any other coverage skip, so a show: entry for the rate drops its column.
+                RulesetCoverageDiagnostic? cause = _coverage.FirstOrDefault(c =>
+                    string.Equals(c.NodeId, ofId, StringComparison.Ordinal)
+                    || string.Equals(c.NodeId, perId, StringComparison.Ordinal));
+                if (cause is not null)
+                {
+                    RecordDependencySkip("stat", stat.Id, cause, stat.Position);
+                }
+
                 return null;
             }
 
@@ -1490,6 +1505,11 @@ public static class RulesetResolver
             {
                 resolved.FlagSource = name;
                 resolved.Ok = true;
+                if (!silent)
+                {
+                    _flagSourceByCount[stat.Id] = name;
+                }
+
                 return;
             }
 
@@ -1648,6 +1668,105 @@ public static class RulesetResolver
         }
 
         // ── Concrete events / coverage ─────────────────────────────────────────────
+
+        /// <summary>
+        ///     Drops every stat and highlight that reads a coverage-skipped node, transitively, and
+        ///     records each one in coverage. A skipped node is never built, so a surviving reader
+        ///     would leave the planner a reference to hash with nothing behind it (#68). The cause
+        ///     carried forward is the root skip, so every record names the view that did not bind.
+        /// </summary>
+        private void SkipDependentsOfSkipped(List<CheckedStat> stats, List<CheckedHighlight> highlights)
+        {
+            if (_coverage.Count == 0)
+            {
+                return;
+            }
+
+            Dictionary<string, RulesetCoverageDiagnostic> skipped = new(StringComparer.Ordinal);
+            foreach (RulesetCoverageDiagnostic coverage in _coverage)
+            {
+                skipped.TryAdd(coverage.NodeId, coverage);
+            }
+
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (int i = stats.Count - 1; i >= 0; i--)
+                {
+                    CheckedStat stat = stats[i];
+                    string? missing = FirstSkippedReference(skipped, stat.TriggerCondition, stat.ValueSelector,
+                        stat.WhileGate);
+                    if (missing is null && _flagSourceByCount.TryGetValue(stat.StatId, out string? flag)
+                                        && skipped.ContainsKey(flag))
+                    {
+                        missing = flag;
+                    }
+
+                    if (missing is null)
+                    {
+                        continue;
+                    }
+
+                    skipped.TryAdd(stat.StatId,
+                        RecordDependencySkip("stat", stat.StatId, missing, skipped[missing], stat.Position));
+                    stats.RemoveAt(i);
+                    changed = true;
+                }
+
+                for (int i = highlights.Count - 1; i >= 0; i--)
+                {
+                    CheckedHighlight highlight = highlights[i];
+                    if (FirstSkippedReference(skipped, highlight.When) is not { } missing)
+                    {
+                        continue;
+                    }
+
+                    RulesetCoverageDiagnostic record = RecordDependencySkip("highlight", highlight.HighlightId,
+                        missing, skipped[missing], highlight.Position);
+                    skipped.TryAdd(highlight.HighlightId, record);
+                    skipped.TryAdd(highlight.CountNodeId, record);
+                    highlights.RemoveAt(i);
+                    changed = true;
+                }
+            }
+        }
+
+        private static string? FirstSkippedReference(Dictionary<string, RulesetCoverageDiagnostic> skipped,
+            params CheckedExpression?[] expressions)
+        {
+            foreach (CheckedExpression? expression in expressions)
+            {
+                if (expression is null)
+                {
+                    continue;
+                }
+
+                foreach (ResolvedReference reference in expression.References)
+                {
+                    if (reference is { IsStatReference: true, StatPath: { } target } && skipped.ContainsKey(target))
+                    {
+                        return target;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private RulesetCoverageDiagnostic RecordDependencySkip(string what, string nodeId,
+            RulesetCoverageDiagnostic cause, SourcePosition position) =>
+            RecordDependencySkip(what, nodeId, cause.NodeId, cause, position);
+
+        private RulesetCoverageDiagnostic RecordDependencySkip(string what, string nodeId, string missing,
+            RulesetCoverageDiagnostic cause, SourcePosition position)
+        {
+            RulesetCoverageDiagnostic record = new(_rulesetId, nodeId, cause.ViewName, _ctx.ProfileId!,
+                $"{what} '{nodeId}' reads '{missing}', which is skipped on source profile '{_ctx.ProfileId}' "
+                + $"(view '{cause.ViewName}' does not bind) — skipped", position);
+            _coverage.Add(record);
+            return record;
+        }
 
         private IReadOnlyList<string>? ResolveConcreteEvents(ResolvedTrigger trigger, StatDef stat)
         {

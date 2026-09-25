@@ -3,6 +3,7 @@
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Profiles;
+using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.TestSupport;
@@ -118,5 +119,36 @@ public class ProfileResolutionTests
         await Assert.That(forced.Provenance.ProfileResolution).IsEqualTo(ProfileResolutionKind.Explicit);
         await Assert.That(forced.Provenance.Dialect.CsPreRestartSeen).IsEqualTo(resolved.Provenance.Dialect.CsPreRestartSeen);
         await Assert.That(forced.Provenance.Dialect.BoundMarkerNeverSeen).IsTrue();
+    }
+
+    public static IEnumerable<string> RegisteredProfiles() =>
+        DemoSourceProfileRegistry.All.Select(profile => profile.GetType().Name);
+
+    /// <summary>
+    ///     The shipped rulesets build and run on every registered profile (#68). On HLTV the
+    ///     blinded_enemy view does not bind, so the stats on it are skipped, and so is the AvgBlind
+    ///     compute that reads them; before, the planner threw on its dangling reference at the
+    ///     first player.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(RegisteredProfiles))]
+    public async Task ShippedRulesets_RunOnTheSample_UnderEveryProfile(string profileName)
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+        DemoSourceProfile profile = DemoSourceProfileRegistry.All.Single(p => p.GetType().Name == profileName);
+
+        AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets, new AnalysisOptions { Profile = profile });
+
+        await Assert.That(run.MaterializedPlayers.Count).IsGreaterThan(0);
+        IReadOnlyList<RulesetCoverageDiagnostic> coverage = run.Build.RulesetCoverage ?? [];
+        bool avgBlindSkipped = coverage.Any(c => c.NodeId == "AvgBlind");
+        await Assert.That(avgBlindSkipped).IsEqualTo(profile is Cs2HltvProfile);
+        if (profile is Cs2HltvProfile)
+        {
+            RulesetCoverageDiagnostic avgBlind = coverage.Single(c => c.NodeId == "AvgBlind");
+            await Assert.That(avgBlind.ViewName).IsEqualTo("blinded_enemy");
+        }
     }
 }

@@ -1380,12 +1380,15 @@ public sealed partial class RuleChainBuilder
         }
 
         // Target counters, highest threshold first (a 5-kill round only bumps the 5K bucket). A
-        // target that isn't already a sibling node is auto-created match-scoped, exactly as v1 does.
+        // target that isn't already a node of THIS ruleset is auto-created match-scoped, exactly as v1
+        // does. The lookup goes through the ruleset-qualified key, not the bare localLookup id: the
+        // template is shared by every each_player ruleset, so a bare 'rounds_2k' may be another
+        // ruleset's target, and reusing it would leave this ruleset's own key unregistered (#70).
         (int Threshold, ValueNode<int> Target)[] thresholds = stat.TallyThresholds!
             .OrderByDescending(t => t.Min)
             .Select(t =>
             {
-                if (!localLookup.TryGetValue(t.Target, out StateNode? targetNode))
+                if (!nodesByRuleId.TryGetValue($"{rs.Id.Id}.{t.Target}", out StateNode? targetNode))
                 {
                     GenericValueNode<int> created = new(t.Target, playerName);
                     created.SetValue(0);

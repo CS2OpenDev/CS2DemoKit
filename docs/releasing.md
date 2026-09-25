@@ -414,6 +414,16 @@ validated and projected zero rows through 0.12.0. It is now a validation error,
 `resolve.show.scoreboard-scope`, where it used to throw at build. Composition drops the ruleset, as
 for any other error.
 
+### `tally:` targets belong to their ruleset (0.13.0)
+
+Two `for: each_player` rulesets whose `tally:` thresholds named the same target (the shipped `kast`
+and the `multikill` example both use `rounds_2k` to `rounds_5k`) built and then
+threw at the first player: the second ruleset bound its tally to the first one's counters and never
+registered its own, so its `show:` scoreboard found nothing. Each ruleset now gets its own target
+counters, so `kast.rounds_2k` and `multikill.rounds_2k` are separate nodes with their own values.
+Every example under `Rules/examples/` now runs beside the shipped rulesets. The shipped rulesets on
+their own build and count the same as before.
+
 ### `for: each_team`, and the public types that grew for it (0.13.0)
 
 A third scope builds a ruleset once per side. Additions a consumer compiled against 0.12.0 meets:
@@ -583,7 +593,7 @@ three always-empty members (#50). What changed:
   it imports the namespace. `RuleGraph.FromBuild` with templates runs the builder's per-player
   factory, which keeps state on the builder while it runs: never call it while a run over the same
   build is going. A template that cannot materialise without a demo is left out of that preview
-  and named in `RuleGraph.Diagnostics`; the shipped rulesets on HLTV are one today.
+  and named in `RuleGraph.Diagnostics`.
 - `RuleGraph.CollapsePlayers` folds only per-player copies, by template position: game, team and
   external edges pass through with their keys. A collapsed edge's `Descriptor` is the lowest slot's
   copy and `RuleGraphEdge.Instances` holds every player's, so a template edge's fire count is the
@@ -595,6 +605,18 @@ three always-empty members (#50). What changed:
 - Rules output, node counts, snapshot columns, the decode plan, the order edges are registered in
   (game and per player) and resolved-identity hashes do not move. The fifteen rules-output fixtures
   are byte-identical.
+
+### A stat that reads a coverage-skipped stat is skipped with it (0.13.0)
+
+A stat whose view does not bind on the demo's profile was skipped and recorded in
+`RulesetCoverage`, but a stat, `rate:` or highlight that read it was still built, and the planner
+threw `stat reference '...' was hashed before the node it points at` at the first player (#68). The
+shipped rulesets hit this on `Cs2HltvProfile`, where `blinded_enemy` does not bind and the
+`AvgBlind` compute reads two stats on it. Such a reader is now skipped too, transitively, with its
+own `RulesetCoverageDiagnostic` naming the stat it reads and the view that did not bind, and its
+`show:` column drops as for any other skip. A `rate:` over a skipped bucket was already dropped,
+silently; it is now recorded as well. On HLTV the shipped rulesets now run, with `AvgBlind` absent.
+Output on the other profiles does not move.
 
 ### A `---` rules file loads every ruleset in it (0.13.0)
 

@@ -71,11 +71,12 @@ public class GraphDescriptorCoverageTests
     // Each build's descriptor sets as the builder drew them at dc0c6b6, before this work: sorted
     // "G|P" + source + destination + label + effect + condition, the tally rows left out (they were
     // drawn from the tallied stat and are now drawn from the root). Every one of them must still be
-    // drawn the same way.
+    // drawn the same way. The HLTV shipped template did not materialise at dc0c6b6 (#68), so its
+    // player rows were added to that pin with the fix.
     private static readonly Dictionary<string, string> _baselineRows = new(StringComparer.Ordinal)
     {
         ["shipped-gotv"] = "142:2DD1650AAB0812F2",
-        ["shipped-hltv"] = "43:634672CC97517E72",
+        ["shipped-hltv"] = "139:076CB20E5C049366",
         ["matrix-gotv"] = "84:8AEA2206E51EAD85",
         ["matrix-hltv"] = "84:8B641E41CF6BFC10"
     };
@@ -488,13 +489,9 @@ public class GraphDescriptorCoverageTests
 
     private static IEnumerable<Scope> Scopes(string name)
     {
-        (_, Func<BuildResult> make, bool materializes) = RuleGraphFixtures.CoverageCases().Single(c => c.Name == name);
+        (_, Func<BuildResult> make) = RuleGraphFixtures.CoverageCases().Single(c => c.Name == name);
         BuildResult build = make();
         yield return new Scope($"{name}/game", build, null, null);
-        if (!materializes)
-        {
-            yield break;
-        }
 
         for (int t = 0; t < build.Graph.PerPlayerTemplates.Count; t++)
         {
