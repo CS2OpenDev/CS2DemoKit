@@ -85,11 +85,12 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
 /// <param name="GroupName">Optional group name used to cluster related columns.</param>
 /// <param name="ChainId">
 ///     The <c>_chain_{ruleset}</c> join key of the ruleset that declared this column, so a view can
-///     emphasize one ruleset's columns without a relayout. This is the ruleset's key, which matches
-///     <see cref="Graphs.RuleGraphNode.Ruleset" />, not a highlight's <c>_chain_{highlight}</c>
-///     name in <see cref="Graphs.RuleGraphNode.HighlightChains" />; a ruleset and a highlight that
-///     share an id give the same string with different meanings. <c>null</c> for a hand-built
-///     column.
+///     emphasize one ruleset's columns without a relayout. This is the declaring ruleset's key, the
+///     ruleset part of one of <see cref="Graphs.RuleGraphNode.Owners" /> (the same as
+///     <see cref="Graphs.RuleGraphNode.Ruleset" /> only when no other ruleset shares the stat's node),
+///     not a highlight's <c>_chain_{highlight}</c> name in
+///     <see cref="Graphs.RuleGraphNode.HighlightChains" />; a ruleset and a highlight that share an id
+///     give the same string with different meanings. <c>null</c> for a hand-built column.
 /// </param>
 /// <param name="IsRoundScoped">
 ///     True when the column's node resets at round boundaries — either the node itself is

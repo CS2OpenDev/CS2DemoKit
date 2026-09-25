@@ -84,7 +84,8 @@ public class RuleGraphTests
     public async Task CollapsePlayers_CollapsesEveryCopyToOne()
     {
         AnalysisRun run = DemoAnalysis.Run(Sample(), RuleGraphFixtures.Shipped());
-        RuleGraph collapsed = RuleGraph.FromRun(run).CollapsePlayers();
+        RuleGraph full = RuleGraph.FromRun(run);
+        RuleGraph collapsed = full.CollapsePlayers();
         int players = run.MaterializedPlayers.Count;
         PerPlayerNodeTemplate.MaterializedPlayer one = run.MaterializedPlayers[0];
 
@@ -96,13 +97,60 @@ public class RuleGraphTests
         HashSet<RuleGraphNode> members = new(collapsed.Nodes, ReferenceEqualityComparer.Instance);
         await Assert.That(collapsed.Edges.All(e => members.Contains(e.Source) && members.Contains(e.Destination))).IsTrue()
             .Because("a collapsed edge must point at the collapsed nodes, not at one player's copies");
-        await Assert.That(collapsed.Edges.Count).IsLessThanOrEqualTo(run.Build.Edges.Count + one.EdgeDescriptors.Count);
+        await Assert.That(collapsed.Edges.Count).IsEqualTo(run.Build.Edges.Count + one.EdgeDescriptors.Count);
 
         // Every copy resolves to its collapsed node.
         foreach (StateNode copy in run.MaterializedPlayers[players - 1].Nodes)
         {
             await Assert.That(collapsed.TryGetNode(copy, out RuleGraphNode? node) && perPlayer.Contains(node)).IsTrue();
         }
+
+        // Game, team and external edges are not copies: each one survives, however many share its
+        // endpoints and label (the conditioned round_officially_ended trigger beside the plain one,
+        // the enrichments that all write player_context on player_death).
+        await Assert.That(collapsed.Edges.Where(e => e.Scope != RuleGraphScope.Player).Select(e => e.Key))
+            .IsEquivalentTo(full.Edges.Where(e => e.Scope != RuleGraphScope.Player).Select(e => e.Key));
+        await Assert.That(collapsed.Edges.Where(e => e.Scope != RuleGraphScope.Player).All(e => e.Instances.Count == 1)).IsTrue();
+
+        // A per-player edge stands for every player's copy, the lowest slot's first, and its fire
+        // count adds up over them.
+        List<RuleGraphEdge> perPlayerEdges = [.. collapsed.Edges.Where(e => e.Scope == RuleGraphScope.Player)];
+        await Assert.That(perPlayerEdges.Select(e => e.Template).Distinct().Count()).IsEqualTo(one.EdgeDescriptors.Count);
+        foreach (RuleGraphEdge edge in perPlayerEdges)
+        {
+            await Assert.That(edge.Instances.Count).IsEqualTo(players).Because(edge.Key);
+            await Assert.That(edge.Instances[0]).IsSameReferenceAs(edge.Descriptor);
+            await Assert.That(edge.Descriptor.Source).IsSameReferenceAs(edge.Source.Node).Because(edge.Key);
+            await Assert.That(edge.Descriptor.Destination).IsSameReferenceAs(edge.Destination.Node).Because(edge.Key);
+        }
+
+        int collapsedFires = perPlayerEdges.SelectMany(e => e.Instances).Sum(d => d.Edge?.FireCount ?? 0);
+        int playerFires = full.Edges.Where(e => e.Scope == RuleGraphScope.Player).Sum(e => e.Descriptor.Edge?.FireCount ?? 0);
+        await Assert.That(collapsedFires).IsEqualTo(playerFires);
+        await Assert.That(collapsedFires).IsGreaterThan(perPlayerEdges.Sum(e => e.Descriptor.Edge?.FireCount ?? 0));
+    }
+
+    /// <summary>
+    ///     The copy a collapsed node or edge shows is the lowest slot's, whatever order the players
+    ///     materialised in, so an edge's descriptor always names the nodes it is drawn between.
+    /// </summary>
+    [Test]
+    public async Task CollapsePlayers_PicksTheLowestSlot_WhateverTheMaterialisationOrder()
+    {
+        AnalysisRun run = DemoAnalysis.Run(Sample(), RuleGraphFixtures.Shipped());
+        AnalysisRun reversed = run with { MaterializedPlayers = [.. run.MaterializedPlayers.Reverse()] };
+        RuleGraph collapsed = RuleGraph.FromRun(reversed).CollapsePlayers();
+        int lowest = run.MaterializedPlayers.Min(p => p.PlayerSlot);
+
+        foreach (RuleGraphEdge edge in collapsed.Edges.Where(e => e.Scope == RuleGraphScope.Player))
+        {
+            await Assert.That(edge.Descriptor.Source).IsSameReferenceAs(edge.Source.Node).Because(edge.Key);
+            await Assert.That(edge.Descriptor.Destination).IsSameReferenceAs(edge.Destination.Node).Because(edge.Key);
+        }
+
+        PerPlayerNodeTemplate.MaterializedPlayer first = run.MaterializedPlayers.Single(p => p.PlayerSlot == lowest);
+        await Assert.That(collapsed.Edges.Where(e => e.Scope == RuleGraphScope.Player).Select(e => e.Descriptor)
+            .SequenceEqual(first.EdgeDescriptors, ReferenceEqualityComparer.Instance)).IsTrue();
     }
 
     [Test]
@@ -189,11 +237,8 @@ public class RuleGraphTests
         await Assert.That(Named("deaths").HighlightChains.Contains("_chain_kast")).IsFalse()
             .Because("deaths feed no part of KAST");
 
-        // Another player's chain does not reach this player's nodes.
-        await Assert.That(player.All(n => n.HighlightChains.All(c => c.StartsWith("_chain_", StringComparison.Ordinal)))).IsTrue();
-
-        // The ruleset a node came from is what its table column's ChainId joins on, a different key
-        // space from the highlight chains.
+        // A table column's ChainId is the key of the ruleset that declared it, one of its node's
+        // owners, and a different key space from the highlight chains.
         foreach (PerPlayerColumnAssignment column in run.MaterializedPlayers[0].ColumnAssignments)
         {
             await Assert.That(view.TryGetNode(column.Node, out RuleGraphNode? node)).IsTrue();
@@ -281,6 +326,77 @@ public class RuleGraphTests
         await Assert.That(edge.Descriptor.Kind).IsEqualTo(GraphEdgeKind.Undescribed);
         await Assert.That(edge.Destination.Node).IsSameReferenceAs(target);
         await Assert.That(view.Diagnostics.Count).IsEqualTo(1);
+    }
+
+    /// <summary>
+    ///     A descriptor made by hand, as through 0.12, names no engine edge. It describes the edge it
+    ///     has the source and destination of, which is drawn once and carries the edge.
+    /// </summary>
+    [Test]
+    [Category("Unit")]
+    public async Task HandBuiltDescriptor_WithoutEdge_DescribesItsEdge()
+    {
+        StateGraph graph = new();
+        GenericBoolNode target = new("target");
+        OnGameEvent<CS2OpenSchema.Events.PlayerDeathEvent> death = new(graph.Root, target, EdgeEffect.Activate);
+        OnGameEvent<CS2OpenSchema.Events.PlayerHurtEvent> hurt = new(graph.Root, target, EdgeEffect.Activate);
+        graph.AddEdge(death);
+        graph.AddEdge(hurt);
+        GraphEdgeDescriptor deathRow = new(graph.Root, target, "player_death", EdgeEffect.Activate);
+        GraphEdgeDescriptor hurtRow = new(graph.Root, target, "player_hurt", EdgeEffect.Activate);
+        BuildResult build = new(graph, [graph.Root, target], [deathRow, hurtRow], new HashSet<Type>());
+
+        RuleGraph view = RuleGraph.FromBuild(build, includeTemplates: false);
+
+        await Assert.That(view.Diagnostics).IsEmpty();
+        await Assert.That(view.Edges.Count).IsEqualTo(2);
+        await Assert.That(view.Edges.All(e => e.Descriptor.Kind == GraphEdgeKind.Trigger)).IsTrue();
+        await Assert.That(view.Edges[0].Descriptor.Edge).IsSameReferenceAs(death);
+        await Assert.That(view.Edges[1].Descriptor.Edge).IsSameReferenceAs(hurt);
+    }
+
+    /// <summary>
+    ///     A highlight chain is walked back from each player's own logic node. A game node that feeds
+    ///     several players is on the chain, but the walk does not come forward out of it into another
+    ///     player's nodes.
+    /// </summary>
+    [Test]
+    public async Task HighlightChain_DoesNotReachAnotherPlayer()
+    {
+        StateGraph graph = new();
+        GenericBoolNode shared = new("shared");
+        BuildResult build = new(graph, [graph.Root, shared],
+            [new GraphEdgeDescriptor(graph.Root, shared, "round_start", EdgeEffect.Activate)], new HashSet<Type>());
+
+        // Only slot 0 has the highlight; both players' "a" read the same game node.
+        PerPlayerNodeTemplate.MaterializedPlayer Player(int slot)
+        {
+            GenericBoolNode a = new("a", $"p{slot}");
+            List<StateNode> nodes = [a];
+            List<GraphEdgeDescriptor> rows = [new(shared, a, "player_death", EdgeEffect.Activate)];
+            if (slot == 0)
+            {
+                ConjunctionNode chain = new("_chain_x");
+                nodes.Add(chain);
+                rows.Add(new GraphEdgeDescriptor(a, chain, "", EdgeEffect.SetValue) { Kind = GraphEdgeKind.LogicInput });
+            }
+
+            return new PerPlayerNodeTemplate.MaterializedPlayer(slot, $"p{slot}", nodes, [], [], rows);
+        }
+
+        AnalysisRun run = DemoAnalysis.Run(Sample(), RuleGraphFixtures.Shipped()) with
+        {
+            Build = build,
+            MaterializedPlayers = [Player(0), Player(1)]
+        };
+        RuleGraph view = RuleGraph.FromRun(run);
+
+        RuleGraphNode Node(string key) => view.TryGetNode(key, out RuleGraphNode? node) ? node : throw new InvalidOperationException(key);
+        await Assert.That(Node("p0/t0/1").HighlightChains).IsEquivalentTo(["_chain_x"]);
+        await Assert.That(Node("p0/t0/0").HighlightChains).IsEquivalentTo(["_chain_x"]);
+        await Assert.That(Node("g/1").HighlightChains).IsEquivalentTo(["_chain_x"]);
+        await Assert.That(Node("p1/t0/0").HighlightChains).IsEmpty()
+            .Because("player 1's node is fed by the shared node, not a feeder of player 0's chain");
     }
 
     private static List<string> Shape(PerPlayerNodeTemplate.MaterializedPlayer player) =>

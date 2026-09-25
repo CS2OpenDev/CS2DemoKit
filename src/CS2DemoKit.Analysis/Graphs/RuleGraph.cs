@@ -59,7 +59,8 @@ public sealed class RuleGraph
     ///     What the view could not draw as the engine describes it: a template preview that did not
     ///     materialise, an edge on the graph with no descriptor (drawn as
     ///     <see cref="GraphEdgeKind.Undescribed" />), a descriptor naming a node the view does not have.
-    ///     Empty for a build the builder made.
+    ///     Empty for <see cref="FromRun" /> over a build the builder made. <see cref="FromBuild(BuildResult, bool, string)" />
+    ///     of such a build still reports a template that cannot materialise without a demo.
     /// </summary>
     public IReadOnlyList<string> Diagnostics { get; }
 
@@ -136,9 +137,17 @@ public sealed class RuleGraph
     /// <summary>
     ///     Folds every player's copy of a template node into one node keyed <c>t{template}/{ordinal}</c>,
     ///     whose <see cref="RuleGraphNode.Node" /> is the first player's copy and whose
-    ///     <see cref="RuleGraphNode.Instances" /> lists every copy in slot order. Game, team and
-    ///     external nodes are unchanged. Edges between the same two collapsed nodes with the same label
-    ///     and kind become one, and every edge's endpoints are nodes of the returned view.
+    ///     <see cref="RuleGraphNode.Instances" /> lists every copy in slot order. Every player's copy of
+    ///     a template edge folds the same way into one edge keyed <c>t{template}/e{ordinal}</c>, whose
+    ///     <see cref="RuleGraphEdge.Descriptor" /> is the first player's copy and whose
+    ///     <see cref="RuleGraphEdge.Instances" /> lists every copy's descriptor in slot order. Game,
+    ///     team and external nodes and edges are unchanged, and every edge's endpoints are nodes of the
+    ///     returned view.
+    ///     <para>
+    ///         A collapsed edge's <see cref="GraphEdgeDescriptor.Edge" /> is one player's engine edge.
+    ///         For the template edge's fire count or applied messages, add up the edges of
+    ///         <see cref="RuleGraphEdge.Instances" />: each is a different player's engine edge.
+    ///     </para>
     /// </summary>
     /// <exception cref="InvalidOperationException">Two copies under one template position differ in type or name.</exception>
     public RuleGraph CollapsePlayers()
@@ -201,26 +210,54 @@ public sealed class RuleGraph
             }
         }
 
+        // Only a player's copies fold. A game, team or external edge is its own engine edge, whatever
+        // other edge shares its endpoints and label, so it passes through unchanged. A per-player edge
+        // folds with the edges at the same template position, which is the same row for every player.
         List<RuleGraphEdge> edges = [];
-        HashSet<(string, string, string, GraphEdgeKind)> seen = [];
+        List<List<RuleGraphEdge>?> folded = [];
+        Dictionary<(int Template, int Ordinal, string Source, string Destination, string Label, GraphEdgeKind Kind), List<RuleGraphEdge>> copiesOf = [];
         foreach (RuleGraphEdge edge in Edges)
         {
-            RuleGraphNode source = map[edge.Source];
-            RuleGraphNode destination = map[edge.Destination];
-            if (!seen.Add((source.Key, destination.Key, edge.Descriptor.Label, edge.Descriptor.Kind)))
+            if (edge.Scope != RuleGraphScope.Player)
+            {
+                edges.Add(edge);
+                folded.Add(null);
+                continue;
+            }
+
+            // An undescribed row has no template position; its endpoints and label stand in for one.
+            var key = edge.Template is { } t
+                ? (t.TemplateIndex, t.Ordinal, "", "", "", GraphEdgeKind.Undescribed)
+                : (-1, -1, map[edge.Source].Key, map[edge.Destination].Key, edge.Descriptor.Label, edge.Descriptor.Kind);
+            if (!copiesOf.TryGetValue(key, out List<RuleGraphEdge>? copies))
+            {
+                copiesOf[key] = copies = [];
+                edges.Add(edge);
+                folded.Add(copies);
+            }
+
+            copies.Add(edge);
+        }
+
+        for (int i = 0; i < edges.Count; i++)
+        {
+            if (folded[i] is not { } copies)
             {
                 continue;
             }
 
-            edges.Add(edge.Scope == RuleGraphScope.Player
-                ? edge with
-                {
-                    Key = edge.Template is { } t ? $"t{t.TemplateIndex}/e{t.Ordinal}" : edge.Key,
-                    Source = source,
-                    Destination = destination,
-                    PlayerSlot = null
-                }
-                : edge);
+            // The lowest slot's copy stands for the rest, as it does for the nodes, so the
+            // descriptor's endpoints are the collapsed nodes' Node.
+            List<RuleGraphEdge> ordered = [.. copies.OrderBy(e => e.PlayerSlot ?? -1)];
+            RuleGraphEdge first = ordered[0];
+            edges[i] = first with
+            {
+                Key = first.PlayerSlot is null ? first.Key : first.Key[(first.Key.IndexOf('/', StringComparison.Ordinal) + 1)..],
+                Source = map[first.Source],
+                Destination = map[first.Destination],
+                PlayerSlot = null,
+                Instances = [.. ordered.SelectMany(e => e.Instances)]
+            };
         }
 
         return new RuleGraph(nodes, edges, Diagnostics);
@@ -343,7 +380,7 @@ public sealed class RuleGraph
             List<RuleGraphEdge> edges = new(resolved.Count);
             foreach ((string key, GraphEdgeDescriptor d, Draft source, Draft destination, RuleGraphScope scope, int? slot, EdgeTemplateKey? template) in resolved)
             {
-                edges.Add(new RuleGraphEdge(key, sealedNodes[source], sealedNodes[destination], d, scope, slot, template));
+                edges.Add(new RuleGraphEdge(key, sealedNodes[source], sealedNodes[destination], d, scope, slot, template, [d]));
             }
 
             return new RuleGraph(nodes, edges, Diagnostics);
@@ -448,18 +485,18 @@ public sealed class RuleGraph
             string prefix, RuleGraphScope scope, int? slot, int? templateIndex)
         {
             HashSet<StateEdge> described = new(ReferenceEqualityComparer.Instance);
-            for (int i = 0; i < descriptors.Count; i++)
+            foreach (GraphEdgeDescriptor d in descriptors)
             {
-                GraphEdgeDescriptor d = descriptors[i];
                 if (d.Edge is { } edge)
                 {
                     described.Add(edge);
                 }
-
-                _edges.Add(($"{prefix}/e{i}", d, scope, slot,
-                    templateIndex is { } t ? new EdgeTemplateKey(t, i) : null));
             }
 
+            // A descriptor made by hand, as through 0.12, names no edge. It describes the graph edge
+            // it has the source and a written node of, and the view's copy of it carries that edge.
+            GraphEdgeDescriptor?[] backed = new GraphEdgeDescriptor?[descriptors.Count];
+            List<int> undescribed = [];
             for (int i = 0; i < graphEdges.Count; i++)
             {
                 StateEdge edge = graphEdges[i];
@@ -468,6 +505,34 @@ public sealed class RuleGraph
                     continue;
                 }
 
+                // One row per written node, so a second edge between the same two nodes takes the
+                // next row rather than none.
+                HashSet<StateNode> rows = new(ReferenceEqualityComparer.Instance);
+                for (int j = 0; j < descriptors.Count; j++)
+                {
+                    GraphEdgeDescriptor d = descriptors[j];
+                    if (d.Edge is null && backed[j] is null && ReferenceEquals(d.Source, edge.Source)
+                        && Writes(edge, d.Destination) && rows.Add(d.Destination))
+                    {
+                        backed[j] = d with { Edge = edge };
+                    }
+                }
+
+                if (rows.Count == 0)
+                {
+                    undescribed.Add(i);
+                }
+            }
+
+            for (int i = 0; i < descriptors.Count; i++)
+            {
+                _edges.Add(($"{prefix}/e{i}", backed[i] ?? descriptors[i], scope, slot,
+                    templateIndex is { } t ? new EdgeTemplateKey(t, i) : null));
+            }
+
+            foreach (int i in undescribed)
+            {
+                StateEdge edge = graphEdges[i];
                 StateNode destination = edge.WrittenNode
                                         ?? (edge.AdditionalWrittenNodes is { Count: > 0 } more ? more[0] : null)
                                         ?? (StateNode?)_build.ExternalNodes.FirstOrDefault(n => n.Kind == ExternalState.PlayerContext)
@@ -482,6 +547,10 @@ public sealed class RuleGraph
                 }, scope, slot, null));
             }
         }
+
+        private static bool Writes(StateEdge edge, StateNode node) =>
+            ReferenceEquals(edge.WrittenNode, node)
+            || (edge.AdditionalWrittenNodes?.Any(n => ReferenceEquals(n, node)) ?? false);
     }
 
     private sealed class Draft(
@@ -574,8 +643,10 @@ public readonly record struct EdgeTemplateKey(int TemplateIndex, int Ordinal);
 /// <param name="Scope">Which part of the graph it belongs to.</param>
 /// <param name="Origin">What part of the engine made it.</param>
 /// <param name="Ruleset">
-///     The bare id of the ruleset that made it, for a rule node. Its <c>_chain_{ruleset}</c> join key
-///     is what <see cref="PerPlayerColumnAssignment.ChainId" /> carries.
+///     The bare id of the ruleset that made it first, for a rule node. A table column's
+///     <see cref="PerPlayerColumnAssignment.ChainId" /> is the <c>_chain_{ruleset}</c> key of the ruleset
+///     that declared the column, which is one of <see cref="Owners" />: for a stat several rulesets
+///     share, it can be a later owner's ruleset rather than this one.
 /// </param>
 /// <param name="Owners">
 ///     The <c>{ruleset}.{stat}</c> or <c>{ruleset}.{highlight}</c> declarers that resolve to this
@@ -616,12 +687,20 @@ public sealed record RuleGraphNode(
 /// <param name="Source">The source view node.</param>
 /// <param name="Destination">The destination view node.</param>
 /// <param name="Descriptor">
-///     The engine's descriptor. Its <see cref="GraphEdgeDescriptor.Edge" /> is where the fire count
-///     and applied messages live; several view edges can share one engine edge.
+///     The engine's descriptor (after <see cref="RuleGraph.CollapsePlayers" />, the first player's
+///     copy). Its <see cref="GraphEdgeDescriptor.Edge" /> is where the fire count and applied messages
+///     live; several view edges can share one engine edge. A hand-built descriptor with no
+///     <see cref="GraphEdgeDescriptor.Edge" /> is matched to the graph edge from its source that writes
+///     its destination, and the view holds a copy of it with that edge set.
 /// </param>
 /// <param name="Scope">Which part of the graph it belongs to.</param>
 /// <param name="PlayerSlot">The player's slot, for a materialised player's edge.</param>
 /// <param name="Template">The edge's template position, for a per-player edge.</param>
+/// <param name="Instances">
+///     Every descriptor this view edge stands for: <see cref="Descriptor" /> alone, or every player's
+///     copy in slot order once collapsed. A collapsed edge's fire count is the sum over these
+///     descriptors' <see cref="GraphEdgeDescriptor.Edge" />s, one engine edge per player.
+/// </param>
 public sealed record RuleGraphEdge(
     string Key,
     RuleGraphNode Source,
@@ -629,4 +708,5 @@ public sealed record RuleGraphEdge(
     GraphEdgeDescriptor Descriptor,
     RuleGraphScope Scope,
     int? PlayerSlot,
-    EdgeTemplateKey? Template);
+    EdgeTemplateKey? Template,
+    IReadOnlyList<GraphEdgeDescriptor> Instances);
