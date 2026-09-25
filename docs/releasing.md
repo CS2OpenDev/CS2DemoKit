@@ -414,6 +414,16 @@ validated and projected zero rows through 0.12.0. It is now a validation error,
 `resolve.show.scoreboard-scope`, where it used to throw at build. Composition drops the ruleset, as
 for any other error.
 
+### `tally:` targets belong to their ruleset (0.13.0)
+
+Two `for: each_player` rulesets whose `tally:` thresholds named the same target (the shipped `kast`
+and the `multikill` example both use `rounds_2k` to `rounds_5k`) built and then
+threw at the first player: the second ruleset bound its tally to the first one's counters and never
+registered its own, so its `show:` scoreboard found nothing. Each ruleset now gets its own target
+counters, so `kast.rounds_2k` and `multikill.rounds_2k` are separate nodes with their own values.
+Every example under `Rules/examples/` now runs beside the shipped rulesets. The shipped rulesets on
+their own build and count the same as before.
+
 ### `for: each_team`, and the public types that grew for it (0.13.0)
 
 A third scope builds a ruleset once per side. Additions a consumer compiled against 0.12.0 meets:
