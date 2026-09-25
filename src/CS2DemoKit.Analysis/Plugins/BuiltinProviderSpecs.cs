@@ -216,8 +216,9 @@ public static class BuiltinProviderSpecs
     ///     <c>0</c> while the round is undecided, <c>2</c> when the terrorists won, <c>3</c> when the
     ///     counter-terrorists did. Measured on the build-10231 nuke and build-10924 dust2 demos: it
     ///     goes 0→2/3 on the frame the round is decided and back to 0 at
-    ///     <c>round_officially_ended</c>, 448 ticks later, so at the round's close it has already
-    ///     reset. The engine's <c>round_decided</c> event is synthesized from this transition.
+    ///     <c>round_officially_ended</c>, 448 ticks later (544 at the end of a half; either can land a
+    ///     tick early or late), so at the round's close it has already reset. The engine's
+    ///     <c>round_decided</c> event is synthesized from this transition.
     /// </summary>
     public static ProviderSpec GameRoundWinStatus { get; } = new(
         "entity.game.round_win_status", "CCSGameRulesProxy",

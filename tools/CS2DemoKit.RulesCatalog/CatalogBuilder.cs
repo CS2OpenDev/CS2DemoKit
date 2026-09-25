@@ -95,7 +95,8 @@ public static class CatalogBuilder
             ["entity.game.round_win_status"] = (null,
                 "0 while the round is undecided, 2 once the terrorists have won it, 3 once the "
                 + "counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and "
-                + "back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on "
+                + "back to 0 at round_officially_ended, 448 ticks later on matchmaking demos (544 at the "
+                + "end of a half; either can land a tick early or late), so on "
                 + "`round_ended` it reads 0, except on the match's last round: that one closes on "
                 + "cs_win_panel_match, 193 ticks after the decision on the demos measured, before "
                 + "the reset, and reads the winner. The `round_decided` view fires on the step, and "

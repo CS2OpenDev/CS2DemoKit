@@ -10,9 +10,10 @@ namespace CS2DemoKit.Analysis.Events;
 ///     Synthesized by <c>EntityChangeScanner</c> on the frame the server decides a round: the frame
 ///     <c>CCSGameRules.m_iRoundWinStatus</c> goes from 0 to 2 (terrorists won) or 3
 ///     (counter-terrorists won). Valve matchmaking demos carry no <c>round_end</c>, and the round's
-///     close, <c>round_officially_ended</c>, comes 448 ticks later, by which time the status has
-///     already reset to 0. This is the one moment the server's own verdict is readable, so the
-///     winner and reason are taken here.
+///     close, <c>round_officially_ended</c>, comes 448 ticks later (544 at the end of a half;
+///     either can land a tick early or late), by which time the status has already reset to 0.
+///     This is the one moment the server's own verdict is readable, so the winner and reason are
+///     taken here.
 ///     <para>
 ///         <b>Dispatched after the frame's own messages, not before them</b> as the other
 ///         synthesized events are. The kill that decides a round is often delivered in the same

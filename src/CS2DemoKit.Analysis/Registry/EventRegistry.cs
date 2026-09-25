@@ -95,7 +95,8 @@ public sealed class EventRegistry
         ("enemy_spotted", typeof(EnemySpottedEvent)),
         // Synthesized (EntityChangeScanner): the frame the game rules' round-win status goes from 0
         // to a winner. Matchmaking demos carry no round_end, and the round's close comes 448 ticks
-        // after the decision, when the status has already reset.
+        // after the decision (544 at the end of a half; either can land a tick early or late), when
+        // the status has already reset.
         ("round_decided", typeof(RoundDecidedEvent)),
         ("decoy_detonate", typeof(DecoyDetonateEvent)),
         ("bullet_impact", typeof(BulletImpactEvent)),

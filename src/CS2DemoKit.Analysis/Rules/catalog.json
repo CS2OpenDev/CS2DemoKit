@@ -2901,7 +2901,7 @@
       "clrType": "int",
       "v2Name": "match.round_win_status",
       "v2Type": "Int",
-      "note": "0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos, so on \u0060round_ended\u0060 it reads 0, except on the match\u0027s last round: that one closes on cs_win_panel_match, 193 ticks after the decision on the demos measured, before the reset, and reads the winner. The \u0060round_decided\u0060 view fires on the step, and at the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+      "note": "0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos (544 at the end of a half; either can land a tick early or late), so on \u0060round_ended\u0060 it reads 0, except on the match\u0027s last round: that one closes on cs_win_panel_match, 193 ticks after the decision on the demos measured, before the reset, and reads the winner. The \u0060round_decided\u0060 view fires on the step, and at the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
     },
     {
       "name": "entity.game.total_rounds_played",
@@ -5990,7 +5990,7 @@
           ]
         }
       ],
-      "note": "Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo."
+      "note": "Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo (544 at the end of a half; either can land a tick early or late)."
     },
     {
       "name": "round_ended",
