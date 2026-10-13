@@ -59,3 +59,8 @@ validated with one of them never produced its numbers. The releasing note lists 
 `PlayerGameStatsProjector.Project(AnalysisRun, DemoDescriptor)` projects the end-of-match scoreboard
 from a run with or without snapshots. A caller that evaluated a second time with snapshots on only to
 get `player_game_stats` can drop that evaluation.
+
+A decode meter replaces a host's own wrappers around every walk seam: `parser.entity_decode.started`
+(new Parser `Meter` `CS2DemoKit.Parser.Entities`) plus `analysis.entity_scan.started` (new counter on
+the existing Analysis evaluator `Meter`) sum to decodes per visit. See
+[`profiling.md`](profiling.md#runtime-sources-always-shipped-near-free-when-off).

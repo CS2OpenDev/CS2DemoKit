@@ -714,6 +714,20 @@ the same end-of-match state the final snapshot row holds, so a bare run's scoreb
 snapshot run's row for row. A bare run that dispatched no message gets the schema-only table, as a
 snapshot run with no rows does. `PlayerRoundStatsProjector` still needs snapshots.
 
+### A decode meter replaces counting at the call site (0.14.0)
+
+`EntityTracker` gained one additive property, `Metered` (default `true`). It gates a new Parser
+Meter, `CS2DemoKit.Parser.Entities`, whose single counter `parser.entity_decode.started` adds one
+the first time a metered tracker folds a frame. `CS2DemoKit.Analysis.Evaluator` gained a sibling
+counter, `analysis.entity_scan.started`, one per `EntityChangeScanner.BeginEvaluation` regardless of
+worker count. A host that used to wrap every walk seam to count decodes reads these two counters
+instead and sums them; see [`profiling.md`](profiling.md#runtime-sources-always-shipped-near-free-when-off).
+
+Every tracker a rules run builds (`EntityStateLayer`'s bootstrap, in CS2DemoKit.Analysis) sets
+`Metered = false`, so a run counts once on the Analysis counter and not at all on the Parser one.
+`PositionSampler.Walk`, `ProjectileSampler.Walk` and a bare `new EntityTracker()` replay keep
+`Metered` at its default and each count once on the Parser counter.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
