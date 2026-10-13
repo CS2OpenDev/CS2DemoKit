@@ -415,14 +415,14 @@ public sealed partial class RuleChainBuilder
                 if (rs.Highlights.Count > 0)
                 {
                     throw new InvalidOperationException(
-                        $"ruleset '{rs.Id.Id}' is for: each_team but declares highlights — a highlight "
+                        $"ruleset '{rs.Id.Id}' is for: each_team but declares highlights: a highlight "
                         + "is attributed to a player.");
                 }
 
                 if (rs.Show is { Scoreboard.Count: > 0 })
                 {
                     throw new InvalidOperationException(
-                        $"ruleset '{rs.Id.Id}' is for: each_team but declares show: scoreboard — a "
+                        $"ruleset '{rs.Id.Id}' is for: each_team but declares show: scoreboard; a "
                         + "scoreboard is per-player; use show: tables (per: team_round | team_match).");
                 }
 
