@@ -67,7 +67,8 @@ internal sealed class LoweringProbeCache
     /// <summary>
     ///     The key: every field of every ruleset in the build (positions included, since the cached
     ///     diagnostics carry them), the compiler options, the tick rate and profile, the event and
-    ///     net-message registrations, the entity providers, and whether a visibility engine is set.
+    ///     net-message registrations, each entity provider's name, class, field and value type, and
+    ///     whether a visibility engine is set.
     ///     Null when an expression cannot be serialized, which leaves the probe to run.
     /// </summary>
     public static UInt128? ComputeKey(
@@ -109,6 +110,10 @@ internal sealed class LoweringProbeCache
                 {
                     w.Str(p.ContextName);
                     w.Str(p.GetType().FullName);
+                    w.Str(p.EntityClass);
+                    w.Str(p.FieldName);
+                    w.Int((int)p.EmitOn);
+                    w.Str(p.DefaultValue?.GetType().FullName);
                 }
             }
 
@@ -119,6 +124,9 @@ internal sealed class LoweringProbeCache
                 {
                     w.Str(p.Name);
                     w.Str(p.GetType().FullName);
+                    w.Str(p.EntityClass);
+                    w.Str(p.FieldName);
+                    w.Str(p.ValueType.FullName);
                 }
             }
 
