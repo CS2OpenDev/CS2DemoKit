@@ -692,6 +692,17 @@ reference cycles — each with a clear message.
 - A ruleset that fails to compose lands in `result.Excluded` with the diagnostics that dropped it —
   at analysis time the same information is on `BuildResult.RulesetDiagnostics` / `.ExcludedRulesets`.
   Check them, or a ruleset that stopped compiling looks identical to stats that never fired.
+- A ruleset is dropped on one of two channels. Validation drops what the source shows is wrong,
+  and `ValidateRulesets` reports it with no demo. The build drops what only lowering can find, with
+  a `build.lowering-failed` diagnostic on `BuildResult.ExcludedRulesets` only (not on
+  `RulesetDiagnostics`); a ruleset that `use:`s it goes with it. Either way the rest still run.
+- Three shapes that validate in YAML but cannot be built are validation errors:
+  `resolve.trigger.unsupported-for-kind` is a `net.<Message>` trigger on `capture keep: list|min|max`,
+  `streak`, `burst` or `bucket`. `resolve.while.unsupported` is a compound `while:` (two gates, from a
+  define and the site, count as one compound), or a value gate (a comparison, or
+  `round.alive.in_clutch`) on a net trigger or on those same kinds; a comparison over a
+  `player.*` entity read is fine wherever the kind has an event trigger.
+  `resolve.keep-list.element-type` is a `keep: list` whose element is not an int, instant or duration.
 - A stat that resolved but cannot measure on *this* run gets a row on `BuildResult.RulesetCoverage`
   instead: a view that does not bind on the demo's source profile, or a spot-derived facet on a run
   with no map bake (above). Those are the two ways a correct ruleset legitimately reports zero, and

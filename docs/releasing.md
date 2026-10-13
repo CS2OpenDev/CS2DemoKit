@@ -103,8 +103,9 @@ its packaging exercised before the tag exists.
 These are the changes a consumer cannot see in a version number. Add to the list rather than
 rewriting it; each entry names the version the change first ships in. The entries are the
 reference; the order a consumer meets them in, with the code to write, is
-[`migrating-to-0.12.md`](migrating-to-0.12.md) for 0.12.0 and
-[`migrating-to-0.13.md`](migrating-to-0.13.md) for 0.13.0.
+[`migrating-to-0.12.md`](migrating-to-0.12.md) for 0.12.0,
+[`migrating-to-0.13.md`](migrating-to-0.13.md) for 0.13.0 and
+[`migrating-to-0.14.md`](migrating-to-0.14.md) for 0.14.0.
 
 ### `CatalogEnrichment` gained two positional parameters (0.11.0)
 
@@ -663,6 +664,42 @@ across the load included, lists the file as failed. A file that loaded cleanly b
 report errors or duplicate ids from the documents that used to be ignored.
 `RulesetDocumentLoader.Load` and `TryLoad`, which return one ruleset, now refuse a multi-document
 stream with a diagnostic instead of reading its first document. No shipped ruleset uses `---`.
+
+### Lowering failures are exclusions, and three shapes validation now rejects (0.14.0)
+
+Same shape of break as "Two new hard errors reject rulesets that loaded under 0.10.0": a rules
+directory that validated before can now fail validation, in exchange for a crash that went away.
+
+A ruleset that resolved but could not be lowered used to throw. `for: match` and `for: each_team`
+rulesets threw from `RuleChainBuilder.Build`; `for: each_player` ones threw from
+`MaterializeNewPlayers` at the first player, which took the whole `Evaluate` down. `Build` now
+lowers each ruleset on trial and drops the one that throws onto `BuildResult.ExcludedRulesets` with
+one `build.lowering-failed` diagnostic (`BuildDiagnosticCodes.LoweringFailed`) carrying the
+planner's message and the failing stat's position. A ruleset that reads an excluded one through
+`use:` is excluded with it under `resolve.cross-ref.unknown-ruleset`. The rest of the set builds and
+evaluates. `RulesetDiagnostics` still lists only composition diagnostics, so read
+`ExcludedRulesets` for both. `DemoAnalysis.Build` lists composition exclusions first, then lowering
+ones. A caller that drives `RuleChainBuilder.Build` directly now gets the lowering exclusions on its
+result as well. The for: match `show: scoreboard` and highlight checks, and the subject-relative
+read check, used to throw from `Build` and are now such exclusions. A `RuleChainBuilder` built with
+no per-player entity providers skips the trial when a per-player ruleset reads an entity, since
+every entity read fails to lower there, and keeps throwing at materialization as before.
+
+Three shapes the planner never lowered are now resolve diagnostics, so `ValidateRulesets` reports
+them before a demo is involved:
+
+- `resolve.trigger.unsupported-for-kind`: a `net.<Message>` trigger on `capture` with
+  `keep: list`, `min` or `max`, or on `streak`, `burst` or `bucket`.
+- `resolve.while.unsupported`: a compound `while:` (an `and`/`or`, a `not`, or two `while:` gates
+  from a define and its site); a value gate (a comparison that does not fold into the event
+  condition, or a bare `round.alive.in_clutch`) on a net trigger; or a
+  value gate on `capture keep: list|min|max`, `streak`, `burst` or `bucket`. A comparison over an
+  entity read folds into the event condition and stays legal on every kind that threads one, net
+  triggers included.
+- `resolve.keep-list.element-type`: a `capture keep: list` whose element is not an int, instant or
+  duration.
+
+No shipped or example ruleset uses any of them, and output on the shipped rulesets does not move.
 
 ## Credentials
 
