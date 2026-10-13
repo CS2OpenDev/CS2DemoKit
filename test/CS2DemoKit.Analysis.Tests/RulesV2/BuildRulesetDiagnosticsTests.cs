@@ -185,6 +185,53 @@ public class BuildRulesetDiagnosticsTests
         await Assert.That(run).IsNotNull();
     }
 
+    /// <summary>A ruleset that reads an excluded one through <c>use:</c> goes with it, under the cross-ref code.</summary>
+    [Test]
+    [Category("Unit")]
+    public async Task LoweringFailure_TakesItsReadersWithIt()
+    {
+        RulesetDoc provider = RulesetCompositionDiagnosticsTests.Doc("bad_streak.rules.yaml", """
+            ruleset: bad_streak
+            for: each_player
+            exports: [sprees]
+            stats:
+              sprees:
+                streak: kill
+                window: 640
+                min_streak: 2
+                per: match
+            """);
+        RulesetDoc reader = RulesetCompositionDiagnosticsTests.Doc("reader.rules.yaml", """
+            ruleset: reader
+            for: each_player
+            use: [bad_streak]
+            stats:
+              more:
+                compute: "bad_streak.sprees + 1"
+            """);
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        RulesetComposition.Result composed =
+            RulesetComposition.Compose([provider, reader], adapter, 64.0, "Cs2GotvProfile");
+        await Assert.That(composed.Excluded.Count).IsEqualTo(0)
+            .Because(string.Join("; ", composed.Diagnostics));
+
+        List<CheckedRuleset> rulesets = [.. composed.Rulesets.Select(rs => rs.Id.Id == "bad_streak"
+            ? rs with { Stats = [rs.Stats.Single() with { ConcreteEvents = ["CDemoFileHeader"] }] }
+            : rs)];
+
+        BuildResult build = new RuleChainBuilder(EventRegistry.Build()).Build(rulesets);
+
+        await Assert.That(build.ExcludedRulesets.Select(e => (e.Id, e.Diagnostics.Single().Code)).ToList())
+            .IsEquivalentTo(new List<(string, string)>
+            {
+                ("bad_streak", BuildDiagnosticCodes.LoweringFailed),
+                ("reader", ResolveDiagnosticCodes.CrossRefUnknownRuleset)
+            });
+        await Assert.That(build.ExcludedRulesets.Single(e => e.Id == "reader").SourceFile)
+            .IsEqualTo("reader.rules.yaml");
+        await Assert.That(build.Graph.PerPlayerTemplates.Count).IsEqualTo(0);
+    }
+
     private static CheckedRuleset Resolve(ParsedDemo demo, RuleChainBuilder builder, string yaml)
     {
         RulesetDoc doc = RulesetCompositionDiagnosticsTests.Doc("probe.rules.yaml", yaml);
