@@ -888,7 +888,16 @@ public sealed partial class RuleChainBuilder
         {
             try
             {
-                _ = factory(0, 0, "probe");
+                ExpressionCompiler.Interpret = true;
+                try
+                {
+                    _ = factory(0, 0, "probe");
+                }
+                finally
+                {
+                    ExpressionCompiler.Interpret = false;
+                }
+
                 break;
             }
             catch (InvalidOperationException ex)

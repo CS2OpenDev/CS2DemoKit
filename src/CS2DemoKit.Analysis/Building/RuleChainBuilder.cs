@@ -740,7 +740,7 @@ public sealed partial class RuleChainBuilder
         ConstantExpression body = Expression.Constant(value, valueType);
         Type funcType = typeof(Func<,>).MakeGenericType(eventType, valueType);
         LambdaExpression lambda = Expression.Lambda(funcType, body, param);
-        return lambda.Compile();
+        return lambda.Compile(ExpressionCompiler.Interpret);
     }
 
     // Builds one per-player rule's node(s) + edges into the caller-supplied slot-local

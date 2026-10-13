@@ -166,6 +166,10 @@ public sealed record NodeMixedCompileResult(
 /// </summary>
 public static class ExpressionCompiler
 {
+    // Set while Build trial-lowers a template: the trees are still built and checked, but
+    // interpreted delegates skip IL emission. The trial's delegates are never run.
+    [ThreadStatic] internal static bool Interpret;
+
     /// <summary><see cref="string.Contains(string,StringComparison)" /> — ordinal string containment.</summary>
     private static readonly MethodInfo _stringContainsMethod =
         typeof(string).GetMethod(nameof(string.Contains), new[]
@@ -197,13 +201,13 @@ public static class ExpressionCompiler
             if (valueType == typeof(bool))
             {
                 ParameterExpression p = Expression.Parameter(typeof(bool), "v");
-                return Expression.Lambda(typeof(Func<bool, bool>), p, p).Compile();
+                return Expression.Lambda(typeof(Func<bool, bool>), p, p).Compile(Interpret);
             }
 
             ParameterExpression pObj = Expression.Parameter(valueType, "v");
             ConstantExpression body = Expression.Constant(true);
             Type ft = typeof(Func<,>).MakeGenericType(valueType, typeof(bool));
-            return Expression.Lambda(ft, body, pObj).Compile();
+            return Expression.Lambda(ft, body, pObj).Compile(Interpret);
         }
 
         ParameterExpression param = Expression.Parameter(valueType, "value");
@@ -219,7 +223,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(valueType, typeof(bool));
-        return Expression.Lambda(funcType, parsed, param).Compile();
+        return Expression.Lambda(funcType, parsed, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -275,7 +279,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(param.Type, typeof(bool));
-        return Expression.Lambda(funcType, body, param).Compile();
+        return Expression.Lambda(funcType, body, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -322,7 +326,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,,>).MakeGenericType(eventParam.Type, typeof(IEntityValueAt), typeof(bool));
-        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile();
+        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile(Interpret);
 
         return new EdgeConditionCompileResult(
             predicate, usage.NeedsEntityCache, usage.ReferencesSelectedPlayer,
@@ -393,7 +397,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(param.Type, valueType);
-        return Expression.Lambda(funcType, body, param).Compile();
+        return Expression.Lambda(funcType, body, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -441,7 +445,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(param.Type, typeof(string));
-        return Expression.Lambda(funcType, body, param).Compile();
+        return Expression.Lambda(funcType, body, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -463,7 +467,7 @@ public static class ExpressionCompiler
             body = Expression.Convert(body, typeof(double));
         }
 
-        return Expression.Lambda<Func<double>>(body).Compile();
+        return Expression.Lambda<Func<double>>(body).Compile(Interpret);
     }
 
     /// <summary>
@@ -494,7 +498,7 @@ public static class ExpressionCompiler
                 $"multi-source predicate '{expression}' must evaluate to a boolean, got {body.Type.Name}.");
         }
 
-        return Expression.Lambda<Func<bool>>(body).Compile();
+        return Expression.Lambda<Func<bool>>(body).Compile(Interpret);
     }
 
     /// <summary>
@@ -545,7 +549,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,,>).MakeGenericType(eventParam.Type, typeof(IEntityValueAt), typeof(double));
-        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile();
+        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile(Interpret);
         return new NodeMixedCompileResult(predicate, usage.ReferencesSelectedPlayer, usage.NeedsEntityCache);
     }
 
