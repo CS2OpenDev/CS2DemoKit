@@ -90,6 +90,12 @@ public sealed partial class RuleChainBuilder
     internal IReadOnlyDictionary<string, ReadOnlyMemory<byte>>? LastMaterializedV2StatHashes
         => _lastMaterializedV2StatHashes;
 
+    /// <summary>Where the per-player probe's exclusions are memoized; tests pass their own.</summary>
+    internal LoweringProbeCache ProbeCache { get; init; } = LoweringProbeCache.Shared;
+
+    /// <summary>Slot-0 probe materializations this builder has run, across its builds.</summary>
+    internal int LoweringProbeRuns { get; private set; }
+
     /// <summary>
     ///     Builds every v2 ruleset into the shared graph: <c>for: each_player</c> rulesets register
     ///     a per-player template; the pilot lives here. Called from
@@ -884,10 +890,35 @@ public sealed partial class RuleChainBuilder
             CreateV2PerPlayerFactory(active, options, views, contextV2ToV1, graph, parentNodeLookup, perPlayerContextRules);
         bool canProbe = (_entityScanner is not null && _perPlayerEntityProviders is not null)
                         || !active.Any(HasEntityReads);
+        UInt128? cacheKey = canProbe
+            ? LoweringProbeCache.ComputeKey(all, options, _tickRate, Profile.GetType(), _registry,
+                _entityProviders, _perPlayerEntityProviders, _visibilityEngine is not null)
+            : null;
+        if (cacheKey is { } hitKey && ProbeCache.TryGet(hitKey, out ExcludedRuleset[] cached))
+        {
+            foreach (ExcludedRuleset excluded in cached)
+            {
+                _loweringExcludedIds.Add(excluded.Id);
+                _loweringExclusions.Add(excluded);
+            }
+
+            active.RemoveAll(IsLoweringExcluded);
+            if (cached.Length > 0)
+            {
+                factory = CreateV2PerPlayerFactory(active, options, views, contextV2ToV1, graph, parentNodeLookup,
+                    perPlayerContextRules);
+            }
+
+            canProbe = false;
+        }
+
+        int exclusionsBefore = _loweringExclusions.Count;
+        bool probeCompleted = false;
         while (canProbe && active.Count > 0)
         {
             try
             {
+                LoweringProbeRuns++;
                 ExpressionCompiler.Interpret = true;
                 try
                 {
@@ -898,6 +929,7 @@ public sealed partial class RuleChainBuilder
                     ExpressionCompiler.Interpret = false;
                 }
 
+                probeCompleted = true;
                 break;
             }
             catch (InvalidOperationException ex)
@@ -911,6 +943,12 @@ public sealed partial class RuleChainBuilder
                 factory = CreateV2PerPlayerFactory(active, options, views, contextV2ToV1, graph, parentNodeLookup,
                     perPlayerContextRules);
             }
+        }
+
+        // Excluding every ruleset is a verdict too; an unattributed throw is not.
+        if (cacheKey is { } missKey && canProbe && (probeCompleted || active.Count == 0))
+        {
+            ProbeCache.Set(missKey, [.. _loweringExclusions.Skip(exclusionsBefore)]);
         }
 
         if (active.Count == 0)
