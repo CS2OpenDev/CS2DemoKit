@@ -55,3 +55,7 @@ validated with one of them never produced its numbers. The releasing note lists 
 
 `BuildDiagnosticCodes.LoweringFailed` (`build.lowering-failed`) and the three new
 `ResolveDiagnosticCodes` constants are stable codes to key on.
+
+`PlayerGameStatsProjector.Project(AnalysisRun, DemoDescriptor)` projects the end-of-match scoreboard
+from a run with or without snapshots. A caller that evaluated a second time with snapshots on only to
+get `player_game_stats` can drop that evaluation.

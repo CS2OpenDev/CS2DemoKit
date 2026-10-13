@@ -285,7 +285,9 @@ per-round, per-side facts such as a side's buy or whether it won) or `for: match
 project through `run.ProjectConfiguredOutputs()` on either path: a snapshot run projects from its
 rows, and a forward run without snapshots from the state it sampled at each round boundary, which is
 the same state, so the two agree row for row. Only a per-event output (a timeline log) still needs
-snapshots.
+snapshots. The built-in scoreboard works the same way:
+`new PlayerGameStatsProjector().Project(run, run.Demo)` reads a bare run's final node values and
+matches a snapshot run's table.
 
 ## Building
 

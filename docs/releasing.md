@@ -701,6 +701,19 @@ them before a demo is involved:
 
 No shipped or example ruleset uses any of them, and output on the shipped rulesets does not move.
 
+### `IOutputProjector` gained a run overload, and the scoreboard projects without snapshots (0.14.0)
+
+`IOutputProjector` has a second member, `Project(AnalysisRun run, DemoDescriptor demo)`, with a
+default body that projects `run.Snapshots` and throws `NotSupportedException` on a run without
+them. Existing implementors compile and behave as before. An implementor that already declared a
+public method with that signature now implements the interface member with it. The default is
+reachable only through an `IOutputProjector` reference, not through the implementing class.
+
+`PlayerGameStatsProjector` overrides it: on a run without snapshots it reads `AnalysisRun.FinalNodes`,
+the same end-of-match state the final snapshot row holds, so a bare run's scoreboard matches a
+snapshot run's row for row. A bare run that dispatched no message gets the schema-only table, as a
+snapshot run with no rows does. `PlayerRoundStatsProjector` still needs snapshots.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
