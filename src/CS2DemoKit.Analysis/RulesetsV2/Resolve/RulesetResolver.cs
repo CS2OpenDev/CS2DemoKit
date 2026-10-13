@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.Rules.Ast;
@@ -498,6 +499,7 @@ public static class RulesetResolver
             }
 
             CheckedExpression? whileGate = BuildWhileGate(stat, trigger, thisType, reads);
+            RejectUnloweredWhile(stat, trigger, concreteEvents, whileGate);
 
             // A team-bound view (round_won / round_lost) filters on the round-end winner against the
             // subject's team. The planner writes that condition, so the reads are declared here: they
@@ -565,6 +567,7 @@ public static class RulesetResolver
                 bucketReducer = effective == "count" ? null : effective;
             }
 
+            RejectNonIntKeepList(stat, valueSelector);
             RejectUngatedSentinelAggregate(stat, keep, bucketReducer, condition, valueSelector);
 
             return new CheckedStat(
@@ -1328,6 +1331,104 @@ public static class RulesetResolver
             }
         }
 
+        // The kinds whose planner edges come from RequireGameEvent, which has no net-message path.
+        private static bool NetTriggerUnsupported(StatDef stat) =>
+            stat.Kind is StatKind.Streak or StatKind.Burst or StatKind.Bucket
+            || stat is { Kind: StatKind.Capture, Keep: KeepMode.List or KeepMode.Min or KeepMode.Max };
+
+        private static string DescribeKind(StatDef stat) =>
+            stat.Kind == StatKind.Capture
+                ? $"capture keep: {stat.Keep.ToString()!.ToLowerInvariant()}"
+                : stat.Kind.ToString().ToLowerInvariant();
+
+        /// <summary>
+        ///     Refuses the <c>while:</c> shapes the planner's gate lowering cannot build. Mirrors
+        ///     <c>RuleChainBuilder.ResolveGateSource</c>: only a bare reference or a single comparison
+        ///     lowers. A comparison over an entity read folds into the event condition on the kinds
+        ///     that thread one; any other comparison, and a bare B6 pull-node read, is a value gate,
+        ///     which only a game-event edge of count, sum, flag or capture first/last can carry.
+        /// </summary>
+        private void RejectUnloweredWhile(StatDef stat, ResolvedTrigger trigger,
+            IReadOnlyList<string> concreteEvents, CheckedExpression? whileGate)
+        {
+            if (whileGate is null)
+            {
+                return;
+            }
+
+            bool valueGate;
+            switch (whileGate.Root)
+            {
+                case ReferenceNode reference:
+                    valueGate = IsB6PullNodePath(reference.Path);
+                    break;
+                case BinaryNode cmp when IsComparison(cmp.Operator):
+                    bool threadsCondition = concreteEvents.Count > 0 && stat.Kind is StatKind.Count
+                        or StatKind.Sum or StatKind.Capture or StatKind.Flag or StatKind.Streak
+                        or StatKind.Bucket or StatKind.Burst;
+                    bool entityBearing = whileGate.References.Any(r => TryEntityRead(r, trigger.View, out _));
+                    valueGate = !(threadsCondition && entityBearing);
+                    break;
+                default:
+                    Report(ResolveDiagnosticCodes.WhileUnsupported,
+                        $"stat '{stat.Id}' while: '{whileGate.Root.CanonicalText}' is compound; a while: gate "
+                        + "must be a single context or flag reference, or a single comparison "
+                        + "(two while: gates, from a define and the site, also compose to a compound)",
+                        stat.Position);
+                    return;
+            }
+
+            if (!valueGate)
+            {
+                return;
+            }
+
+            if (trigger.IsNet)
+            {
+                Report(ResolveDiagnosticCodes.WhileUnsupported,
+                    $"stat '{stat.Id}' while: '{whileGate.Root.CanonicalText}' is a value gate, which a net-message "
+                    + "trigger cannot carry; use where: over the payload instead",
+                    stat.Position);
+                return;
+            }
+
+            if (NetTriggerUnsupported(stat))
+            {
+                Report(ResolveDiagnosticCodes.WhileUnsupported,
+                    $"stat '{stat.Id}' while: '{whileGate.Root.CanonicalText}' is a value gate, which "
+                    + $"{DescribeKind(stat)} cannot carry; only count, sum, flag and capture keep first/last can",
+                    stat.Position);
+            }
+        }
+
+        // The B6 reads the planner builds as always-active pull nodes; the economy members are written nodes.
+        private static bool IsB6PullNodePath(string path) =>
+            B6RuleIds.Members.Any(m => string.Equals(m.V2Name, path, StringComparison.Ordinal))
+            && !path.EndsWith(".equipment", StringComparison.Ordinal)
+            && !path.EndsWith(".money", StringComparison.Ordinal);
+
+        private static bool IsComparison(BinaryOperator op) =>
+            op is BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.Greater
+                or BinaryOperator.GreaterOrEqual or BinaryOperator.Less or BinaryOperator.LessOrEqual;
+
+        // The list node's append edge compiles typeof(int); instants and durations are tick counts.
+        private void RejectNonIntKeepList(StatDef stat, CheckedExpression? valueSelector)
+        {
+            if (stat is not { Kind: StatKind.Capture, Keep: KeepMode.List } || valueSelector is null)
+            {
+                return;
+            }
+
+            if (valueSelector.ResultType.Kind is not (RulesTypeKind.Int or RulesTypeKind.Instant
+                or RulesTypeKind.Duration))
+            {
+                Report(ResolveDiagnosticCodes.KeepListElementType,
+                    $"stat '{stat.Id}' capture keep: list element is {valueSelector.ResultType}; a list holds "
+                    + "int values only",
+                    stat.Position);
+            }
+        }
+
         private CheckedExpression? BuildWhileGate(StatDef stat, ResolvedTrigger trigger, RulesType thisType,
             ReadCollector reads)
         {
@@ -1480,6 +1581,19 @@ public static class RulesetResolver
                 case TriggerRefKind.Net:
                     resolved.RawOrNetName = sourceRef.Name;
                     resolved.IsNet = true;
+                    if (NetTriggerUnsupported(stat))
+                    {
+                        if (!silent)
+                        {
+                            Report(ResolveDiagnosticCodes.TriggerUnsupportedForKind,
+                                $"stat '{stat.Id}' ({DescribeKind(stat)}) cannot trigger on a net message; "
+                                + "only count, sum, flag and capture keep first/last can",
+                                stat.Position);
+                        }
+
+                        return;
+                    }
+
                     resolved.Ok = true;
                     return;
                 case TriggerRefKind.This:

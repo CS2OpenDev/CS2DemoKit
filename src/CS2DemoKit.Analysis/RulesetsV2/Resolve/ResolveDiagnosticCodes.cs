@@ -113,4 +113,16 @@ public static class ResolveDiagnosticCodes
     ///     alone, the sentinel is summed and the result is a plausible number rather than an error.
     /// </summary>
     public const string UngatedSentinelAggregate = "resolve.ungated-sentinel-aggregate";
+
+    /// <summary>A trigger form the stat kind cannot lower (a net message on keep list/min/max, streak, burst or bucket).</summary>
+    public const string TriggerUnsupportedForKind = "resolve.trigger.unsupported-for-kind";
+
+    /// <summary>
+    ///     A <c>while:</c> gate this trigger or kind cannot carry: a value gate on a net trigger, a
+    ///     compound gate anywhere, or a value gate on a kind without a source-gate slot.
+    /// </summary>
+    public const string WhileUnsupported = "resolve.while.unsupported";
+
+    /// <summary>A <c>keep: list</c> element that is not int-typed.</summary>
+    public const string KeepListElementType = "resolve.keep-list.element-type";
 }

@@ -98,6 +98,81 @@ public class ValidateRulesetsTests
     }
 
     [Test]
+    public async Task NetTriggerOnKeepList_IsRejected()
+    {
+        await AssertRejected("net_keep_list", ResolveDiagnosticCodes.TriggerUnsupportedForKind, """
+            ruleset: net_keep_list
+            for: each_player
+            stats:
+              builds:
+                capture: event.BuildNum
+                on: net.CDemoFileHeader
+                keep: list
+                per: match
+            """);
+    }
+
+    [Test]
+    public async Task ValueGateOnNetTrigger_IsRejected()
+    {
+        await AssertRejected("net_value_gate", ResolveDiagnosticCodes.WhileUnsupported, """
+            ruleset: net_value_gate
+            for: each_player
+            stats:
+              headers:
+                count: net.CDemoFileHeader
+                while: "round.number > 3"
+                per: match
+            """);
+    }
+
+    [Test]
+    public async Task CompoundWhile_IsRejected()
+    {
+        await AssertRejected("compound_while", ResolveDiagnosticCodes.WhileUnsupported, """
+            ruleset: compound_while
+            for: each_player
+            stats:
+              late_alive_kills:
+                count: kill
+                while: "player.alive and round.number > 3"
+                per: match
+            """);
+    }
+
+    [Test]
+    public async Task FloatKeepList_IsRejected()
+    {
+        await AssertRejected("float_keep_list", ResolveDiagnosticCodes.KeepListElementType, """
+            ruleset: float_keep_list
+            for: each_player
+            stats:
+              half_damage:
+                capture: event.DmgHealth * 0.5
+                on: damage_dealt
+                keep: list
+                per: match
+            """);
+    }
+
+    private static async Task AssertRejected(string rulesetId, string code, string yaml)
+    {
+        RulesetValidationResult validated = DemoAnalysis.ValidateRulesets(
+        [
+            RulesetCompositionDiagnosticsTests.Doc($"{rulesetId}.rules.yaml", yaml)
+        ]);
+
+        await Assert.That(validated.Success).IsFalse()
+            .Because("lowering cannot build this shape, so validation must refuse it");
+        await Assert.That(validated.Diagnostics.Select(d => d.ToString())).Contains(d => d.EndsWith($"[{code}]", StringComparison.Ordinal));
+        RulesetCompositionDiagnostic hit = validated.Diagnostics.First(d => d.Code == code);
+        await Assert.That(hit.RulesetId).IsEqualTo(rulesetId);
+        await Assert.That(hit.Position.Line).IsGreaterThan(0);
+        await Assert.That(hit.Position.File).IsEqualTo($"{rulesetId}.rules.yaml");
+        await Assert.That(validated.Excluded.Select(e => e.Id)).Contains(rulesetId);
+    }
+
+    [Test]
     public async Task EmptyInput_ValidatesTrivially()
     {
         RulesetValidationResult validated = DemoAnalysis.ValidateRulesets(Array.Empty<RulesetDoc>());
