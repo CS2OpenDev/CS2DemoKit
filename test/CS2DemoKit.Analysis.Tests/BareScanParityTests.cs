@@ -1,6 +1,7 @@
 #region
 
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.TestSupport;
@@ -45,6 +46,14 @@ public class BareScanParityTests
         await Assert.That(bareDigest).IsEqualTo(snapshotDigest);
         await Assert.That(bareAgainDigest).IsEqualTo(bareDigest)
             .Because("a second evaluation over one build must not start from the first run's terminal state");
+
+        // The scoreboard needs no snapshots either: the bare run reads it from its final nodes.
+        PlayerGameStatsProjector scoreboard = new();
+        string snapshotBoard = PlayerGameStatsProjectorTests.RenderTable(scoreboard.Project(snapshot, snapshot.Demo).Single());
+        await Assert.That(PlayerGameStatsProjectorTests.RenderTable(scoreboard.Project(bare, bare.Demo).Single()))
+            .IsEqualTo(snapshotBoard);
+        await Assert.That(PlayerGameStatsProjectorTests.RenderTable(scoreboard.Project(bareAgain, bareAgain.Demo).Single()))
+            .IsEqualTo(snapshotBoard);
 
         // The final tracked nodes the snapshot table saw are exactly the bare run's final nodes.
         await Assert.That(snapshot.Snapshots!.FinalTrackedNodes.Count).IsEqualTo(bare.FinalNodes.Count);

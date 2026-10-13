@@ -19,6 +19,23 @@ public interface IOutputProjector
     /// <param name="demo">The parsed demo, for dimension context (map, players, filename).</param>
     /// <returns>Zero or more tables. Most built-in projectors return exactly one.</returns>
     IReadOnlyList<MetricTable> Project(EvaluationResult result, DemoDescriptor demo);
+
+    /// <summary>
+    ///     Project metric tables from an analysis run. The default needs the run's snapshots; a
+    ///     projector that can read a run without them (<see cref="PlayerGameStatsProjector" />)
+    ///     overrides it.
+    /// </summary>
+    /// <param name="run">The analysis run.</param>
+    /// <param name="demo">The demo facts to project against.</param>
+    /// <returns>Zero or more tables.</returns>
+    /// <exception cref="NotSupportedException">The run captured no snapshots and this projector needs them.</exception>
+    IReadOnlyList<MetricTable> Project(AnalysisRun run, DemoDescriptor demo)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        return run.Snapshots is { } result
+            ? Project(result, demo)
+            : throw new NotSupportedException($"{GetType().Name} needs snapshots.");
+    }
 }
 
 public static class OutputProjectorExtensions
