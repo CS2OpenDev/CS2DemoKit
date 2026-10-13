@@ -15,6 +15,16 @@ internal static class EvaluatorMetrics
     public static readonly Counter<long> EdgesEvaluated =
         _meter.CreateCounter<long>("analysis.edges.evaluated");
 
+    /// <summary>
+    ///     Counter: +1 per <see cref="EntityChangeScanner.BeginEvaluation" />, once per rules run,
+    ///     whatever the digest producer's worker count. The analysis-side half of the decode meter
+    ///     (see docs/profiling.md); the Parser-side half is <c>parser.entity_decode.started</c>,
+    ///     which counts a tracker only when <see cref="CS2DemoKit.Parser.EntityTracking.EntityTracker.Metered" />
+    ///     is true.
+    /// </summary>
+    public static readonly Counter<long> EntityScanStarted =
+        _meter.CreateCounter<long>("analysis.entity_scan.started");
+
     /// <summary>Counter: number of edges whose <c>TryApply</c> returned <c>true</c>.</summary>
     public static readonly Counter<long> EdgesFired =
         _meter.CreateCounter<long>("analysis.edges.fired");

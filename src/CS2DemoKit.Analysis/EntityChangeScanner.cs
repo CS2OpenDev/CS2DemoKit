@@ -415,6 +415,13 @@ public sealed class EntityChangeScanner
     internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, int? maxDegreeOfParallelism,
         CancellationToken cancellationToken)
     {
+        // Counted here, before the producer-kind branches below, so every kind (pipelined,
+        // sequential, precomputed, injected) counts this run exactly once.
+        if (EvaluatorMetrics.EntityScanStarted.Enabled)
+        {
+            EvaluatorMetrics.EntityScanStarted.Add(1);
+        }
+
         ClosePipeline();
         _releaseFolded = !source.SupportsRandomAccess;
         _pastSignonPrefix = false;

@@ -120,6 +120,9 @@ public sealed class EntityTracker
     private int _curEntityIndex;
     private string _curUpdateKind = "";
 
+    // Latches on the first ProcessFrame regardless of Metered, so flipping Metered after that
+    // frame, or replaying the tracker again, never double-counts or retroactively counts.
+    private bool _decodeCounted;
     private bool _errorLogged;
     private bool _wrapperBootstrapWarned;
     private int _ibFlags;
@@ -266,6 +269,19 @@ public sealed class EntityTracker
     ///     the box per write. Lane writes are unaffected either way.
     /// </summary>
     public bool StoreUnlensedFields { get; set; } = true;
+
+    /// <summary>
+    ///     Whether this tracker's first folded frame counts toward the decode meter's
+    ///     <c>parser.entity_decode.started</c> counter (see docs/profiling.md). Defaults to true. A
+    ///     tracker a rules run owns (every <c>EntityStateLayer</c> in CS2DemoKit.Analysis builds one
+    ///     through its bootstrap) sets this false, because that tracker folds as part of the one run
+    ///     the analysis-side <c>analysis.entity_scan.started</c> counter already counts; without the
+    ///     flag the Parser counter would report the pipelined producer's worker count instead of one
+    ///     decode per run. Read once, on the first frame this tracker ever folds: later frames, and
+    ///     a later flip of the flag, have no further effect, so a <see cref="ReplayToIndex" /> re-run
+    ///     of an already-counted tracker does not double-count.
+    /// </summary>
+    public bool Metered { get; set; } = true;
 
     /// <summary>
     ///     Returns the entity-decode profiling accumulators captured so far. Returns <c>default</c>
@@ -1968,6 +1984,15 @@ public sealed class EntityTracker
 
     private void ProcessFrame(DemoFrame frame)
     {
+        if (!_decodeCounted)
+        {
+            _decodeCounted = true;
+            if (Metered && EntityDecodeMetrics.DecodeStarted.Enabled)
+            {
+                EntityDecodeMetrics.DecodeStarted.Add(1);
+            }
+        }
+
         CurrentTick = frame.ServerTick;
         CurrentFrameIndex = frame.FrameNumber;
 
