@@ -580,7 +580,7 @@ public static class DemoAnalysis
         return build with
         {
             RulesetDiagnostics = composed.AttributedDiagnostics,
-            ExcludedRulesets = composed.Excluded,
+            ExcludedRulesets = [.. composed.Excluded, .. build.ExcludedRulesets],
             ProfileResolution = resolution
         };
     }

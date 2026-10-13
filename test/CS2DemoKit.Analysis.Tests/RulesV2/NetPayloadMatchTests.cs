@@ -6,6 +6,7 @@ using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
@@ -228,6 +229,42 @@ public class NetPayloadMatchTests
             .IsTrue().Because($"expected a net-message value edge, got {edge.GetType().Name}");
         await Assert.That(CompiledCondition(edge) is null).IsTrue()
             .Because("a bare net trigger (no where:) carries no condition — value-identical to the v1 net path");
+    }
+
+    /// <summary>
+    ///     An entity-bearing <c>while:</c> on a net trigger is not a value gate, so validation leaves it
+    ///     alone. It must either lower or come back as a lowering exclusion; it must not throw.
+    /// </summary>
+    [Test]
+    public async Task EntityWhileOnNetTrigger_BuildsOrIsExcluded()
+    {
+        RulesetResolveResult resolved = Resolve("""
+                                                ruleset: net_entity_while
+                                                for: each_player
+                                                stats:
+                                                  hdr_while_hp:
+                                                    count: net.CDemoFileHeader
+                                                    while: "player.health > 50"
+                                                    per: match
+                                                """);
+        await Assert.That(resolved.Success).IsTrue()
+            .Because(string.Join("; ", resolved.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
+
+        RuleChainBuilder builder = new(EventRegistry.Build(),
+            perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault());
+        BuildResult build = builder.Build([resolved.Ruleset!]);
+
+        if (build.ExcludedRulesets.SingleOrDefault(e => e.Id == "net_entity_while") is { } excluded)
+        {
+            await Assert.That(excluded.Diagnostics.Single().Code).IsEqualTo(BuildDiagnosticCodes.LoweringFailed);
+            await Assert.That(build.Graph.PerPlayerTemplates.Count).IsEqualTo(0);
+            return;
+        }
+
+        foreach (PerPlayerNodeTemplate template in build.Graph.PerPlayerTemplates)
+        {
+            _ = template.Materialize(0, 2, "probe");
+        }
     }
 
     // ── Scaffolding ────────────────────────────────────────────────────────────

@@ -144,6 +144,9 @@ public sealed partial class RuleChainBuilder
     {
         rulesets ??= [];
         options ??= RulesetCompilerOptions.Default;
+        _loweringExclusions.Clear();
+        _loweringExcludedIds.Clear();
+        _loweringRulesetId = null;
         List<RulesetCoverageDiagnostic> v2Coverage = [];
         foreach (CheckedRuleset ruleset in rulesets)
         {
@@ -580,6 +583,7 @@ public sealed partial class RuleChainBuilder
         // recorder is dropped once the result has its copy of the entries.
         IReadOnlyDictionary<StateNode, NodeProvenance> gameProvenance = provenance.ToDictionary();
         _gameProvenance = new ProvenanceRecorder();
+        v2Coverage.RemoveAll(c => _loweringExcludedIds.Contains(c.Ruleset.Id));
         return new BuildResult(graph, allNodes, wiring.Descriptors,
             relevantTypes, playerContextIndex, entityScanner,
             edgeBacking.Count > 0 ? edgeBacking : null,
@@ -593,7 +597,8 @@ public sealed partial class RuleChainBuilder
             TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
             RoundBoundaryTypes = RoundBoundaryTypes(),
             ExternalNodes = externals.All,
-            Provenance = gameProvenance
+            Provenance = gameProvenance,
+            ExcludedRulesets = [.. _loweringExclusions]
         };
     }
 

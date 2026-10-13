@@ -85,7 +85,8 @@ public sealed record BuildResult(
     ///         Populated by <c>DemoAnalysis.Build</c>, which owns the composition step. A caller
     ///         that composes itself and drives
     ///         <c>RuleChainBuilder.Build</c> directly gets an empty list here and should read
-    ///         <c>RulesetComposition.Result.AttributedDiagnostics</c> instead. Distinct from
+    ///         <c>RulesetComposition.Result.AttributedDiagnostics</c> instead. Lowering failures
+    ///         are not listed here; they are on <see cref="ExcludedRulesets" />. Distinct from
     ///         <see cref="RulesetCoverage" />, which reports legitimate per-profile view-binding
     ///         skips rather than broken documents.
     ///     </para>
@@ -93,9 +94,15 @@ public sealed record BuildResult(
     public IReadOnlyList<RulesetCompositionDiagnostic> RulesetDiagnostics { get; init; } = [];
 
     /// <summary>
-    ///     The rulesets composition dropped from this build, each with the diagnostics explaining
-    ///     why. Empty when every supplied document composed. The ids here are absent from
+    ///     The rulesets dropped from this build, each with the diagnostics explaining why: first
+    ///     the ones composition dropped, then the ones that resolved but could not be lowered
+    ///     (<see cref="BuildDiagnosticCodes.LoweringFailed" />, and the rulesets reading them).
+    ///     Empty when every supplied document composed and lowered. The ids here are absent from
     ///     the graph entirely: their stats and highlights produce no nodes and can never fire.
+    ///     <para>
+    ///         <c>DemoAnalysis.Build</c> fills both halves. A caller that drives
+    ///         <c>RuleChainBuilder.Build</c> directly gets the lowering half only.
+    ///     </para>
     /// </summary>
     public IReadOnlyList<ExcludedRuleset> ExcludedRulesets { get; init; } = [];
 
