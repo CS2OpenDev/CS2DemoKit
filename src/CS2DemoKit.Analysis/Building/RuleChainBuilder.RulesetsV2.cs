@@ -97,6 +97,20 @@ public sealed partial class RuleChainBuilder
         // instance; an expression that reads the instance (projectile.*) or its node is never here.
         public readonly Dictionary<(string Expression, Type EventType, Type? ValueType, int? Slot), Delegate> Compiled = [];
 
+        // The lookup, condition overlay and hash map every instance lowers into, built by the
+        // trial materialization. An instance's own keys (its pull nodes, its stats, whatever a
+        // stat materialized under a read path) are the same set every time; they are learned at
+        // the trial and removed after each instance, so the next one starts from the base again
+        // and never finds a predecessor's node under a key it has yet to write.
+        public Dictionary<string, StateNode>? Lookup;
+        public Dictionary<string, object>? Overlay;
+        public Dictionary<string, ReadOnlyMemory<byte>>? Hashes;
+        public MapStatHashSource? HashSource;
+        public int BaseCount;
+        public int BaseOverlayCount;
+        public List<string> InstanceKeys = [];
+        public List<string> InstanceOverlayKeys = [];
+
         public sealed class StatEntry
         {
             public required byte[] Hash;
@@ -716,10 +730,30 @@ public sealed partial class RuleChainBuilder
         string subtitle = $"{ProjectileGrenadeName.Of(row.ClassName)} {row.EntityIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
                           + $":{row.Serial.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
-        Dictionary<string, StateNode> localLookup = new(baseLookup, StringComparer.OrdinalIgnoreCase);
+        ProjectileLoweringCache cache = _projectileCache!;
+        bool trial = cache.Lookup is null;
+        Dictionary<string, StateNode> localLookup;
+        Dictionary<string, object> overlay;
+        if (trial)
+        {
+            localLookup = new Dictionary<string, StateNode>(baseLookup, StringComparer.OrdinalIgnoreCase);
+            overlay = BuildV2ConditionOverlay(localLookup, [])!;
+            cache.Lookup = localLookup;
+            cache.Overlay = overlay;
+            cache.BaseCount = localLookup.Count;
+            cache.BaseOverlayCount = overlay.Count;
+            cache.Hashes = new Dictionary<string, ReadOnlyMemory<byte>>(_gameStatHashes, StringComparer.Ordinal);
+            cache.HashSource = new MapStatHashSource(cache.Hashes);
+        }
+        else
+        {
+            localLookup = cache.Lookup!;
+            overlay = cache.Overlay!;
+        }
+
         Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(_gameStatHashes, StringComparer.Ordinal);
-        MapStatHashSource hashSource = new(statHashesByPath);
+        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = cache.Hashes!;
+        MapStatHashSource hashSource = cache.HashSource!;
         Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
         List<StateNode> nodes = [];
         GraphWiring scope = new(_registry, externals);
@@ -727,7 +761,6 @@ public sealed partial class RuleChainBuilder
         _currentPlayerTeam = null;
         _teamSubjectSide = null;
         _projectileSubject = (row.EntityIndex, row.Serial);
-        Dictionary<string, object> overlay = BuildV2ConditionOverlay(localLookup, [])!;
         _v2ConditionNodeOverlay = overlay;
         foreach ((string member, _) in CatalogScopeAdapter.ProjectileMembers)
         {
@@ -779,6 +812,27 @@ public sealed partial class RuleChainBuilder
             _v2ConditionNodeOverlay = null;
             _projectileSubject = null;
             _projectileEdgeBinding = null;
+            if (trial)
+            {
+                cache.InstanceKeys = localLookup.Keys.Where(k => !baseLookup.ContainsKey(k)).ToList();
+                cache.InstanceOverlayKeys = CatalogScopeAdapter.ProjectileMembers.Select(m => ProjectileMemberNodes.Key(m.Member)).ToList();
+            }
+
+            foreach (string key in cache.InstanceKeys)
+            {
+                localLookup.Remove(key);
+            }
+
+            foreach (string key in cache.InstanceOverlayKeys)
+            {
+                overlay.Remove(key);
+            }
+        }
+
+        if (localLookup.Count != cache.BaseCount || overlay.Count != cache.BaseOverlayCount)
+        {
+            throw new InvalidOperationException(
+                "a for: each_projectile instance lowered a key its trial did not; the shared lookup would carry it into the next grenade");
         }
 
         return new ProjectileNodeTemplate.MaterializedProjectile(
