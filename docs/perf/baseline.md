@@ -664,7 +664,46 @@ below arm (c) on every demo.
 only: within noise, pass. Below arm (c) (fresh, within 1% of step 0): 19 to 38 percent under on
 every demo, pass.
 Observer-pawns-stream against scoreboard-stream, budget +10%: pooled +10.6%, paired +13.0%, mean
-+15.3%, per-demo +27.9%. Every aggregation reads over budget. Fails.
++15.3%, per-demo +27.9%. Every aggregation reads over budget. Fails. Re-measured at `cf67326`
+below: still fails.
+
+**Re-run after row storage recycling.**
+
+    commit    cf67326
+    runs      45 (3 rounds x 5 demos x 3 arms, paths), zero failures, zero digest mismatches
+    load      1.99 to 3.78
+
+The same protocol as the three-arm leg above: same demos, `--cooldown 5`, `--rounds 1` three
+times with the same three rotated arm orders. `cf67326` pools the per-frame `PerPawnColumns` and
+projectile row storage, which a sampled trace blamed for the observer-pawns overhead. Before and
+after, observer-pawns-stream's delta against `scoreboard-stream` paired within demo and round
+(15 pairs), median and range:
+
+| observer-pawns-stream minus scoreboard-stream | f6dccfc | cf67326 |
+|---|---|---|
+| `alloc_mb` | +97.8 (69.4 to 113.3) | +35.3 (30.0 to 45.5) |
+| `gen0` | +16 (11 to 20) | +4 (3 to 5) |
+| `pause_ms` | +84.8 (50.7 to 99.2) | +118.2 (63.5 to 156.0) |
+| working set, pooled median | +17.0 MB | +48.0 MB |
+| peak heap, pooled median | +15.3 MB | +73.1 MB |
+
+The pool did what it was for: allocation down by two thirds, gen0 to a quarter, and gen1 and
+gen2 back to the no-observer arm's medians (24 and 7 against 23 and 8; before, 33 and 12). The
+collector's total pause did not follow. Fewer collections over a heap the pool keeps larger
+pause longer in sum, and the retained rows cost 31 MB of working set the old build did not hold.
+
+Wall clock, observer-pawns-stream against scoreboard-stream: pooled +49.9%, paired median +44.9%,
+paired mean +38.4%, per-demo +48.9% (per demo +81.5, +48.9, -18.5, +17.3, +76.5%). This session
+is noisier than the first: projectiles-only `observer-stream`, which `cf67326` barely touches
+(26 MB less allocation, 3 fewer gen0), reads pooled +34.4%, paired +10.5%, paired range -30 to
++91%, and the no-observer arm's own three rounds spread 9 to 111 percent per demo. So the wall
+readings do not show the pool making things worse, and none of them shows it clearing the budget.
+Observer-pawns-stream per-demo medians (3375, 3431, 2718, 2641, 3607 ms) sit 16 to 43 percent
+below the fresh arm (c) above; that comparison is cross-session.
+
+**Gate at `cf67326`.** Run 3, budget +10%: every aggregation reads over, fails. The allocation
+the trace named is mostly gone; the remaining cost is collector pause and is not yet diagnosed.
+The hook's run-3 gate is open.
 
 ## Reading these numbers later
 
