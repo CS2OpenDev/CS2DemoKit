@@ -23,11 +23,12 @@ namespace CS2DemoKit.Analysis;
 /// </summary>
 internal sealed class ProjectileLifecycle
 {
-    // Ascending by entity index, the order the digest rows arrive in.
-    private readonly List<ProjectileRow> _live = [];
+    // Ascending by entity index, the order the digest rows arrive in. _live and _next swap
+    // every step; a row holds a reference, so copying one list into the other is not a memcpy.
+    private List<ProjectileRow> _live = [];
     private readonly List<ProjectileRow> _created = [];
     private readonly List<ProjectileRow> _removed = [];
-    private readonly List<ProjectileRow> _next = [];
+    private List<ProjectileRow> _next = [];
 
     /// <summary>Every live projectile after the last <see cref="Step" />, ascending entity index, throwers held.</summary>
     public ReadOnlySpan<ProjectileRow> Live => CollectionsMarshal.AsSpan(_live);
@@ -90,7 +91,6 @@ internal sealed class ProjectileLifecycle
             _removed.Add(_live[l++]);
         }
 
-        _live.Clear();
-        _live.AddRange(_next);
+        (_live, _next) = (_next, _live);
     }
 }
