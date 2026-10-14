@@ -577,6 +577,69 @@ window's tasks where the old loop's local-init built one per task; its peak heap
 of the base, collector pauses within 8 ms, and the gen2 counts are the same. Against the rows
 above, the reader's loop now decodes every frame that reaches a `ParsedDemo`.
 
+### The frame observer
+
+    commit    f6dccfc
+    runs      30 (3 rounds x 5 demos x 2 arms, compare) and 45 (3 rounds x 5 demos x 3 arms, paths),
+              zero failures, zero digest mismatches
+    load      2.50 to 5.23 throughout
+
+Same 5-demo corpus as "One producer" and "Two decode loops" above. Base is `a728ae3`, the
+version-bump commit before any single-walk code; it has no observer arms, so the two perf
+questions split across two tools.
+
+**Nothing declared.** `compare`, cooldown dropped from the default 12 s to 5 s on both arms
+(order still flips per round, so the shorter cooldown lands on both sides alike): `eval_ms`
+medians per demo, base against this commit:
+
+| demo | base | this commit | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 863.7 ms | 1044.8 ms | +21.0% |
+| ...7406845372_0003771537.dem | 652.3 ms | 678.5 ms | +4.0% |
+| ...0180689112_1066991563.dem | 630.5 ms | 641.4 ms | +1.7% |
+| ...1231606001_0126308730.dem | 689.4 ms | 685.0 ms | -0.6% |
+| ...3634708_1168926414.dem | 643.6 ms | 663.3 ms | +3.1% |
+
+Median +3.1%. The one demo at +21% is the 40 MB file, the smallest and noisiest in the corpus;
+`frames` and `inner_messages` are equal to the base build on every demo in every round, so
+nothing structural moved and that row is the bimodal collector ("GC configuration" above), not a
+regression. Step 0's own base-vs-base noise floor on this corpus (`compare-5.csv`, 1 round) reads
+median 1.7%, max 4.2%; the three-round median here sits a point above that, inside the same
+collector noise. Within noise.
+
+**Projectiles and pawn reads.** `paths` has no two-build mode and the base build cannot declare
+an observer, so this is three arms on one build: `scoreboard-stream` (no observer),
+`observer-stream` (the five projectile classes declared and counted), `observer-pawns-stream`
+(the same plus the seven per-pawn columns a round index reads, for every slot, every frame, with
+`9fb4fca`'s handle reads instead of a name lookup per cell). `--cooldown` was already 5 s, the
+tool's own default. Three rounds, arm order rotated each round
+(`scoreboard,observer,pawns` / `pawns,observer,scoreboard` / `observer,scoreboard,pawns`) so no
+arm always lands last and absorbs whatever the demo before it left behind. All three arms agreed
+on scoreboard digest on every demo in every round.
+
+Paired within the same demo and round (cancels demo size and round-level drift, 15 pairs each):
+
+| arm | wall_ms median overhead vs scoreboard-stream | mean |
+|---|---|---|
+| observer-stream | -3.0% | +5.1% |
+| observer-pawns-stream | +13.0% | +15.3% |
+
+Pooled medians over all 15 samples per arm: scoreboard-stream 2788.7 ms, observer-stream
+2785.7 ms, observer-pawns-stream 3085.7 ms. Per-demo medians across the three rounds, then
+medianed over the five demos, read the same shape: observer-stream +5.0%, observer-pawns-stream
++27.9%, both above the paired figures because each per-demo median is only three samples against
+the same bimodal collector. Every aggregation tried puts observer-stream at or below the noise
+this corpus showed above and observer-pawns-stream clearly past it.
+
+Working set (`peak_working_set_mb` minus `size_mb`, `peak_private_mb` reads 0 on this OS):
+scoreboard-stream median 180.5 MB, observer-stream 185.9 MB (+5.4 MB), observer-pawns-stream
+197.5 MB (+17.0 MB).
+
+**Gate.** Nothing declared: within noise, pass. Projectiles only: within noise, pass.
+Observer-pawns-stream against scoreboard-stream, budget +10%: measured +13.0% paired, +15.3%
+mean, +27.9% per-demo. It misses the budget on every reading; the handle reads in `9fb4fca` cut
+the per-cell lookup but not enough to bring seven columns over 64 slots a frame under 10%.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An
