@@ -14,6 +14,7 @@ using CS2DemoKit.Analysis.RulesetsV2.Compile;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 
 #endregion
@@ -341,6 +342,13 @@ public sealed partial class RuleChainBuilder
         bool emitMolotov = IsReferencedByBuiltins("molotov_thrown", builtinContexts)
                            || RulesetsSubscribeToEvent("molotov_thrown", rulesets);
 
+        // The projectile lifecycle events gate the same way. A subscription widens the digest to
+        // all five classes; nothing narrows it to the classes a match names yet.
+        bool emitProjectiles = IsReferencedByBuiltins("projectile_created", builtinContexts)
+                               || IsReferencedByBuiltins("projectile_removed", builtinContexts)
+                               || RulesetsSubscribeToEvent("projectile_created", rulesets)
+                               || RulesetsSubscribeToEvent("projectile_removed", rulesets);
+
         // Built only when something asks for them, so an ordinary run allocates none and the
         // per-frame consume short-circuits on the null check. The team callback is where liveness
         // enters: the digest columns cannot say whether a slot is a corpse, and PlayerContext already
@@ -383,7 +391,7 @@ public sealed partial class RuleChainBuilder
         // graph (for: match) needs the same live teams for its enrichments and the round-end
         // winner, so any ruleset forces it.
         bool trackPlayers = rulesets.Count > 0;
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || trackPlayers)
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || emitProjectiles || trackPlayers)
         {
             // The round's winner is the server's verdict: the scanner synthesizes round_decided
             // from these three game-rules singletons, and the round-end enrichment reports the
@@ -429,7 +437,9 @@ public sealed partial class RuleChainBuilder
                 emitMolotov,
                 vantageScanner,
                 transitionScanner,
-                silent);
+                silent,
+                emitProjectiles ? AllProjectileClasses : null,
+                emitProjectiles);
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve
@@ -1457,6 +1467,9 @@ public sealed partial class RuleChainBuilder
 
         return true;
     }
+
+    private static readonly IReadOnlySet<string> AllProjectileClasses =
+        new HashSet<string>(GrenadeProjectileClasses.All, StringComparer.Ordinal);
 
     /// <summary>
     ///     Does any checked v2 stat trigger on <paramref name="eventName" />? A view-based stat's

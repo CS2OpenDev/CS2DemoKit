@@ -1588,6 +1588,124 @@
       ]
     },
     {
+      "name": "projectile_created",
+      "clrType": "ProjectileCreatedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "ClassName",
+          "type": "string",
+          "v2Name": "event.ClassName",
+          "v2Type": "String"
+        },
+        {
+          "name": "EntityIndex",
+          "type": "int",
+          "v2Name": "event.EntityIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Grenade",
+          "type": "string",
+          "v2Name": "event.Grenade",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Serial",
+          "type": "int",
+          "v2Name": "event.Serial",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "projectile_removed",
+      "clrType": "ProjectileRemovedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Bounces",
+          "type": "int",
+          "v2Name": "event.Bounces",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ClassName",
+          "type": "string",
+          "v2Name": "event.ClassName",
+          "v2Type": "String"
+        },
+        {
+          "name": "EntityIndex",
+          "type": "int",
+          "v2Name": "event.EntityIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Grenade",
+          "type": "string",
+          "v2Name": "event.Grenade",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Serial",
+          "type": "int",
+          "v2Name": "event.Serial",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
       "name": "round_announce_last_round_half",
       "clrType": "RoundAnnounceLastRoundHalfEvent",
       "synthesized": false,
@@ -3363,6 +3481,20 @@
           ]
         },
         {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
           "logicalName": "$round_decided",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3762,6 +3894,20 @@
           ]
         },
         {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
           "logicalName": "$round_decided",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4154,6 +4300,20 @@
           ]
         },
         {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
           "logicalName": "$round_decided",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4539,6 +4699,20 @@
           ]
         },
         {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
           "logicalName": "$round_decided",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4914,6 +5088,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "player_team"
+          ]
+        },
+        {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
           ]
         },
         {
@@ -5930,6 +6118,158 @@
         }
       ],
       "note": "Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
+    },
+    {
+      "name": "projectile_landed",
+      "event": "projectile_removed",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "bounces",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Bounces"
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Grenade"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        }
+      ],
+      "note": "Synthesized from entity state on the first frame the projectile is gone, so event.tick is the FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy lands here only when its cloud or sound ends. Fires for every projectile, but binds to no player when the thrower never resolved."
+    },
+    {
+      "name": "projectile_thrown",
+      "event": "projectile_created",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "class",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Grenade"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        }
+      ],
+      "note": "Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile whose thrower never resolves fires no projectile_thrown."
     },
     {
       "name": "round_decided",

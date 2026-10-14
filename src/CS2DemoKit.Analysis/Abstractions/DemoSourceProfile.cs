@@ -231,6 +231,18 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "player team" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? PlayerTeam => null;
 
+    /// <summary>
+    ///     Logical binding for the synthesized "projectile created" event (one per grenade projectile,
+    ///     on the frame its thrower resolves). See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? ProjectileCreated => null;
+
+    /// <summary>
+    ///     Logical binding for the synthesized "projectile removed" event (one per grenade projectile,
+    ///     on the first frame it is gone). See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? ProjectileRemoved => null;
+
     /// <summary>Logical binding for the "round announce last round half" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundAnnounceLastRoundHalf => null;
 

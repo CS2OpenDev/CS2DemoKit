@@ -236,6 +236,8 @@
         "he_grenade",
         "kill",
         "molotov",
+        "projectile_landed",
+        "projectile_thrown",
         "round_decided",
         "round_ended",
         "round_lost",
@@ -261,11 +263,17 @@
         "attacker_blind": {
           "markdownDescription": "Facet \u0060attacker_blind\u0060 (type \u0060bool\u0060). Exposed by: death. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "bounces": {
+          "markdownDescription": "Facet \u0060bounces\u0060 (type \u0060int\u0060). Exposed by: projectile_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "bullet": {
           "markdownDescription": "Facet \u0060bullet\u0060 (type \u0060bool\u0060). Exposed by: damage_dealt, damage_taken, shot. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "capped": {
           "markdownDescription": "Facet \u0060capped\u0060 (type \u0060int\u0060). Exposed by: damage_dealt. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "class": {
+          "markdownDescription": "Facet \u0060class\u0060 (type \u0060string\u0060). Exposed by: projectile_landed, projectile_thrown. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "counter_strafe_admitted": {
           "markdownDescription": "Facet \u0060counter_strafe_admitted\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -395,6 +403,15 @@
         },
         "winner_team": {
           "markdownDescription": "Facet \u0060winner_team\u0060 (type \u0060int\u0060). Exposed by: round_ended, round_lost, round_won. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "x": {
+          "markdownDescription": "Facet \u0060x\u0060 (type \u0060float\u0060). Exposed by: projectile_landed, projectile_thrown. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "y": {
+          "markdownDescription": "Facet \u0060y\u0060 (type \u0060float\u0060). Exposed by: projectile_landed, projectile_thrown. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "z": {
+          "markdownDescription": "Facet \u0060z\u0060 (type \u0060float\u0060). Exposed by: projectile_landed, projectile_thrown. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "actor": {
           "enum": [
@@ -1273,6 +1290,72 @@
               {
                 "properties": {
                   "on": {
+                    "const": "projectile_landed"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "projectile_landed"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_projectile_landed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "projectile_thrown"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "projectile_thrown"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_projectile_thrown"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
                     "const": "round_decided"
                   }
                 },
@@ -2077,6 +2160,59 @@
       "additionalProperties": false,
       "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_projectile_landed": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060projectile_landed\u0060 (event \u0060projectile_removed\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state on the first frame the projectile is gone, so event.tick is the FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy lands here only when its cloud or sound ends. Fires for every projectile, but binds to no player when the thrower never resolved.",
+      "properties": {
+        "bounces": {
+          "markdownDescription": "\u0060bounces\u0060 (type \u0060int\u0060) on view \u0060projectile_landed\u0060."
+        },
+        "class": {
+          "markdownDescription": "\u0060class\u0060 (type \u0060string\u0060) on view \u0060projectile_landed\u0060."
+        },
+        "x": {
+          "markdownDescription": "\u0060x\u0060 (type \u0060float\u0060) on view \u0060projectile_landed\u0060."
+        },
+        "y": {
+          "markdownDescription": "\u0060y\u0060 (type \u0060float\u0060) on view \u0060projectile_landed\u0060."
+        },
+        "z": {
+          "markdownDescription": "\u0060z\u0060 (type \u0060float\u0060) on view \u0060projectile_landed\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_projectile_thrown": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060projectile_thrown\u0060 (event \u0060projectile_created\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile whose thrower never resolves fires no projectile_thrown.",
+      "properties": {
+        "class": {
+          "markdownDescription": "\u0060class\u0060 (type \u0060string\u0060) on view \u0060projectile_thrown\u0060."
+        },
+        "x": {
+          "markdownDescription": "\u0060x\u0060 (type \u0060float\u0060) on view \u0060projectile_thrown\u0060."
+        },
+        "y": {
+          "markdownDescription": "\u0060y\u0060 (type \u0060float\u0060) on view \u0060projectile_thrown\u0060."
+        },
+        "z": {
+          "markdownDescription": "\u0060z\u0060 (type \u0060float\u0060) on view \u0060projectile_thrown\u0060."
+        },
         "actor": {
           "enum": [
             "any"

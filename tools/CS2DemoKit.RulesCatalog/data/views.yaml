@@ -322,6 +322,49 @@ views:
     facets: { }
     availability: all
 
+  # Synthesized projectile lifecycle (actor = the thrower, held from its first resolution). The
+  # five classes share both views; `class` is the short name (smoke, molotov, he, flash, decoy),
+  # with incendiaries under molotov. projectile_thrown fires on the frame the thrower resolves,
+  # which is a molotov's molotov_thrown frame; projectile_landed fires on the first frame the
+  # entity is gone, which for a smoke or a decoy is when the cloud or the sound ends.
+  projectile_thrown:
+    event: projectile_created
+    note: >-
+      Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick
+      reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile
+      whose thrower never resolves fires no projectile_thrown.
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: PlayerSlot
+    baked: [ ]
+    facets:
+      class: { type: string, field: Grenade }
+      x: { type: float, field: X }
+      y: { type: float, field: Y }
+      z: { type: float, field: Z }
+    availability: all
+
+  projectile_landed:
+    event: projectile_removed
+    note: >-
+      Synthesized from entity state on the first frame the projectile is gone, so event.tick is the
+      FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy
+      lands here only when its cloud or sound ends. Fires for every projectile, but binds to no
+      player when the thrower never resolved.
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: PlayerSlot
+    baked: [ ]
+    facets:
+      class: { type: string, field: Grenade }
+      x: { type: float, field: X }
+      y: { type: float, field: Y }
+      z: { type: float, field: Z }
+      bounces: { type: int, field: Bounces }
+    availability: all
+
   # ── bomb events (binding: none) ──────────────────────────────────────────────
   bomb_planted:
     event: bomb_planted

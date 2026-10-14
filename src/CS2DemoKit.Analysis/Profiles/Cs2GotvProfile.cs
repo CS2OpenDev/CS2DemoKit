@@ -206,6 +206,15 @@ public class Cs2GotvProfile : DemoSourceProfile
         LogicalEventBinding.Of("player_team");
 
     /// <inheritdoc />
+    public override LogicalEventBinding? ProjectileCreated =>
+        // Synthesized by EntityChangeScanner from the digest's projectile rows; no wire event.
+        LogicalEventBinding.Of("projectile_created");
+
+    /// <inheritdoc />
+    public override LogicalEventBinding? ProjectileRemoved =>
+        LogicalEventBinding.Of("projectile_removed");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? RoundDecided =>
         // Synthesized by EntityChangeScanner from CCSGameRules.m_iRoundWinStatus, so every source
         // that records the game-rules entity carries it; bound here and inherited by every profile.

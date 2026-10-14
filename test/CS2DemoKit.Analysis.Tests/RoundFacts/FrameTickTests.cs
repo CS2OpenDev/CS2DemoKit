@@ -39,6 +39,14 @@ public class FrameTickTests
                 capture: event.tick + 1
                 on: bomb_planted
                 per: round
+              thrown_tick:
+                capture: event.tick
+                on: projectile_thrown
+                per: round
+              removed_tick:
+                capture: event.tick
+                on: raw.projectile_removed
+                per: round
             """);
 
         CheckedStat Stat(string id) => rs.Stats.Single(s => s.StatId == id);
@@ -47,6 +55,9 @@ public class FrameTickTests
         await Assert.That(Stat("plant_server").Clock).IsEqualTo(TickClock.Server);
         // molotov_thrown is synthesized from entity state: its event.tick is the frame clock.
         await Assert.That(Stat("molotov_tick").Clock).IsEqualTo(TickClock.Frame);
+        // So are the projectile lifecycle events, through a view or raw.
+        await Assert.That(Stat("thrown_tick").Clock).IsEqualTo(TickClock.Frame);
+        await Assert.That(Stat("removed_tick").Clock).IsEqualTo(TickClock.Frame);
         // Arithmetic over a tick is on no single clock the table could promise.
         await Assert.That(Stat("plant_shifted").Clock).IsEqualTo(TickClock.None);
     }
