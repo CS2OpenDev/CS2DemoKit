@@ -636,6 +636,72 @@ public class TeamScopeTests
         await Assert.That(oracle[2].Clan).IsNotEqualTo(oracle[3].Clan);
     }
 
+    /// <summary>The forward run over the file reads the same final score and clan names.</summary>
+    [Test]
+    [Category("Integration")]
+    [NotInParallel]
+    public async Task TeamScore_ReadsEachSide_OnTheForwardPath()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        Dictionary<int, (int Score, string Clan)> oracle = LastFrameTeams(DemoTestHelper.GetOrParse(path));
+        AnalysisRun run = DemoAnalysis.Run(path, RoundFactsTestSupport.Load(LibraryTeams));
+        MetricTable table = RoundFactsTestSupport.Table(run, "team_final");
+
+        await Assert.That(run.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
+        await Assert.That(string.Join(";", table.Rows.Select(r =>
+                $"{RoundFactsTestSupport.Dim(r, "side")}:{RoundFactsTestSupport.Int(r, "score")}:{r.Values["clan_name"]}")))
+            .IsEqualTo($"2:{oracle[2].Score}:{oracle[2].Clan};3:{oracle[3].Score}:{oracle[3].Clan}");
+    }
+
+    /// <summary>
+    ///     A side's score is the rounds won by the team on that side at the end, across the halftime
+    ///     swap, not the rounds won on that side: the first half counts for the other side's row.
+    ///     Checked on every regulation-length demo beside the pinned one; overtime is left out.
+    /// </summary>
+    [Test]
+    [Category("Corpus")]
+    [NotInParallel]
+    public async Task Corpus_ScoreFollowsTheTeamAcrossHalftime()
+    {
+        string pinned = DemoTestHelper.RequireDemo("match730_003770625492944683328_1992712646_129.dem");
+        IReadOnlyList<RulesetDoc> rules = RoundFactsTestSupport.Load(LibraryTeams, """
+            ruleset: decided
+            for: match
+            stats:
+              winners:
+                capture: event.Winner
+                on: round_decided
+                keep: list
+                per: match
+            """);
+
+        int checkedDemos = 0, telling = 0;
+        foreach (string path in Directory.EnumerateFiles(Path.GetDirectoryName(pinned)!, "match730_*.dem").Order(StringComparer.Ordinal))
+        {
+            AnalysisRun run = DemoAnalysis.Run(path, rules);
+            int[] winners = RoundFactsCorpusTests.Ints(run, "decided.winners");
+            if (winners.Length is <= 12 or > 24)
+            {
+                continue;
+            }
+
+            MetricTable table = RoundFactsTestSupport.Table(run, "team_final");
+            foreach (int side in (int[])[2, 3])
+            {
+                string because = $"{Path.GetFileName(path)} side {side}";
+                int followsTeam = winners.Take(12).Count(w => w == 5 - side) + winners.Skip(12).Count(w => w == side);
+                telling += followsTeam != winners.Count(w => w == side) ? 1 : 0;
+                MetricRow row = table.Rows.Single(r => RoundFactsTestSupport.Dim(r, "side") == side);
+                await Assert.That(RoundFactsTestSupport.Int(row, "score")).IsEqualTo(followsTeam).Because(because);
+            }
+
+            checkedDemos++;
+        }
+
+        await Assert.That(checkedDemos).IsGreaterThan(0);
+        await Assert.That(telling).IsGreaterThan(0).Because("some side's two counts must differ, or the check proves nothing");
+    }
+
     /// <summary>The oracle: a hand walk to the last frame, then each side's <c>CCSTeam</c> by its <c>m_iTeamNum</c>.</summary>
     internal static Dictionary<int, (int Score, string Clan)> LastFrameTeams(ParsedDemo demo)
     {

@@ -827,7 +827,8 @@ value breaks nothing at compile time; a consumer that switches on it needs the t
 A `capture:` with no `on:` used to resolve to nothing without a diagnostic. It now lowers for a bare
 `team.*` read `per: match` kept last (a node written by the provider's change events and re-seeded at
 `begin_new_match`), and any other shape is `resolve.trigger.unsupported-for-kind` at validation.
-No shipped or example ruleset had one, so no golden moves.
+No shipped ruleset reads them, so no golden moves; the round facts example gains a `team_final`
+table that does.
 
 ## Credentials
 
