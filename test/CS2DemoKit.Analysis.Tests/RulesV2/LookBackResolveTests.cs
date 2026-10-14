@@ -160,6 +160,10 @@ public class LookBackCorpusTests
             capture: player.pos_x@-8
             on: cadence.step
             per: match
+          moved_x:
+            sum: abs(player.pos_x - player.pos_x@-8)
+            on: cadence.step
+            per: match
         show:
           tables:
             steps:
@@ -168,6 +172,7 @@ public class LookBackCorpusTests
               columns:
                 - { stat: now_x, label: now_x }
                 - { stat: back_x, label: back_x }
+                - { stat: moved_x, label: moved_x }
         """;
 
     [Test]
@@ -197,6 +202,8 @@ public class LookBackCorpusTests
 
             Dictionary<(int Slot, int Snapshot), double> nowAt = [];
             List<(int Slot, int Tick, double Back, double Now)> rows = [];
+            Dictionary<int, double> lastMoved = [];
+            int movedSteps = 0, movedBad = 0;
             foreach (MetricRow row in RoundFactsTestSupport.Table(run, "steps", demo).Rows)
             {
                 int slot = Convert.ToInt32(row.Dimensions["player_slot"], CultureInfo.InvariantCulture);
@@ -205,6 +212,14 @@ public class LookBackCorpusTests
                 double back = Convert.ToDouble(row.Values["back_x"], CultureInfo.InvariantCulture);
                 nowAt[(slot, snapshotTickAtFire[tick])] = now;
                 rows.Add((slot, tick, back, now));
+
+                // Each step adds |now - back| to the running sum, or starts it again after a reset.
+                double sum = Convert.ToDouble(row.Values["moved_x"], CultureInfo.InvariantCulture);
+                double step = Math.Abs(now - back);
+                double added = sum - lastMoved.GetValueOrDefault(slot);
+                movedSteps += step > 0 ? 1 : 0;
+                movedBad += Math.Abs(added - step) < 0.01 || Math.Abs(sum - step) < 0.01 ? 0 : 1;
+                lastMoved[slot] = sum;
             }
 
             int compared = 0, moved = 0;
@@ -221,6 +236,8 @@ public class LookBackCorpusTests
             }
 
             Console.WriteLine($"{label}: {rows.Count} rows, {compared} look-backs compared, {moved} differ from the plain read");
+            await Assert.That(movedBad).IsEqualTo(0).Because($"{label}: a plain read and a look-back in one sum");
+            await Assert.That(movedSteps).IsGreaterThan(1000).Because(label);
             await Assert.That(compared).IsGreaterThan(1000).Because(label);
             await Assert.That(moved).IsGreaterThan(compared / 10).Because(label);
         }

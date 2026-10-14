@@ -148,7 +148,8 @@ public sealed record AnalysisOptions
     ///     Rebuild the players' user commands on the evaluation thread and serve them to
     ///     <c>player.cmd.*</c> reads and to <see cref="FrameView.Command" />. Widens the decode plan
     ///     with <see cref="MessageCategories.UserCmds" />. A build that reads <c>player.cmd.*</c>
-    ///     turns the lane on without it.
+    ///     turns the lane on without it. Pass it to <c>Build</c>, which plans the decode: set on
+    ///     <c>Evaluate</c> alone, the lane sees only the commands the source already decodes.
     /// </summary>
     public bool DecodeUserCommands { get; init; }
 }
@@ -698,7 +699,7 @@ public static class DemoAnalysis
         {
             FrameObserver = options.FrameObserver,
             ObservedProviders = options.ObservedProviders,
-            DecodeUserCommands = build.DecodesUserCommands,
+            DecodeUserCommands = build.DecodesUserCommands || options.DecodeUserCommands,
             Cadences = build.CadencePlans
         };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;

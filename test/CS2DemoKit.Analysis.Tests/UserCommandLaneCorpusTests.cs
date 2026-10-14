@@ -1,7 +1,9 @@
 #region
 
+using System.Globalization;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Observation;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.Tests.RoundFacts;
 using CS2DemoKit.Analysis.Yaml;
@@ -126,9 +128,88 @@ public class UserCommandLaneCorpusTests
                 await Assert.That(pressing).IsEqualTo(expectedPressing).Because($"{label} slot {slot}");
             }
 
-            Console.WriteLine($"{label}: {compared} command reads compared, {nonZero} nonzero");
+            Console.WriteLine($"{label}: {compared} command reads compared, {nonZero} nonzero; "
+                              + $"rebuilt {oracle.Stats.Full} full, {oracle.Stats.Delta} delta");
             await Assert.That(nonZero).IsGreaterThan(compared / 2).Because(label);
         }
+    }
+
+    private const string AimRules = """
+        ruleset: cmd_aim
+        for: each_player
+        cadences:
+          step: { ticks: 64, anchor: round_freeze_end, until: round_ended }
+        stats:
+          view_yaw:
+            capture: player.cmd.view_yaw
+            on: cadence.step
+            per: match
+          eye_yaw:
+            capture: player.eye_yaw
+            on: cadence.step
+            per: match
+        show:
+          tables:
+            aim:
+              per: player_event
+              on: cadence.step
+              columns:
+                - { stat: view_yaw, label: view_yaw }
+                - { stat: eye_yaw, label: eye_yaw }
+        """;
+
+    /// <summary>
+    ///     A command slot is the player slot: each player's command yaw tracks their own pawn's eye
+    ///     yaw far more often than the next player's.
+    /// </summary>
+    [Test]
+    public async Task CommandSlot_IsThePlayerSlot()
+    {
+        string path = Demo();
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(path).AsMemory());
+        AnalysisRun run = DemoAnalysis.Run(demo, RoundFactsTestSupport.Load(AimRules));
+        await Assert.That(run.Build.ExcludedRulesets).IsEmpty();
+
+        Dictionary<int, Dictionary<int, (double View, double Eye)>> byTick = [];
+        foreach (MetricRow row in RoundFactsTestSupport.Table(run, "aim", demo).Rows)
+        {
+            int tick = Convert.ToInt32(row.Dimensions["tick"], CultureInfo.InvariantCulture);
+            int slot = Convert.ToInt32(row.Dimensions["player_slot"], CultureInfo.InvariantCulture);
+            if (!byTick.TryGetValue(tick, out Dictionary<int, (double, double)>? slots))
+            {
+                byTick[tick] = slots = [];
+            }
+
+            slots[slot] = (Convert.ToDouble(row.Values["view_yaw"], CultureInfo.InvariantCulture),
+                Convert.ToDouble(row.Values["eye_yaw"], CultureInfo.InvariantCulture));
+        }
+
+        static bool Close(double a, double b) => Math.Abs(((a - b) % 360.0 + 540.0) % 360.0 - 180.0) < 5.0;
+
+        int same = 0, sameClose = 0, shifted = 0, shiftedClose = 0;
+        foreach (Dictionary<int, (double View, double Eye)> slots in byTick.Values)
+        {
+            int[] order = [.. slots.Keys.Order()];
+            for (int i = 0; i < order.Length; i++)
+            {
+                (double view, double eye) = slots[order[i]];
+                if (view == 0 && eye == 0)
+                {
+                    continue;
+                }
+
+                same++;
+                sameClose += Close(view, eye) ? 1 : 0;
+                shifted++;
+                shiftedClose += Close(view, slots[order[(i + 1) % order.Length]].Eye) ? 1 : 0;
+            }
+        }
+
+        Console.WriteLine($"same slot: {sameClose}/{same} within 5 degrees; next slot: {shiftedClose}/{shifted}");
+        await Assert.That(same).IsGreaterThan(1000);
+        // Dead and spectating pawns keep a stale eye yaw, so the own-slot rate is well short of 1.
+        await Assert.That(sameClose).IsGreaterThan(same / 2);
+        await Assert.That(shiftedClose * 3).IsLessThan(sameClose);
     }
 
     [Test]
