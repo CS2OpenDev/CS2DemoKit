@@ -1327,9 +1327,25 @@ public sealed partial class RuleChainBuilder
     {
         Type eventType = reg.EventType;
 
-        Delegate? condition = trigger.Condition is not null
-            ? ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent))
-            : null;
+        Delegate? condition = null;
+        if (trigger.Condition is not null)
+        {
+            // Inside a projectile factory an expression that reads neither the instance nor its
+            // node compiles to the same delegate for every grenade, so the first one serves all.
+            if (_projectileCache is { } cache && ProjectileLoweringCache.IsInstanceFree(trigger.Condition))
+            {
+                if (!cache.Compiled.TryGetValue((trigger.Condition, eventType, null, playerSlot), out condition))
+                {
+                    condition = ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+                    cache.Compiled[(trigger.Condition, eventType, null, playerSlot)] = condition;
+                }
+            }
+            else
+            {
+                condition = ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+            }
+        }
+
         if (_projectileEdgeBinding is { } projectile)
         {
             condition = ProjectileEdgeBinding.Bind(projectile.Index, projectile.Serial, (Func<GameEvent, bool>?)condition);
@@ -1365,9 +1381,22 @@ public sealed partial class RuleChainBuilder
             string valueExpr = trigger.Value?.Replace("rule.value", "node.value", StringComparison.Ordinal)
                                ?? throw new InvalidOperationException(
                                    $"Trigger to '{dest.Name}' uses Set but has no value expression.");
-            selector = ExpressionCompiler.CompileEventValueSelector(
-                valueExpr, eventType, valueType, reg.Fields, playerSlot, dest, ConditionNodes,
-                _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+            if (_projectileCache is { } cache && ProjectileLoweringCache.IsInstanceFree(valueExpr))
+            {
+                if (!cache.Compiled.TryGetValue((valueExpr, eventType, valueType, playerSlot), out selector!))
+                {
+                    selector = ExpressionCompiler.CompileEventValueSelector(
+                        valueExpr, eventType, valueType, reg.Fields, playerSlot, dest, ConditionNodes,
+                        _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+                    cache.Compiled[(valueExpr, eventType, valueType, playerSlot)] = selector;
+                }
+            }
+            else
+            {
+                selector = ExpressionCompiler.CompileEventValueSelector(
+                    valueExpr, eventType, valueType, reg.Fields, playerSlot, dest, ConditionNodes,
+                    _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+            }
         }
 
         Type setValueEdgeType = typeof(OnGameEventSetValue<,>).MakeGenericType(eventType, valueType);

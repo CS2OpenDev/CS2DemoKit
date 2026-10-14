@@ -84,10 +84,33 @@ public sealed partial class RuleChainBuilder
     // event's stat lowers, null for any other stat and outside the factory.
     private (int Index, int Serial)? _projectileEdgeBinding;
 
-    // Stat hashes by qualified path for the projectile factory now running; null everywhere
-    // else. Every instance lowers the same stats over the same game hashes in the same order, so
-    // the trial materialization's hashes serve the hundreds that follow.
-    private Dictionary<string, byte[]>? _projectileStatHashes;
+    // What the projectile factory now running has lowered before; null everywhere else. Every
+    // instance lowers the same stats over the same game hashes in the same order, so the trial
+    // materialization's hashes, strings and instance-free delegates serve the hundreds that follow.
+    private ProjectileLoweringCache? _projectileCache;
+
+    private sealed class ProjectileLoweringCache
+    {
+        public readonly Dictionary<CheckedStat, StatEntry> Stats = new(ReferenceEqualityComparer.Instance);
+
+        // Keyed by the expression and everything else the compile binds that is the same for every
+        // instance; an expression that reads the instance (projectile.*) or its node is never here.
+        public readonly Dictionary<(string Expression, Type EventType, Type? ValueType, int? Slot), Delegate> Compiled = [];
+
+        public sealed class StatEntry
+        {
+            public required byte[] Hash;
+            public required string Hex;
+            public required string QualifiedId;
+            public string? Condition;
+            public bool ConditionKnown;
+            public string? ValueExpr;
+        }
+
+        public static bool IsInstanceFree(string expression) =>
+            !expression.Contains("node", StringComparison.Ordinal)
+            && !expression.Contains("projectile", StringComparison.Ordinal);
+    }
 
     // The for: each_team build's per-side outputs: side → {ruleset}.{stat} node map, and side → the
     // roster node its tables' `slots` dimension reads. Empty when no team ruleset was built.
@@ -660,14 +683,14 @@ public sealed partial class RuleChainBuilder
             }
         }
 
-        Dictionary<string, byte[]> statHashes = new(StringComparer.Ordinal);
+        ProjectileLoweringCache cache = new();
         return row =>
         {
             // Hundreds of instances a demo, each edge firing a few times: interpretation beats a
             // JIT compile per instance.
             bool interpret = ExpressionCompiler.Interpret;
             ExpressionCompiler.Interpret = true;
-            _projectileStatHashes = statHashes;
+            _projectileCache = cache;
             try
             {
                 return LowerV2Projectile(row, rulesets, options, views, contextV2ToV1, externals, baseLookup);
@@ -675,7 +698,7 @@ public sealed partial class RuleChainBuilder
             finally
             {
                 ExpressionCompiler.Interpret = interpret;
-                _projectileStatHashes = null;
+                _projectileCache = null;
             }
         };
     }
@@ -709,7 +732,7 @@ public sealed partial class RuleChainBuilder
         foreach ((string member, _) in CatalogScopeAdapter.ProjectileMembers)
         {
             string key = ProjectileMemberNodes.Key(member);
-            StateNode pull = ProjectileMemberNodes.Create(member, $"__projectile_{member}", subtitle, state);
+            StateNode pull = ProjectileMemberNodes.Create(member, ProjectileMemberNodes.NodeName(member), subtitle, state);
             localLookup[key] = pull;
             overlay[key] = pull;
         }
@@ -1468,16 +1491,22 @@ public sealed partial class RuleChainBuilder
         _loweringPosition = stat.Position;
 
         // Resolved-identity dedup (obligation 3): a hash-equal stat shares the existing node.
-        string qualifiedId = $"{rs.Id.Id}.{stat.StatId}";
-        if (_projectileStatHashes is not { } knownHashes || !knownHashes.TryGetValue(qualifiedId, out byte[]? hash))
+        ProjectileLoweringCache.StatEntry? cached = _projectileCache?.Stats.GetValueOrDefault(stat);
+        if (cached is null)
         {
-            hash = V2StatHasher.Hash(stat, hashSource);
-            _projectileStatHashes?.Add(qualifiedId, hash);
+            byte[] fresh = V2StatHasher.Hash(stat, hashSource);
+            cached = new ProjectileLoweringCache.StatEntry
+            {
+                Hash = fresh, Hex = Convert.ToHexString(fresh), QualifiedId = $"{rs.Id.Id}.{stat.StatId}"
+            };
+            _projectileCache?.Stats.Add(stat, cached);
         }
 
+        byte[] hash = cached.Hash;
+        string qualifiedId = cached.QualifiedId;
         statHashesByPath[stat.StatId] = hash;
         statHashesByPath[qualifiedId] = hash;
-        string hex = Convert.ToHexString(hash);
+        string hex = cached.Hex;
         if (nodesByHash.TryGetValue(hex, out StateNode? shared))
         {
             localLookup[stat.StatId] = shared;
@@ -1494,7 +1523,13 @@ public sealed partial class RuleChainBuilder
         EnsureSettleEntityPullNodes(stat, slot, playerName, localLookup, nodes, wiring);
 
         bool roundScoped = stat.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round or ScopeAxis.TeamRound;
-        string? condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
+        if (!cached.ConditionKnown)
+        {
+            cached.Condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
+            cached.ConditionKnown = true;
+        }
+
+        string? condition = cached.Condition;
         _projectileEdgeBinding = BindsProjectile(stat) ? _projectileSubject : null;
 
         // While: gate. An entity-bearing single-comparison while: (e.g. `while: player.health > 50`) has
@@ -1710,7 +1745,8 @@ public sealed partial class RuleChainBuilder
                 // (v1 `value` semantics, the default) = plain set.
                 StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                string valueExpr = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
+                string valueExpr = cached.ValueExpr ??=
+                    RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     BoolNode? guard = null;
