@@ -32,9 +32,13 @@ internal sealed class DigestStoragePool
     private readonly Stack<PerPawnColumns> _columns = new();
     private readonly object _gate = new();
 
-    // Producer thread only. The digest being filled owns [_used - count, _used) of _block.
+    // Producer thread only. The digest being filled owns [_used - count, _used) of _block, and
+    // the last digest committed owns the _prev segment, which may sit in an earlier block.
     private ProjectileRow[] _block = [];
     private int _used;
+    private ProjectileRow[]? _prevBlock;
+    private int _prevStart;
+    private int _prevCount;
 
     /// <summary>
     ///     A zero-row instance bound to <paramref name="layout" />, recycled when one is free and
@@ -91,6 +95,29 @@ internal sealed class DigestStoragePool
 
         _block[_used++] = row;
         count++;
+    }
+
+    /// <summary>
+    ///     Ends the digest whose storage the three refs describe. A grenade at rest reads the same
+    ///     row frame after frame, so a digest whose rows equal the last digest's shares that
+    ///     segment and its own rows are given back to the block; the span it reads is identical.
+    /// </summary>
+    public void CommitProjectiles(ref ProjectileRow[]? block, ref int start, ref int count)
+    {
+        if (count == _prevCount && count > 0
+            && new ReadOnlySpan<ProjectileRow>(block, start, count).SequenceEqual(
+                new ReadOnlySpan<ProjectileRow>(_prevBlock, _prevStart, _prevCount)))
+        {
+            // The rows are the tail of the current block by the append invariant.
+            _used -= count;
+            block = _prevBlock;
+            start = _prevStart;
+            return;
+        }
+
+        _prevBlock = block;
+        _prevStart = start;
+        _prevCount = count;
     }
 
     /// <summary>Takes back row storage the consumer has finished with.</summary>

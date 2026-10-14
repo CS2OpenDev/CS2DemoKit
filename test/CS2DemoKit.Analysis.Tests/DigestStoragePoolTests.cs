@@ -74,6 +74,43 @@ public class DigestStoragePoolTests
     }
 
     [Test]
+    public async Task ProjectileRows_EqualToTheLastDigests_ShareItsSegment()
+    {
+        DigestStoragePool pool = new();
+        EntityFrameDigest first = new() { Pool = pool };
+        first.AddProjectile(Smoke);
+        first.AddProjectile(Smoke with { EntityIndex = 41 });
+        first.CommitProjectiles();
+
+        EntityFrameDigest same = new() { Pool = pool };
+        same.AddProjectile(Smoke);
+        same.AddProjectile(Smoke with { EntityIndex = 41 });
+        same.CommitProjectiles();
+
+        EntityFrameDigest moved = new() { Pool = pool };
+        moved.AddProjectile(Smoke);
+        moved.AddProjectile(Smoke with { EntityIndex = 41, Bounces = 1 });
+        moved.CommitProjectiles();
+
+        EntityFrameDigest fewer = new() { Pool = pool };
+        fewer.AddProjectile(Smoke);
+        fewer.CommitProjectiles();
+
+        await Assert.That(same.Projectiles.Length).IsEqualTo(2);
+        await Assert.That(same.Projectiles[1].EntityIndex).IsEqualTo(41);
+        await Assert.That(same.Projectiles.Overlaps(first.Projectiles)).IsTrue()
+            .Because("an unchanged frame reads the previous digest's rows, not a copy");
+        await Assert.That(moved.Projectiles.Overlaps(first.Projectiles)).IsFalse();
+        await Assert.That(moved.Projectiles[1].Bounces).IsEqualTo(1);
+        await Assert.That(fewer.Projectiles.Length).IsEqualTo(1);
+        await Assert.That(fewer.Projectiles.Overlaps(moved.Projectiles)).IsFalse();
+
+        first.ReleaseStorage();
+        await Assert.That(same.Projectiles.Length).IsEqualTo(2);
+        await Assert.That(same.Projectiles[0].Serial).IsEqualTo(7);
+    }
+
+    [Test]
     public async Task ProjectileRows_StayContiguous_AcrossABlockBoundary()
     {
         DigestStoragePool pool = new();
@@ -83,11 +120,14 @@ public class DigestStoragePoolTests
             filler.AddProjectile(Smoke with { EntityIndex = i });
         }
 
+        filler.CommitProjectiles();
         EntityFrameDigest straddling = new() { Pool = pool };
         for (int i = 0; i < 3; i++)
         {
             straddling.AddProjectile(Smoke with { EntityIndex = 100 + i });
         }
+
+        straddling.CommitProjectiles();
 
         await Assert.That(filler.Projectiles.Length).IsEqualTo(DigestStoragePool.ProjectileBlockRows - 1);
         await Assert.That(filler.Projectiles[^1].EntityIndex).IsEqualTo(DigestStoragePool.ProjectileBlockRows - 2);
@@ -99,6 +139,7 @@ public class DigestStoragePoolTests
 
         EntityFrameDigest next = new() { Pool = pool };
         next.AddProjectile(Smoke with { EntityIndex = 200 });
+        next.CommitProjectiles();
         await Assert.That(next.Projectiles[0].EntityIndex).IsEqualTo(200);
         await Assert.That(straddling.Projectiles[2].EntityIndex).IsEqualTo(102);
     }

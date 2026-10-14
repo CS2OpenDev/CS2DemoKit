@@ -129,6 +129,13 @@ internal sealed class EntityFrameDigest
         _projectileBlock[_projectileCount++] = row;
     }
 
+    /// <summary>
+    ///     Ends the projectile rows: the extractor calls it once, after the last
+    ///     <see cref="AddProjectile" />, so rows equal to the last digest's can share its segment.
+    /// </summary>
+    public void CommitProjectiles() =>
+        Pool?.CommitProjectiles(ref _projectileBlock, ref _projectileStart, ref _projectileCount);
+
     /// <summary>The pool the row storage came from, set by the extractor; null for a digest that owns its storage.</summary>
     internal DigestStoragePool? Pool;
 

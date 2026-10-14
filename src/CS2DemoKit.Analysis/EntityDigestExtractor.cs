@@ -150,6 +150,8 @@ internal static class EntityDigestExtractor
                     }
                 }
             }
+
+            d.CommitProjectiles();
         }
 
         return d;
