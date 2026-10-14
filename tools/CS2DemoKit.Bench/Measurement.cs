@@ -357,6 +357,12 @@ internal static class Measurement
             evalTicks.Dispose();
             Console.Error.WriteLine($"eval allocation by type ({Path.GetFileName(demoPath)}, projectiles={run.Projectiles.Count}):");
             evalTicks.Report(Console.Error);
+            if (build.EntityScanner?.GetProfilingSnapshot() is { Enabled: true } scan)
+            {
+                // Worker time summed over the fold workers, which the timed thread never sees.
+                Console.Error.WriteLine(
+                    $"fold: {scan.FoldTicks * 1000.0 / Stopwatch.Frequency:F0} ms worker time, {scan.FoldAlloc / (1024.0 * 1024):F1} MB");
+            }
         }
 
         // Full enumeration of InnerMessages across every frame: what a consumer walking the message
