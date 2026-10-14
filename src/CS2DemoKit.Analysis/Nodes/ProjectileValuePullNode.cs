@@ -104,26 +104,20 @@ internal sealed class ProjectileValuePullNode<T>(
 /// <summary>Builds the pull node behind each <see cref="CatalogScopeAdapter.ProjectileMembers" /> entry.</summary>
 internal static class ProjectileMemberNodes
 {
-    private static readonly Dictionary<string, (string Key, string Name)> Names = new(StringComparer.Ordinal);
+    // Built once over the catalog's member list; read on every materialization.
+    private static readonly Dictionary<string, (string Key, string Name)> Names =
+        CatalogScopeAdapter.ProjectileMembers.ToDictionary(
+            m => m.Member, m => ($"entity.projectile.{m.Member}", $"__projectile_{m.Member}"), StringComparer.Ordinal);
 
     /// <summary>The lookup key a <c>projectile.&lt;member&gt;</c> read lowers to in a condition or value.</summary>
-    public static string Key(string member) => Entry(member).Key;
+    public static string Key(string member) => Names.TryGetValue(member, out (string Key, string Name) entry)
+        ? entry.Key
+        : $"entity.projectile.{member}";
 
     /// <summary>The name of the pull node behind <paramref name="member" />, the same for every instance.</summary>
-    public static string NodeName(string member) => Entry(member).Name;
-
-    private static (string Key, string Name) Entry(string member)
-    {
-        lock (Names)
-        {
-            if (!Names.TryGetValue(member, out (string Key, string Name) entry))
-            {
-                Names[member] = entry = ($"entity.projectile.{member}", $"__projectile_{member}");
-            }
-
-            return entry;
-        }
-    }
+    public static string NodeName(string member) => Names.TryGetValue(member, out (string Key, string Name) entry)
+        ? entry.Name
+        : $"__projectile_{member}";
 
     /// <summary>The pull node for <paramref name="member" /> over <paramref name="state" />.</summary>
     public static StateNode Create(string member, string name, string? subtitle, ProjectileInstanceState state) =>

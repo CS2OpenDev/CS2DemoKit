@@ -26,8 +26,12 @@ namespace CS2DemoKit.Analysis;
 /// </summary>
 internal sealed class DigestStoragePool
 {
-    /// <summary>Rows per projectile block: under the large-object threshold at the row's size.</summary>
-    internal const int ProjectileBlockRows = 512;
+    /// <summary>
+    ///     Rows per projectile block: over the large-object threshold at the row's size. A block
+    ///     lives as long as the chunks in flight, so a small-object block would be copied through
+    ///     two generations and count against the gen0 budget on the way.
+    /// </summary>
+    internal const int ProjectileBlockRows = 1024;
 
     private readonly Stack<PerPawnColumns> _columns = new();
     private readonly object _gate = new();
