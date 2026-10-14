@@ -127,6 +127,12 @@ static int Help()
         so an arm published from a checkout older than the ray path fails its rows instead of
         sitting in the CSV without rays under a label that promises them.
 
+        CS2DEMOKIT_BENCH_USERCMD=1 loads an overlay that reads player.cmd.tick on an infrequent
+        event, so eval_ms carries the user-command lane's reconstructor cost without the read
+        itself adding any. measure, sweep and compare all read it; an arm published before the
+        lane existed does not decode user commands under it and fails the guard instead of
+        silently measuring the lane off.
+
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the
           eight-wide tree on the same seeded corpus, interleaved for R rounds and reported as

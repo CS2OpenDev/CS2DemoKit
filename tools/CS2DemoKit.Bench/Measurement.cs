@@ -76,6 +76,25 @@ internal static class Measurement
             per: match
         """;
 
+    /// <summary>Set to measure the R7 part 2b user-command lane cost (eval_ms with it on).</summary>
+    public const string UserCmdLaneVariable = "CS2DEMOKIT_BENCH_USERCMD";
+
+    private const string UserCmdOverlayLabel = "bench-usercmd.rules.yaml";
+
+    // on: kill, not a cadence, so the read itself stays rare; the lane's cost is the
+    // reconstructor advancing every frame once a build references player.cmd.*, not this stat.
+    private const string UserCmdOverlayYaml =
+        """
+        ruleset: bench_usercmd
+        for: each_player
+        stats:
+          cmd_tick:
+            capture: player.cmd.tick
+            on: kill
+            keep: last
+            per: match
+        """;
+
     private static double Ms(long t) => (Stopwatch.GetTimestamp() - t) * 1000.0 / Stopwatch.Frequency;
 
     private static void Settle()
@@ -151,8 +170,11 @@ internal static class Measurement
     public static string Run(string demoPath, string variant, string runIndex)
     {
         byte[] bytes = File.ReadAllBytes(demoPath);
-        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(
-            [(VisibilityOverlayLabel, VisibilityOverlayYaml)]);
+        bool userCmdLane = Environment.GetEnvironmentVariable(UserCmdLaneVariable) == "1";
+        (string, string)[] overlays = userCmdLane
+            ? [(VisibilityOverlayLabel, VisibilityOverlayYaml), (UserCmdOverlayLabel, UserCmdOverlayYaml)]
+            : [(VisibilityOverlayLabel, VisibilityOverlayYaml)];
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(overlays);
         if (!rules.Success)
         {
             // The overlay tier is error-contained by design, so a broken overlay would otherwise
@@ -194,6 +216,19 @@ internal static class Measurement
             VisibilityCounters.Reset();
             VisibilityCounters.Enabled = engine is not null;
             BuildResult wb = DemoAnalysis.Build(w, rules.Rulesets, options);
+            if (wb.ExcludedRulesets.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "a bench overlay was excluded: " + string.Join("; ", wb.ExcludedRulesets.Select(r => r.ToString())));
+            }
+
+            if (userCmdLane && !wb.DecodesUserCommands)
+            {
+                // A silent miss here would label a lane-off row as lane-on.
+                throw new InvalidOperationException(
+                    $"{UserCmdLaneVariable} is set but the build does not decode user commands");
+            }
+
             _ = DemoAnalysis.Evaluate(w, wb, options);
             VisibilityCounters.Enabled = false;
             VisibilityCountersSnapshot rays = VisibilityCounters.Snapshot();
