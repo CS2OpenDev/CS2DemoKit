@@ -540,11 +540,6 @@ public class PipelinedDigestEquivalenceTests
     }
 
     /// <summary>
-    ///     The sequential reference path: drive ONE forward-only layer through every frame with the same
-    ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
-    ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
-    /// </summary>
-    /// <summary>
     ///     The projectile event stream is the same at the sequential cap and the default one: the
     ///     pipelined producer re-primes a worker per chunk, and the lifecycle is what hides that.
     /// </summary>
@@ -560,6 +555,11 @@ public class PipelinedDigestEquivalenceTests
         await Assert.That(EntityIntegrationTests.FirstDifference(sequential, pipelined)).IsNull();
     }
 
+    /// <summary>
+    ///     The sequential reference path: drive ONE forward-only layer through every frame with the same
+    ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
+    ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
+    /// </summary>
     private static EntityFrameDigest[] BuildSequential(
         IReadOnlyList<DemoFrame> frames, bool dedup = false, bool captureSmokes = false,
         IReadOnlySet<string>? projectileClasses = null)
