@@ -223,11 +223,11 @@
         },
         {
           "const": "team.clan_name",
-          "markdownDescription": "\u0060team.clan_name\u0060 (type \u0060string\u0060) - an entity read, from \u0060entity.team.clan_name\u0060."
+          "markdownDescription": "\u0060team.clan_name\u0060 (type \u0060string\u0060) - an entity read, from \u0060entity.team.clan_name\u0060. The side\u0027s clan name as the server set it (m_szClanTeamname on the side\u0027s CCSTeam). Keyed by side, not by team: after halftime the team that started T is the CT row."
         },
         {
           "const": "team.score",
-          "markdownDescription": "\u0060team.score\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.team.score\u0060."
+          "markdownDescription": "\u0060team.score\u0060 (type \u0060int\u0060, in rounds) - an entity read, from \u0060entity.team.score\u0060. Rounds won by whoever is on the side now (m_iScore on the side\u0027s CCSTeam). Keyed by side, not by team: after halftime the team that started T is the CT row."
         }
       ]
     },

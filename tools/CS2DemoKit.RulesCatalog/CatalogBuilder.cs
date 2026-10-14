@@ -104,6 +104,12 @@ public static class CatalogBuilder
             ["entity.game.total_rounds_played"] = (null,
                 "Rounds decided so far this match: 0 before round 1, and it increments on the "
                 + "frame a round is decided, not when the next one starts."),
+            ["entity.team.clan_name"] = (null,
+                "The side's clan name as the server set it (m_szClanTeamname on the side's CCSTeam). "
+                + "Keyed by side, not by team: after halftime the team that started T is the CT row."),
+            ["entity.team.score"] = ("rounds",
+                "Rounds won by whoever is on the side now (m_iScore on the side's CCSTeam). Keyed by "
+                + "side, not by team: after halftime the team that started T is the CT row."),
             ["entity.controller.money"] = ("dollars",
                 "The player's cash, off the controller. Read before the event's frame, like every "
                 + "player column. At round_freeze_end it is the money left after the freeze-time "

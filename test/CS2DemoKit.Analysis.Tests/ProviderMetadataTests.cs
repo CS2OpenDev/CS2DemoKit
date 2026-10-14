@@ -48,6 +48,34 @@ public class ProviderMetadataTests
         await Assert.That(provider.DefaultValue).IsEqualTo(false);
     }
 
+    /// <summary>
+    ///     The per-side team reads: one instance per spec and side, named <c>{spec}@{side}</c>, each
+    ///     with its own marker, reading <c>m_iScore</c> / <c>m_szClanTeamname</c> off <c>CCSTeam</c>.
+    /// </summary>
+    [Test]
+    public async Task TeamSideProviders_ExposeExpectedMetadata()
+    {
+        List<GenericSideFieldProvider> providers =
+            BuiltinProviderSpecs.CreateTeamProviders().Cast<GenericSideFieldProvider>().ToList();
+        await Assert.That(string.Join(",", providers.Select(p => p.ContextName))).IsEqualTo(
+            "entity.team.score@2,entity.team.score@3,entity.team.clan_name@2,entity.team.clan_name@3");
+        await Assert.That(providers.Select(p => p.MarkerType).Distinct().Count()).IsEqualTo(4);
+        foreach (GenericSideFieldProvider provider in providers)
+        {
+            await Assert.That(provider.EntityClass).IsEqualTo("CCSTeam");
+            await Assert.That(provider.EmitOn).IsEqualTo(ChangeDirection.Both);
+            await Assert.That(provider.DefaultValue).IsNull();
+            await Assert.That(provider.Side is 2 or 3).IsTrue();
+            await Assert.That(((GenericSideFieldProvider)((IWorkerCloneable<IEntityValueProvider>)provider).CloneForWorker()).Side)
+                .IsEqualTo(provider.Side);
+        }
+
+        await Assert.That(providers[0].FieldName).IsEqualTo("m_iScore");
+        await Assert.That(providers[0].ValueType).IsEqualTo(typeof(int));
+        await Assert.That(providers[2].FieldName).IsEqualTo("m_szClanTeamname");
+        await Assert.That(providers[2].ValueType).IsEqualTo(typeof(string));
+    }
+
     /// <summary>Pawn health provider_exposes expected metadata.</summary>
     [Test]
     public async Task PawnHealthProvider_ExposesExpectedMetadata()

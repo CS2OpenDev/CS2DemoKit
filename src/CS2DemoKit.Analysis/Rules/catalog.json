@@ -3183,14 +3183,17 @@
       "scope": "perTeam",
       "clrType": "string",
       "v2Name": "team.clan_name",
-      "v2Type": "String"
+      "v2Type": "String",
+      "note": "The side\u0027s clan name as the server set it (m_szClanTeamname on the side\u0027s CCSTeam). Keyed by side, not by team: after halftime the team that started T is the CT row."
     },
     {
       "name": "entity.team.score",
       "scope": "perTeam",
       "clrType": "int",
       "v2Name": "team.score",
-      "v2Type": "Int"
+      "v2Type": "Int",
+      "unit": "rounds",
+      "note": "Rounds won by whoever is on the side now (m_iScore on the side\u0027s CCSTeam). Keyed by side, not by team: after halftime the team that started T is the CT row."
     },
     {
       "name": "entity.weapon.accuracy_penalty",
