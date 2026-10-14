@@ -914,6 +914,45 @@ for each column a build looks back on, and nothing for a build that does not. Lo
 `LookBackCorpusTests` checks `player.pos_x@-8` at an 8-tick cadence against the plain capture eight
 ticks earlier, on both paths.
 
+### A projectile scope (0.14.0)
+
+`for: each_projectile` instantiates a ruleset once per grenade projectile, from `projectile_created`
+to `projectile_removed`. Additive surface: `RulesetScope.EachProjectile`, `ScopeAxis.Projectile`
+(hashed as `projectile`, so only a ruleset in the scope carries it) and `OutputScope.PerProjectile`,
+each appended after the last value (a consumer `switch` with no default arm stops compiling);
+`ProjectileNodeTemplate` with `MaterializedProjectile`, `StateGraph.AddProjectileTemplate`,
+`ProjectileRecord`, `StateGraphEvaluator.ProjectileRecords`, `AnalysisRun.Projectiles`,
+`ConfiguredOutputProjector.Projectiles`, `ShowLowering.PerProjectileDimensions`,
+`ShowReferenceValidator.ProjectileGrain`, `CatalogScopeAdapter.Projectile`, `.ProjectileMembers`,
+`.ProjectileRoot` and `.ThrowerRole`, and `ResolveDiagnosticCodes.ProjectileScopeUnsupported`
+(`resolve.projectile-scope.unsupported`). The schema's `for:` gains `each_projectile` and a table's
+`per:` gains `projectile`. The catalog does not move: `projectile.*` members are loader-injected
+symbols, like `team.side`.
+
+The resolver puts `projectile.*` and the `thrower` role in scope in every expression slot of such a
+ruleset, resolving `thrower.<member>` as the thrower's per-player provider read at the subject's
+slot; every stat lands on the projectile axis. A capture with no `on:` takes a bare `projectile.*`
+read kept first (sampled when the instance materializes) or last (the pull node itself, read at
+removal). Highlights, `tally`, `streak`, `burst`, `bucket`, `rate`, a `flag:` with no trigger and a
+live `compute:` are refused; nothing may read a projectile ruleset, and it reads only a `for: match`
+ruleset, in `compute:`. A projectile ruleset alone switches the projectile rows and events on.
+
+The builder registers a second template family: one factory call per projectile lowers the stats
+with the projectile as the subject, compiled interpreted, and trial-materializes once at build so a
+lowering failure is an exclusion there. The evaluator materializes on `projectile_created` before
+the message's edges run and, after `projectile_removed` settles, samples the instance's qualified
+nodes into a `ProjectileRecord` and releases its edges; an instance still live at the end of the run
+is recorded then. Instance nodes never join the snapshot node list, so a snapshot row does not widen
+per grenade, and both paths project the `per: projectile` table from the same records, with
+`created_tick` and `removed_tick` in `ColumnClocks`. Row dimensions: `match_id`, `map`,
+`round_number`, `created_tick`, `removed_tick`, `entity_index`, `serial`, `player_slot`,
+`player_name`, `steam_id`, `team`.
+
+`ExpressionCompiler.CompileEventValueSelector` now reads a bool-typed expression captured into a
+numeric node as 1 or 0; before, the build threw on the missing coercion. No shipped ruleset uses the
+scope, so no hash, digest or fixture moves. `ProjectileScopeTests` checks the grenade row shape on
+the sample demo on both paths against the parser's `ProjectileSampler`.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

@@ -32,6 +32,11 @@ fix: add the arms, or a default.
 **`TokenKind` gained `LookBack`, after `EndOfInput`.** A `switch` over it with no default arm stops
 compiling; existing values keep their numbers.
 
+**`RulesetScope` gained `EachProjectile`, `ScopeAxis` gained `Projectile` and `OutputScope` gained
+`PerProjectile`.** Each appended after the last value; a `switch` with no default arm stops
+compiling, and a consumer that maps `OutputScope` to a dimension list needs the projectile table's
+(`ShowLowering.PerProjectileDimensions`).
+
 ## 4. Behaviour that moved without a compile error
 
 **A ruleset that cannot be lowered is excluded, not thrown.** Through 0.13.0 a ruleset that resolved
@@ -200,4 +205,28 @@ ticks on the frame clock, so a host that kept its own ring of recent positions c
 stats:
   moved_x: { sum: abs(player.pos_x - player.pos_x@-8), on: cadence.step, per: round }
   pressing: { count: cadence.step, where: player.cmd.buttons != 0, per: round }
+```
+
+A ruleset can be `for: each_projectile`: one instance per grenade, from `projectile_created` to
+`projectile_removed`, with `projectile.*` reading the grenade's row, `thrower.*` the thrower's
+per-player values, and a `per: projectile` table giving one row per throw, recorded as the grenade
+is removed, on either path, with `created_tick` and `removed_tick` on the frame clock and the
+thrower's `steam_id`. A host that walked `ProjectileSampler` beside a run to build a throw log can
+declare the row instead. `AnalysisRun.Projectiles` carries the same rows as `ProjectileRecord`s for
+a host that reads them without a table. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-grenade-stats-for-each_projectile).
+
+```yaml
+ruleset: grenade_rows
+for: each_projectile
+stats:
+  class:   { capture: projectile.class,   keep: first }
+  spawn_x: { capture: projectile.pos_x,   keep: first }
+  end_x:   { capture: projectile.pos_x,   keep: last }
+  bounces: { capture: projectile.bounces, keep: last }
+show:
+  tables:
+    grenades:
+      per: projectile
+      columns: [ { stat: class }, { stat: spawn_x }, { stat: end_x }, { stat: bounces } ]
 ```

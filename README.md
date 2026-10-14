@@ -281,11 +281,13 @@ when there was nothing to measure. The geometry-backed views (`enemy_spotted` an
 need the engine wired in first; see the quick start above.
 
 A ruleset is `for: each_player` (one instance per player), `for: each_team` (one per side, for
-per-round, per-side facts such as a side's buy or whether it won) or `for: match`. Its `show: tables`
+per-round, per-side facts such as a side's buy or whether it won), `for: each_projectile` (one per
+grenade, from `projectile_created` to `projectile_removed`, for a row per throw) or `for: match`. Its `show: tables`
 project through `run.ProjectConfiguredOutputs()` on either path: a snapshot run projects from its
 rows, and a forward run without snapshots from the state it sampled at each round boundary, which is
 the same state, so the two agree row for row. Event tables (`per: player_event`, `team_event`,
-`match_event`, one row per firing of a trigger) are recorded as the run goes, on either path. Only a
+`match_event`, one row per firing of a trigger) and `per: projectile` tables (one row per grenade,
+recorded as it is removed) are recorded as the run goes, on either path. Only a
 v1 per-event timeline log still needs snapshots. The built-in scoreboard works the same way:
 `new PlayerGameStatsProjector().Project(run, run.Demo)` reads a bare run's final node values and
 matches a snapshot run's table.

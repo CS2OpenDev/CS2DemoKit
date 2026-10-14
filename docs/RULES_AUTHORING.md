@@ -65,7 +65,8 @@ text, an in-expression `(line, column)` span, and ranked "did you mean" candidat
 A **ruleset** is a named bundle of **stats**. Each stat is one measurement. You choose:
 
 - **`for:`** — do you want this *per player* (`each_player`), *per side* (`each_team`: one for the
-  terrorists, one for the counter-terrorists) or for the *whole match* (`match`)?
+  terrorists, one for the counter-terrorists), *per grenade* (`each_projectile`: one for each
+  projectile, from the throw to the moment it is gone) or for the *whole match* (`match`)?
 - **the kind** — *how* to measure (count events, sum a value, keep a max, compute a formula, …).
 - **the source** — *what* to measure (a "view" like `kill`, or another stat).
 - **`per:`** — the window it resets over: `round` or `match`.
@@ -603,8 +604,9 @@ ruleset has no subject and cannot read any of them.
 - **`tables:`** — richer per-round or per-match tables, written as a **named map**
   (`tables: { <table-name>: { per:, columns: [...] } }`). The `per:` has to match the ruleset's
   `for:`, or validation reports `resolve.show.table-scope-mismatch`: `player_round` /
-  `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`, and
-  `match` (a single match-level row) in `for: match`. Player rows carry `player_slot`,
+  `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`,
+  `projectile` in `for: each_projectile` and `match` (a single match-level row) in `for: match`.
+  Player rows carry `player_slot`,
   `player_name`, `steam_id` (the SteamID64 as a string, null when the demo has none) and `team`;
   join players by `steam_id` rather than by slot.
 - **Event tables: one row per firing.** `per: player_event`, `team_event` or `match_event` (one
@@ -761,6 +763,58 @@ thing that did not happen that round reads `0`. A string column does not read `"
 `round.bomb.site` or `round.bomb.plant_place` on a round with no plant projects as null (the
 expression reads `""`, and an empty string capture comes out null), so test a table cell for null,
 or use the int twin `round.bomb.site_entity`, which projects `-1`.
+
+### Per-grenade stats: `for: each_projectile`
+When the question is about a grenade (where it was thrown from, where it landed, how many times it
+bounced, what the thrower was doing when it left the hand), use `for: each_projectile`. The ruleset
+runs once per projectile: an instance materializes on `projectile_created`, lives while the grenade
+flies, and on `projectile_removed` its stats are sampled into one row of a `per: projectile` table
+and the instance is released. A grenade still in the air when the demo ends gets its row then.
+
+- `projectile.*` reads the instance's row as of the frame the read happens on: `class` (the short
+  name the views match on: `smoke`, `molotov`, `he`, `flash`, `decoy`), `class_name` (the server
+  class), `thrower` (the slot, held from its first resolution), `team`, `entity_index`, `serial`,
+  `pos_x` / `pos_y` / `pos_z` (the live position, `NaN` while unreadable), `initial_x` / `_y` /
+  `_z` (where it left the hand), `velocity_x` / `_y` / `_z` (the release velocity), `bounces`,
+  `smoke_effect_tick` and `is_incendiary`.
+- A capture with no `on:` takes a bare `projectile.*` read: `keep: first` samples it on the frame
+  the instance materializes, `keep: last` reads it live, so the table sees the value at removal.
+  Anything else with no `on:` is `resolve.trigger.unsupported-for-kind`.
+- `thrower.*` is the thrower's per-player read set (`thrower.is_walking`, `thrower.pos_x`, ...),
+  read at the thrower's slot on the frame of the event that triggers the stat. It is in scope on
+  every trigger, not only the `projectile_thrown` view that names the role.
+- `projectile_thrown` / `projectile_landed`, and the raw `projectile_created` /
+  `projectile_removed`, bind to the instance: a stat on them fires for this grenade only. Any other
+  event fires for every live instance, as it does in `for: match`.
+- The kinds are `count`, `sum`, `capture`, a triggered `flag` and a round-end `compute`, which
+  settles when the instance is sampled. `tally`, `streak`, `burst`, `bucket`, `rate`, a `flag:`
+  with no trigger and a live `compute:` keep state the instance could not release, and are
+  `resolve.projectile-scope.unsupported`, as are highlights. `per:` is accepted and ignored: the
+  instance's whole life is its window. `player.*` is not in scope.
+- It may `use:` a `for: match` ruleset, read in `compute:` only; nothing reads a projectile ruleset.
+- The `projectile` table row carries `round_number` (the round the grenade was removed in),
+  `created_tick` and `removed_tick` (frame clock, listed in `ColumnClocks`), `entity_index`,
+  `serial`, the thrower's `player_slot`, `player_name` and `steam_id`, and `team` (the grenade's).
+
+```yaml
+ruleset: grenade_rows
+for: each_projectile
+stats:
+  class:        { capture: projectile.class,     keep: first }
+  thrower:      { capture: projectile.thrower,   keep: first }
+  spawn_x:      { capture: projectile.pos_x,     keep: first }
+  end_x:        { capture: projectile.pos_x,     keep: last }
+  bounces:      { capture: projectile.bounces,   keep: last }
+  thrower_walk: { capture: thrower.is_walking,   on: raw.projectile_created }
+show:
+  tables:
+    grenades:
+      per: projectile
+      columns: [ { stat: class }, { stat: thrower }, { stat: spawn_x }, { stat: end_x }, { stat: bounces }, { stat: thrower_walk } ]
+```
+
+The `projectile_created` an instance starts on waits for the thrower to resolve, so a
+`keep: first` position can be a tick into flight; `initial_x` / `_y` / `_z` is the release point.
 
 ### Reusing another ruleset — `use:` / `exports:`
 A stat can read `otherRuleset.stat` if your file declares `use: [otherRuleset]` and that ruleset
