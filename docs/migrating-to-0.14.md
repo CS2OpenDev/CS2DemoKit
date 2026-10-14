@@ -67,9 +67,9 @@ still gets the fold at its next poll. The one visible difference: `GetPreFrameVa
 frame's last message and the next poll returns that frame's end state instead of the previous
 frame's. The frame observer below reads at exactly that point.
 
-**A new per-player `entity.pawn.is_walking` column moves every later provider's index in the
-per-pawn digest by one again**, the same shape the 0.13.0 `entity.controller.money` column caused:
-index digest columns by provider name, not position.
+**A new per-player `entity.pawn.is_walking` column moves `pos_x`, `pos_y` and `pos_z` by one in the
+per-pawn digest**, the same shape the 0.13.0 `entity.controller.money` column caused for every
+column after it: index digest columns by provider name, not position.
 
 ## 5. New things worth adopting
 

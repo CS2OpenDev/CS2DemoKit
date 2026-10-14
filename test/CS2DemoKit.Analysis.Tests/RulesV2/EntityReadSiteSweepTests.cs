@@ -113,7 +113,6 @@ public class EntityReadSiteSweepTests
             per: round
         """;
 
-    // A bare bool read (no is_walking twin elsewhere in this sweep), same where: site shape.
     private static string IsWalkingSite =>
         """
         ruleset: sweep_is_walking

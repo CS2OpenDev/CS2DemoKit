@@ -809,12 +809,12 @@ move, `ProjectileDigestParityTests` the observer's stream against `ProjectileSam
 
 ### A new per-player provider shifts the digest again (0.14.0)
 
-`entity.pawn.is_walking` (`player.is_walking`, bool) reads `m_bIsWalking` and sits before the angle
-and position columns in both registries, the same slot the 0.13.0 `entity.controller.money` column
-took. The angle and position columns each move by one in the per-pawn digest layout; the per-pawn
-fold fixtures moved for it. No API changes: a consumer that reads digest columns by provider name
-is unaffected, and one that indexes by position needs to rebuild its index, for the same reason as
-the 0.13.0 "Singleton reads build, and a new per-player column shifts the digest" entry above.
+`entity.pawn.is_walking` (`player.is_walking`, bool) reads `m_bIsWalking` and sits after the angle
+columns and immediately before the position trio in both registries. `pos_x`, `pos_y` and `pos_z`
+each move by one in the per-pawn digest layout; the per-pawn fold fixtures moved for it. No API
+changes: a consumer that reads digest columns by provider name is unaffected, and one that indexes
+by position needs to rebuild its index, for the same reason as the 0.13.0 "Singleton reads build,
+and a new per-player column shifts the digest" entry above.
 
 ## Credentials
 
