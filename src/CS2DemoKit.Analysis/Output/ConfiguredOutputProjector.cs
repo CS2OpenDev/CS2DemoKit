@@ -593,6 +593,9 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                 case DimPlayerName:
                     dimensions[DimPlayerName] = mp.PlayerName;
                     break;
+                case DimSteamId:
+                    dimensions[DimSteamId] = SteamId(demo, mp);
+                    break;
                 case DimTeam:
                     dimensions[DimTeam] = demo.Players.TryGetValue(mp.PlayerSlot, out PlayerInfo? pi) ? pi.Team : 0;
                     break;

@@ -37,10 +37,10 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Compile;
 public static class ShowLowering
 {
     private static readonly string[] _perPlayerRoundDimensions =
-        ["match_id", "map", "round_number", "player_slot", "player_name", "team"];
+        ["match_id", "map", "round_number", "player_slot", "player_name", "steam_id", "team"];
 
     private static readonly string[] _perPlayerMatchDimensions =
-        ["match_id", "map", "player_slot", "player_name", "team"];
+        ["match_id", "map", "player_slot", "player_name", "steam_id", "team"];
 
     /// <summary>A match-level table has no player dimension — a single row keyed only by match/map.</summary>
     private static readonly string[] _perMatchDimensions =

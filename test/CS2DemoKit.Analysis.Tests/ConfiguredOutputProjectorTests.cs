@@ -6,6 +6,8 @@ using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Profiles;
+using CS2DemoKit.Analysis.RulesetsV2.Compile;
+using CS2DemoKit.Analysis.Tests.RoundFacts;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 
@@ -273,6 +275,63 @@ public class ConfiguredOutputProjectorTests
         MetricRow round2 = table.Rows.Single(r => AsInt(r.Dimensions["round_number"]) == 2);
         await Assert.That(AsInt(round1.Values["Kills"])).IsEqualTo(5); // last index of round 1
         await Assert.That(AsInt(round2.Values["Kills"])).IsEqualTo(9);
+    }
+
+    // ── steam_id on per-player tables ────────────────────────────────────────
+
+    private const string PlayerTables = """
+        ruleset: rs
+        for: each_player
+        stats:
+          kills:
+            count: kill
+            per: round
+        show:
+          tables:
+            by_round:
+              per: player_round
+              columns: [ { stat: kills } ]
+            by_match:
+              per: player_match
+              columns: [ { stat: kills } ]
+        """;
+
+    [Test]
+    public async Task PlayerTables_LowerWithSteamId()
+    {
+        IReadOnlyList<OutputDef> outputs = ShowLowering.LowerTables(RoundFactsTestSupport.Checked(PlayerTables));
+        await Assert.That(string.Join(",", outputs.Single(o => o.Id == "by_round").Dimensions))
+            .IsEqualTo("match_id,map,round_number,player_slot,player_name,steam_id,team");
+        await Assert.That(string.Join(",", outputs.Single(o => o.Id == "by_match").Dimensions))
+            .IsEqualTo("match_id,map,player_slot,player_name,steam_id,team");
+    }
+
+    /// <summary>A decimal string, null when the descriptor has no SteamID64 for the slot.</summary>
+    [Test]
+    public async Task PlayerRows_CarrySteamIdAsString()
+    {
+        (EvaluationResult result, _) = BuildScenario([0, 1, 1], [(0, "Alice"), (1, "Bob")], (m, p) => m + p);
+        ParsedDemo demo = SyntheticDemo("de_mirage", new Dictionary<int, PlayerInfo>
+        {
+            [0] = new(0, "Alice", 76561198000000001UL, 0, 2, false),
+            [1] = new(1, "Bob", 0UL, 1, 3, false)
+        });
+        string[] dims = ["player_slot", "player_name", "steam_id", "team"];
+
+        foreach (OutputDef output in (OutputDef[])
+                 [
+                     PerGameOutput(dims, "kills"),
+                     new("my_round_table", OutputScope.PerPlayerPerRound, [new MetricRef("kills", "Kills")], dims)
+                 ])
+        {
+            MetricTable table = new ConfiguredOutputProjector(output).Project(result, demo).Single();
+            await Assert.That(table.Rows.Count).IsEqualTo(2);
+            MetricRow alice = table.Rows.Single(r => (string?)r.Dimensions["player_name"] == "Alice");
+            MetricRow bob = table.Rows.Single(r => (string?)r.Dimensions["player_name"] == "Bob");
+            await Assert.That(alice.Dimensions["steam_id"]).IsEqualTo("76561198000000001");
+            await Assert.That(bob.Dimensions.ContainsKey("steam_id")).IsTrue();
+            await Assert.That(bob.Dimensions["steam_id"]).IsNull();
+        }
     }
 
     // ── per_event ────────────────────────────────────────────────────────────
