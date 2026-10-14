@@ -762,7 +762,9 @@ unchanged.
 
 `ProjectileCreatedEvent` and `ProjectileRemovedEvent` (new, `CS2DemoKit.Analysis.Events`) are
 synthesized from the digest's projectile rows, registered as `projectile_created` and
-`projectile_removed`, and bound on every profile. The catalog gains both events (`unmeasured`) and
+`projectile_removed`, and bound on every shipped profile through two new public virtuals,
+`DemoSourceProfile.ProjectileCreated` and `ProjectileRemoved`, which `Cs2GotvProfile` overrides. A
+custom profile that does not derive from it binds neither, and both views are unavailable on it. The catalog gains both events (`unmeasured`) and
 two views, `projectile_thrown` and `projectile_landed`, with facets `class`, `x`, `y`, `z` and, on
 landing, `bounces`. Created waits for the thrower to resolve, the `molotov_thrown` rule, so a
 `CMolotovProjectile` fires both on the same frame with the same slot; removed fires for every

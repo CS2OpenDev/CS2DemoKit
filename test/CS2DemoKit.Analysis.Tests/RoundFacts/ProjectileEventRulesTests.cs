@@ -102,4 +102,37 @@ public class ProjectileEventRulesTests
             await Assert.That(table.Rows.Sum(r => RoundFactsTestSupport.Int(r, "Landed") ?? 0)).IsEqualTo(attributedRemovals).Because(label);
         }
     }
+
+    [Test]
+    public async Task ARawTriggerAlone_SwitchesTheEventsOn()
+    {
+        const string rawOnly = """
+            ruleset: raw_projectiles
+            for: match
+            stats:
+              thrown_at:
+                capture: event.frame_tick
+                on: raw.projectile_created
+                keep: list
+                per: match
+              removed_at:
+                capture: event.frame_tick
+                on: raw.projectile_removed
+                keep: list
+                per: match
+            """;
+
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        List<(int FrameIndex, int ServerTick, Parser.GameEvents.GameEvent Event)> scanned =
+            EntityIntegrationTests.ScanProjectileEvents(RoundFactsTestSupport.Sample());
+        string created = string.Join(",", scanned.Where(e => e.Event is ProjectileCreatedEvent).Select(e => e.ServerTick));
+        string removed = string.Join(",", scanned.Where(e => e.Event is ProjectileRemovedEvent).Select(e => e.ServerTick));
+
+        await Assert.That(created).IsNotEmpty();
+        foreach ((string label, AnalysisRun run) in RoundFactsCorpusTests.RunBothPaths(path, RoundFactsTestSupport.Load(rawOnly)))
+        {
+            await Assert.That(RoundFactsCorpusTests.List(run, "raw_projectiles.thrown_at")).IsEqualTo(created).Because(label);
+            await Assert.That(RoundFactsCorpusTests.List(run, "raw_projectiles.removed_at")).IsEqualTo(removed).Because(label);
+        }
+    }
 }
