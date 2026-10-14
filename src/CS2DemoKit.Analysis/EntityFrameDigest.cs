@@ -18,15 +18,20 @@ namespace CS2DemoKit.Analysis;
 ///     only this, never the live layer, so it is identical for either decode.
 ///     <para>
 ///         A digest for a frame where nothing happened allocates nothing beyond itself: the row
-///         storage starts as the shared <see cref="PerPawnColumns.Empty" /> and the projectile and
-///         smoke lists are created on the first entry.
+///         storage starts as the shared <see cref="PerPawnColumns.Empty" />, the smoke list is
+///         created on the first entry, and the projectile rows land in the pool's shared block.
 ///     </para>
 /// </summary>
 internal sealed class EntityFrameDigest
 {
     private List<(int Index, int Serial, int ThrowerSlot)>? _molotovs;
     private List<Vector4>? _smokes;
-    private List<ProjectileRow>? _projectiles;
+
+    // This digest's rows are [_projectileStart, _projectileStart + _projectileCount) of the
+    // block: a pool's shared block, or one this digest owns when it has no pool.
+    private ProjectileRow[]? _projectileBlock;
+    private int _projectileStart;
+    private int _projectileCount;
 
     /// <summary>
     ///     Per-player-provider cells that CHANGED this frame, one row per pawn with at least one
@@ -94,7 +99,7 @@ internal sealed class EntityFrameDigest
     ///     <see cref="ProjectileLifecycle" />, since a chunk worker has no previous frame.
     /// </summary>
     public ReadOnlySpan<ProjectileRow> Projectiles =>
-        _projectiles is null ? default : CollectionsMarshal.AsSpan(_projectiles);
+        _projectileBlock is null ? default : new ReadOnlySpan<ProjectileRow>(_projectileBlock, _projectileStart, _projectileCount);
 
     /// <summary>Records one live molotov projectile.</summary>
     public void AddMolotov(int index, int serial, int throwerSlot) =>
@@ -104,8 +109,25 @@ internal sealed class EntityFrameDigest
     public void AddSmoke(Vector4 sphere) => (_smokes ??= new List<Vector4>(4)).Add(sphere);
 
     /// <summary>Records one live projectile of an asked-for class.</summary>
-    public void AddProjectile(in ProjectileRow row) =>
-        (_projectiles ??= Pool?.RentProjectiles() ?? new List<ProjectileRow>(4)).Add(row);
+    public void AddProjectile(in ProjectileRow row)
+    {
+        if (Pool is { } pool)
+        {
+            pool.AppendProjectile(ref _projectileBlock, ref _projectileStart, ref _projectileCount, row);
+            return;
+        }
+
+        if (_projectileBlock is null)
+        {
+            _projectileBlock = new ProjectileRow[4];
+        }
+        else if (_projectileCount == _projectileBlock.Length)
+        {
+            Array.Resize(ref _projectileBlock, _projectileCount * 2);
+        }
+
+        _projectileBlock[_projectileCount++] = row;
+    }
 
     /// <summary>The pool the row storage came from, set by the extractor; null for a digest that owns its storage.</summary>
     internal DigestStoragePool? Pool;
@@ -128,10 +150,7 @@ internal sealed class EntityFrameDigest
             PerPawn = PerPawnColumns.Empty;
         }
 
-        if (_projectiles is not null)
-        {
-            Pool.Return(_projectiles);
-            _projectiles = null;
-        }
+        _projectileBlock = null;
+        _projectileCount = 0;
     }
 }
