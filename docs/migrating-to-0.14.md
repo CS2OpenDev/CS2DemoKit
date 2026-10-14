@@ -191,7 +191,8 @@ show:
 A ruleset can read the player's input: `player.cmd.buttons`, `forward`, `left`, `view_pitch`,
 `view_yaw` and `tick`, off the latest user command. A host that rebuilt commands itself for a frame
 observer can set `AnalysisOptions.DecodeUserCommands` and read `FrameView.Command(slot)` instead, and
-`PlanDecode` asks the reader for the commands either way. A read looks back with `@-N`, up to 64
+`PlanDecode` asks the reader for the commands either way. The command a read returns is the slot's
+live instance, rebuilt in place as later commands arrive, so copy what you keep. A read looks back with `@-N`, up to 64
 ticks on the frame clock, so a host that kept its own ring of recent positions can ask for
 `player.pos_x@-8`. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#7-contexts--reading-the-game-state).
 

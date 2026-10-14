@@ -885,6 +885,10 @@ with the built-in set on `UserCommandProviders`), catalog scope `perPlayerComman
 `usercmd.*`, and have no digest column, so the per-pawn layout and its fixtures do not move. A build
 that reads one gives its scanner a `UserCmdReconstructor` the evaluator resets per run and advances
 before each frame's poll, served through the new public `EntityChangeScanner.GetCommandValue`.
+That reconstructor runs with the new `UserCmdReconstructor.OnDemand` (init property): the walk
+queues each command's bytes per slot without parsing and rebuilds a slot when `Current` reads it,
+so the lane costs a few percent of `eval_ms` rather than doubling it; the instance a read returns
+is updated in place by later rebuilds, so copy what you keep. The eager mode is unchanged.
 `AnalysisOptions.DecodeUserCommands` and `BuildResult.DecodesUserCommands` (init properties) turn the
 lane on for an observer, which reads `FrameView.Command(slot)`; that read throws when the run decodes
 no commands. `PlanDecode` adds `MessageCategories.UserCmds` for either. A command read sees the
