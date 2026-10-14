@@ -13,6 +13,9 @@
 # plant projects as null, not "" (the expression reads "", and an empty string capture comes out
 # null). A round decided in freeze time (a surrender vote) still gets its own two rows: the engine
 # opens it at the decision, so its freeze-end columns are sampled on the decision's frame.
+#
+# team_final is one row per side for the match: the score and clan name on the side's team entity at
+# the last frame. A demo cut off at the buzzer can miss the last round's point.
 ruleset: round_facts
 title: Round facts
 summary: Per-round, per-side economy, outcome, plant and kill timeline.
@@ -89,6 +92,14 @@ stats:
     on: raw.bomb_exploded
     per: round
 
+  # ── The final score and clan name, read off the side's team entity as the match ends ──
+  score:
+    capture: team.score
+    per: match
+  clan_name:
+    capture: team.clan_name
+    per: match
+
   # ── Kills: this side's, and every kill with each side's man-count after it ──
   kills:
     count: kill
@@ -136,3 +147,8 @@ show:
         - { stat: kill_ticks, label: KillTicks }
         - { stat: alive_after_kill, label: AliveAfterKill }
         - { stat: enemies_alive_after_kill, label: EnemiesAliveAfterKill }
+    team_final:
+      per: team_match
+      columns:
+        - { stat: score, label: Score }
+        - { stat: clan_name, label: ClanName }

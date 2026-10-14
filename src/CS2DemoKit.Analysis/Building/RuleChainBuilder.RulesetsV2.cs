@@ -1339,13 +1339,17 @@ public sealed partial class RuleChainBuilder
                 // table reads the latest value as it samples the row. The resolver admits only a
                 // per-team read here.
                 EntityProviderReference read = stat.EntityReads.Single();
-                IEntityValueProvider provider =
-                    (_teamSubjectSide is { } side
-                        ? _entityProviders?.Get(GenericSideFieldProvider.InstanceName(read.ProviderName, side))
-                        : null)
-                    ?? throw new InvalidOperationException(
+                IEntityValueProvider? provider = _teamSubjectSide is { } side
+                    ? _entityProviders?.Get(GenericSideFieldProvider.InstanceName(read.ProviderName, side))
+                    : null;
+                if (provider is null
+                    || _entityContextNodes?.GetValueOrDefault(provider.ContextName) is not { } providerNode)
+                {
+                    throw new InvalidOperationException(
                         $"stat '{rs.Id.Id}.{stat.StatId}' captures '{read.Path}' with no on:, and no side "
                         + "provider backs that read in this build.");
+                }
+
                 StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
                 Type valueType = stat.ValueType.Kind == RulesTypeKind.String ? typeof(string) : typeof(int);
@@ -1356,7 +1360,6 @@ public sealed partial class RuleChainBuilder
 
                 // A match restart resets the node, and a value set before it (a clan name set in
                 // warmup) never changes again, so the restart re-seeds it from the provider.
-                StateNode providerNode = _entityContextNodes![provider.ContextName];
                 StateEdge reseed = (StateEdge)_matchRestartReseedEdgeMethod
                     .MakeGenericMethod(valueType)
                     .Invoke(null, [source, node, providerNode])!;
