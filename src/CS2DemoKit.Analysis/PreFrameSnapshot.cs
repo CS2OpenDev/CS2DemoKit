@@ -1,5 +1,6 @@
 #region
 
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using CS2DemoKit.Analysis.Plugins;
 
@@ -79,12 +80,7 @@ internal sealed class PreFrameSnapshot
     /// <summary>The held value for (<paramref name="column" />, <paramref name="slot" />) boxed in its declared type, or null when never written.</summary>
     public object? GetBoxed(int column, int slot)
     {
-        if ((uint)slot >= (uint)_bySlot.Length || _bySlot[slot] is not { } row)
-        {
-            return null;
-        }
-
-        if ((row.Recorded[column >> 6] & (1UL << (column & 63))) == 0)
+        if (!TryRow(column, slot, out TypedSlotRow? row))
         {
             return null;
         }
@@ -97,6 +93,58 @@ internal sealed class PreFrameSnapshot
             PawnCellKind.Float => row.Floats[index],
             _ => row.Strings[index]
         };
+    }
+
+    /// <summary>An int or bool column's held value, unboxed. The caller has checked the column's kind.</summary>
+    public bool TryGetInt(int column, int slot, out int value)
+    {
+        if (TryRow(column, slot, out TypedSlotRow? row))
+        {
+            value = row.Ints[Layout.KindIndex[column]];
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    /// <summary>A float column's held value, unboxed. The caller has checked the column's kind.</summary>
+    public bool TryGetFloat(int column, int slot, out float value)
+    {
+        if (TryRow(column, slot, out TypedSlotRow? row))
+        {
+            value = row.Floats[Layout.KindIndex[column]];
+            return true;
+        }
+
+        value = 0f;
+        return false;
+    }
+
+    /// <summary>A string column's held value. The caller has checked the column's kind.</summary>
+    public bool TryGetString(int column, int slot, out string? value)
+    {
+        if (TryRow(column, slot, out TypedSlotRow? row))
+        {
+            value = row.Strings[Layout.KindIndex[column]];
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private bool TryRow(int column, int slot, [NotNullWhen(true)] out TypedSlotRow? row)
+    {
+        if ((uint)slot >= (uint)_bySlot.Length || _bySlot[slot] is not { } held
+                                                || (held.Recorded[column >> 6] & (1UL << (column & 63))) == 0)
+        {
+            row = null;
+            return false;
+        }
+
+        row = held;
+        return true;
     }
 
     private TypedSlotRow RowFor(int slot)

@@ -472,6 +472,61 @@ public class PipelinedDigestEquivalenceTests
             .Because("with one chunk the producer is the sequential fold and the gate proves nothing about checkpoints");
     }
 
+    private sealed class ProjectileRecorder : IFrameObserver
+    {
+        public readonly List<string> Lines = [];
+
+        public void OnFrame(FrameView frame)
+        {
+            foreach (ProjectileRow row in frame.Created)
+            {
+                Lines.Add($"f{frame.FrameIndex} t{frame.Tick} + {row}");
+            }
+
+            foreach (ProjectileRow row in frame.Removed)
+            {
+                Lines.Add($"f{frame.FrameIndex} t{frame.Tick} - {row}");
+            }
+
+            foreach (ProjectileRow row in frame.Projectiles)
+            {
+                Lines.Add($"f{frame.FrameIndex} t{frame.Tick} = {row}");
+            }
+        }
+
+        public void Finish()
+        {
+        }
+    }
+
+    /// <summary>
+    ///     The same statement through the public seam: a run declaring every projectile class hands
+    ///     its observer the same created, removed and live rows on every frame at the sequential
+    ///     cap and at the default one.
+    /// </summary>
+    [Test]
+    public async Task ObservedProjectiles_ThroughTheObserver_SequentialAndPipelined_Agree()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        ProjectileRecorder sequential = new();
+        ProjectileRecorder pipelined = new();
+        DemoAnalysis.Run(demo, [], new AnalysisOptions
+        {
+            MaxDegreeOfParallelism = 1, CaptureSnapshots = false,
+            ObservedProjectileClasses = GrenadeProjectileClasses.All, FrameObserver = sequential
+        });
+        DemoAnalysis.Run(demo, [], new AnalysisOptions
+        {
+            CaptureSnapshots = false,
+            ObservedProjectileClasses = GrenadeProjectileClasses.All, FrameObserver = pipelined
+        });
+
+        Console.WriteLine($"rows: {sequential.Lines.Count:N0}");
+        await Assert.That(sequential.Lines.Count(l => l.Contains(" + "))).IsGreaterThan(0);
+        await Assert.That(EntityIntegrationTests.FirstDifference(sequential.Lines, pipelined.Lines)).IsNull();
+    }
+
     /// <summary>
     ///     The dedup rule <see cref="DedupMolotovEvents" /> replays, stated directly against the scanner:
     ///     a molotov whose thrower has not resolved on the frame the projectile first appears must still

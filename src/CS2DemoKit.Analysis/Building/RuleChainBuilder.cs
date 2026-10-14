@@ -85,6 +85,12 @@ public sealed partial class RuleChainBuilder
     // the same shape as a profile that does not bind an event.
     private readonly VisibilityEngine? _visibilityEngine;
 
+    // What a frame observer declared it reads: per-player providers by name and projectile classes.
+    // Each activates its column or rows the way a rule reference would; an unknown name is the
+    // caller's error and throws at Build.
+    private readonly IReadOnlyList<string> _observedProviders;
+    private readonly HashSet<string> _observedProjectileClasses;
+
     // Per-slot condition-node overlay for the v2 per-player template (gap G1, event-gated per-player
     // aggregate reads). While a v2 slot's stats/highlights are being built, this holds a SUPERSET of
     // _enrichmentNodes that also exposes the subject slot's per-player context / B6 aggregate nodes
@@ -107,17 +113,32 @@ public sealed partial class RuleChainBuilder
     ///     bakes live (see <c>CollisionAssetLocator</c>): the caller loads and injects, exactly as
     ///     <c>VisibilityAnalyzer.Analyze</c> requires.
     /// </param>
+    /// <param name="observedProviders">
+    ///     Per-player providers a frame observer reads, by catalog name
+    ///     (<see cref="AnalysisOptions.ObservedProviders" />). Each is activated as a rule reference
+    ///     would activate it; a name no registered provider carries throws at <see cref="Build" />.
+    /// </param>
+    /// <param name="observedProjectileClasses">
+    ///     Grenade projectile classes a frame observer reads
+    ///     (<see cref="AnalysisOptions.ObservedProjectileClasses" />). A non-empty list builds the
+    ///     scanner and carries those classes' rows in every digest; a name outside
+    ///     <see cref="GrenadeProjectileClasses.All" /> throws at <see cref="Build" />.
+    /// </param>
     public RuleChainBuilder(
         EventRegistry registry,
         AnalysisTarget? target = null,
         EntityValueProviderRegistry? entityProviders = null,
         PerPlayerEntityValueProviderRegistry? perPlayerEntityProviders = null,
-        VisibilityEngine? visibilityEngine = null)
+        VisibilityEngine? visibilityEngine = null,
+        IReadOnlyList<string>? observedProviders = null,
+        IReadOnlyList<string>? observedProjectileClasses = null)
     {
         _registry = registry;
         _entityProviders = entityProviders;
         _perPlayerEntityProviders = perPlayerEntityProviders;
         _visibilityEngine = visibilityEngine;
+        _observedProviders = observedProviders ?? [];
+        _observedProjectileClasses = new HashSet<string>(observedProjectileClasses ?? [], StringComparer.Ordinal);
         _tickRate = target?.TickRate ?? 64;
         _logicalResolver = new LogicalEventResolver(target?.Profile ?? DemoSourceProfileRegistry.DefaultFallback);
     }
@@ -277,6 +298,16 @@ public sealed partial class RuleChainBuilder
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
         bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false, b6MoneyNeeded = false;
 
+        // A frame observer's declared columns gate in by name, like a direct v2 read would. The
+        // declaration is the caller's, not a ruleset's, so a name nothing registered is thrown, not
+        // excluded.
+        HashSet<string> observed = new(_observedProviders, StringComparer.OrdinalIgnoreCase);
+        if (observed.Count > 0 && _perPlayerEntityProviders is not { All.Count: > 0 })
+        {
+            throw new ArgumentException(
+                $"observed providers [{string.Join(", ", _observedProviders)}] declared, but this build has no per-player entity providers");
+        }
+
         // The plant-site round facts read the planter's place: an indirect need like the hurt
         // enrichments', so a ruleset naming any of the three gates the place column in.
         bool roundFactsNeeded = RoundFactIds.Members.Any(m => IsReferencedByV2Reads(m.V2Name, rulesets));
@@ -320,10 +351,30 @@ public sealed partial class RuleChainBuilder
                     referenced = true;
                 }
 
+                if (observed.Remove(provider.Name))
+                {
+                    referenced = true;
+                }
+
                 if (referenced)
                 {
                     perPlayerList.Add(provider);
                 }
+            }
+
+            if (observed.Count > 0)
+            {
+                throw new ArgumentException(
+                    $"observed providers [{string.Join(", ", observed)}] are not registered per-player entity providers");
+            }
+        }
+
+        foreach (string className in _observedProjectileClasses)
+        {
+            if (!GrenadeProjectileClasses.Contains(className))
+            {
+                throw new ArgumentException(
+                    $"observed projectile class '{className}' is not one of GrenadeProjectileClasses.All");
             }
         }
 
@@ -391,7 +442,13 @@ public sealed partial class RuleChainBuilder
         // graph (for: match) needs the same live teams for its enrichments and the round-end
         // winner, so any ruleset forces it.
         bool trackPlayers = rulesets.Count > 0;
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || emitProjectiles || trackPlayers)
+
+        // A subscription to the projectile events widens the rows to every class; an observer's
+        // declaration alone carries just the classes it named.
+        IReadOnlySet<string>? projectileClasses = emitProjectiles
+            ? AllProjectileClasses
+            : _observedProjectileClasses.Count > 0 ? _observedProjectileClasses : null;
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || projectileClasses is not null || trackPlayers)
         {
             // The round's winner is the server's verdict: the scanner synthesizes round_decided
             // from these three game-rules singletons, and the round-end enrichment reports the
@@ -438,7 +495,7 @@ public sealed partial class RuleChainBuilder
                 vantageScanner,
                 transitionScanner,
                 silent,
-                emitProjectiles ? AllProjectileClasses : null,
+                projectileClasses,
                 emitProjectiles);
         }
 

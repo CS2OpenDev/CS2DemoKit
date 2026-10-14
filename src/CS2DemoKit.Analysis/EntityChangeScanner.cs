@@ -133,11 +133,12 @@ public sealed class EntityChangeScanner
     // the rest, so a run cut short leaves nothing half-consumed for the next.
     private EntityFrameDigest?[]? _precomputed;
 
-    // The previous frame's digest. The pre-frame snapshot consumed inside frame N
-    // is the per-pawn state from frame N-1 — which is exactly _prevDigest.PerPawn (built last frame from
-    // N-1's post-seek state == N's pre-seek state). Holding one frame back lets the digest carry the
-    // "previous values", so a chunk worker needn't preserve the layer's pre-seek state.
+    // The digest Consume last stored, and whether it has been folded into the pre-frame snapshot.
+    // The snapshot an edge reads inside frame N is the per-pawn state from frame N-1: CompleteFrame
+    // folds digest N-1 at the end of its frame, and Consume folds it one frame late for a caller
+    // that polls without ever completing a frame. Either way the fold runs once.
     private EntityFrameDigest? _prevDigest;
+    private bool _prevFolded = true;
 
     private int _profFramesPolled;
 
@@ -190,6 +191,12 @@ public sealed class EntityChangeScanner
     ///     built with projectile classes.
     /// </summary>
     internal ProjectileLifecycle Projectiles { get; } = new();
+
+    /// <summary>The per-pawn snapshot the frame observer reads after <see cref="CompleteFrame" />. Replaced per evaluation.</summary>
+    internal PreFrameSnapshot Snapshot => _preFrameSnapshot;
+
+    /// <summary>The column plan of the per-pawn snapshot, which names the readable columns.</summary>
+    internal DigestColumnLayout ColumnLayout => _layout;
 
     /// <param name="layer">The entity-state layer the scanner reads from; advanced one frame at a time.</param>
     /// <param name="providers">Singleton-entity providers paired with their backing value nodes (push model).</param>
@@ -452,6 +459,7 @@ public sealed class EntityChangeScanner
         _releaseFolded = !source.SupportsRandomAccess;
         _pastSignonPrefix = false;
         _prevDigest = null;
+        _prevFolded = true;
         _seenMolotovs.Clear();
         Projectiles.Reset();
         _pendingProjectiles.Clear();
@@ -891,9 +899,10 @@ public sealed class EntityChangeScanner
 
     /// <summary>
     ///     Consumes one frame's digest: folds the previous frame's per-pawn values into the pre-frame
-    ///     snapshot, runs singleton change-detection, then molotov synthesis — the (sequential, stateful)
-    ///     half of the scan, the same whichever producer built the digest. Order matches the
-    ///     pre-digest poll-loop → DetectMolotovThrows sequence.
+    ///     snapshot unless <see cref="CompleteFrame" /> already did, runs singleton change-detection,
+    ///     then molotov synthesis: the (sequential, stateful) half of the scan, the same whichever
+    ///     producer built the digest. Order matches the pre-digest poll-loop → DetectMolotovThrows
+    ///     sequence.
     /// </summary>
     private List<NetMessage> Consume(EntityFrameDigest digest, int tick)
     {
@@ -902,7 +911,10 @@ public sealed class EntityChangeScanner
 
         // Pre-frame snapshot consumed inside THIS frame = the previous frame's per-pawn values (N-1 state).
         // Before _prevDigest exists (frame 0) the snapshot stays empty.
-        MergePreFrameSnapshot(_prevDigest);
+        if (!_prevFolded)
+        {
+            MergePreFrameSnapshot(_prevDigest);
+        }
 
         ConsumeSingletons(digest, tick);
         ConsumeRoundDecided(digest, tick);
@@ -924,7 +936,26 @@ public sealed class EntityChangeScanner
         ConsumeAimVantage(digest, tick);
 
         _prevDigest = digest;
+        _prevFolded = false;
         return _scratch;
+    }
+
+    /// <summary>
+    ///     Ends the frame last polled: folds its per-pawn values into the pre-frame snapshot, so a
+    ///     frame observer reads the state at the end of frame N and the next frame's first edge
+    ///     reads the same cells. The evaluator calls it after the frame's post-frame messages have
+    ///     dispatched; a caller that polls without it gets the same fold at the next poll. The
+    ///     decode-compromise latch keeps its order either way, since the fold is the same fold.
+    /// </summary>
+    public void CompleteFrame()
+    {
+        if (_prevFolded)
+        {
+            return;
+        }
+
+        MergePreFrameSnapshot(_prevDigest);
+        _prevFolded = true;
     }
 
     /// <summary>The team <paramref name="slot" />'s controller last showed in a digest, when one has.</summary>
@@ -1268,7 +1299,8 @@ public sealed class EntityChangeScanner
     /// <summary>
     ///     Reads the snapshot of <paramref name="provider" />'s value for
     ///     <paramref name="playerSlot" /> as captured at the START of the most recent
-    ///     <see cref="AdvanceAndPollAt" /> call. Returns <c>null</c> if no snapshot exists
+    ///     <see cref="AdvanceAndPollAt" /> call, or at the END of that frame once
+    ///     <see cref="CompleteFrame" /> has run. Returns <c>null</c> if no snapshot exists
     ///     (provider not registered, slot never populated, or first frame). The value is
     ///     PRE-FRAME relative to the currently-in-flight frame.
     /// </summary>

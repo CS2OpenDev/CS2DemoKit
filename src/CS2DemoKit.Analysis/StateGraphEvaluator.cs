@@ -7,6 +7,7 @@ using CS2DemoKit.Analysis.Diagnostics;
 using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Nodes;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
 using Microsoft.Extensions.Logging;
@@ -148,6 +149,16 @@ public sealed class StateGraphEvaluator
     ///     message. The forward path's configured-output recorder is the one user.
     /// </summary>
     internal Output.IEvaluationObserver? Observer { get; set; }
+
+    /// <summary>
+    ///     The host's per-frame hook, called after each frame's post-frame messages with a
+    ///     <see cref="FrameView" /> over the scanner's folded state. Null (the default) costs one
+    ///     null check per frame.
+    /// </summary>
+    internal IFrameObserver? FrameObserver { get; set; }
+
+    /// <summary>The provider names <see cref="FrameObserver" /> may read; resolved to columns once per run.</summary>
+    internal IReadOnlyList<string> ObservedProviders { get; set; } = [];
 
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
@@ -528,6 +539,10 @@ public sealed class StateGraphEvaluator
             _enrichment = frames.Enrichment;
         }
 
+        // One view per run; the observer reads it inside OnFrame only.
+        IFrameObserver? frameObserver = FrameObserver;
+        FrameView? view = frameObserver is not null ? new FrameView(_entityScanner, ObservedProviders) : null;
+
         // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
         // producer applies the whole run before any frame in it is polled, which is what a
         // tick-gated seek over a list did, so every frame of a run reads the same entity state.
@@ -740,6 +755,22 @@ public sealed class StateGraphEvaluator
                 Observer?.AfterMessage();
             }
 
+            // The frame's own fold, so the observer and the next frame's first edge read the same
+            // cells. Nothing between here and the next poll reads the snapshot.
+            _entityScanner?.CompleteFrame();
+            if (view is not null)
+            {
+                view.Publish(frame, frameIdx);
+                try
+                {
+                    frameObserver!.OnFrame(view);
+                }
+                finally
+                {
+                    view.Close();
+                }
+            }
+
             if (timeFrame)
             {
                 long frameTicks = Stopwatch.GetTimestamp() - frameStart;
@@ -766,6 +797,7 @@ public sealed class StateGraphEvaluator
         FramesConsumed = frameIdx;
         MessagesConsumed = totalMessages;
         Observer?.Finish();
+        frameObserver?.Finish();
 
         // A1: snapshot the collected highlight firings for this evaluation (copy — the graph's
         // sink is cleared by the NEXT evaluation over this graph, ours must stay stable).

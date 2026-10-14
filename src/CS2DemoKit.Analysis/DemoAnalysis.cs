@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Profiles;
@@ -15,6 +16,7 @@ using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
+using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
 
@@ -116,6 +118,31 @@ public sealed record AnalysisOptions
     ///     </para>
     /// </summary>
     public VisibilityEngine? VisibilityEngine { get; init; }
+
+    /// <summary>
+    ///     Per-player providers <see cref="FrameObserver" /> reads, by catalog name
+    ///     (<c>entity.pawn.place</c>, <c>entity.pawn.pos_x</c> ...). Each activates its digest
+    ///     column the way a rule reference would, so the run pays for the columns it declares and no
+    ///     others; a name no registered provider carries throws at build time. The observer may
+    ///     read only these names.
+    /// </summary>
+    public IReadOnlyList<string> ObservedProviders { get; init; } = [];
+
+    /// <summary>
+    ///     Grenade projectile classes <see cref="FrameObserver" /> reads, from
+    ///     <see cref="GrenadeProjectileClasses.All" />. Each digest then carries a
+    ///     <see cref="ProjectileRow" /> per live projectile of those classes; empty leaves the digest
+    ///     exactly as a run with no observer builds it. A name outside the five throws at build time.
+    /// </summary>
+    public IReadOnlyList<string> ObservedProjectileClasses { get; init; } = [];
+
+    /// <summary>
+    ///     Called once per frame on the evaluation thread, after the frame's messages and
+    ///     synthesized events have dispatched, with a <see cref="FrameView" /> over the declared
+    ///     state as of the end of that frame. Null for no observer. An observer that throws aborts
+    ///     the run.
+    /// </summary>
+    public IFrameObserver? FrameObserver { get; init; }
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
@@ -590,7 +617,9 @@ public static class DemoAnalysis
         target,
         entityProviders: options.EntityProviders ?? EntityValueProviderRegistry.CreateDefault(),
         perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault(),
-        visibilityEngine: options.VisibilityEngine);
+        visibilityEngine: options.VisibilityEngine,
+        observedProviders: options.ObservedProviders,
+        observedProjectileClasses: options.ObservedProjectileClasses);
 
     private static (DemoSourceProfile Profile, ProfileResolutionKind Resolution) ResolveProfileCore(
         ParsedDemo demo, AnalysisOptions? options)
@@ -648,7 +677,11 @@ public static class DemoAnalysis
         ParsedDemo? demo)
     {
         ArgumentNullException.ThrowIfNull(build);
-        StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner);
+        StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner)
+        {
+            FrameObserver = options.FrameObserver,
+            ObservedProviders = options.ObservedProviders
+        };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;
 
         RuleChainTimeline timeline;

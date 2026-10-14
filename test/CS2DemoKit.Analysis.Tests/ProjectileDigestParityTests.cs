@@ -43,6 +43,56 @@ public class ProjectileDigestParityTests
     [Test]
     public async Task Lifecycle_AtTheDefaultCap_MatchesTheSamplerWalk() => await AssertParity(null);
 
+    /// <summary>
+    ///     The public seam: a run declaring the five classes hands its observer the same stream.
+    ///     This is the statement DemoViewer's grenade consumers are built on.
+    /// </summary>
+    [Test]
+    public async Task Observer_AtTheDefaultCap_MatchesTheSamplerWalk()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        Stream expected = FromSampler(demo);
+        StreamObserver observer = new();
+        DemoAnalysis.Run(demo, [], new AnalysisOptions
+        {
+            CaptureSnapshots = false,
+            ObservedProjectileClasses = GrenadeProjectileClasses.All,
+            FrameObserver = observer
+        });
+
+        await Assert.That(observer.Finished).IsEqualTo(1);
+        await Assert.That(Diff(expected.Created, observer.Stream.Created)).IsNull();
+        await Assert.That(Diff(expected.Removed, observer.Stream.Removed)).IsNull();
+        await Assert.That(Diff(expected.Live, observer.Stream.Live)).IsNull();
+    }
+
+    private sealed class StreamObserver : IFrameObserver
+    {
+        public readonly Stream Stream = new();
+        public int Finished;
+
+        public void OnFrame(FrameView frame)
+        {
+            foreach (ProjectileRow row in frame.Created)
+            {
+                Stream.Created.Add(ToRow(frame.FrameIndex, row));
+            }
+
+            foreach (ProjectileRow row in frame.Removed)
+            {
+                Stream.Removed.Add(ToRow(frame.FrameIndex, row));
+            }
+
+            foreach (ProjectileRow row in frame.Projectiles)
+            {
+                Stream.Live.Add(ToRow(frame.FrameIndex, row));
+            }
+        }
+
+        public void Finish() => Finished++;
+    }
+
     private static async Task AssertParity(int? maxDegreeOfParallelism)
     {
         ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
