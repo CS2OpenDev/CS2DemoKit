@@ -3108,6 +3108,13 @@
       "v2Type": "Bool"
     },
     {
+      "name": "entity.pawn.is_walking",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.is_walking",
+      "v2Type": "Bool"
+    },
+    {
       "name": "entity.pawn.max_speed",
       "scope": "perPlayer",
       "clrType": "float",

@@ -86,6 +86,12 @@ public sealed class PerPlayerEntityValueProviderRegistry
         registry.Register(new PawnEyeAngleProvider(PawnAngleAxis.Yaw));
         registry.Register(new PawnAimPunchProvider(PawnAngleAxis.Pitch));
         registry.Register(new PawnAimPunchProvider(PawnAngleAxis.Yaw));
+        // Spec-constructed on both sides (no hand-written twin), same position as in
+        // BuiltinProviderSpecs.CreateGenericPerPlayerProviders(), so digest parity holds by
+        // construction. Registered before the position trio, not appended, for the same reason
+        // as the aim-rating batch above: PawnPositionProviderTests pins those three as the last
+        // three.
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnIsWalking));
         // World position, one provider per axis. Computed from CBodyComponent's cell + offset
         // pair rather than a single leaf, so there is no ProviderSpec form; both sides of the
         // parity gate register these same instances, appended last in the same order.

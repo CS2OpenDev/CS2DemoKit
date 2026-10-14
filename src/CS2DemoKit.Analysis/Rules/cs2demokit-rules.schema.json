@@ -174,6 +174,10 @@
           "markdownDescription": "\u0060player.is_scoped\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.pawn.is_scoped\u0060. Read at a rule site from the frame BEFORE the triggering event."
         },
         {
+          "const": "player.is_walking",
+          "markdownDescription": "\u0060player.is_walking\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.pawn.is_walking\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
           "const": "player.max_speed",
           "markdownDescription": "\u0060player.max_speed\u0060 (type \u0060float\u0060, in units/second) - an entity read, from \u0060entity.pawn.max_speed\u0060. Read at a rule site from the frame BEFORE the triggering event. Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
         },
