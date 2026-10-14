@@ -247,7 +247,6 @@
         "blinded_enemy",
         "bomb_defused",
         "bomb_planted",
-        "cadence_tick",
         "damage_dealt",
         "damage_taken",
         "death",
@@ -1050,7 +1049,7 @@
               {
                 "properties": {
                   "on": {
-                    "const": "cadence_tick"
+                    "pattern": "^cadence\\."
                   }
                 },
                 "required": [
@@ -1060,7 +1059,7 @@
               {
                 "properties": {
                   "count": {
-                    "const": "cadence_tick"
+                    "pattern": "^cadence\\."
                   }
                 },
                 "required": [

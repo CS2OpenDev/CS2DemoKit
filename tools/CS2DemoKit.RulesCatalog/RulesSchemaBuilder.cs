@@ -286,7 +286,10 @@ public static class RulesSchemaBuilder
         JsonArray examples = [];
         foreach (CatalogView v in views)
         {
-            examples.Add(v.Name);
+            if (v.Name != CadenceTickView)
+            {
+                examples.Add(v.Name);
+            }
         }
 
         examples.Add("raw.player_death");
@@ -1060,6 +1063,11 @@ public static class RulesSchemaBuilder
         // view's facet enum (compiler-plan §9 per-view facet enums).
         foreach (CatalogView view in views)
         {
+            // The resolver rejects a bare cadence_tick; its facets apply to `cadence.<id>`.
+            JsonObject SourceIs() => view.Name == CadenceTickView
+                ? new JsonObject { ["pattern"] = "^cadence\\." }
+                : new JsonObject { ["const"] = view.Name };
+
             allOf.Add(new JsonObject
             {
                 ["if"] = new JsonObject
@@ -1070,10 +1078,7 @@ public static class RulesSchemaBuilder
                         {
                             ["properties"] = new JsonObject
                             {
-                                ["on"] = new JsonObject
-                                {
-                                    ["const"] = view.Name
-                                }
+                                ["on"] = SourceIs()
                             },
                             ["required"] = new JsonArray
                             {
@@ -1084,10 +1089,7 @@ public static class RulesSchemaBuilder
                         {
                             ["properties"] = new JsonObject
                             {
-                                ["count"] = new JsonObject
-                                {
-                                    ["const"] = view.Name
-                                }
+                                ["count"] = SourceIs()
                             },
                             ["required"] = new JsonArray
                             {
@@ -1570,6 +1572,8 @@ public static class RulesSchemaBuilder
         ["description"] = description,
         ["body"] = body
     };
+
+    private const string CadenceTickView = "cadence_tick";
 
     private static string MatchDefName(string viewName) => $"match_{viewName}";
 }
