@@ -759,6 +759,17 @@ public static class ExpressionCompiler
             return (left, Expression.Convert(right, typeof(float)));
         }
 
+        // player.cmd.buttons is the only long a rule can read.
+        if (left.Type == typeof(long) && right.Type == typeof(int))
+        {
+            return (left, Expression.Convert(right, typeof(long)));
+        }
+
+        if (left.Type == typeof(int) && right.Type == typeof(long))
+        {
+            return (Expression.Convert(left, typeof(long)), right);
+        }
+
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
         // so a comparison such as `weapon_tier[event.Weapon] > 2` is a lifted (null-safe) comparison.
         if (left.Type == typeof(double?) && right.Type is var rt && (rt == typeof(int) || rt == typeof(double) || rt == typeof(float)))
@@ -840,6 +851,37 @@ public static class ExpressionCompiler
             ? call
             : Expression.Coalesce(call, Expression.Constant(boxedDefault, typeof(object)));
         return Expression.Convert(coalesced, provider.ValueType);
+    }
+
+    /// <summary>
+    ///     Resolves <c>player.usercmd.&lt;member&gt;</c> to a fixed-slot read of the scanner's command
+    ///     lane, with the same null-to-default coalescing as <see cref="ResolvePlayerEntity" />.
+    /// </summary>
+    private static UnaryExpression ResolvePlayerCommand(ExpressionBindings b, string providerName)
+    {
+        if (b.EntityScanner is null || !b.PlayerSlot.HasValue)
+        {
+            throw new InvalidOperationException(
+                $"'player.{providerName}' requires the entity scanner and a player slot, but none are bound.");
+        }
+
+        IPerPlayerCommandProvider provider = UserCommandProviders.Get(providerName)
+                                             ?? throw new InvalidOperationException(
+                                                 $"Unknown user-command provider: '{providerName}'.");
+        if (b.EntityScanner.Commands is null)
+        {
+            throw new InvalidOperationException(
+                $"'player.{providerName}' reads a user command, but this build's scanner has no command lane.");
+        }
+
+        Expression call = Expression.Call(
+            Expression.Constant(b.EntityScanner),
+            typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetCommandValue))!,
+            Expression.Constant(provider, typeof(IPerPlayerCommandProvider)),
+            Expression.Constant(b.PlayerSlot.Value));
+        return Expression.Convert(
+            Expression.Coalesce(call, Expression.Constant(Activator.CreateInstance(provider.ValueType), typeof(object))),
+            provider.ValueType);
     }
 
     /// <summary>
@@ -1299,6 +1341,15 @@ public static class ExpressionCompiler
                         }
 
                         return ResolvePlayerEntity(b, providerName);
+                    }
+
+                    // `player.usercmd.<member>`: the slot's latest user command.
+                    if (member == "usercmd" && pos + 1 < tokens.Length && tokens[pos].Kind == TokenKind.Dot
+                        && tokens[pos + 1].Kind == TokenKind.Identifier)
+                    {
+                        string commandName = UserCommandProviders.Prefix + tokens[pos + 1].Text;
+                        pos += 2;
+                        return ResolvePlayerCommand(b, commandName);
                     }
 
                     if (member == "slot" && b.PlayerSlot.HasValue)

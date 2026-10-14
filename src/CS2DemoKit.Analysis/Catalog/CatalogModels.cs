@@ -133,7 +133,10 @@ public sealed record CatalogContextRule(
 
 /// <summary>One entity-value provider (v1: hand-written C#; the data-driven form makes these catalog data).</summary>
 /// <param name="Name">Name rules read (e.g. <c>player.health</c> / <c>entity.game.freeze_period</c>).</param>
-/// <param name="Scope"><c>perPlayer</c> or <c>singleton</c>.</param>
+/// <param name="Scope">
+///     <c>perPlayer</c>, <c>singleton</c>, <c>perTeam</c>, or <c>perPlayerCommand</c> for a read
+///     off the player's latest user command (<c>player.cmd.*</c>).
+/// </param>
 /// <param name="ClrType">Friendly value type name.</param>
 /// <param name="V2Name">
 ///     The v2 namespace path: <c>entity.pawn.* → player.*</c>,

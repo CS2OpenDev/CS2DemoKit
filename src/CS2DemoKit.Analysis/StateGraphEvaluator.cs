@@ -9,6 +9,7 @@ using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 using Microsoft.Extensions.Logging;
 
@@ -162,6 +163,15 @@ public sealed class StateGraphEvaluator
 
     /// <summary>The build's cadences (<see cref="Graphs.BuildResult.CadencePlans" />); empty costs one check per frame.</summary>
     internal IReadOnlyList<CadencePlan> Cadences { get; set; } = [];
+
+    /// <summary>
+    ///     Rebuild user commands for <see cref="FrameView.Command" /> even when no rule reads one
+    ///     (<see cref="Graphs.BuildResult.DecodesUserCommands" />). A rule read turns the lane on by itself.
+    /// </summary>
+    internal bool DecodeUserCommands { get; set; }
+
+    // The lane when only the observer asked for it; a rule read uses the scanner's.
+    private UserCmdReconstructor? _observerCommands;
 
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
@@ -542,9 +552,15 @@ public sealed class StateGraphEvaluator
             _enrichment = frames.Enrichment;
         }
 
+        // Must be reset per run: a second evaluation over one build would start from the last
+        // run's baselines.
+        UserCmdReconstructor? commands = _entityScanner?.Commands
+                                         ?? (DecodeUserCommands ? _observerCommands ??= new UserCmdReconstructor() : null);
+        commands?.Reset();
+
         // One view per run; the observer reads it inside OnFrame only.
         IFrameObserver? frameObserver = FrameObserver;
-        FrameView? view = frameObserver is not null ? new FrameView(_entityScanner, ObservedProviders) : null;
+        FrameView? view = frameObserver is not null ? new FrameView(_entityScanner, ObservedProviders, commands) : null;
 
         // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
         // producer applies the whole run before any frame in it is polled, which is what a
@@ -605,6 +621,9 @@ public sealed class StateGraphEvaluator
 
                 snap?.CaptureAfterMessage(frameIdx, frame.ServerTick, ordinal, message, fired > 0);
             }
+
+            // Before the poll, so every read in this frame sees the frame's own commands.
+            commands?.AdvanceOneFrame(frame);
 
             // ── Synthesize entity-state change events (lazy: scanner is null when no rule
             //    references an entity context). Each synthesized message participates in the

@@ -143,6 +143,14 @@ public sealed record AnalysisOptions
     ///     the run.
     /// </summary>
     public IFrameObserver? FrameObserver { get; init; }
+
+    /// <summary>
+    ///     Rebuild the players' user commands on the evaluation thread and serve them to
+    ///     <c>player.cmd.*</c> reads and to <see cref="FrameView.Command" />. Widens the decode plan
+    ///     with <see cref="MessageCategories.UserCmds" />. A build that reads <c>player.cmd.*</c>
+    ///     turns the lane on without it.
+    /// </summary>
+    public bool DecodeUserCommands { get; init; }
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
@@ -383,7 +391,8 @@ public static class DemoAnalysis
     ///     The narrowest decode plan that still feeds <paramref name="build" /> everything its graph
     ///     dispatches: the header and string tables always, every game event an edge or the
     ///     evaluator consumes, and the schema, entities and retained signon prefix only when the
-    ///     build has an entity scanner. A net message an edge subscribes to is included by wire
+    ///     build has an entity scanner, and the user commands only when
+    ///     <see cref="BuildResult.DecodesUserCommands" />. A net message an edge subscribes to is included by wire
     ///     id; one the catalog cannot place widens the plan to every
     ///     <see cref="MessageCategories.Other" /> message rather than dropping it.
     /// </summary>
@@ -417,6 +426,11 @@ public static class DemoAnalysis
         if (scanner)
         {
             categories |= MessageCategories.Schema | MessageCategories.Entities;
+        }
+
+        if (build.DecodesUserCommands)
+        {
+            categories |= MessageCategories.UserCmds;
         }
 
         return new DecodePlan
@@ -594,9 +608,11 @@ public static class DemoAnalysis
         RuleChainBuilder builder = CreateBuilder(target, options);
         if (v2Docs.Count == 0)
         {
-            return builder.Build() with
+            BuildResult bare = builder.Build();
+            return bare with
             {
-                ProfileResolution = resolution
+                ProfileResolution = resolution,
+                DecodesUserCommands = bare.DecodesUserCommands || options.DecodeUserCommands
             };
         }
 
@@ -608,7 +624,8 @@ public static class DemoAnalysis
         {
             RulesetDiagnostics = composed.AttributedDiagnostics,
             ExcludedRulesets = [.. composed.Excluded, .. build.ExcludedRulesets],
-            ProfileResolution = resolution
+            ProfileResolution = resolution,
+            DecodesUserCommands = build.DecodesUserCommands || options.DecodeUserCommands
         };
     }
 
@@ -681,6 +698,7 @@ public static class DemoAnalysis
         {
             FrameObserver = options.FrameObserver,
             ObservedProviders = options.ObservedProviders,
+            DecodeUserCommands = build.DecodesUserCommands,
             Cadences = build.CadencePlans
         };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;

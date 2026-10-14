@@ -3,6 +3,7 @@
 using System.Runtime.CompilerServices;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
 
@@ -23,15 +24,18 @@ namespace CS2DemoKit.Analysis.Observation;
 public sealed class FrameView
 {
     private readonly EntityChangeScanner? _scanner;
+    private readonly UserCmdReconstructor? _commands;
     private readonly Dictionary<string, int> _columns;
     private readonly string[] _declared;
     private DemoFrame? _frame;
     private int _frameIndex;
     private bool _open;
 
-    internal FrameView(EntityChangeScanner? scanner, IReadOnlyList<string> declaredProviders)
+    internal FrameView(EntityChangeScanner? scanner, IReadOnlyList<string> declaredProviders,
+        UserCmdReconstructor? commands = null)
     {
         _scanner = scanner;
+        _commands = commands;
         _declared = [.. declaredProviders];
         _columns = new Dictionary<string, int>(_declared.Length, StringComparer.OrdinalIgnoreCase);
         string[] names = scanner?.ColumnLayout.Names ?? [];
@@ -147,6 +151,16 @@ public sealed class FrameView
 
         return Open()._scanner!.Snapshot.TryGetString(provider.Column, playerSlot, out value);
     }
+
+    /// <summary>
+    ///     The slot's latest user command as of the end of this frame, its own commands included, or
+    ///     null before the slot's first. The instance is the slot's baseline for its next delta: read
+    ///     it, never change it, and copy what you keep.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The run decodes no user commands (<see cref="AnalysisOptions.DecodeUserCommands" />).</exception>
+    public CSGOUserCmdPB? Command(int playerSlot) =>
+        (Open()._commands ?? throw new InvalidOperationException(
+            "this run decodes no user commands; set AnalysisOptions.DecodeUserCommands")).Current(playerSlot);
 
     /// <summary>The slot's controller team as last seen (2 = T, 3 = CT), or -1.</summary>
     public int Team(int playerSlot) =>

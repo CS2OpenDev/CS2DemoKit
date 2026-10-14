@@ -1326,6 +1326,23 @@ public sealed class EntityChangeScanner
         return _preFrameSnapshot.GetBoxed(idx, playerSlot);
     }
 
+    /// <summary>
+    ///     The user-command lane compiled <c>player.cmd.*</c> reads are served from. The builder sets it
+    ///     when a rule reads a command; the evaluator resets and advances it once per frame, before the
+    ///     frame's poll. Null when nothing reads commands.
+    /// </summary>
+    internal UserCmdReconstructor? Commands { get; set; }
+
+    /// <summary>
+    ///     <paramref name="provider" />'s value off <paramref name="playerSlot" />'s latest command,
+    ///     or null when the slot has no command yet or the build decodes none.
+    /// </summary>
+    public object? GetCommandValue(IPerPlayerCommandProvider provider, int playerSlot)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        return Commands?.Current(playerSlot) is { } command ? provider.Read(command) : null;
+    }
+
     private static EntityChangeMessage BuildSynthesizedMessage(IEntityValueProvider provider, int tick, object? oldValue, object? newValue)
     {
         // Construct EntityValueChangedEvent<TMarker> via reflection. The marker type is only

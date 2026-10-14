@@ -354,6 +354,10 @@ public static class CatalogBuilder
                 .Select(p => Annotate(new CatalogProvider(
                     p.ContextName, "singleton", FriendlyTypeName(p.ValueType),
                     ProviderV2Name(p.ContextName), RulesType(FriendlyTypeName(p.ValueType))))),
+            .. UserCommandProviders.All
+                .Select(p => Annotate(new CatalogProvider(
+                    p.Name, "perPlayerCommand", FriendlyTypeName(p.ValueType),
+                    ProviderV2Name(p.Name), RulesType(FriendlyTypeName(p.ValueType))))),
             // Listed once per spec; the registry holds one instance per side.
             .. BuiltinProviderSpecs.TeamSpecs
                 .Select(s => Annotate(new CatalogProvider(
@@ -679,9 +683,11 @@ public static class CatalogBuilder
                     ? "match." + name["entity.game.".Length..]
                     : name.StartsWith("entity.team.", StringComparison.Ordinal)
                         ? "team." + name["entity.team.".Length..]
-                        : throw new InvalidOperationException(
+                        : name.StartsWith(UserCommandProviders.Prefix, StringComparison.Ordinal)
+                            ? "player.cmd." + name[UserCommandProviders.Prefix.Length..]
+                            : throw new InvalidOperationException(
                             $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
-                            + "(expected entity.pawn.*, entity.controller.*, entity.weapon.*, entity.game.* or entity.team.*)");
+                            + "(expected entity.pawn.*, entity.controller.*, entity.weapon.*, entity.game.*, entity.team.* or usercmd.*)");
 
     private static string ContextV2Name(string ruleId) =>
         _contextV2Names.TryGetValue(ruleId, out string? v2)

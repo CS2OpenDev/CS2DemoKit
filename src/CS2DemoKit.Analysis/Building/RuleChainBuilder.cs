@@ -500,6 +500,10 @@ public sealed partial class RuleChainBuilder
                 silent,
                 projectileClasses,
                 emitProjectiles);
+            if (ReadsUserCommands(rulesets))
+            {
+                entityScanner.Commands = new UserCmdReconstructor();
+            }
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve
@@ -672,8 +676,27 @@ public sealed partial class RuleChainBuilder
             CadencePlans = cadencePlans,
             ExternalNodes = externals.All,
             Provenance = gameProvenance,
-            ExcludedRulesets = [.. _loweringExclusions]
+            ExcludedRulesets = [.. _loweringExclusions],
+            DecodesUserCommands = entityScanner?.Commands is not null
         };
+    }
+
+    private static bool ReadsUserCommands(IReadOnlyList<CheckedRuleset> rulesets)
+    {
+        static bool Any(IReadOnlyList<EntityProviderReference> reads)
+        {
+            foreach (EntityProviderReference read in reads)
+            {
+                if (read.ProviderName.StartsWith(UserCommandProviders.Prefix, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return rulesets.Any(rs => rs.Stats.Any(s => Any(s.EntityReads)) || rs.Highlights.Any(h => Any(h.EntityReads)));
     }
 
     /// <summary>

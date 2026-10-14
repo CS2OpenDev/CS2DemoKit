@@ -153,6 +153,30 @@
           "markdownDescription": "\u0060player.armor\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.armor\u0060. Read at a rule site from the frame BEFORE the triggering event."
         },
         {
+          "const": "player.cmd.buttons",
+          "markdownDescription": "\u0060player.cmd.buttons\u0060 (type \u0060long\u0060) - an entity read, from \u0060usercmd.buttons\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
+          "const": "player.cmd.forward",
+          "markdownDescription": "\u0060player.cmd.forward\u0060 (type \u0060float\u0060) - an entity read, from \u0060usercmd.forward\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
+          "const": "player.cmd.left",
+          "markdownDescription": "\u0060player.cmd.left\u0060 (type \u0060float\u0060) - an entity read, from \u0060usercmd.left\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
+          "const": "player.cmd.tick",
+          "markdownDescription": "\u0060player.cmd.tick\u0060 (type \u0060int\u0060) - an entity read, from \u0060usercmd.tick\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
+          "const": "player.cmd.view_pitch",
+          "markdownDescription": "\u0060player.cmd.view_pitch\u0060 (type \u0060float\u0060) - an entity read, from \u0060usercmd.view_pitch\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
+          "const": "player.cmd.view_yaw",
+          "markdownDescription": "\u0060player.cmd.view_yaw\u0060 (type \u0060float\u0060) - an entity read, from \u0060usercmd.view_yaw\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
           "const": "player.duck_amount",
           "markdownDescription": "\u0060player.duck_amount\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060entity.pawn.duck_amount\u0060. Read at a rule site from the frame BEFORE the triggering event. Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
         },

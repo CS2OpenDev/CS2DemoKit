@@ -107,6 +107,13 @@ public sealed record BuildResult(
     /// </summary>
     public IReadOnlyList<ExcludedRuleset> ExcludedRulesets { get; init; } = [];
 
+    /// <summary>
+    ///     True when an evaluation rebuilds the players' user commands: a rule reads
+    ///     <c>player.cmd.*</c>, or <see cref="AnalysisOptions.DecodeUserCommands" /> asked for them.
+    ///     <c>DemoAnalysis.PlanDecode</c> then decodes <c>MessageCategories.UserCmds</c>.
+    /// </summary>
+    public bool DecodesUserCommands { get; init; }
+
     /// <summary>The source profile the graph was built for, dialect included.</summary>
     public DemoSourceProfile Profile { get; init; } = DemoSourceProfileRegistry.DefaultFallback;
 

@@ -219,9 +219,13 @@ public static class RulesSchemaBuilder
             string unit = provider.Unit is null ? "" : $", in {provider.Unit}";
             // Per-player reads are taken from the pre-frame snapshot, which is the difference
             // between "the clip before the killing shot" and "the clip after it" at a rule site.
-            string cadence = string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal)
-                ? " Read at a rule site from the frame BEFORE the triggering event."
-                : "";
+            string cadence = provider.Scope switch
+            {
+                "perPlayer" => " Read at a rule site from the frame BEFORE the triggering event.",
+                "perPlayerCommand" => " Read at a rule site from the player's latest user command, "
+                                      + "the triggering frame's own commands included.",
+                _ => ""
+            };
             branches.Add(new JsonObject
             {
                 ["const"] = provider.V2Name,

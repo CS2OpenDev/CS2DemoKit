@@ -13,7 +13,8 @@ namespace CS2DemoKit.Analysis.Tests;
 
 /// <summary>
 ///     What a build asks the reader to decode: the events its edges and the evaluator consume,
-///     entities only when something reads them, and never the user commands.
+///     entities only when something reads them, and user commands only when a rule reads one or
+///     the options ask for them.
 /// </summary>
 [Category("Unit")]
 public class AnalysisDecodePlanTests
@@ -36,6 +37,8 @@ public class AnalysisDecodePlanTests
         await Assert.That(plan.Categories.HasFlag(MessageCategories.Entities)).IsTrue();
         await Assert.That(plan.RetainSignonPrefix).IsTrue();
         await Assert.That(plan.Decodes(NetMessageCatalog.UserCmdsTypeId)).IsFalse();
+        await Assert.That(build.DecodesUserCommands).IsFalse();
+        await Assert.That(build.EntityScanner!.Commands).IsNull();
 
         await Assert.That(plan.GameEventNames).IsNotNull();
         foreach (string name in new[]
@@ -68,6 +71,39 @@ public class AnalysisDecodePlanTests
         await Assert.That(plan.Decodes((int)SVC_Messages.SvcCreateStringTable)).IsTrue();
         await Assert.That(plan.Decodes(NetMessageCatalog.UserCmdsTypeId)).IsFalse();
         await Assert.That(plan.GameEventNames!.Contains("player_death")).IsTrue();
+    }
+
+    [Test]
+    public async Task DecodeUserCommands_WidensThePlan()
+    {
+        BuildResult build = DemoAnalysis.Build(Target, [], new AnalysisOptions { DecodeUserCommands = true });
+        await Assert.That(build.DecodesUserCommands).IsTrue();
+        await Assert.That(build.EntityScanner?.Commands).IsNull();
+
+        DecodePlan plan = DemoAnalysis.PlanDecode(build);
+        await Assert.That(plan.Categories.HasFlag(MessageCategories.UserCmds)).IsTrue();
+        await Assert.That(plan.Decodes(NetMessageCatalog.UserCmdsTypeId)).IsTrue();
+    }
+
+    [Test]
+    public async Task ACommandRead_WidensThePlan_AndBuildsTheLane()
+    {
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadDocuments([("cmds.rules.yaml", """
+            ruleset: cmds
+            for: each_player
+            stats:
+              kill_cmd_tick:
+                capture: player.cmd.tick
+                on: kill
+                per: match
+            """)]);
+        await Assert.That(rules.Errors).IsEmpty();
+
+        BuildResult build = DemoAnalysis.Build(Target, rules.Rulesets);
+        await Assert.That(build.ExcludedRulesets).IsEmpty();
+        await Assert.That(build.DecodesUserCommands).IsTrue();
+        await Assert.That(build.EntityScanner!.Commands).IsNotNull();
+        await Assert.That(DemoAnalysis.PlanDecode(build).Decodes(NetMessageCatalog.UserCmdsTypeId)).IsTrue();
     }
 
     [Test]
