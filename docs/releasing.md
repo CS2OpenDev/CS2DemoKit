@@ -728,6 +728,16 @@ Every tracker a rules run builds (`EntityStateLayer`'s bootstrap, in CS2DemoKit.
 `PositionSampler.Walk`, `ProjectileSampler.Walk` and a bare `new EntityTracker()` replay keep
 `Metered` at its default and each count once on the Parser counter.
 
+### Shot angles are rounded and the same on every OS (0.14.0)
+
+`ShotEnrichmentEdge.AngleDeltaDegrees` computes the angle as `atan2(|a x b|, a.b)` instead of
+`acos(a.b)` and rounds it to `ShotEnrichmentEdge.AngleDecimals` (9, new) decimal places. It feeds
+`turn_degrees`, `travel_from_spot_deg` and `spray_residual_deg`, which now give the same digits on
+Windows and macOS and read exactly 0 for identical views. Values move by at most about 1e-6
+degrees, the noise acos added near zero turn. Through 0.13.0 the last digit could differ by OS,
+which moved a rules-output digest between machines. `flick_error_deg` subtracts an unrounded chest
+angle from travel, so it can still differ by OS.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

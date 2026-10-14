@@ -51,6 +51,13 @@ net path (`resolve.trigger.unsupported-for-kind`), a `while:` gate the planner c
 (`resolve.keep-list.element-type`). Each failed at build or evaluation before, so a directory that
 validated with one of them never produced its numbers. The releasing note lists the exact shapes.
 
+**Shot angles round to nine decimal places.** `enrich.shot.turn_degrees`, `travel_from_spot_deg`
+and `spray_residual_deg` come from `ShotEnrichmentEdge.AngleDeltaDegrees`, which now returns a value
+rounded to `AngleDecimals` (9) and is exactly 0 for identical views. A value moves by at most about
+1e-6 degrees, the noise acos added near zero turn. Before, the last digits differed between Windows
+and macOS. `flick_error_deg` moves with `travel_from_spot_deg`, but its chest-angle term is not
+rounded and can still differ between them.
+
 ## 5. New things worth adopting
 
 `BuildDiagnosticCodes.LoweringFailed` (`build.lowering-failed`) and the three new
