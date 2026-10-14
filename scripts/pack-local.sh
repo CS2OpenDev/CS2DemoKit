@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-# Packs the three CS2DemoKit libraries for local, off-nuget.org consumption.
+# Packs the three CS2DemoKit libraries for local, off-nuget.org consumption, always at the
+# version.json stamp: PublicRelease=true drops the -g<sha> dev suffix a branch ref otherwise
+# appends, so a host's exact intra-family pins stay satisfiable across repacks.
 #
-# PublicRelease=true matches ci.yml's pack step: without it a branch ref stamps
-# <version>-g<sha>, which disagrees with the DLL informational version a host checks against its
-# pinned PackageReference and fails ExtensionHostTests, CompatibilityMatrixTests and the Strat
-# Book load check.
-#
-# Every repack on this branch stamps the same version, so a prior copy already extracted into
-# the global NuGet cache survives a plain `dotnet pack` and must be purged first. No --no-build:
-# the Release DLLs on disk may have been built under the old -g stamp, and packing them as-is
-# would ship a nupkg labelled right with a DLL stamped wrong.
+# Every repack shares that one version, so a prior copy already extracted into the global NuGet
+# cache survives a plain `dotnet pack` and must be purged first.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
