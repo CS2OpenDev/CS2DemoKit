@@ -76,56 +76,75 @@ public sealed class FrameView
     public ReadOnlySpan<ProjectileRow> Removed => Open()._scanner is { } s ? s.Projectiles.Removed : default;
 
     /// <summary>
+    ///     Resolves a declared provider name once. Reads through the handle skip the name lookup,
+    ///     which is what a hot adapter wants: at seven columns and 64 slots a frame, the lookup
+    ///     alone was most of the read. Callable outside <c>OnFrame</c>; the handle is valid for this
+    ///     view, which is one run.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is not among <see cref="AnalysisOptions.ObservedProviders" />.</exception>
+    public ObservedProvider Provider(string providerName)
+    {
+        int column = Column(providerName);
+        return new ObservedProvider(this, column, _scanner!.ColumnLayout.Kinds[column], _scanner.ColumnLayout.Names[column]);
+    }
+
+    /// <summary>
     ///     A declared per-player provider's value for a slot, boxed in its declared type, or null
     ///     when the slot has no value yet. The typed reads below are allocation-free.
     /// </summary>
     /// <exception cref="ArgumentException">The name is not among <see cref="AnalysisOptions.ObservedProviders" />.</exception>
-    public object? Read(string providerName, int playerSlot) =>
-        Open()._scanner!.Snapshot.GetBoxed(Column(providerName), playerSlot);
+    public object? Read(string providerName, int playerSlot) => Read(Provider(providerName), playerSlot);
 
     /// <summary>An int or bool column's value (a bool reads as 0 or 1). False when the slot has no value yet.</summary>
     /// <exception cref="ArgumentException">The name is not declared, or the column is not an int or bool.</exception>
-    public bool TryReadInt(string providerName, int playerSlot, out int value)
-    {
-        int column = Column(providerName);
-        Open();
-        PawnCellKind kind = _scanner!.ColumnLayout.Kinds[column];
-        if (kind is not (PawnCellKind.Int or PawnCellKind.Bool))
-        {
-            throw Kind(providerName, kind, "int");
-        }
-
-        return _scanner.Snapshot.TryGetInt(column, playerSlot, out value);
-    }
+    public bool TryReadInt(string providerName, int playerSlot, out int value) => TryReadInt(Provider(providerName), playerSlot, out value);
 
     /// <summary>A float column's value. False when the slot has no value yet.</summary>
     /// <exception cref="ArgumentException">The name is not declared, or the column is not a float.</exception>
-    public bool TryReadFloat(string providerName, int playerSlot, out float value)
-    {
-        int column = Column(providerName);
-        Open();
-        PawnCellKind kind = _scanner!.ColumnLayout.Kinds[column];
-        if (kind != PawnCellKind.Float)
-        {
-            throw Kind(providerName, kind, "float");
-        }
-
-        return _scanner.Snapshot.TryGetFloat(column, playerSlot, out value);
-    }
+    public bool TryReadFloat(string providerName, int playerSlot, out float value) => TryReadFloat(Provider(providerName), playerSlot, out value);
 
     /// <summary>A string column's value. False when the slot has no value yet.</summary>
     /// <exception cref="ArgumentException">The name is not declared, or the column is not a string.</exception>
-    public bool TryReadString(string providerName, int playerSlot, out string? value)
+    public bool TryReadString(string providerName, int playerSlot, out string? value) => TryReadString(Provider(providerName), playerSlot, out value);
+
+    /// <summary><see cref="Read(string, int)" /> through a resolved handle.</summary>
+    public object? Read(ObservedProvider provider, int playerSlot) =>
+        Open()._scanner!.Snapshot.GetBoxed(Own(provider).Column, playerSlot);
+
+    /// <summary><see cref="TryReadInt(string, int, out int)" /> through a resolved handle.</summary>
+    public bool TryReadInt(ObservedProvider provider, int playerSlot, out int value)
     {
-        int column = Column(providerName);
-        Open();
-        PawnCellKind kind = _scanner!.ColumnLayout.Kinds[column];
-        if (kind != PawnCellKind.String)
+        Own(provider);
+        if (provider.Kind is not (PawnCellKind.Int or PawnCellKind.Bool))
         {
-            throw Kind(providerName, kind, "string");
+            throw Kind(provider.Name, provider.Kind, "int");
         }
 
-        return _scanner.Snapshot.TryGetString(column, playerSlot, out value);
+        return Open()._scanner!.Snapshot.TryGetInt(provider.Column, playerSlot, out value);
+    }
+
+    /// <summary><see cref="TryReadFloat(string, int, out float)" /> through a resolved handle.</summary>
+    public bool TryReadFloat(ObservedProvider provider, int playerSlot, out float value)
+    {
+        Own(provider);
+        if (provider.Kind != PawnCellKind.Float)
+        {
+            throw Kind(provider.Name, provider.Kind, "float");
+        }
+
+        return Open()._scanner!.Snapshot.TryGetFloat(provider.Column, playerSlot, out value);
+    }
+
+    /// <summary><see cref="TryReadString(string, int, out string?)" /> through a resolved handle.</summary>
+    public bool TryReadString(ObservedProvider provider, int playerSlot, out string? value)
+    {
+        Own(provider);
+        if (provider.Kind != PawnCellKind.String)
+        {
+            throw Kind(provider.Name, provider.Kind, "string");
+        }
+
+        return Open()._scanner!.Snapshot.TryGetString(provider.Column, playerSlot, out value);
     }
 
     /// <summary>The slot's controller team as last seen (2 = T, 3 = CT), or -1.</summary>
@@ -152,6 +171,15 @@ public sealed class FrameView
             : throw new InvalidOperationException(
                 "FrameView is readable only inside IFrameObserver.OnFrame; copy what you keep before returning");
 
+    private ObservedProvider Own(in ObservedProvider provider) =>
+        ReferenceEquals(provider.Owner, this)
+            ? provider
+            : throw new ArgumentException(
+                provider.Owner is null
+                    ? "the provider handle is default; resolve one with FrameView.Provider"
+                    : $"the handle for '{provider.Name}' belongs to another run's view",
+                nameof(provider));
+
     private int Column(string providerName) =>
         _columns.TryGetValue(providerName, out int column)
             ? column
@@ -162,4 +190,29 @@ public sealed class FrameView
 
     private static ArgumentException Kind(string providerName, PawnCellKind actual, string wanted) =>
         new($"provider '{providerName}' is a {actual.ToString().ToLowerInvariant()} column, not {wanted}", nameof(providerName));
+}
+
+/// <summary>
+///     A declared provider resolved against one run's <see cref="FrameView" /> through
+///     <see cref="FrameView.Provider" />. Reads through it skip the name lookup. Valid only on the
+///     view that made it; a view of another run rejects it.
+/// </summary>
+public readonly struct ObservedProvider
+{
+    internal ObservedProvider(FrameView owner, int column, PawnCellKind kind, string name)
+    {
+        Owner = owner;
+        Column = column;
+        Kind = kind;
+        Name = name;
+    }
+
+    internal FrameView? Owner { get; }
+    internal int Column { get; }
+
+    /// <summary>The column's storage kind, which picks the typed read that applies.</summary>
+    public PawnCellKind Kind { get; }
+
+    /// <summary>The provider's catalog name as the layout spells it.</summary>
+    public string Name { get; }
 }

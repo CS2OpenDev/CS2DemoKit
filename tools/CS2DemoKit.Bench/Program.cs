@@ -101,7 +101,9 @@ static int Help()
           (structure only), game-events, entity-replay (curated tracker off the reader),
           materialised-replay (the same walk over a retained parse), scoreboard-materialised
           (shipped rulesets over a retained parse, snapshots on), scoreboard-stream (the same
-          rulesets straight off the file, snapshots off), parse (the whole-file parse, every
+          rulesets straight off the file, snapshots off), observer-stream (scoreboard-stream plus
+          a frame observer declaring the five projectile classes), observer-pawns-stream (the same
+          plus seven per-pawn columns read for every slot each frame), parse (the whole-file parse, every
           frame retained) and materialise (the reader's windowed loop with one window over the
           whole file, every frame retained). Each row carries the arm's wall-clock, allocation,
           collector cost and the process's sampled memory high-water mark, plus a digest of what
@@ -111,6 +113,8 @@ static int Help()
           so the peak is the live set instead of live plus garbage; it perturbs the arm, so
           take wall-clock from a run without it. CS2DEMOKIT_PATHS_DOP caps the stream
           scoreboard's parallelism and CS2DEMOKIT_PATHS_READAHEAD sets the reader arms' window.
+          CS2DEMOKIT_PATHS_OBSERVE=<a,b,..> replaces the pawn observer arm's seven columns with
+          the named providers, and CS2DEMOKIT_PATHS_OBSERVER_READ=0 declares them without reading.
 
         The ray path (the enemy_spotted transition scan) is measured only when
         CS2DEMOKIT_COLLISION_DIR names a directory of per-map bakes (<dir>/<map>/collision.tris

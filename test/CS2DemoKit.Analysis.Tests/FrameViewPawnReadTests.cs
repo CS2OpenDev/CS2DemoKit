@@ -59,7 +59,8 @@ public class FrameViewPawnReadTests
 
         public void Finish() => Finished++;
 
-        // The typed reads must agree with the boxed one cell for cell, and say so when a cell is empty.
+        // The typed reads, through a resolved handle, must agree with the boxed name read cell for
+        // cell, and say so when a cell is empty.
         private void CheckTyped(FrameView frame, string name, int slot, object? boxed)
         {
             if (TypedMismatch is not null)
@@ -67,20 +68,21 @@ public class FrameViewPawnReadTests
                 return;
             }
 
+            ObservedProvider handle = frame.Provider(name);
             bool present;
             object? typed;
             switch (name)
             {
                 case Health:
-                    present = frame.TryReadInt(name, slot, out int i);
+                    present = frame.TryReadInt(handle, slot, out int i);
                     typed = i;
                     break;
                 case PosX:
-                    present = frame.TryReadFloat(name, slot, out float f);
+                    present = frame.TryReadFloat(handle, slot, out float f);
                     typed = f;
                     break;
                 default:
-                    present = frame.TryReadString(name, slot, out string? s);
+                    present = frame.TryReadString(handle, slot, out string? s);
                     typed = s;
                     break;
             }
