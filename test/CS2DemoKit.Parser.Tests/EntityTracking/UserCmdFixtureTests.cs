@@ -114,6 +114,70 @@ public class UserCmdFixtureTests
     }
 
     [Test]
+    [MethodDataSource(nameof(Fixtures))]
+    public async Task PinnedWindow_OnDemandReads_MatchTheEagerRebuild(string fixture)
+    {
+        List<(byte Kind, byte[] Payload)> records = Read(Path.Combine(FixtureDir(), fixture));
+
+        // The stored-payload path, which on demand reads by hand; sampled reads apply the queued
+        // deltas in place, and the unread instance holds the whole window until its one read.
+        UserCmdsWriter store = new();
+        UserCmdReconstructor eager = new(), sampled = new() { OnDemand = true }, atTheEnd = new() { OnDemand = true };
+        long compared = 0;
+        for (int i = 0; i < records.Count; i++)
+        {
+            store.BeginFrame();
+            store.Append(records[i].Payload, 0);
+            (byte[]? block, int offset, int count) = store.EndFrame();
+            DemoFrame frame = new()
+            {
+                CommandKind = records[i].Kind == FullPacketKind ? EDemoCommands.DemFullPacket : EDemoCommands.DemPacket,
+                FrameNumber = i,
+                HeaderLength = 0,
+                IsCompressed = false,
+                RawLength = 0,
+                RawStart = 0,
+                ServerTick = i,
+                MessageList = [],
+                UserCmdsBlock = block,
+                UserCmdsOffset = offset,
+                UserCmdsCount = count
+            };
+
+            eager.AdvanceOneFrame(frame);
+            await Assert.That(sampled.AdvanceOneFrame(frame).Count).IsEqualTo(0);
+            atTheEnd.AdvanceOneFrame(frame);
+            if (i % 97 == 0 || i == records.Count - 1)
+            {
+                compared += await SameCommands(sampled, eager);
+            }
+        }
+
+        await Assert.That(compared).IsGreaterThan(0L);
+        await Assert.That(await SameCommands(atTheEnd, eager)).IsGreaterThan(0L);
+        await Assert.That(sampled.Stats.DecodeFailed + sampled.Stats.MissingBaseline + sampled.Stats.OutOfOrder).IsEqualTo(0L);
+        await Assert.That(atTheEnd.Stats.Delta).IsGreaterThan(0L);
+    }
+
+    /// <summary>Asserts every slot's latest command agrees, field for field and byte for byte; returns how many slots held one.</summary>
+    private static async Task<long> SameCommands(UserCmdReconstructor a, UserCmdReconstructor b)
+    {
+        long primed = 0;
+        for (int slot = 0; slot < 64; slot++)
+        {
+            CSGOUserCmdPB? x = a.Current(slot), y = b.Current(slot);
+            await Assert.That(x).IsEqualTo(y);
+            if (x is not null)
+            {
+                await Assert.That(x.ToByteString()).IsEqualTo(y!.ToByteString());
+                primed++;
+            }
+        }
+
+        return primed;
+    }
+
+    [Test]
     public async Task Pin_WritesTheFixture()
     {
         if (!Repin)

@@ -149,13 +149,42 @@ public readonly record struct UserCmdReconstructionStats
 ///         a new player, restarts its command numbers, and its first keyframe is what lets the
 ///         deltas after it decode.
 ///     </para>
+///     <para>
+///         <b>On demand.</b> A reader that samples a few slots now and then, such as a rule
+///         evaluator, does not need every command rebuilt: set <see cref="OnDemand" /> and a slot
+///         is rebuilt when <see cref="Current" /> reads it.
+///     </para>
 ///     <para>Not thread-safe. One instance follows one demo.</para>
 /// </summary>
 public sealed class UserCmdReconstructor
 {
+    private const int LengthDelimitedWireType = 2;
+
+    // Player slots are 0..63; the dictionary is for anything else the wire may say.
+    private const int DirectSlots = 64;
+
     private readonly List<ReconstructedUserCmd> _emitted = [];
+    private readonly SlotState?[] _direct = new SlotState?[DirectSlots];
     private readonly Dictionary<int, SlotState> _slots = [];
     private Counters _c;
+
+    /// <summary>
+    ///     Rebuild a slot's commands only when <see cref="Current" /> reads the slot.
+    ///     <para>
+    ///         <see cref="AdvanceOneFrame" /> then keeps each command's bytes against its slot, parses
+    ///         nothing and returns an empty list; <see cref="Current" /> and <see cref="Apply" /> apply
+    ///         the slot's pending commands in wire order first. A read sees the command the eager
+    ///         mode would hold at that frame, but the instance is updated in place by the slot's later
+    ///         rebuilds, so copy what you keep. A keyframe outside a full packet needs no baseline and
+    ///         always re-seeds, so it drops the pending commands before it for its slot, and
+    ///         <see cref="Stats" /> then count what was rebuilt rather than every command seen.
+    ///     </para>
+    ///     <para>
+    ///         Rebuilding every command of a demo allocates about ten times the commands' own bytes,
+    ///         and a sampling reader looks at almost none of it.
+    ///     </para>
+    /// </summary>
+    public bool OnDemand { get; init; }
 
     /// <summary>Totals since construction or the last <see cref="Reset" />.</summary>
     public UserCmdReconstructionStats Stats => new()
@@ -179,7 +208,7 @@ public sealed class UserCmdReconstructor
     /// </summary>
     /// <returns>
     ///     A list owned by the reconstructor, valid until the next call. The commands in it are fresh
-    ///     objects the caller may keep.
+    ///     objects the caller may keep. Always empty with <see cref="OnDemand" /> set.
     /// </returns>
     public IReadOnlyList<ReconstructedUserCmd> AdvanceOneFrame(DemoFrame frame)
     {
@@ -193,6 +222,20 @@ public sealed class UserCmdReconstructor
             for (int i = 0; i < frame.UserCmdsCount; i++)
             {
                 ReadOnlySpan<byte> payload = UserCmdsStore.Read(block, ref offset);
+                if (OnDemand)
+                {
+                    try
+                    {
+                        Record(payload, fromFullPacket);
+                    }
+                    catch (InvalidDataException)
+                    {
+                        _c.DecodeFailed++;
+                    }
+
+                    continue;
+                }
+
                 CSVCMsg_UserCommands parsed;
                 try
                 {
@@ -209,7 +252,13 @@ public sealed class UserCmdReconstructor
         }
 
         // A frame built by hand (tests, synthetic input) carries its payloads as messages instead.
-        // Parse-time frames never do: their stored payloads are not in this list.
+        // Parse-time frames never do: their stored payloads are not in this list, so a frame with
+        // a store is not scanned.
+        if (frame.UserCmdsBlock is not null)
+        {
+            return _emitted;
+        }
+
         foreach (NetMessage msg in frame.MessageList)
         {
             CSVCMsg_UserCommands? direct = msg.Payload switch
@@ -219,7 +268,20 @@ public sealed class UserCmdReconstructor
                 _ => null
             };
 
-            if (direct is not null)
+            if (direct is null)
+            {
+                continue;
+            }
+
+            if (OnDemand)
+            {
+                foreach (CMsgServerUserCmd cmd in direct.Commands)
+                {
+                    Record(cmd.PlayerSlot, cmd.CmdNumber, cmd.HasClientTick, cmd.ClientTick, fromFullPacket,
+                        cmd.HasData ? cmd.Data.Span : default, cmd.HasDeltaData ? cmd.DeltaData.Span : default);
+                }
+            }
+            else
             {
                 ApplyAll(direct, fromFullPacket);
             }
@@ -242,7 +304,8 @@ public sealed class UserCmdReconstructor
     }
 
     /// <summary>
-    ///     Applies one command, for callers that parse <c>svc_UserCmds</c> payloads themselves.
+    ///     Applies one command, for callers that parse <c>svc_UserCmds</c> payloads themselves. With
+    ///     <see cref="OnDemand" /> set, the slot's pending commands are applied first.
     /// </summary>
     /// <param name="cmd">One entry of <c>CSVCMsg_UserCommands.commands</c>.</param>
     /// <param name="fromFullPacket">True when it came from a <c>DEM_FullPacket</c> frame.</param>
@@ -255,31 +318,40 @@ public sealed class UserCmdReconstructor
         ArgumentNullException.ThrowIfNull(cmd);
         command = null;
 
-        bool hasData = cmd.HasData && !cmd.Data.IsEmpty;
-        bool hasDelta = cmd.HasDeltaData && !cmd.DeltaData.IsEmpty;
-        if ((!hasData && !hasDelta) || cmd.PlayerSlot < 0)
+        ReadOnlySpan<byte> data = cmd.HasData ? cmd.Data.Span : default;
+        ReadOnlySpan<byte> delta = cmd.HasDeltaData ? cmd.DeltaData.Span : default;
+        if ((data.IsEmpty && delta.IsEmpty) || cmd.PlayerSlot < 0)
         {
             _c.Empty++;
             return UserCmdApplyStatus.Empty;
         }
 
-        if (!_slots.TryGetValue(cmd.PlayerSlot, out SlotState? slot))
+        SlotState slot = GetSlot(cmd.PlayerSlot);
+        if (slot.Pending is { Count: > 0 })
         {
-            slot = new SlotState();
-            _slots[cmd.PlayerSlot] = slot;
+            Rebuild(slot);
         }
 
+        return ApplyCore(slot, cmd.CmdNumber, cmd.HasClientTick, cmd.ClientTick, fromFullPacket, data, delta, false,
+            out command);
+    }
+
+    private UserCmdApplyStatus ApplyCore(SlotState slot, int cmdNumber, bool hasClientTick, int clientTick,
+        bool fromFullPacket, ReadOnlySpan<byte> data, ReadOnlySpan<byte> delta, bool inPlace,
+        out CSGOUserCmdPB? command)
+    {
+        command = null;
         if (fromFullPacket)
         {
-            return ApplyCheckpoint(cmd, slot, hasData, hasDelta);
+            return ApplyCheckpoint(slot, cmdNumber, data, delta);
         }
 
         CSGOUserCmdPB? built;
         UserCmdApplyStatus status;
-        if (hasData)
+        if (!data.IsEmpty)
         {
             // No order check: a keyframe needs no baseline, and a lower number means the slot restarted.
-            built = TryParseKeyframe(cmd, hasDelta);
+            built = TryParseKeyframe(data, delta);
             status = UserCmdApplyStatus.Full;
         }
         else
@@ -290,13 +362,14 @@ public sealed class UserCmdReconstructor
                 return UserCmdApplyStatus.MissingBaseline;
             }
 
-            if (cmd.CmdNumber < slot.CmdNumber)
+            if (cmdNumber < slot.CmdNumber)
             {
                 _c.OutOfOrder++;
                 return UserCmdApplyStatus.OutOfOrder;
             }
 
-            built = TryApplyDelta(slot.Command, cmd.DeltaData);
+            // In place is safe here only: a failed merge drops the baseline anyway.
+            built = TryApplyDelta(slot.Command, delta, inPlace);
             status = UserCmdApplyStatus.Delta;
         }
 
@@ -308,7 +381,7 @@ public sealed class UserCmdReconstructor
         }
 
         slot.Command = built;
-        slot.CmdNumber = cmd.CmdNumber;
+        slot.CmdNumber = cmdNumber;
         if (status == UserCmdApplyStatus.Full)
         {
             _c.Full++;
@@ -318,7 +391,7 @@ public sealed class UserCmdReconstructor
             _c.Delta++;
         }
 
-        if (cmd.HasClientTick && built.Base?.ClientTick != cmd.ClientTick)
+        if (hasClientTick && built.Base?.ClientTick != clientTick)
         {
             _c.ClientTickMismatches++;
         }
@@ -327,20 +400,21 @@ public sealed class UserCmdReconstructor
         return status;
     }
 
-    private UserCmdApplyStatus ApplyCheckpoint(CMsgServerUserCmd cmd, SlotState slot, bool hasData, bool hasDelta)
+    private UserCmdApplyStatus ApplyCheckpoint(SlotState slot, int cmdNumber, ReadOnlySpan<byte> data,
+        ReadOnlySpan<byte> delta)
     {
         bool primed = slot.Command is not null;
-        if (primed && cmd.CmdNumber < slot.CmdNumber)
+        if (primed && cmdNumber < slot.CmdNumber)
         {
             _c.OutOfOrder++;
             return UserCmdApplyStatus.OutOfOrder;
         }
 
-        bool duplicate = primed && cmd.CmdNumber == slot.CmdNumber;
+        bool duplicate = primed && cmdNumber == slot.CmdNumber;
         CSGOUserCmdPB? snapshot;
-        if (hasData)
+        if (!data.IsEmpty)
         {
-            snapshot = TryParseKeyframe(cmd, hasDelta);
+            snapshot = TryParseKeyframe(data, delta);
         }
         else if (duplicate)
         {
@@ -355,7 +429,7 @@ public sealed class UserCmdReconstructor
         }
         else
         {
-            snapshot = TryApplyDelta(slot.Command!, cmd.DeltaData);
+            snapshot = TryApplyDelta(slot.Command!, delta, false);
         }
 
         if (snapshot is null)
@@ -379,19 +453,19 @@ public sealed class UserCmdReconstructor
         }
 
         slot.Command = snapshot;
-        slot.CmdNumber = cmd.CmdNumber;
+        slot.CmdNumber = cmdNumber;
         _c.CheckpointPrimed++;
         return UserCmdApplyStatus.CheckpointPrimed;
     }
 
-    private CSGOUserCmdPB? TryParseKeyframe(CMsgServerUserCmd cmd, bool hasDelta)
+    private CSGOUserCmdPB? TryParseKeyframe(ReadOnlySpan<byte> data, ReadOnlySpan<byte> delta)
     {
         try
         {
-            CSGOUserCmdPB parsed = CSGOUserCmdPB.Parser.ParseFrom(cmd.Data);
-            if (hasDelta)
+            CSGOUserCmdPB parsed = CSGOUserCmdPB.Parser.ParseFrom(data);
+            if (!delta.IsEmpty)
             {
-                UserCmdDelta.Merge(parsed, cmd.DeltaData.Span, ref _c.UnknownFieldsSkipped);
+                UserCmdDelta.Merge(parsed, delta, ref _c.UnknownFieldsSkipped);
             }
 
             return parsed;
@@ -402,12 +476,12 @@ public sealed class UserCmdReconstructor
         }
     }
 
-    private CSGOUserCmdPB? TryApplyDelta(CSGOUserCmdPB baseline, ByteString delta)
+    private CSGOUserCmdPB? TryApplyDelta(CSGOUserCmdPB baseline, ReadOnlySpan<byte> delta, bool inPlace)
     {
-        CSGOUserCmdPB next = baseline.Clone();
+        CSGOUserCmdPB next = inPlace ? baseline : baseline.Clone();
         try
         {
-            UserCmdDelta.Merge(next, delta.Span, ref _c.UnknownFieldsSkipped);
+            UserCmdDelta.Merge(next, delta, ref _c.UnknownFieldsSkipped);
             return next;
         }
         catch (Exception ex) when (ex is InvalidProtocolBufferException or InvalidDataException)
@@ -416,20 +490,183 @@ public sealed class UserCmdReconstructor
         }
     }
 
+    /// <summary>Queues the commands of one stored <c>CSVCMsg_UserCommands</c> payload without parsing them.</summary>
+    private void Record(ReadOnlySpan<byte> payload, bool fromFullPacket)
+    {
+        int p = 0;
+        while (p < payload.Length)
+        {
+            ulong tag = UserCmdDelta.ReadVarint(payload, ref p);
+            int wire = (int)(tag & 7);
+            if (tag >> 3 == CSVCMsg_UserCommands.CommandsFieldNumber && wire == LengthDelimitedWireType)
+            {
+                RecordCommand(UserCmdDelta.ReadLengthDelimited(payload, ref p), fromFullPacket);
+            }
+            else
+            {
+                Skip(payload, ref p, wire);
+            }
+        }
+    }
+
+    private void RecordCommand(ReadOnlySpan<byte> cmd, bool fromFullPacket)
+    {
+        int playerSlot = 0, cmdNumber = 0, clientTick = 0;
+        bool hasClientTick = false;
+        ReadOnlySpan<byte> data = default, delta = default;
+        int p = 0;
+        while (p < cmd.Length)
+        {
+            ulong tag = UserCmdDelta.ReadVarint(cmd, ref p);
+            int wire = (int)(tag & 7);
+            switch ((int)(tag >> 3), wire)
+            {
+                case (CMsgServerUserCmd.DataFieldNumber, LengthDelimitedWireType):
+                    data = UserCmdDelta.ReadLengthDelimited(cmd, ref p);
+                    break;
+                case (CMsgServerUserCmd.DeltaDataFieldNumber, LengthDelimitedWireType):
+                    delta = UserCmdDelta.ReadLengthDelimited(cmd, ref p);
+                    break;
+                case (CMsgServerUserCmd.CmdNumberFieldNumber, 0):
+                    cmdNumber = (int)UserCmdDelta.ReadVarint(cmd, ref p);
+                    break;
+                case (CMsgServerUserCmd.PlayerSlotFieldNumber, 0):
+                    playerSlot = (int)UserCmdDelta.ReadVarint(cmd, ref p);
+                    break;
+                case (CMsgServerUserCmd.ClientTickFieldNumber, 0):
+                    clientTick = (int)UserCmdDelta.ReadVarint(cmd, ref p);
+                    hasClientTick = true;
+                    break;
+                default:
+                    Skip(cmd, ref p, wire);
+                    break;
+            }
+        }
+
+        Record(playerSlot, cmdNumber, hasClientTick, clientTick, fromFullPacket, data, delta);
+    }
+
+    private void Record(int playerSlot, int cmdNumber, bool hasClientTick, int clientTick, bool fromFullPacket,
+        ReadOnlySpan<byte> data, ReadOnlySpan<byte> delta)
+    {
+        if ((data.IsEmpty && delta.IsEmpty) || playerSlot < 0)
+        {
+            _c.Empty++;
+            return;
+        }
+
+        SlotState slot = GetSlot(playerSlot);
+        slot.Pending ??= [];
+        if (!fromFullPacket && !data.IsEmpty)
+        {
+            // Nothing queued before a keyframe can reach Current: the keyframe re-seeds the slot.
+            slot.Pending.Clear();
+            slot.PendingBytes = 0;
+        }
+
+        int need = data.Length + delta.Length;
+        if (slot.Bytes is null || slot.Bytes.Length - slot.PendingBytes < need)
+        {
+            byte[] grown = new byte[Math.Max(Math.Max(4096, slot.PendingBytes + need), 2 * (slot.Bytes?.Length ?? 0))];
+            slot.Bytes?.AsSpan(0, slot.PendingBytes).CopyTo(grown);
+            slot.Bytes = grown;
+        }
+
+        int at = slot.PendingBytes;
+        data.CopyTo(slot.Bytes.AsSpan(at));
+        delta.CopyTo(slot.Bytes.AsSpan(at + data.Length));
+        slot.PendingBytes = at + need;
+        slot.Pending.Add(new PendingCmd(cmdNumber, clientTick, hasClientTick, fromFullPacket, at, data.Length,
+            delta.Length));
+    }
+
+    /// <summary>Applies the slot's pending commands in wire order and empties the queue.</summary>
+    private void Rebuild(SlotState slot)
+    {
+        List<PendingCmd> pending = slot.Pending!;
+        byte[] bytes = slot.Bytes!;
+        foreach (PendingCmd cmd in pending)
+        {
+            ApplyCore(slot, cmd.CmdNumber, cmd.HasClientTick, cmd.ClientTick, cmd.FromFullPacket,
+                bytes.AsSpan(cmd.Offset, cmd.DataLength), bytes.AsSpan(cmd.Offset + cmd.DataLength, cmd.DeltaLength),
+                true, out _);
+        }
+
+        pending.Clear();
+        slot.PendingBytes = 0;
+    }
+
+    private static void Skip(ReadOnlySpan<byte> data, ref int p, int wire)
+    {
+        if (wire == LengthDelimitedWireType)
+        {
+            UserCmdDelta.ReadLengthDelimited(data, ref p);
+        }
+        else
+        {
+            UserCmdDelta.SkipValue(data, ref p, wire);
+        }
+    }
+
+    private SlotState GetSlot(int playerSlot)
+    {
+        if ((uint)playerSlot < DirectSlots)
+        {
+            return _direct[playerSlot] ??= new SlotState();
+        }
+
+        if (!_slots.TryGetValue(playerSlot, out SlotState? slot))
+        {
+            slot = new SlotState();
+            _slots[playerSlot] = slot;
+        }
+
+        return slot;
+    }
+
+    private SlotState? FindSlot(int playerSlot) =>
+        (uint)playerSlot < DirectSlots
+            ? _direct[playerSlot]
+            : _slots.TryGetValue(playerSlot, out SlotState? slot) ? slot : null;
+
     /// <summary>
     ///     The latest command rebuilt or primed for <paramref name="playerSlot" />, or null when the
     ///     slot has no baseline. Treat it as read-only: it is the baseline for the slot's next delta.
+    ///     With <see cref="OnDemand" /> set, the slot's pending commands are applied first.
     /// </summary>
-    public CSGOUserCmdPB? Current(int playerSlot) =>
-        _slots.TryGetValue(playerSlot, out SlotState? slot) ? slot.Command : null;
+    public CSGOUserCmdPB? Current(int playerSlot)
+    {
+        if (FindSlot(playerSlot) is not { } slot)
+        {
+            return null;
+        }
+
+        if (slot.Pending is { Count: > 0 })
+        {
+            Rebuild(slot);
+        }
+
+        return slot.Command;
+    }
 
     /// <summary>Forgets every slot and zeroes <see cref="Stats" />, before a seek.</summary>
     public void Reset()
     {
+        Array.Clear(_direct);
         _slots.Clear();
         _emitted.Clear();
         _c = default;
     }
+
+    /// <summary>A queued command; its bytes are the slot buffer's <see cref="DataLength" /> then <see cref="DeltaLength" /> bytes at <see cref="Offset" />.</summary>
+    private readonly record struct PendingCmd(
+        int CmdNumber,
+        int ClientTick,
+        bool HasClientTick,
+        bool FromFullPacket,
+        int Offset,
+        int DataLength,
+        int DeltaLength);
 
     private sealed class SlotState
     {
@@ -437,6 +674,14 @@ public sealed class UserCmdReconstructor
 
         /// <summary>The latest command, or null while the slot waits for a keyframe.</summary>
         public CSGOUserCmdPB? Command;
+
+        /// <summary>Queued on-demand commands, in wire order.</summary>
+        public List<PendingCmd>? Pending;
+
+        /// <summary>The queued commands' bytes, the first <see cref="PendingBytes" /> in use.</summary>
+        public byte[]? Bytes;
+
+        public int PendingBytes;
     }
 
     private struct Counters

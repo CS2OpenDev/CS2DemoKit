@@ -505,7 +505,7 @@ public sealed partial class RuleChainBuilder
                 emitProjectiles);
             if (ReadsUserCommands(rulesets))
             {
-                entityScanner.Commands = new UserCmdReconstructor();
+                entityScanner.Commands = new UserCmdReconstructor { OnDemand = true };
             }
 
             foreach ((string providerName, int ticks) in _lookBackTicks)

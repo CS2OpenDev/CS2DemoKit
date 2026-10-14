@@ -21,7 +21,8 @@ namespace CS2DemoKit.Parser.Tests;
 ///         commands or checkpoint mismatches, and every rebuilt <c>base.client_tick</c> equal to the
 ///         outer one), that the forward reader and the retained parse rebuild the same commands, and
 ///         that a reconstructor started cold at the middle <c>DEM_FullPacket</c> reproduces every
-///         later command exactly, which is what a seek relies on.
+///         later command exactly, which is what a seek relies on, and that an on-demand reconstructor
+///         read now and then holds the same latest command per slot.
 ///     </para>
 /// </summary>
 [Explicit]
@@ -93,8 +94,8 @@ public class UserCmdReconstructionCorpusTests
 
         // Three reconstructors in lockstep: retained frames, forward frames, and forward frames from
         // the seek point on with nothing carried over.
-        UserCmdReconstructor retained = new(), forward = new(), seek = new();
-        long forwardDiffers = 0, seekCompared = 0, seekDiffers = 0;
+        UserCmdReconstructor retained = new(), forward = new(), seek = new(), onDemand = new() { OnDemand = true };
+        long forwardDiffers = 0, seekCompared = 0, seekDiffers = 0, onDemandDiffers = 0;
         int frameIndex = 0;
         using (DemoReader reader = DemoReader.Open(bytes.AsMemory()))
         {
@@ -103,6 +104,11 @@ public class UserCmdReconstructionCorpusTests
                 IReadOnlyList<ReconstructedUserCmd> f = forward.AdvanceOneFrame(frame);
                 IReadOnlyList<ReconstructedUserCmd> r = retained.AdvanceOneFrame(demo.Frames[frameIndex]);
                 forwardDiffers += Differences(f, r, bytesToo: false);
+                onDemand.AdvanceOneFrame(demo.Frames[frameIndex]);
+                if (frameIndex % 4096 == 0)
+                {
+                    onDemandDiffers += CurrentDifferences(onDemand, retained);
+                }
 
                 if (seekFrame >= 0 && frameIndex >= seekFrame)
                 {
@@ -115,6 +121,7 @@ public class UserCmdReconstructionCorpusTests
             }
         }
 
+        onDemandDiffers += CurrentDifferences(onDemand, retained);
         double deltaShare = (double)s.Delta / (s.Full + s.Delta);
         Console.WriteLine($"{Path.GetFileName(path)}: full={s.Full} delta={s.Delta} ({deltaShare:P2} delta) "
                           + $"primed={s.CheckpointPrimed} dup={s.CheckpointDuplicates} unknownFields={s.UnknownFieldsSkipped} "
@@ -132,6 +139,7 @@ public class UserCmdReconstructionCorpusTests
         await Assert.That(forward.Stats).IsEqualTo(retained.Stats);
         await Assert.That(retained.Stats).IsEqualTo(s);
         await Assert.That(forwardDiffers).IsEqualTo(0L);
+        await Assert.That(onDemandDiffers).IsEqualTo(0L);
 
         if (seekFrame >= 0)
         {
@@ -139,6 +147,21 @@ public class UserCmdReconstructionCorpusTests
             await Assert.That(seekDiffers).IsEqualTo(0L);
             await Assert.That(seekCompared).IsGreaterThan(0L);
         }
+    }
+
+    /// <summary>Counts the slots whose latest command differs between two reconstructors.</summary>
+    private static long CurrentDifferences(UserCmdReconstructor a, UserCmdReconstructor b)
+    {
+        long differ = 0;
+        for (int slot = 0; slot < 64; slot++)
+        {
+            if (!Equals(a.Current(slot), b.Current(slot)))
+            {
+                differ++;
+            }
+        }
+
+        return differ;
     }
 
     /// <summary>

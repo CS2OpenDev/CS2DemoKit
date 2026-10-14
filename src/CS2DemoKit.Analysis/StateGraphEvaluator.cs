@@ -555,7 +555,7 @@ public sealed class StateGraphEvaluator
         // Must be reset per run: a second evaluation over one build would start from the last
         // run's baselines.
         UserCmdReconstructor? commands = _entityScanner?.Commands
-                                         ?? (DecodeUserCommands ? _observerCommands ??= new UserCmdReconstructor() : null);
+                                         ?? (DecodeUserCommands ? _observerCommands ??= new UserCmdReconstructor { OnDemand = true } : null);
         commands?.Reset();
 
         // One view per run; the observer reads it inside OnFrame only.
