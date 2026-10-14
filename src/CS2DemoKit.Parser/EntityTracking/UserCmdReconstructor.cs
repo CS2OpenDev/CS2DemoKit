@@ -1,5 +1,6 @@
 #region
 
+using System.Runtime.CompilerServices;
 using Google.Protobuf;
 
 #endregion
@@ -210,6 +211,9 @@ public sealed class UserCmdReconstructor
     ///     A list owned by the reconstructor, valid until the next call. The commands in it are fresh
     ///     objects the caller may keep. Always empty with <see cref="OnDemand" /> set.
     /// </returns>
+    // The on-demand walk runs only inside an evaluation, so a tiered build would still be
+    // at tier 0 for most of a demo; the attribute compiles it optimized on first call.
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public IReadOnlyList<ReconstructedUserCmd> AdvanceOneFrame(DemoFrame frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
@@ -491,6 +495,7 @@ public sealed class UserCmdReconstructor
     }
 
     /// <summary>Queues the commands of one stored <c>CSVCMsg_UserCommands</c> payload without parsing them.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Record(ReadOnlySpan<byte> payload, bool fromFullPacket)
     {
         int p = 0;
@@ -509,6 +514,7 @@ public sealed class UserCmdReconstructor
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void RecordCommand(ReadOnlySpan<byte> cmd, bool fromFullPacket)
     {
         int playerSlot = 0, cmdNumber = 0, clientTick = 0;
@@ -546,6 +552,7 @@ public sealed class UserCmdReconstructor
         Record(playerSlot, cmdNumber, hasClientTick, clientTick, fromFullPacket, data, delta);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Record(int playerSlot, int cmdNumber, bool hasClientTick, int clientTick, bool fromFullPacket,
         ReadOnlySpan<byte> data, ReadOnlySpan<byte> delta)
     {

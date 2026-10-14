@@ -2,6 +2,7 @@
 
 using System.Buffers;
 using System.Collections;
+using System.Runtime.CompilerServices;
 using Google.Protobuf;
 using Google.Protobuf.Reflection;
 
@@ -254,6 +255,7 @@ internal static class UserCmdDelta
 
     private static IMessage NewMessage(MessageDescriptor type) => type.Parser.ParseFrom(ByteString.Empty);
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static ulong ReadVarint(ReadOnlySpan<byte> data, ref int p)
     {
         ulong result = 0;
@@ -275,6 +277,7 @@ internal static class UserCmdDelta
         throw new InvalidDataException("varint longer than 10 bytes in user-command delta");
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static ReadOnlySpan<byte> ReadLengthDelimited(ReadOnlySpan<byte> data, scoped ref int p)
     {
         ulong length = ReadVarint(data, ref p);
@@ -289,6 +292,7 @@ internal static class UserCmdDelta
         return value;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static void SkipValue(ReadOnlySpan<byte> data, ref int p, int wire)
     {
         int size = wire switch
