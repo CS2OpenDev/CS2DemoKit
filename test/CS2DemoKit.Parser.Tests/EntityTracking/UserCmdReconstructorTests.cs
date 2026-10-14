@@ -318,10 +318,13 @@ public class UserCmdReconstructorTests
     [Test]
     public async Task OnDemand_KeyframeDropsTheQueueBeforeIt_AndReadsLikeEager()
     {
-        DemoFrame frame = Packet(Keyframe(10, 100, 1), Delta(11, 101, 2), Keyframe(20, 200, 9), Delta(21, 201, 8));
+        DemoFrame[] frames = [Packet(Keyframe(10, 100, 1), Delta(11, 101, 2)), Packet(Keyframe(20, 200, 9), Delta(21, 201, 8))];
         UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true };
-        eager.AdvanceOneFrame(frame);
-        lazy.AdvanceOneFrame(frame);
+        foreach (DemoFrame frame in frames)
+        {
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
 
         await Assert.That(lazy.Current(Slot)).IsEqualTo(eager.Current(Slot));
         await Assert.That(lazy.Current(Slot)!.Base.Mousedx).IsEqualTo(8);
@@ -416,6 +419,62 @@ public class UserCmdReconstructorTests
         await Assert.That(cmd!.Base.Mousedx).IsEqualTo(3);
         await Assert.That(r.Stats.Full).IsEqualTo(1L);
         await Assert.That(r.Stats.Delta).IsEqualTo(2L);
+    }
+
+    [Test]
+    public async Task OnDemand_LongUnreadQueue_IsCaughtUpFromTheOldestFrames()
+    {
+        // Past the queue bound the oldest frames are applied to every slot, so a late read still
+        // sees every delta and nothing was dropped.
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true };
+        DemoFrame first = Packet(Keyframe(10, 100, 1));
+        eager.AdvanceOneFrame(first);
+        lazy.AdvanceOneFrame(first);
+        for (int i = 1; i < 5000; i++)
+        {
+            DemoFrame frame = Packet(Delta(10 + i, 100 + i, i % 7));
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        await Assert.That(lazy.Current(Slot)).IsEqualTo(eager.Current(Slot));
+        await Assert.That(lazy.Current(Slot)!.Base.ClientTick).IsEqualTo(5099);
+        await Assert.That(lazy.Stats).IsEqualTo(eager.Stats);
+        await Assert.That(lazy.Stats.Delta).IsEqualTo(4999L);
+    }
+
+    [Test]
+    public async Task OnDemand_BoundedQueue_AppliesTheOldestFramesToEverySlot()
+    {
+        // Two slots on keyframes every frame, a third that joins and leaves inside one flushed
+        // range, read only at the end: each holds what the eager mode holds.
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true, OnDemandFrameBound = 8 };
+        for (int i = 0; i < 100; i++)
+        {
+            List<CMsgServerUserCmd> commands = [Keyframe(10 + i, 100 + i, i, slot: 1), Delta(20 + i, 200 + i, i + 1, slot: 2)];
+            if (i % 10 == 0)
+            {
+                commands.Add(Keyframe(20 + i, 200 + i, i, slot: 2));
+            }
+
+            if (i is >= 40 and < 44)
+            {
+                commands.Add(i == 40 ? Keyframe(i, i, 7, slot: 5) : Delta(i, i, 7, slot: 5));
+            }
+
+            DemoFrame frame = i % 25 == 24 ? Snapshot(Keyframe(10 + i, 100 + i, i, slot: 1)) : Packet([.. commands]);
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        foreach (int slot in new[] { 1, 2, 5, 9 })
+        {
+            await Assert.That(lazy.Current(slot)).IsEqualTo(eager.Current(slot));
+        }
+
+        await Assert.That(lazy.Current(5)!.Base.ClientTick).IsEqualTo(43);
+        await Assert.That(lazy.Stats.Full).IsLessThan(eager.Stats.Full).Because("commands before a keyframe are skipped");
+        await Assert.That(lazy.Stats.DecodeFailed + lazy.Stats.MissingBaseline + lazy.Stats.OutOfOrder).IsEqualTo(0L);
     }
 
     private static DemoFrame Packet(params CMsgServerUserCmd[] commands) => Frame(EDemoCommands.DemPacket, Message(commands));

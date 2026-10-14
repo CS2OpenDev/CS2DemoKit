@@ -886,9 +886,12 @@ with the built-in set on `UserCommandProviders`), catalog scope `perPlayerComman
 that reads one gives its scanner a `UserCmdReconstructor` the evaluator resets per run and advances
 before each frame's poll, served through the new public `EntityChangeScanner.GetCommandValue`.
 That reconstructor runs with the new `UserCmdReconstructor.OnDemand` (init property): the walk
-queues each command's bytes per slot without parsing and rebuilds a slot when `Current` reads it,
-so the lane costs a few percent of `eval_ms` rather than doubling it; the instance a read returns
-is updated in place by later rebuilds, so copy what you keep. The eager mode is unchanged.
+only queues each frame's payload location and a slot is rebuilt from the queued frames when
+`Current` reads it, so the lane costs nothing measurable on `eval_ms` rather than doubling it; the
+instance a read returns is updated in place by later rebuilds, so copy what you keep.
+`OnDemandFrameBound` (settable, default `DefaultOnDemandFrameBound` = 4096) caps the queue for a
+streaming source, where a queued frame pins its payload block; the evaluator lifts it for a
+retained one. The eager mode is unchanged.
 `AnalysisOptions.DecodeUserCommands` and `BuildResult.DecodesUserCommands` (init properties) turn the
 lane on for an observer, which reads `FrameView.Command(slot)`; that read throws when the run decodes
 no commands. `PlanDecode` adds `MessageCategories.UserCmds` for either. A command read sees the

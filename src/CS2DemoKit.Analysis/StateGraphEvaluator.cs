@@ -557,6 +557,13 @@ public sealed class StateGraphEvaluator
         UserCmdReconstructor? commands = _entityScanner?.Commands
                                          ?? (DecodeUserCommands ? _observerCommands ??= new UserCmdReconstructor { OnDemand = true } : null);
         commands?.Reset();
+        if (commands is not null)
+        {
+            // Retained frames keep their payload blocks alive anyway, so the queue need not bound them.
+            commands.OnDemandFrameBound = source.SupportsRandomAccess
+                ? int.MaxValue
+                : UserCmdReconstructor.DefaultOnDemandFrameBound;
+        }
 
         // One view per run; the observer reads it inside OnFrame only.
         IFrameObserver? frameObserver = FrameObserver;
