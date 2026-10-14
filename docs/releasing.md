@@ -738,6 +738,26 @@ degrees, the noise acos added near zero turn. Through 0.13.0 the last digit coul
 which moved a rules-output digest between machines. `flick_error_deg` subtracts an unrounded chest
 angle from travel, so it can still differ by OS.
 
+### The entity digest carries projectile rows (0.14.0)
+
+`CS2DemoKit.Analysis.Observation.ProjectileRow` (new) is one grenade projectile of the five
+`GrenadeProjectileClasses` as the per-frame entity digest read it at the end of a frame: the
+`ProjectileSample` fields without the walk's bookkeeping, plus the projectile's team, a smoke's
+`m_nSmokeEffectTickBegin` and `m_vSmokeDetonationPos`, and a molotov's `m_bIsIncGrenade`.
+`m_nExplodeEffectTickBegin` is not on it; the lens does not carry that field yet. The digest
+records rows only for the classes a run declares, the scanner derives created, removed and the
+live set from them on the consume side (one continuous diff, so a pipelined worker re-primed at a
+checkpoint cannot report a projectile it just met as created), and the thrower is held from its
+first resolution as the sampler holds it. Nothing in the public surface declares a class yet; the
+frame observer that does lands later in 0.14.0. With nothing declared the digest, the goldens and
+the rules output are byte-identical to 0.13.0, which `PipelinedDigestEquivalenceTests`,
+`ProjectileDigestParityTests` (the rows against `ProjectileSampler.Walk` at stride 1) and the
+golden suites pin.
+
+`PositionUtil.CellToWorld(EntityState, bool rejectZeroCell)` is a new public Parser overload: the
+read `ProjectileSampler` makes, which refuses a zero cell index. The one-argument overload is
+unchanged.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

@@ -71,3 +71,9 @@ A decode meter replaces a host's own wrappers around every walk seam: `parser.en
 (new Parser `Meter` `CS2DemoKit.Parser.Entities`) plus `analysis.entity_scan.started` (new counter on
 the existing Analysis evaluator `Meter`) sum to decodes per visit. See
 [`profiling.md`](profiling.md#runtime-sources-always-shipped-near-free-when-off).
+
+`PositionUtil.CellToWorld(entity, rejectZeroCell: true)` is the projectile position read
+`ProjectileSampler` makes, now callable on any entity carrying the cell leaves: null when a cell
+index is 0, which puts the axis outside every map. `CS2DemoKit.Analysis.Observation.ProjectileRow`
+is the per-frame projectile record the entity digest carries for the five grenade classes; nothing
+public produces one yet, the frame observer that does follows in this release.
