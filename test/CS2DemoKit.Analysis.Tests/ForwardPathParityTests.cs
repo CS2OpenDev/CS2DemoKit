@@ -150,7 +150,7 @@ public class ForwardPathParityTests
     {
         string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
         ParsedDemo demo = DemoTestHelper.GetOrParse(path);
-        await AssertTablesAgree(path, demo);
+        await AssertTablesAgree(path, demo, true);
     }
 
     /// <summary>The same agreement over whatever demos the corpus holds.</summary>
@@ -162,7 +162,7 @@ public class ForwardPathParityTests
         await AssertTablesAgree(demoPath, demo);
     }
 
-    private const string TableRulesets = """
+    internal const string TableRulesets = """
         ruleset: parity_sides
         for: each_team
         stats:
@@ -196,6 +196,12 @@ public class ForwardPathParityTests
               per: team_match
               columns:
                 - { stat: match_kills, label: K }
+            parity_sides_freeze:
+              per: team_event
+              on: raw.round_freeze_end
+              columns:
+                - { stat: money, label: M }
+                - { stat: match_kills, label: K }
         ---
         ruleset: parity_match
         for: match
@@ -215,15 +221,55 @@ public class ForwardPathParityTests
               columns:
                 - { stat: kills, label: K }
                 - { stat: plant_at, label: Plants }
+            parity_match_plants:
+              per: match_event
+              on: bomb_planted
+              columns:
+                - { stat: kills, label: K }
+        ---
+        ruleset: parity_players
+        for: each_player
+        cadences:
+          second: { ticks: 64, anchor: round_freeze_end, until: round_ended }
+        stats:
+          pos_x:
+            capture: player.pos_x
+            on: cadence.second
+            per: match
+          pos_y:
+            capture: player.pos_y
+            on: cadence.second
+            per: match
+          at:
+            capture: event.tick
+            on: cadence.second
+            per: match
+          kills:
+            count: kill
+            per: round
+        show:
+          tables:
+            parity_positions:
+              per: player_event
+              on: cadence.second
+              columns:
+                - { stat: pos_x, label: X }
+                - { stat: pos_y, label: Y }
+                - { stat: at, label: At, as: seconds }
+            parity_kills:
+              per: player_event
+              on: kill
+              columns:
+                - { stat: kills, label: K }
         """;
 
-    private static async Task AssertTablesAgree(string path, ParsedDemo demo)
+    private static async Task AssertTablesAgree(string path, ParsedDemo demo, bool requireEventRows = false)
     {
         RuleConfigLoadResult shipped = YamlConfigLoader.LoadShippedEmbedded();
         RuleConfigLoadResult extra = YamlConfigLoader.LoadDocuments([("parity.rules.yaml", TableRulesets)]);
         await Assert.That(extra.Errors.Count).IsEqualTo(0);
         await Assert.That(string.Join(", ", extra.Rulesets.Select(r => r.Id)))
-            .IsEqualTo("parity_sides, parity_match")
+            .IsEqualTo("parity_sides, parity_match, parity_players")
             .Because("both '---' documents load, so the for: match table is compared too");
         List<RulesetsV2.Model.RulesetDoc> rules = [.. shipped.Rulesets, .. extra.Rulesets];
 
@@ -238,6 +284,15 @@ public class ForwardPathParityTests
         string expected = RunDigest.Render(snapshots);
         await Assert.That(expected).Contains("== parity_sides_round");
         await Assert.That(expected).Contains("== parity_match");
+        // The event tables have rows, so the agreement below covers them too.
+        foreach (string table in requireEventRows
+                     ? (string[])["parity_positions", "parity_kills", "parity_sides_freeze", "parity_match_plants"]
+                     : [])
+        {
+            MetricTable projected = snapshots.ProjectConfiguredOutputs().Single(t => t.Name == table);
+            await Assert.That(projected.Rows.Count).IsGreaterThan(0).Because(table);
+        }
+
         await Assert.That(RunDigest.Render(bare)).IsEqualTo(expected);
         await Assert.That(RunDigest.Render(streamed)).IsEqualTo(expected);
     }

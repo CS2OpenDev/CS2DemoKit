@@ -57,6 +57,18 @@ public static class ShowLowering
     private static readonly string[] _perTeamMatchDimensions =
         ["match_id", "map", "side"];
 
+    /// <summary>One row per (player, firing): <c>tick</c> is on the frame clock.</summary>
+    private static readonly string[] _perPlayerEventDimensions =
+        ["match_id", "map", "round_number", "tick", "player_slot", "player_name", "steam_id", "team"];
+
+    /// <summary>One row per (side, firing).</summary>
+    private static readonly string[] _perTeamEventDimensions =
+        ["match_id", "map", "round_number", "tick", "side"];
+
+    /// <summary>One row per firing.</summary>
+    private static readonly string[] _perMatchEventDimensions =
+        ["match_id", "map", "round_number", "tick"];
+
     /// <summary>
     ///     Lowers a checked ruleset's <c>show: scoreboard:</c> to per-player column
     ///     assignments. Called by the planner inside the per-player template factory once a
@@ -212,7 +224,17 @@ public static class ShowLowering
                     clock));
             }
 
-            outputs.Add(new OutputDef(table.Name, scope, metrics, dimensions));
+            OutputDef output = new(table.Name, scope, metrics, dimensions);
+            if (EventTableSequence.IsEventGrain(table.Per))
+            {
+                output = output with
+                {
+                    Trigger = table.On,
+                    SequenceRef = $"{ruleset.Id.Id}.{EventTableSequence.StatId(table.Name)}"
+                };
+            }
+
+            outputs.Add(output);
         }
 
         return outputs;
@@ -230,9 +252,14 @@ public static class ShowLowering
             // against that side's node map.
             "team_round" => (OutputScope.PerTeamPerRound, _perTeamRoundDimensions),
             "team_match" => (OutputScope.PerTeamPerGame, _perTeamMatchDimensions),
+            // Event tables: one row per firing of the table's on: trigger.
+            EventTableSequence.PlayerEvent => (OutputScope.PerPlayerPerEvent, _perPlayerEventDimensions),
+            EventTableSequence.TeamEvent => (OutputScope.PerTeamPerEvent, _perTeamEventDimensions),
+            EventTableSequence.MatchEvent => (OutputScope.PerMatchPerEvent, _perMatchEventDimensions),
             _ => throw new InvalidOperationException(
                 $"show: table dimension 'per: {per ?? "<null>"}' is not a supported v2.0 table dimension "
-                + "(player_round | player_match | match | team_round | team_match).")
+                + "(player_round | player_match | match | team_round | team_match | player_event | team_event "
+                + "| match_event).")
         };
 
     /// <summary>A resolved scoreboard reference: its node-map key, per:-inferred board, and column label.</summary>

@@ -59,4 +59,30 @@ public class BareScanParityTests
         await Assert.That(snapshot.Snapshots!.FinalTrackedNodes.Count).IsEqualTo(bare.FinalNodes.Count);
         await Assert.That(snapshot.FinalNodes.Count).IsEqualTo(snapshot.Snapshots.FinalTrackedNodes.Count);
     }
+
+    /// <summary>
+    ///     Event tables agree too: the bare run records a row per firing as it goes, the snapshot run
+    ///     finds the same firings in its rows, and a second bare run over the build starts clean.
+    /// </summary>
+    [Test]
+    public async Task BareScan_EventTables_MatchSnapshotRun_OnTheSameBuild()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        RuleConfigLoadResult extra = YamlConfigLoader.LoadDocuments([("parity.rules.yaml", ForwardPathParityTests.TableRulesets)]);
+        await Assert.That(extra.Errors.Count).IsEqualTo(0);
+        BuildResult build = DemoAnalysis.Build(demo, [.. YamlConfigLoader.LoadShippedEmbedded().Rulesets, .. extra.Rulesets]);
+
+        AnalysisRun bare = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = false });
+        AnalysisRun snapshot = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = true });
+        AnalysisRun bareAgain = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = false });
+
+        MetricTable positions = snapshot.ProjectConfiguredOutputs().Single(t => t.Name == "parity_positions");
+        await Assert.That(positions.Rows.Count).IsGreaterThan(0);
+        await Assert.That(positions.ColumnClocks["tick"]).IsEqualTo(MetricTable.FrameClock);
+
+        string expected = ForwardPathParityTests.RunDigest.Render(snapshot);
+        await Assert.That(ForwardPathParityTests.RunDigest.Render(bare)).IsEqualTo(expected);
+        await Assert.That(ForwardPathParityTests.RunDigest.Render(bareAgain)).IsEqualTo(expected);
+    }
 }

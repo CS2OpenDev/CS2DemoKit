@@ -20,7 +20,8 @@ internal interface IEvaluationObserver
     void BeforeMessage(Type dispatchKey);
 
     /// <summary>Called once a message has been dispatched and its logic settled.</summary>
-    void AfterMessage();
+    /// <param name="tick">The tick of the message's frame (the frame clock).</param>
+    void AfterMessage(int tick);
 
     /// <summary>Called when a player template has materialized, before any of its edges dispatch.</summary>
     /// <param name="player">The materialized player.</param>
@@ -50,6 +51,10 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
 {
     private readonly IReadOnlySet<Type> _boundaryTypes;
     private readonly Dictionary<StateNode, NodeSnapshot> _defaults = new(ReferenceEqualityComparer.Instance);
+    private readonly List<EventRow> _events = [];
+    private readonly List<OutputDef> _eventOutputs = [];
+    private readonly IReadOnlyDictionary<string, StateNode>? _gameNodes;
+    private readonly List<EventInstance> _eventInstances = [];
     private readonly HashSet<string> _metricRefs = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<PerPlayerNodeTemplate.MaterializedPlayer> _players = [];
     private readonly Dictionary<int, Dictionary<StateNode, NodeSnapshot>> _rounds = [];
@@ -70,6 +75,7 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
         ArgumentNullException.ThrowIfNull(build);
         _boundaryTypes = build.RoundBoundaryTypes;
         _roundNumber = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId);
+        _gameNodes = build.GameNodesByRuleId;
 
         foreach (StateNode node in build.Nodes)
         {
@@ -80,6 +86,13 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
         {
             if (output.Scope == OutputScope.PerEvent)
             {
+                continue;
+            }
+
+            if (IsEventScope(output.Scope))
+            {
+                _eventOutputs.Add(output);
+                TrackStaticEvents(output, build);
                 continue;
             }
 
@@ -107,6 +120,10 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
         }
     }
 
+    /// <summary>Whether <paramref name="scope" /> is one of the event-table scopes.</summary>
+    internal static bool IsEventScope(OutputScope scope) =>
+        scope is OutputScope.PerPlayerPerEvent or OutputScope.PerTeamPerEvent or OutputScope.PerMatchPerEvent;
+
     /// <summary>Whether a build has any output this recorder can project.</summary>
     public static bool Serves(BuildResult build) =>
         build.Outputs?.Any(o => o.Enabled && o.Scope != OutputScope.PerEvent) == true;
@@ -121,8 +138,9 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
     }
 
     /// <inheritdoc />
-    public void AfterMessage()
+    public void AfterMessage(int tick)
     {
+        RecordEvents(tick);
         if (_pending is not { } pending)
         {
             return;
@@ -159,6 +177,15 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
                     Track(node);
                 }
             }
+
+            foreach (OutputDef output in _eventOutputs)
+            {
+                if (output.Scope == OutputScope.PerPlayerPerEvent
+                    && byRuleId.GetValueOrDefault(output.SequenceRef!) is { } sequence)
+                {
+                    AddEventInstance(sequence, output, byRuleId);
+                }
+            }
         }
     }
 
@@ -178,7 +205,82 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
         new(
             _rounds.OrderBy(r => r.Key).Select(r => (r.Key, Reader(r.Value))).ToList(),
             _final is null ? null : Reader(_final),
-            _players);
+            _players)
+        {
+            Events = _events
+        };
+
+    private void TrackStaticEvents(OutputDef output, BuildResult build)
+    {
+        if (output.SequenceRef is not { } sequenceRef)
+        {
+            return;
+        }
+
+        if (output.Scope == OutputScope.PerMatchPerEvent
+            && _gameNodes?.GetValueOrDefault(sequenceRef) is { } matchSequence)
+        {
+            AddEventInstance(matchSequence, output, null);
+        }
+        else if (output.Scope == OutputScope.PerTeamPerEvent && build.TeamNodesByRuleId is { } teams)
+        {
+            foreach (int side in (int[])[2, 3])
+            {
+                if (teams.GetValueOrDefault(side) is { } sideNodes
+                    && sideNodes.GetValueOrDefault(sequenceRef) is { } sideSequence)
+                {
+                    AddEventInstance(sideSequence, output, sideNodes);
+                }
+            }
+        }
+    }
+
+    private void AddEventInstance(StateNode sequence, OutputDef output,
+        IReadOnlyDictionary<string, StateNode>? instanceNodes)
+    {
+        List<StateNode> columns = [];
+        foreach (MetricRef metric in output.Metrics)
+        {
+            StateNode? node = instanceNodes?.GetValueOrDefault(metric.RuleRef) ?? _gameNodes?.GetValueOrDefault(metric.RuleRef);
+            // A node a snapshot run does not track reads null there, so it is never captured here.
+            if (node is not null && (_staticNodes.Contains(node) || node is not ISnapshotExcludedNode)
+                && !columns.Contains(node))
+            {
+                columns.Add(node);
+            }
+        }
+
+        _eventInstances.Add(new EventInstance(sequence, [.. columns]));
+    }
+
+    // One row per increase, so a match restart's reset to zero emits nothing.
+    private void RecordEvents(int tick)
+    {
+        for (int i = 0; i < _eventInstances.Count; i++)
+        {
+            EventInstance instance = _eventInstances[i];
+            double value = instance.Sequence.GetNumericValue() ?? 0;
+            if (value <= instance.Last)
+            {
+                instance.Last = value;
+                continue;
+            }
+
+            instance.Last = value;
+            StateNode[] columns = instance.Columns;
+            NodeSnapshot[] cells = new NodeSnapshot[columns.Length];
+            for (int c = 0; c < columns.Length; c++)
+            {
+                cells[c] = Capture(columns[c]);
+            }
+
+            _events.Add(new EventRow(instance.Sequence, tick, CurrentRound() ?? 0, node =>
+            {
+                int c = Array.IndexOf(columns, node);
+                return c >= 0 ? StatValues.ReadSnapshotValue(cells[c], node) : null;
+            }));
+        }
+    }
 
     private Func<StateNode, object?> Reader(Dictionary<StateNode, NodeSnapshot> sample) =>
         node =>
@@ -225,5 +327,14 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
         }
 
         return node.GetNumericValue() is { } numeric ? (int)numeric : null;
+    }
+
+    private sealed class EventInstance(StateNode sequence, StateNode[] columns)
+    {
+        public StateNode Sequence { get; } = sequence;
+
+        public StateNode[] Columns { get; } = columns;
+
+        public double Last { get; set; }
     }
 }

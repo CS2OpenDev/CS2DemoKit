@@ -641,7 +641,7 @@ public sealed class StateGraphEvaluator
                         trace, ref sLogic, snap);
 
                     FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
-                    Observer?.AfterMessage();
+                    Observer?.AfterMessage(frame.ServerTick);
                 }
             }
 
@@ -701,7 +701,7 @@ public sealed class StateGraphEvaluator
                 }
 
                 FinishMessage(message, edgesEvaluated, edgesFired, logicRecomputed);
-                Observer?.AfterMessage();
+                Observer?.AfterMessage(frame.ServerTick);
             }
 
             // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
@@ -774,7 +774,7 @@ public sealed class StateGraphEvaluator
                     trace, ref pLogic, snap);
 
                 FinishMessage(postMsg, pEvaluated, pFired, pLogic);
-                Observer?.AfterMessage();
+                Observer?.AfterMessage(frame.ServerTick);
             }
 
             // The frame's own fold, so the observer and the next frame's first edge read the same
