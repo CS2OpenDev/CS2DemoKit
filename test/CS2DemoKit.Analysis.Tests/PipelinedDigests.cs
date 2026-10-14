@@ -31,9 +31,10 @@ internal static class PipelinedDigests
         int? minChunkFrames = null,
         bool releaseFolded = false,
         Action<EntityTracker>? schemaCheck = null,
+        IReadOnlySet<string>? projectileClasses = null,
         CancellationToken cancellationToken = default) =>
         Produce(source, perPlayerFactory, singletonFactory, emitMolotov, out _,
-            captureSmokes, workers, minChunkFrames, releaseFolded, schemaCheck, cancellationToken);
+            captureSmokes, workers, minChunkFrames, releaseFolded, schemaCheck, projectileClasses, cancellationToken);
 
     public static EntityFrameDigest[] Produce(
         IDemoFrameSource source,
@@ -46,12 +47,14 @@ internal static class PipelinedDigests
         int? minChunkFrames = null,
         bool releaseFolded = false,
         Action<EntityTracker>? schemaCheck = null,
+        IReadOnlySet<string>? projectileClasses = null,
         CancellationToken cancellationToken = default)
     {
         int workerCount = workers ?? EntityChangeScanner.ResolveWorkers(null, source.SupportsRandomAccess);
         PipelinedDigestSource pipeline = new(source, perPlayerFactory, singletonFactory, emitMolotov, captureSmokes,
             workerCount, releaseFolded, schemaCheck, cancellationToken,
-            minChunkFrames ?? EntityChangeScanner.MinChunkFrames(source.FrameCount, workerCount));
+            minChunkFrames ?? EntityChangeScanner.MinChunkFrames(source.FrameCount, workerCount),
+            projectileClasses);
         try
         {
             EntityFrameDigest[] digests = Drain(pipeline);
@@ -100,16 +103,18 @@ internal static class PipelinedDigests
 }
 
 /// <summary>
-///     Drives a scanner over a retained demo the way the evaluator drives the sequential
-///     producer: one layer, each tick run applied before any frame in it is polled. For tests
-///     that read the scanner frame by frame rather than through a graph.
+///     Drives a scanner over a retained demo the way the evaluator does: each tick run handed to
+///     the scanner before any frame in it is polled. At the default cap of one that is the
+///     sequential producer over one layer; a wider cap runs the pipelined producer, for which the
+///     tick run is a no-op. For tests that read the scanner frame by frame rather than through a
+///     graph.
 /// </summary>
 internal static class SequentialScan
 {
     public static IEnumerable<(int FrameIndex, DemoFrame Frame, IReadOnlyList<NetMessage> Messages)> Frames(
-        EntityChangeScanner scanner, ParsedDemo demo)
+        EntityChangeScanner scanner, ParsedDemo demo, int? maxDegreeOfParallelism = 1)
     {
-        IDemoFrameSource source = scanner.BeginEvaluation(demo.AsFrameSource(), 1, CancellationToken.None);
+        IDemoFrameSource source = scanner.BeginEvaluation(demo.AsFrameSource(), maxDegreeOfParallelism, CancellationToken.None);
         try
         {
             List<DemoFrame> run = new(4);

@@ -35,9 +35,10 @@ namespace CS2DemoKit.Analysis;
 ///         parallel producer gives each chunk worker its own layer, so each gets its own index.
 ///     </para>
 ///     <para>
-///         Scoped on purpose to the two classes the digest reads. The public all-five-class walk
-///         is <see cref="ProjectileSampler" />, which follows its own slots; widening this set
-///         would only make the digest visit projectiles it skips.
+///         Scoped by default to the two classes the digest always reads, and widened only by the
+///         class set a run declares for projectile rows (<see cref="EntityFrameDigest.Projectiles" />),
+///         so the index never admits a projectile the digest would skip. The public all-five-class
+///         walk is <see cref="ProjectileSampler" />, which follows its own slots.
 ///     </para>
 /// </summary>
 internal sealed class ProjectileSlotIndex
@@ -46,7 +47,18 @@ internal sealed class ProjectileSlotIndex
     internal const string MolotovClass = GrenadeProjectileClasses.Molotov;
 
     private readonly List<int> _slots = new(8);
+    private readonly IReadOnlySet<string>? _classes;
     private EntityTracker? _tracker;
+
+    /// <param name="classes">
+    ///     Projectile classes the digest records rows for, admitted alongside the two it always
+    ///     reads. Null or empty keeps the two-class default.
+    /// </param>
+    public ProjectileSlotIndex(IReadOnlySet<string>? classes = null) =>
+        _classes = classes is { Count: > 0 } ? classes : null;
+
+    /// <summary>The class set this index was widened by, or null for the two-class default.</summary>
+    public IReadOnlySet<string>? Classes => _classes;
 
     /// <summary>Ascending slot indices holding a projectile as of the last <see cref="Sync" />.</summary>
     public ReadOnlySpan<int> Slots => CollectionsMarshal.AsSpan(_slots);
@@ -74,13 +86,15 @@ internal sealed class ProjectileSlotIndex
 
     /// <summary>
     ///     Whether <paramref name="className" /> is one of the two projectile classes the digest
-    ///     reads. The smoke half defers to <see cref="VisibilityAnalyzer.SmokeClass" /> rather than
-    ///     naming the class again: the gate that decides whether a cloud reaches the digest is
+    ///     always reads, or one of the declared row classes. The smoke half defers to
+    ///     <see cref="VisibilityAnalyzer.SmokeClass" /> rather than naming the class again: the
+    ///     gate that decides whether a cloud reaches the digest is
     ///     <see cref="VisibilityAnalyzer.TryActiveSmoke" />, and an index that admitted a narrower
     ///     set than that gate accepts would drop clouds the walk oracle keeps.
     /// </summary>
-    internal static bool IsProjectile(string className) =>
-        className == VisibilityAnalyzer.SmokeClass || className == MolotovClass;
+    internal bool Admits(string className) =>
+        className == VisibilityAnalyzer.SmokeClass || className == MolotovClass
+        || (_classes is not null && _classes.Contains(className));
 
     private void Bind(EntityTracker tracker)
     {
@@ -96,7 +110,7 @@ internal sealed class ProjectileSlotIndex
         _slots.Clear();
         foreach ((int index, EntityState entity) in tracker.CurrentEntities.AllIndexed())
         {
-            if (IsProjectile(entity.ClassName))
+            if (Admits(entity.ClassName))
             {
                 _slots.Add(index);
             }
@@ -107,7 +121,7 @@ internal sealed class ProjectileSlotIndex
 
     private void OnCreated(int index, EntityState state)
     {
-        if (!IsProjectile(state.ClassName))
+        if (!Admits(state.ClassName))
         {
             return;
         }
@@ -127,7 +141,7 @@ internal sealed class ProjectileSlotIndex
         {
             int index = _slots[read];
             EntityState? entity = tracker.CurrentEntities[index];
-            if (entity is not null && IsProjectile(entity.ClassName))
+            if (entity is not null && Admits(entity.ClassName))
             {
                 _slots[keep++] = index;
             }

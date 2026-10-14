@@ -60,6 +60,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly Func<IReadOnlyList<IEntityValueProvider>> _singletonFactory;
     private readonly bool _emitMolotov;
     private readonly bool _captureSmokes;
+    private readonly IReadOnlySet<string>? _projectileClasses;
     private readonly int _workers;
     private readonly bool _releaseFolded;
     private readonly Action<EntityTracker>? _schemaCheck;
@@ -132,6 +133,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     ///     value to move the chunk boundaries, which is the one position a checkpoint
     ///     reconstruction can diverge at; production takes <see cref="MinChunkFrames" />.
     /// </param>
+    /// <param name="projectileClasses">
+    ///     Projectile classes every digest carries rows for (<see cref="EntityFrameDigest.Projectiles" />);
+    ///     null or empty leaves the digest as a run with none builds it.
+    /// </param>
     public PipelinedDigestSource(
         IDemoFrameSource inner,
         Func<IReadOnlyList<IPerPlayerEntityValueProvider>> perPlayerFactory,
@@ -142,13 +147,15 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         bool releaseFolded,
         Action<EntityTracker>? schemaCheck,
         CancellationToken cancellationToken,
-        int minChunkFrames = MinChunkFrames)
+        int minChunkFrames = MinChunkFrames,
+        IReadOnlySet<string>? projectileClasses = null)
     {
         _inner = inner;
         _perPlayerFactory = perPlayerFactory;
         _singletonFactory = singletonFactory;
         _emitMolotov = emitMolotov;
         _captureSmokes = captureSmokes;
+        _projectileClasses = projectileClasses is { Count: > 0 } ? projectileClasses : null;
         _workers = Math.Max(1, workers);
         _releaseFolded = releaseFolded;
         _schemaCheck = schemaCheck;
@@ -162,7 +169,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         // grows: a fold starts only when fewer than _workers are running.
         for (int i = 0; i < _workers; i++)
         {
-            _pool.Add(new Worker());
+            _pool.Add(new Worker(_projectileClasses));
         }
     }
 
@@ -704,7 +711,8 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 _schemaCheck(layer.Tracker);
             }
 
-            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, _emitMolotov, _captureSmokes, worker.Projectiles, worker.Pawns);
+            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, _emitMolotov, _captureSmokes,
+                worker.Projectiles, worker.Pawns, _projectileClasses);
         }
 
         return digests;
@@ -772,10 +780,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     // One tracker and one projectile index per worker, reused chunk after chunk. The index
     // stays bound to its tracker across a re-prime: stale slots are pruned on the next sync and
     // the checkpoint's creates are inserted as they fire.
-    private sealed class Worker
+    private sealed class Worker(IReadOnlySet<string>? projectileClasses)
     {
         public readonly EntityStateLayer Layer = new() { StoreUnlensedFields = false };
-        public readonly ProjectileSlotIndex Projectiles = new();
+        public readonly ProjectileSlotIndex Projectiles = new(projectileClasses);
         public readonly PawnSlotIndex Pawns = new();
         public bool SchemaLoaded;
     }

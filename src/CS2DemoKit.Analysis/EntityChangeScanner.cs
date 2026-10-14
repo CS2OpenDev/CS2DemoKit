@@ -171,8 +171,19 @@ public sealed class EntityChangeScanner
 
     // The projectile slots the per-frame digest reads instead of walking every live entity. Bound
     // to the layer's tracker on first use and rebound if the layer is reset under it.
-    private readonly ProjectileSlotIndex _projectiles = new();
+    private readonly ProjectileSlotIndex _projectiles;
     private readonly PawnSlotIndex _pawns = new();
+
+    // The classes every digest carries projectile rows for, or null for none: the digest a run
+    // with none declared builds is the one it always built.
+    private readonly IReadOnlySet<string>? _projectileClasses;
+
+    /// <summary>
+    ///     The projectile lifecycle derived from the consumed digests' rows: what appeared on the
+    ///     frame last polled, what was removed, and the live set. Empty unless the scanner was
+    ///     built with projectile classes.
+    /// </summary>
+    internal ProjectileLifecycle Projectiles { get; } = new();
 
     /// <param name="layer">The entity-state layer the scanner reads from; advanced one frame at a time.</param>
     /// <param name="providers">Singleton-entity providers paired with their backing value nodes (push model).</param>
@@ -207,7 +218,9 @@ public sealed class EntityChangeScanner
     ///     The builder's form: <paramref name="silentProviders" /> are tracked for their value node
     ///     and for <c>round_decided</c> only, so a change of one updates the node but synthesizes no
     ///     change marker. The builder tracks the three game-rules singletons in every build and
-    ///     passes the ones no rule reads here.
+    ///     passes the ones no rule reads here. <paramref name="projectileClasses" /> names the
+    ///     grenade projectile classes every digest carries rows for, read back through
+    ///     <see cref="Projectiles" />; null or empty carries none.
     /// </summary>
     internal EntityChangeScanner(
         EntityStateLayer layer,
@@ -216,10 +229,13 @@ public sealed class EntityChangeScanner
         bool emitMolotovThrows,
         AimVantageScanner? vantageScanner,
         VisibilityTransitionScanner? transitionScanner,
-        IReadOnlySet<IEntityValueProvider>? silentProviders)
+        IReadOnlySet<IEntityValueProvider>? silentProviders,
+        IReadOnlySet<string>? projectileClasses = null)
     {
         Layer = layer;
         _emitMolotovThrows = emitMolotovThrows;
+        _projectileClasses = projectileClasses is { Count: > 0 } ? projectileClasses : null;
+        _projectiles = new ProjectileSlotIndex(_projectileClasses);
         _vantageScanner = vantageScanner;
         _transitionScanner = transitionScanner;
         _tracked = new List<TrackedProvider>(providers.Count);
@@ -427,6 +443,7 @@ public sealed class EntityChangeScanner
         _pastSignonPrefix = false;
         _prevDigest = null;
         _seenMolotovs.Clear();
+        Projectiles.Reset();
         _postFrame.Clear();
         _lastWinStatus = -1;
         _preFrameSnapshotFrozen = false;
@@ -485,7 +502,8 @@ public sealed class EntityChangeScanner
             releaseFolded,
             ValidateSchema,
             cancellationToken,
-            MinChunkFrames(source.FrameCount, workers));
+            MinChunkFrames(source.FrameCount, workers),
+            _projectileClasses);
 
     /// <summary>
     ///     Folds every frame's digest on the pipelined producer up front: the next evaluation over
@@ -883,6 +901,11 @@ public sealed class EntityChangeScanner
             ConsumeMolotovs(digest, tick);
         }
 
+        if (_projectileClasses is not null)
+        {
+            Projectiles.Step(digest.Projectiles);
+        }
+
         ConsumeAimVantage(digest, tick);
 
         _prevDigest = digest;
@@ -1007,7 +1030,8 @@ public sealed class EntityChangeScanner
         }
 
         EntityFrameDigest d = EntityDigestExtractor.Build(
-            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null, _projectiles, _pawns);
+            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null, _projectiles, _pawns,
+            _projectileClasses);
         if (prof)
         {
             // Lumped under the historical "snapshot" sub-phase — it is the per-pawn sweep that dominated it;

@@ -26,7 +26,7 @@ public enum PawnPositionAxis
 ///     Reads one axis of a pawn's world position, exposed as <c>entity.pawn.pos_x</c> /
 ///     <c>pos_y</c> / <c>pos_z</c>. There is no <c>m_vecOrigin</c> leaf on a pawn: position is
 ///     cell indices plus an in-cell offset on <c>CBodyComponent</c>, reconstructed as
-///     <c>(cell - 32) * 512 + offset</c>, which <see cref="PositionUtil.CellToWorld" />
+///     <c>(cell - 32) * 512 + offset</c>, which <see cref="PositionUtil.CellToWorld(EntityState)" />
 ///     owns as this repo's oracle-verified home for the constant.
 ///     <para>
 ///         Read through <see cref="IPawnStateReader" />, not the SDK wrapper.

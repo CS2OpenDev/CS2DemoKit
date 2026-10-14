@@ -2,6 +2,7 @@
 
 using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser.EntityTracking;
@@ -58,6 +59,13 @@ internal static class EntityDigestExtractor
     ///     entity into a read of the dozen slots that hold one. Null falls back to the full walk,
     ///     which produces the same digest.
     /// </param>
+    /// <param name="projectileClasses">
+    ///     Projectile classes the digest records a <see cref="ProjectileRow" /> for, every live one
+    ///     in ascending index order (<see cref="EntityFrameDigest.Projectiles" />). Null or empty
+    ///     records none, and the digest is byte-identical to one built before rows existed. Shares
+    ///     the molotov and smoke visit. An index passed alongside must have been widened by the
+    ///     same set, or it would skip slots the walk visits.
+    /// </param>
     internal static EntityFrameDigest Build(
         EntityStateLayer layer,
         PerPawnDeltaState delta,
@@ -65,11 +73,25 @@ internal static class EntityDigestExtractor
         bool emitMolotovThrows,
         bool captureSmokes = false,
         ProjectileSlotIndex? projectiles = null,
-        PawnSlotIndex? pawns = null)
+        PawnSlotIndex? pawns = null,
+        IReadOnlySet<string>? projectileClasses = null)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(delta);
         ArgumentNullException.ThrowIfNull(singletonProviders);
+        if (projectileClasses is { Count: 0 })
+        {
+            projectileClasses = null;
+        }
+
+        if (projectileClasses is not null && projectiles is not null
+                                          && !ReferenceEquals(projectiles.Classes, projectileClasses)
+                                          && projectiles.Classes?.IsSupersetOf(projectileClasses) != true)
+        {
+            throw new InvalidOperationException(
+                "the projectile slot index was not widened by the classes the digest records rows for; "
+                + "build the index over the same set");
+        }
 
         EntityTracker tracker = layer.Tracker;
         EntityFrameDigest d = new()
@@ -105,14 +127,14 @@ internal static class EntityDigestExtractor
 
         d.ControllerTeams = ReadControllerTeams(tracker, delta);
 
-        if (emitMolotovThrows || captureSmokes)
+        if (emitMolotovThrows || captureSmokes || projectileClasses is not null)
         {
             if (projectiles is null)
             {
-                // The reference walk: one pass serves both classes, in ascending index order.
+                // The reference walk: one pass serves every class, in ascending index order.
                 foreach ((int idx, EntityState ent) in tracker.CurrentEntities.AllIndexed())
                 {
-                    VisitProjectile(d, tracker, idx, ent, emitMolotovThrows, captureSmokes);
+                    VisitProjectile(d, tracker, idx, ent, emitMolotovThrows, captureSmokes, projectileClasses);
                 }
             }
             else
@@ -124,7 +146,7 @@ internal static class EntityDigestExtractor
                 {
                     if (tracker.CurrentEntities[idx] is { } ent)
                     {
-                        VisitProjectile(d, tracker, idx, ent, emitMolotovThrows, captureSmokes);
+                        VisitProjectile(d, tracker, idx, ent, emitMolotovThrows, captureSmokes, projectileClasses);
                     }
                 }
             }
@@ -159,16 +181,24 @@ internal static class EntityDigestExtractor
     }
 
     // The per-entity half of the projectile visit, shared by the walk and the indexed read so the
-    // two cannot drift: a molotov is recorded with its thrower, otherwise a billowing smoke is
-    // recorded as a sphere. Any other class is a no-op, which is what lets the walk pass every
-    // live entity through it.
+    // two cannot drift: a projectile of a declared class is recorded as a row, a molotov with its
+    // thrower, and a billowing smoke as a sphere. Any other class is a no-op, which is what lets
+    // the walk pass every live entity through it.
     private static void VisitProjectile(
         EntityFrameDigest d, EntityTracker tracker, int idx, EntityState ent,
-        bool emitMolotovThrows, bool captureSmokes)
+        bool emitMolotovThrows, bool captureSmokes, IReadOnlySet<string>? projectileClasses)
     {
+        int thrower = int.MinValue;
+        if (projectileClasses is not null && projectileClasses.Contains(ent.ClassName))
+        {
+            ProjectileRow row = ReadProjectile(tracker, idx, ent);
+            thrower = row.ThrowerSlot;
+            d.AddProjectile(row);
+        }
+
         if (emitMolotovThrows && ent.ClassName == ProjectileSlotIndex.MolotovClass)
         {
-            d.AddMolotov(idx, ent.Serial, PawnLookup.ResolveThrowerSlot(tracker, ent));
+            d.AddMolotov(idx, ent.Serial, thrower != int.MinValue ? thrower : PawnLookup.ResolveThrowerSlot(tracker, ent));
             return;
         }
 
@@ -179,6 +209,33 @@ internal static class EntityDigestExtractor
         {
             d.AddSmoke(sphere);
         }
+    }
+
+    // The same fields ProjectileSampler reads, plus the class-specific ones. The smoke and
+    // molotov leaves are gated on the class because they are lensed only there.
+    private static ProjectileRow ReadProjectile(EntityTracker tracker, int idx, EntityState ent)
+    {
+        string className = ent.ClassName;
+        bool smoke = className == VisibilityAnalyzer.SmokeClass;
+        bool? incendiary = null;
+        if (className == ProjectileSlotIndex.MolotovClass && ent.TryGet<int>("m_bIsIncGrenade") is { } inc)
+        {
+            incendiary = inc != 0;
+        }
+
+        return new ProjectileRow(
+            idx,
+            ent.Serial,
+            className,
+            PawnLookup.ResolveThrowerSlot(tracker, ent),
+            ent.TryGet<int>("m_iTeamNum") ?? -1,
+            PositionUtil.CellToWorld(ent, true),
+            ent.TryGet<Vector3>("m_vInitialPosition"),
+            ent.TryGet<Vector3>("m_vInitialVelocity"),
+            ent.TryGet<int>("m_nBounces") ?? 0,
+            smoke ? ent.TryGet<int>("m_nSmokeEffectTickBegin") ?? 0 : 0,
+            smoke ? ent.TryGet<Vector3>("m_vSmokeDetonationPos") : null,
+            incendiary);
     }
 
     /// <summary>

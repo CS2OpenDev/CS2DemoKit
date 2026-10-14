@@ -119,7 +119,7 @@ public sealed class PawnReadContext
                          + "wrapper-reading providers cannot be served");
 
     /// <summary>
-    ///     The pawn's world position from <see cref="PositionUtil.CellToWorld" />, or null when the
+    ///     The pawn's world position from <see cref="PositionUtil.CellToWorld(EntityState)" />, or null when the
     ///     six CBodyComponent leaves have not all been networked. Resolved once per pawn-frame.
     /// </summary>
     public Vector3? Origin

@@ -3,6 +3,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
@@ -25,6 +26,7 @@ internal sealed class EntityFrameDigest
 {
     private List<(int Index, int Serial, int ThrowerSlot)>? _molotovs;
     private List<Vector4>? _smokes;
+    private List<ProjectileRow>? _projectiles;
 
     /// <summary>
     ///     Per-player-provider cells that CHANGED this frame, one row per pawn with at least one
@@ -85,10 +87,23 @@ internal sealed class EntityFrameDigest
     /// </summary>
     public ReadOnlySpan<Vector4> Smokes => _smokes is null ? default : CollectionsMarshal.AsSpan(_smokes);
 
+    /// <summary>
+    ///     Every live projectile of a class the producing decode was asked for, ascending entity
+    ///     index, as of the end of this frame. Empty when no class was asked for, so a run that
+    ///     declares none builds the digest it always built. The lifecycle (created, removed, the
+    ///     thrower held across frames) is derived on the consume side by
+    ///     <see cref="ProjectileLifecycle" />, since a chunk worker has no previous frame.
+    /// </summary>
+    public ReadOnlySpan<ProjectileRow> Projectiles =>
+        _projectiles is null ? default : CollectionsMarshal.AsSpan(_projectiles);
+
     /// <summary>Records one live molotov projectile.</summary>
     public void AddMolotov(int index, int serial, int throwerSlot) =>
         (_molotovs ??= new List<(int, int, int)>(4)).Add((index, serial, throwerSlot));
 
     /// <summary>Records one active smoke cloud.</summary>
     public void AddSmoke(Vector4 sphere) => (_smokes ??= new List<Vector4>(4)).Add(sphere);
+
+    /// <summary>Records one live projectile of an asked-for class.</summary>
+    public void AddProjectile(in ProjectileRow row) => (_projectiles ??= new List<ProjectileRow>(4)).Add(row);
 }
