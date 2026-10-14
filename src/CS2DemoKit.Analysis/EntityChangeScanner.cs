@@ -174,8 +174,7 @@ public sealed class EntityChangeScanner
     private readonly ProjectileSlotIndex _projectiles;
     private readonly PawnSlotIndex _pawns = new();
 
-    // The classes every digest carries projectile rows for, or null for none: the digest a run
-    // with none declared builds is the one it always built.
+    // The classes every digest carries projectile rows for. Null or empty adds no rows.
     private readonly IReadOnlySet<string>? _projectileClasses;
 
     /// <summary>

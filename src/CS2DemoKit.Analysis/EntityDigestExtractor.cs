@@ -62,8 +62,7 @@ internal static class EntityDigestExtractor
     /// <param name="projectileClasses">
     ///     Projectile classes the digest records a <see cref="ProjectileRow" /> for, every live one
     ///     in ascending index order (<see cref="EntityFrameDigest.Projectiles" />). Null or empty
-    ///     records none, and the digest is byte-identical to one built before rows existed. Shares
-    ///     the molotov and smoke visit. An index passed alongside must have been widened by the
+    ///     records none and adds nothing to the digest. Shares the molotov and smoke visit. An index passed alongside must have been widened by the
     ///     same set, or it would skip slots the walk visits.
     /// </param>
     internal static EntityFrameDigest Build(

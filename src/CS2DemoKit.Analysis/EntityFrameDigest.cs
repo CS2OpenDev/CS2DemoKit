@@ -89,8 +89,7 @@ internal sealed class EntityFrameDigest
 
     /// <summary>
     ///     Every live projectile of a class the producing decode was asked for, ascending entity
-    ///     index, as of the end of this frame. Empty when no class was asked for, so a run that
-    ///     declares none builds the digest it always built. The lifecycle (created, removed, the
+    ///     index, as of the end of this frame. Empty when no class was asked for. The lifecycle (created, removed, the
     ///     thrower held across frames) is derived on the consume side by
     ///     <see cref="ProjectileLifecycle" />, since a chunk worker has no previous frame.
     /// </summary>
