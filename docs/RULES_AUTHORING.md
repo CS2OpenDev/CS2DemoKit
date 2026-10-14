@@ -574,7 +574,9 @@ ruleset has no subject and cannot read any of them.
   (`tables: { <table-name>: { per:, columns: [...] } }`). The `per:` has to match the ruleset's
   `for:`, or validation reports `resolve.show.table-scope-mismatch`: `player_round` /
   `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`, and
-  `match` (a single match-level row) in `for: match`.
+  `match` (a single match-level row) in `for: match`. Player rows carry `player_slot`,
+  `player_name`, `steam_id` (the SteamID64 as a string, null when the demo has none) and `team`;
+  join players by `steam_id` rather than by slot.
 - **Event tables: one row per firing.** `per: player_event`, `team_event` or `match_event` (one
   per `for:`, in the same order) takes an `on:` trigger, written as a stat's `on:` is, and emits a
   row each time it fires for an instance, with the columns read right after that message. Rows

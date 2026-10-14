@@ -869,8 +869,12 @@ Each event table resolves with one extra stat, a match-scoped `count:` of its tr
 reserved id `#seq_<table>`, which is the row key; a host that lists `CheckedRuleset.Stats` sees it and
 can drop it with `EventTableSequence.IsSequenceStat`. A ruleset with no event table hashes and builds
 as before, and output on the shipped rulesets does not move. `ProjectConfiguredOutputs` on a run
-without snapshots still throws only for a v1 `PerEvent` output. `steam_id` on the existing per-player
-tables lands separately, as its own re-baseline.
+without snapshots still throws only for a v1 `PerEvent` output.
+
+`per: player_round` and `per: player_match` rows carry `steam_id` too, between `player_name` and
+`team`, so every per-player `show:` table keys by SteamID64. A v1 per-player output may declare it.
+This moves the `dims=` line and hash of all 15 rules-output digests, re-recorded in their own commit;
+StatParity and the rules-v2 fixtures do not move. The built-in projectors are unchanged.
 
 ## Credentials
 

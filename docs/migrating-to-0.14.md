@@ -18,8 +18,8 @@ Intra-family pins are exact, so a mixed set fails to restore rather than half-wo
 ## 2. What stays put
 
 `DemoAnalysis.Run`, `Build`, `Evaluate` and `ValidateRulesets`, `BuildResult`'s constructor, the
-rules syntax and every output projection keep their shape. The shipped rulesets build and count as
-before.
+rules syntax and the built-in output projections keep their shape. The shipped rulesets build and
+count as before; their per-player `show:` tables gain one dimension (section 4).
 
 ## 3. Compile errors, in the order they show up
 
@@ -84,6 +84,12 @@ a directory that validated with one now reports it.
 game-rules ones: `entity.team.score@2`, `@3`, `entity.team.clan_name@2`, `@3`. A host that counts
 or indexes the registry's list moves with it; the catalog lists the two specs once each with
 `scope: "perTeam"`.
+
+**Per-player `show:` tables carry `steam_id`.** `per: player_round` and `per: player_match` rows
+gain a `steam_id` dimension between `player_name` and `team`: the SteamID64 as a decimal string, null
+when the demo has none for the slot. JSON rows gain a key; a CSV reader that indexes columns by
+position shifts every column after `player_name` by one. Join players by `steam_id` rather than slot.
+The built-in tables (`player_game_stats`, `player_round_stats` and the rest) are unchanged.
 
 ## 5. New things worth adopting
 

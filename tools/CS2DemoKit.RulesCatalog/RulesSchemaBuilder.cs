@@ -1474,7 +1474,7 @@ public static class RulesSchemaBuilder
                                   + "players at that round's freeze end); `match` is a single match-level row "
                                   + "(for: match). `player_event` / `team_event` / `match_event` (one per for:) "
                                   + "emit one row per firing of the table's `on:` trigger, with `round_number` "
-                                  + "and `tick` (frame clock) dimensions; player rows also carry `steam_id`."
+                                  + "and `tick` (frame clock) dimensions. Every per-player row carries `steam_id`."
             },
             ["on"] = new JsonObject
             {
