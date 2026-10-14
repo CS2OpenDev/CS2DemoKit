@@ -243,6 +243,12 @@ public abstract class DemoSourceProfile
     /// </summary>
     public virtual LogicalEventBinding? ProjectileRemoved => null;
 
+    /// <summary>
+    ///     Logical binding for the synthesized "cadence tick" event: a ruleset cadence's period, fired
+    ///     by the evaluator on the frame clock. See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? CadenceTick => null;
+
     /// <summary>Logical binding for the "round announce last round half" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundAnnounceLastRoundHalf => null;
 

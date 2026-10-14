@@ -434,6 +434,21 @@ views:
       rounds_played: { type: int, field: RoundsPlayed }
     availability: all
 
+  # cadence_tick is a ruleset cadence's period, synthesized by the evaluator. Authors reach it as
+  # cadence.<id>, which the resolver lowers to this view filtered on event.Cadence; a bare
+  # reference is rejected because it would fire on every cadence in the build.
+  cadence_tick:
+    event: cadence_tick
+    note: >-
+      Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once
+      per period on the first frame at or after each due tick, after the frame's own events. Reach
+      it as cadence.<id>; Step is the step since the anchor, 0 on the anchor's frame.
+    binding: none
+    baked: [ ]
+    facets:
+      step: { type: int, field: Step }
+    availability: all
+
   # round_ended is the round's close ($round_end), bound to nobody: every player's template fires,
   # and a per-player stat that is about surviving or playing the round counts it once per round.
   # round_won / round_lost are the same event filtered to the player's side.

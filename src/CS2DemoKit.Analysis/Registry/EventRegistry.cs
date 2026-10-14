@@ -102,6 +102,8 @@ public sealed class EventRegistry
         // projectile rows of the entity digest.
         ("projectile_created", typeof(ProjectileCreatedEvent)),
         ("projectile_removed", typeof(ProjectileRemovedEvent)),
+        // Synthesized (StateGraphEvaluator): a ruleset cadence's period on the frame clock.
+        ("cadence_tick", typeof(CadenceTickEvent)),
         ("decoy_detonate", typeof(DecoyDetonateEvent)),
         ("bullet_impact", typeof(BulletImpactEvent)),
         ("other_death", typeof(OtherDeathEvent)),

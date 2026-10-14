@@ -460,6 +460,26 @@
       "fields": []
     },
     {
+      "name": "cadence_tick",
+      "clrType": "CadenceTickEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Cadence",
+          "type": "string",
+          "v2Name": "event.Cadence",
+          "v2Type": "String"
+        },
+        {
+          "name": "Step",
+          "type": "int",
+          "v2Name": "event.Step",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
       "name": "cs_intermission",
       "clrType": "CsIntermissionEvent",
       "synthesized": false,
@@ -3295,6 +3315,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3708,6 +3735,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4111,6 +4145,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
           ]
         },
         {
@@ -4527,6 +4568,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4902,6 +4950,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
           ]
         },
         {
@@ -5543,6 +5598,55 @@
           ]
         }
       ]
+    },
+    {
+      "name": "cadence_tick",
+      "event": "cadence_tick",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "step",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Step"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        }
+      ],
+      "note": "Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once per period on the first frame at or after each due tick, after the frame\u0027s own events. Reach it as cadence.\u003Cid\u003E; Step is the step since the anchor, 0 on the anchor\u0027s frame."
     },
     {
       "name": "damage_dealt",

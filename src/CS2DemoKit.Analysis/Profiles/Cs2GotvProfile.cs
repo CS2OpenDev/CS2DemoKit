@@ -156,6 +156,11 @@ public class Cs2GotvProfile : DemoSourceProfile
         LogicalEventBinding.Of("molotov_thrown");
 
     /// <inheritdoc />
+    public override LogicalEventBinding? CadenceTick =>
+        // Synthesized by the evaluator from the ruleset's cadences; no wire event.
+        LogicalEventBinding.Of("cadence_tick");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? OtherDeath =>
         LogicalEventBinding.Of("other_death");
 

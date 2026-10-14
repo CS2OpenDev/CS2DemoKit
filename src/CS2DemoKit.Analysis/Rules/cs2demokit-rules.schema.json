@@ -77,6 +77,13 @@
         "$ref": "#/$defs/highlight"
       }
     },
+    "cadences": {
+      "type": "object",
+      "description": "Periodic triggers on the frame clock, keyed by id; a stat fires on one as \u0060cadence.\u003Cid\u003E\u0060.",
+      "additionalProperties": {
+        "$ref": "#/$defs/cadence"
+      }
+    },
     "show": {
       "$ref": "#/$defs/show"
     },
@@ -233,13 +240,14 @@
     },
     "triggerRef": {
       "type": "string",
-      "markdownDescription": "A trigger source: a curated view (kill, bomb_planted, ...), a same-document \u0060define:\u0060 name, \u0060raw.\u003Cevent\u003E\u0060 (a wire event with no actor convention), or \u0060net.\u003CMessage\u003E\u0060 (a net-message trigger - both bare triggers and their match:/where: payload matching are live; a net trigger\u0027s payload fields read under \u0060event.\u003CField\u003E\u0060, typed from the netMessages catalog).",
+      "markdownDescription": "A trigger source: a curated view (kill, bomb_planted, ...), a same-document \u0060define:\u0060 name, \u0060raw.\u003Cevent\u003E\u0060 (a wire event with no actor convention), or \u0060net.\u003CMessage\u003E\u0060 (a net-message trigger - both bare triggers and their match:/where: payload matching are live; a net trigger\u0027s payload fields read under \u0060event.\u003CField\u003E\u0060, typed from the netMessages catalog), or \u0060cadence.\u003Cid\u003E\u0060 (one of this ruleset\u0027s \u0060cadences:\u0060).",
       "examples": [
         "assist",
         "blinded",
         "blinded_enemy",
         "bomb_defused",
         "bomb_planted",
+        "cadence_tick",
         "damage_dealt",
         "damage_taken",
         "death",
@@ -258,7 +266,8 @@
         "shot_landed",
         "smoke_grenade",
         "raw.player_death",
-        "net.CDemoFileHeader"
+        "net.CDemoFileHeader",
+        "cadence.second"
       ]
     },
     "match": {
@@ -373,6 +382,9 @@
         },
         "spray_victims": {
           "markdownDescription": "Facet \u0060spray_victims\u0060 (type \u0060int\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "step": {
+          "markdownDescription": "Facet \u0060step\u0060 (type \u0060int\u0060). Exposed by: cadence_tick. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "teamdamage": {
           "markdownDescription": "Facet \u0060teamdamage\u0060 (type \u0060bool\u0060). Exposed by: damage_dealt. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -1028,6 +1040,39 @@
             "properties": {
               "match": {
                 "$ref": "#/$defs/match_bomb_planted"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "cadence_tick"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "cadence_tick"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_cadence_tick"
               }
             }
           }
@@ -1780,6 +1825,51 @@
         }
       ]
     },
+    "cadence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anchor"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "ticks"
+          ]
+        },
+        {
+          "required": [
+            "seconds"
+          ]
+        }
+      ],
+      "markdownDescription": "A period on the frame clock. It fires once on the first frame at or after each due tick, starting with step 0 on the anchor\u0027s frame, so a gap longer than a period fires the missed steps together. \u0060cadence_tick\u0060 binds to nobody: an each_player stat fires for every player.",
+      "properties": {
+        "ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The period in ticks."
+        },
+        "seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "The period in seconds, rounded to ticks at the demo\u0027s tick rate."
+        },
+        "anchor": {
+          "enum": [
+            "round_freeze_end"
+          ],
+          "description": "The boundary that starts the schedule: the source profile\u0027s $round_freeze_end."
+        },
+        "until": {
+          "enum": [
+            "round_ended",
+            "next_freeze_end"
+          ],
+          "description": "The boundary that stops it: the profile\u0027s $round_end, or the next freeze end. Omit to run until the next anchor."
+        }
+      }
+    },
     "show": {
       "type": "object",
       "additionalProperties": false,
@@ -1974,6 +2064,22 @@
       "properties": {
         "site": {
           "markdownDescription": "\u0060site\u0060 (type \u0060int\u0060) on view \u0060bomb_planted\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_cadence_tick": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060cadence_tick\u0060 (event \u0060cadence_tick\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once per period on the first frame at or after each due tick, after the frame\u0027s own events. Reach it as cadence.\u003Cid\u003E; Step is the step since the anchor, 0 on the anchor\u0027s frame.",
+      "properties": {
+        "step": {
+          "markdownDescription": "\u0060step\u0060 (type \u0060int\u0060) on view \u0060cadence_tick\u0060."
         },
         "actor": {
           "enum": [

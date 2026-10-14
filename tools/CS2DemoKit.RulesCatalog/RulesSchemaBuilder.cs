@@ -140,6 +140,8 @@ public static class RulesSchemaBuilder
         ["stats"] = MapOf("#/$defs/stat", "The ruleset's stats, keyed by id (spec §6)."),
         ["highlights"] = MapOf("#/$defs/highlight",
             "Rising-edge achievements: a when: conjunction whose firing produces a timeline event + auto .count."),
+        ["cadences"] = MapOf("#/$defs/cadence",
+            "Periodic triggers on the frame clock, keyed by id; a stat fires on one as `cadence.<id>`."),
         ["show"] = new JsonObject
         {
             ["$ref"] = "#/$defs/show"
@@ -174,6 +176,7 @@ public static class RulesSchemaBuilder
             ["defineBody"] = DefineBodyDef(),
             ["stat"] = StatDef(views),
             ["highlight"] = HighlightDef(),
+            ["cadence"] = CadenceDef(),
             ["show"] = ShowDef(),
             ["scoreboardEntry"] = ScoreboardEntryDef(),
             ["table"] = TableDef(),
@@ -288,6 +291,7 @@ public static class RulesSchemaBuilder
 
         examples.Add("raw.player_death");
         examples.Add("net.CDemoFileHeader");
+        examples.Add("cadence.second");
 
         return new JsonObject
         {
@@ -296,7 +300,8 @@ public static class RulesSchemaBuilder
                 "A trigger source: a curated view (kill, bomb_planted, ...), a same-document `define:` name, "
                 + "`raw.<event>` (a wire event with no actor convention), or `net.<Message>` (a net-message "
                 + "trigger - both bare triggers and their match:/where: payload matching are live; a "
-                + "net trigger's payload fields read under `event.<Field>`, typed from the netMessages catalog).",
+                + "net trigger's payload fields read under `event.<Field>`, typed from the netMessages catalog), "
+                + "or `cadence.<id>` (one of this ruleset's `cadences:`).",
             ["examples"] = examples
         };
     }
@@ -1368,6 +1373,70 @@ public static class RulesSchemaBuilder
                 ["markdownDescription"] =
                     "Display formatting for a tick-valued column: `ticks` = raw integer ticks, "
                     + "`seconds` = ticks / tick-rate, `time` = `m:ss` at the tick rate. Omit for the raw value."
+            }
+        }
+    };
+
+    private static JsonObject CadenceDef() => new()
+    {
+        ["type"] = "object",
+        ["additionalProperties"] = false,
+        ["required"] = new JsonArray
+        {
+            "anchor"
+        },
+        ["oneOf"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["required"] = new JsonArray
+                {
+                    "ticks"
+                }
+            },
+            new JsonObject
+            {
+                ["required"] = new JsonArray
+                {
+                    "seconds"
+                }
+            }
+        },
+        ["markdownDescription"] =
+            "A period on the frame clock. It fires once on the first frame at or after each due tick, "
+            + "starting with step 0 on the anchor's frame, so a gap longer than a period fires the missed "
+            + "steps together. `cadence_tick` binds to nobody: an each_player stat fires for every player.",
+        ["properties"] = new JsonObject
+        {
+            ["ticks"] = new JsonObject
+            {
+                ["type"] = "integer",
+                ["minimum"] = 1,
+                ["description"] = "The period in ticks."
+            },
+            ["seconds"] = new JsonObject
+            {
+                ["type"] = "number",
+                ["exclusiveMinimum"] = 0,
+                ["description"] = "The period in seconds, rounded to ticks at the demo's tick rate."
+            },
+            ["anchor"] = new JsonObject
+            {
+                ["enum"] = new JsonArray
+                {
+                    "round_freeze_end"
+                },
+                ["description"] = "The boundary that starts the schedule: the source profile's $round_freeze_end."
+            },
+            ["until"] = new JsonObject
+            {
+                ["enum"] = new JsonArray
+                {
+                    "round_ended",
+                    "next_freeze_end"
+                },
+                ["description"] = "The boundary that stops it: the profile's $round_end, or the next freeze "
+                                  + "end. Omit to run until the next anchor."
             }
         }
     };
