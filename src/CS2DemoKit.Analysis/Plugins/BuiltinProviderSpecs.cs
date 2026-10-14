@@ -206,10 +206,8 @@ public static class BuiltinProviderSpecs
                                                                 + SchemaNames.CCSPlayerControllerInGameMoneyServices.Account));
 
     /// <summary>
-    ///     entity.pawn.is_walking: the shift-to-walk toggle, <c>m_bIsWalking</c>. Unlike the other
-    ///     per-tick reads above, this one changes rarely (only on a keybind edge), so it costs the
-    ///     digest's delta encoding almost nothing. Read by the grenade observer, which is why it
-    ///     lands ahead of the lens-gated providers (section 0): the field is already lensed.
+    ///     entity.pawn.is_walking: the shift-to-walk toggle, <c>m_bIsWalking</c>. Changes only on a
+    ///     walk-key edge, not per tick, so it costs the digest's delta encoding almost nothing.
     /// </summary>
     public static ProviderSpec PawnIsWalking { get; } = new(
         "entity.pawn.is_walking", "CCSPlayerPawn",
@@ -323,10 +321,8 @@ public static class BuiltinProviderSpecs
         new PawnEyeAngleProvider(PawnAngleAxis.Yaw),
         new PawnAimPunchProvider(PawnAngleAxis.Pitch),
         new PawnAimPunchProvider(PawnAngleAxis.Yaw),
-        // Spec-constructed on both sides, same position: no hand-written twin, so parity holds
-        // by construction. Inserted before the position trio, not appended, for the same reason
-        // as the aim-rating batch above: PawnPositionProviderTests pins those three as the last
-        // three.
+        // Same position in CreateDefault. Before the position trio, not appended:
+        // PawnPositionProviderTests pins those three as the last three.
         new GenericPerPlayerFieldProvider(PawnIsWalking),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
