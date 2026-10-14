@@ -6,6 +6,7 @@ using System.Globalization;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
+using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.Rules.Ast;
 using CS2DemoKit.Analysis.Rules.Checking;
@@ -102,6 +103,11 @@ public static class RulesetResolver
         // so their event.tick is the frame clock; see ResolveTickClock.
         private readonly HashSet<string> _synthesizedEvents;
 
+        // The cadences a stat triggers on, by id, with seconds folded to ticks.
+        private readonly Dictionary<string, CadenceDef> _usedCadences = new(StringComparer.Ordinal);
+
+        private readonly Dictionary<string, string> _cadenceKeyByStat = new(StringComparer.Ordinal);
+
         internal Session(RulesetDoc doc, CatalogScopeAdapter adapter, ResolveContext ctx, RulesetExportGraph? exports)
         {
             _doc = doc;
@@ -194,7 +200,10 @@ public static class RulesetResolver
 
             SkipDependentsOfSkipped(stats, highlights);
 
-            CheckedRuleset ruleset = new(_rulesetId, _doc.Title, _doc.For, stats, highlights, _coverage, _doc.Show);
+            CheckedRuleset ruleset = new(_rulesetId, _doc.Title, _doc.For, stats, highlights, _coverage, _doc.Show)
+            {
+                Cadences = UsedCadences(stats)
+            };
             return new RulesetResolveResult(ruleset, _diagnostics);
         }
 
@@ -1131,6 +1140,13 @@ public static class RulesetResolver
         {
             List<ExpressionNode> conjuncts = [];
 
+            // 0. A cadence trigger selects its own schedule by key, which carries the period into the hash.
+            if (trigger.CadenceKey is { } cadenceKey)
+            {
+                conjuncts.Add(new BinaryNode(BinaryOperator.Equal,
+                    new ReferenceNode(["event", nameof(CadenceTickEvent.Cadence)]), new StringLiteralNode(cadenceKey)));
+            }
+
             // 1. merged match: bindings, catalog facet order (spec §4.2 / §5 row 5).
             foreach ((CatalogFacet facet, UnaryTest test) in trigger.MergedMatch)
             {
@@ -1605,8 +1621,17 @@ public static class RulesetResolver
             switch (sourceRef.Kind)
             {
                 case TriggerRefKind.Raw:
+                    if (string.Equals(sourceRef.Name, CadenceTickEventName, StringComparison.Ordinal))
+                    {
+                        ReportBareCadenceTick(stat, silent);
+                        return;
+                    }
+
                     resolved.RawOrNetName = sourceRef.Name;
                     resolved.Ok = true;
+                    return;
+                case TriggerRefKind.Cadence:
+                    ResolveCadence(sourceRef, stat, resolved, silent);
                     return;
                 case TriggerRefKind.Net:
                     resolved.RawOrNetName = sourceRef.Name;
@@ -1637,6 +1662,12 @@ public static class RulesetResolver
             }
 
             string name = sourceRef.Name;
+            if (string.Equals(name, CadenceTickEventName, StringComparison.Ordinal))
+            {
+                ReportBareCadenceTick(stat, silent);
+                return;
+            }
+
             if (_viewsByName.TryGetValue(name, out CatalogView? view))
             {
                 resolved.View = view;
@@ -1662,6 +1693,86 @@ public static class RulesetResolver
                 Report(ResolveDiagnosticCodes.UnknownTriggerSource,
                     $"'{name}' is not a known view, trigger define, or sibling flag", stat.Position);
             }
+        }
+
+        private const string CadenceTickEventName = "cadence_tick";
+
+        private void ResolveCadence(TriggerRef sourceRef, StatDef stat, ResolvedTrigger resolved, bool silent)
+        {
+            CadenceDef? declared = _doc.Cadences.FirstOrDefault(c => string.Equals(c.Id, sourceRef.Name,
+                StringComparison.Ordinal));
+            if (declared is null)
+            {
+                if (!silent)
+                {
+                    Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                        $"'cadence.{sourceRef.Name}' names no entry of this ruleset's cadences:", stat.Position);
+                }
+
+                return;
+            }
+
+            // Same rounding as a duration literal.
+            int ticks = declared.Ticks
+                        ?? (int)Math.Round((declared.Seconds ?? 0) * _ctx.TicksPerSecond, MidpointRounding.AwayFromZero);
+            if (ticks <= 0)
+            {
+                if (!silent)
+                {
+                    Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                        $"cadence '{declared.Id}' rounds to {ticks} ticks at {_ctx.TicksPerSecond.ToString(CultureInfo.InvariantCulture)} ticks/s; "
+                        + "a period must be at least one tick", declared.Position);
+                }
+
+                return;
+            }
+
+            if (!_viewsByName.TryGetValue(CadenceTickEventName, out CatalogView? view))
+            {
+                if (!silent)
+                {
+                    Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                        "the catalog has no cadence_tick view", stat.Position);
+                }
+
+                return;
+            }
+
+            CadenceDef resolvedDef = declared with { Ticks = ticks, Seconds = null };
+            _usedCadences[declared.Id] = resolvedDef;
+            _cadenceKeyByStat[stat.Id] = resolvedDef.Key;
+            resolved.View = view;
+            resolved.CadenceKey = resolvedDef.Key;
+            resolved.Ok = true;
+        }
+
+        private void ReportBareCadenceTick(StatDef stat, bool silent)
+        {
+            if (!silent)
+            {
+                Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                    $"stat '{stat.Id}' triggers on cadence_tick directly, which fires for every cadence in the "
+                    + "build; declare one under cadences: and trigger on cadence.<id>", stat.Position);
+            }
+        }
+
+        // The cadences the surviving stats trigger on, in declaration order.
+        private List<CadenceDef> UsedCadences(List<CheckedStat> stats)
+        {
+            HashSet<string> keys = new(StringComparer.Ordinal);
+            foreach (CheckedStat stat in stats)
+            {
+                if (_cadenceKeyByStat.TryGetValue(stat.StatId, out string? key))
+                {
+                    keys.Add(key);
+                }
+            }
+
+            return _doc.Cadences
+                .Select(c => _usedCadences.GetValueOrDefault(c.Id))
+                .OfType<CadenceDef>()
+                .Where(c => keys.Contains(c.Key))
+                .ToList();
         }
 
         private void MergeDefineTrigger(TriggerDef trigger, ResolvedTrigger resolved, bool silent)
@@ -2388,6 +2499,9 @@ public static class RulesetResolver
             internal CatalogView? View { get; set; }
 
             internal string? RawOrNetName { get; set; }
+
+            /// <summary>The resolved cadence's key, when the trigger is <c>cadence.&lt;id&gt;</c>.</summary>
+            internal string? CadenceKey { get; set; }
 
             internal bool IsNet { get; set; }
 
