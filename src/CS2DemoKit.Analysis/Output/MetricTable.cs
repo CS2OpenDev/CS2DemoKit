@@ -31,7 +31,8 @@ public sealed record MetricTable(
     ///     (the index <c>DemoFrame</c>, timeline events and highlights use) or <see cref="ServerClock" />
     ///     (<c>GameEvent.ServerTick</c>, higher by the demo's <c>ServerStartTick</c>). Only bare tick
     ///     captures are listed; a column absent from the map is not a tick, or is derived from one
-    ///     (a difference of two ticks is on no clock). Empty for a table with no tick columns.
+    ///     (a difference of two ticks is on no clock). Empty for a table with no tick columns. An event
+    ///     table also lists its <c>tick</c> dimension, which is on the frame clock.
     /// </summary>
     public IReadOnlyDictionary<string, string> ColumnClocks { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);

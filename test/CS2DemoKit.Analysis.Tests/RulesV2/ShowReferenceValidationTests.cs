@@ -221,6 +221,16 @@ public class ShowReferenceValidationTests
         await Assert.That(diagnostics).IsEmpty();
     }
 
+    /// <summary>The build resolves per-profile concrete events, and the gate reads those too.</summary>
+    [Test]
+    public async Task EventTable_OnAFrequentTrigger_IsRejectedAtBuildToo()
+    {
+        RulesetComposition.Result result = RulesetComposition.Compose(
+            [Load(EventTable("player_event", "raw.weapon_fire"))], Adapter(), 64.0, "Cs2GotvProfile");
+        await Assert.That(ShowDiagnostics(result).Select(d => d.Code))
+            .IsEquivalentTo([ResolveDiagnosticCodes.ShowEventTableFrequency]);
+    }
+
     [Test]
     public async Task EventTable_OfTheWrongScope_IsAScopeMismatch()
     {
