@@ -80,6 +80,10 @@ public sealed partial class RuleChainBuilder
     // serial to it.
     private (int Index, int Serial)? _projectileSubject;
 
+    // The projectile the stat being lowered binds its edges to: the subject while a projectile
+    // event's stat lowers, null for any other stat and outside the factory.
+    private (int Index, int Serial)? _projectileEdgeBinding;
+
     // Stat hashes by qualified path for the projectile factory now running; null everywhere
     // else. Every instance lowers the same stats over the same game hashes in the same order, so
     // the trial materialization's hashes serve the hundreds that follow.
@@ -751,6 +755,7 @@ public sealed partial class RuleChainBuilder
         {
             _v2ConditionNodeOverlay = null;
             _projectileSubject = null;
+            _projectileEdgeBinding = null;
         }
 
         return new ProjectileNodeTemplate.MaterializedProjectile(
@@ -1489,8 +1494,8 @@ public sealed partial class RuleChainBuilder
         EnsureSettleEntityPullNodes(stat, slot, playerName, localLookup, nodes, wiring);
 
         bool roundScoped = stat.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round or ScopeAxis.TeamRound;
-        string? condition = RewriteEntityReads(
-            BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide, _projectileSubject), stat);
+        string? condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
+        _projectileEdgeBinding = BindsProjectile(stat) ? _projectileSubject : null;
 
         // While: gate. An entity-bearing single-comparison while: (e.g. `while: player.health > 50`) has
         // NO graph node to gate on — it is a subject-slot pre-frame entity-provider read, not a
@@ -2516,8 +2521,7 @@ public sealed partial class RuleChainBuilder
 
     /// <summary>Builds the fire-time condition string: the actor binding (if any) ∧ the trigger condition.</summary>
     private static string? BuildConditionString(CheckedRuleset rs, CheckedStat stat,
-        Dictionary<string, CatalogView> views, Dictionary<string, string> contextV2ToV1, int? subjectSide,
-        (int Index, int Serial)? projectileSubject = null)
+        Dictionary<string, CatalogView> views, Dictionary<string, string> contextV2ToV1, int? subjectSide)
     {
         // where: (trigger) reads are lowered through contextV2ToV1 so a per-player context
         // (player.survived) / B6 aggregate (round.enemies.alive) becomes its bare v1 rule id — the
@@ -2528,11 +2532,6 @@ public sealed partial class RuleChainBuilder
             ? null
             : V1ExpressionWriter.Write(stat.TriggerCondition.Root, contextV2ToV1);
         string? subject = BuildSubjectBinding(rs, stat, views, subjectSide);
-        if (ProjectileBinding(stat, projectileSubject) is { } projectile)
-        {
-            subject = subject is null ? projectile : $"{subject} && {projectile}";
-        }
-
         if (subject is null)
         {
             return trigger;
@@ -2542,21 +2541,14 @@ public sealed partial class RuleChainBuilder
     }
 
     /// <summary>
-    ///     A <c>for: each_projectile</c> instance's binding: a projectile event fires for the instance
-    ///     whose entity index and serial it carries. Any other event is left unbound and fires for
-    ///     every live instance, as a <c>for: match</c> stat fires for the match.
+    ///     Whether a <c>for: each_projectile</c> instance binds this stat's edges to its own
+    ///     projectile: a projectile event fires for the instance whose entity index and serial it
+    ///     carries (<see cref="ProjectileEdgeBinding" />). Any other event is left unbound and fires
+    ///     for every live instance, as a <c>for: match</c> stat fires for the match.
     /// </summary>
-    private static string? ProjectileBinding(CheckedStat stat, (int Index, int Serial)? subject)
-    {
-        if (subject is not { } projectile || stat.ConcreteEvents.Count == 0
-            || !stat.ConcreteEvents.All(e => e is "projectile_created" or "projectile_removed"))
-        {
-            return null;
-        }
-
-        return $"event.EntityIndex == {projectile.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)} "
-               + $"&& event.Serial == {projectile.Serial.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-    }
+    private static bool BindsProjectile(CheckedStat stat) =>
+        stat.ConcreteEvents.Count > 0
+        && stat.ConcreteEvents.All(e => e is "projectile_created" or "projectile_removed");
 
     /// <summary>
     ///     The implicit subject binding a view lowers to.

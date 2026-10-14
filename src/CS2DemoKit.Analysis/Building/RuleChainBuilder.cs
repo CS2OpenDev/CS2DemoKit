@@ -1330,6 +1330,10 @@ public sealed partial class RuleChainBuilder
         Delegate? condition = trigger.Condition is not null
             ? ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent))
             : null;
+        if (_projectileEdgeBinding is { } projectile)
+        {
+            condition = ProjectileEdgeBinding.Bind(projectile.Index, projectile.Serial, (Func<GameEvent, bool>?)condition);
+        }
 
         if (trigger.Action is TriggerAction.Activate or TriggerAction.Deactivate)
         {
