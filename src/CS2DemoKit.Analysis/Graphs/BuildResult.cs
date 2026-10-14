@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.Registry;
+using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 
 #endregion
@@ -149,6 +150,16 @@ public sealed record BuildResult(
     ///     together, or a row that writes per-player state is dropped.
     /// </summary>
     public IReadOnlyList<ExternalStateNode> ExternalNodes { get; init; } = [];
+
+    /// <summary>
+    ///     The cadences the built rulesets' stats trigger on, one per distinct
+    ///     <see cref="CadenceDef.Key" />, each with its period resolved to ticks. The evaluator fires
+    ///     a <c>cadence_tick</c> for each one per period. Empty when no stat uses a cadence.
+    /// </summary>
+    public IReadOnlyList<CadenceDef> Cadences { get; init; } = [];
+
+    /// <summary><see cref="Cadences" /> with the dispatch types of each anchor and stop.</summary>
+    internal IReadOnlyList<CadencePlan> CadencePlans { get; init; } = [];
 
     /// <summary>
     ///     Where the builder made each node of <see cref="Nodes" />; <c>null</c> for a hand-built

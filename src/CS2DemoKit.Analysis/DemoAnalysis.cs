@@ -680,7 +680,8 @@ public static class DemoAnalysis
         StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner)
         {
             FrameObserver = options.FrameObserver,
-            ObservedProviders = options.ObservedProviders
+            ObservedProviders = options.ObservedProviders,
+            Cadences = build.CadencePlans
         };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;
 

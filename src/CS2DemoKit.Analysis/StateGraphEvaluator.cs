@@ -160,6 +160,9 @@ public sealed class StateGraphEvaluator
     /// <summary>The provider names <see cref="FrameObserver" /> may read; resolved to columns once per run.</summary>
     internal IReadOnlyList<string> ObservedProviders { get; set; } = [];
 
+    /// <summary>The build's cadences (<see cref="Graphs.BuildResult.CadencePlans" />); empty costs one check per frame.</summary>
+    internal IReadOnlyList<CadencePlan> Cadences { get; set; } = [];
+
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
     /// <param name="playerContextIndex">Optional cross-player state index for enrichment edges.</param>
@@ -546,6 +549,9 @@ public sealed class StateGraphEvaluator
         // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
         // producer applies the whole run before any frame in it is polled, which is what a
         // tick-gated seek over a list did, so every frame of a run reads the same entity state.
+        CadenceScheduler? cadences = Cadences.Count > 0 ? new CadenceScheduler(Cadences) : null;
+        List<CadenceTickEvent> dueCadences = [];
+
         int frameIdx = 0;
         int runPos = 0;
         List<DemoFrame> run = new(4);
@@ -576,6 +582,7 @@ public sealed class StateGraphEvaluator
             }
 
             DemoFrame frame = run[runPos++];
+            int frameTick = frame.GameTick ?? frame.ServerTick;
             long frameStart = timeFrame ? Stopwatch.GetTimestamp() : 0;
             int frameMessageCount = 0;
 
@@ -677,6 +684,8 @@ public sealed class StateGraphEvaluator
                     CsPreRestartSeen++;
                 }
 
+                cadences?.Observe(key, frameTick);
+
                 int edgesEvaluated = 0, edgesFired = 0, logicRecomputed = 0;
                 EvaluateEdgesInstrumented(new EvaluationContext(message, frame), key,
                     trace, ref edgesEvaluated, ref edgesFired,
@@ -728,6 +737,17 @@ public sealed class StateGraphEvaluator
                 }
             }
 
+            // ── Cadence steps, after everything else the frame dispatches. ──
+            if (cadences is not null)
+            {
+                dueCadences.Clear();
+                cadences.Drain(frameTick, dueCadences);
+                for (int c = 0; c < dueCadences.Count; c++)
+                {
+                    DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(dueCadences[c]));
+                }
+            }
+
             void DispatchPostFrame(NetMessage postMsg)
             {
                 Type pKey = GetDispatchKey(postMsg);
@@ -743,6 +763,8 @@ public sealed class StateGraphEvaluator
                     ResetRoundScopedNodes(snap);
                     snap?.MarkRoundScopedDirty(_roundScopedNodes);
                 }
+
+                cadences?.Observe(pKey, frameTick);
 
                 int pEvaluated = 0, pFired = 0, pLogic = 0;
                 EvaluateEdgesInstrumented(new EvaluationContext(postMsg, frame), pKey,

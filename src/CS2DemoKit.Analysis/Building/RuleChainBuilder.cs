@@ -16,6 +16,9 @@ using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
+using CadenceAnchor = CS2DemoKit.Analysis.RulesetsV2.Model.CadenceAnchor;
+using CadenceDef = CS2DemoKit.Analysis.RulesetsV2.Model.CadenceDef;
+using CadenceStop = CS2DemoKit.Analysis.RulesetsV2.Model.CadenceStop;
 
 #endregion
 
@@ -625,6 +628,8 @@ public sealed partial class RuleChainBuilder
                 gameNodesByRuleId, relevantTypes, v2Outputs, perPlayerContextRules);
         }
 
+        List<CadencePlan> cadencePlans = CadencePlans(rulesets, relevantTypes);
+
         relevantTypes.Add(typeof(PlayerDeathEvent));
         relevantTypes.Add(typeof(PlayerConnectEvent));
         relevantTypes.Add(typeof(PlayerTeamEvent));
@@ -663,10 +668,65 @@ public sealed partial class RuleChainBuilder
             TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
             TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
             RoundBoundaryTypes = RoundBoundaryTypes(),
+            Cadences = [.. cadencePlans.Select(p => p.Def)],
+            CadencePlans = cadencePlans,
             ExternalNodes = externals.All,
             Provenance = gameProvenance,
             ExcludedRulesets = [.. _loweringExclusions]
         };
+    }
+
+    /// <summary>
+    ///     One plan per distinct cadence key over the rulesets that lowered, with the anchor and stop
+    ///     resolved through the profile. The boundary types join the relevant set, so a decode plan keeps
+    ///     them even when no rule subscribes to them.
+    /// </summary>
+    private List<CadencePlan> CadencePlans(IReadOnlyList<CheckedRuleset> rulesets, HashSet<Type> relevantTypes)
+    {
+        List<CadencePlan> plans = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (CheckedRuleset ruleset in rulesets)
+        {
+            if (IsLoweringExcluded(ruleset))
+            {
+                continue;
+            }
+
+            foreach (CadenceDef cadence in ruleset.Cadences)
+            {
+                if (!seen.Add(cadence.Key))
+                {
+                    continue;
+                }
+
+                // The evaluator synthesizes a freeze end for a round decided in freeze time.
+                HashSet<Type> anchors = cadence.Anchor == CadenceAnchor.RoundFreezeEnd
+                    ? [typeof(RoundFreezeEndEvent), .. LogicalTypes("round_freeze_end")]
+                    : [];
+                HashSet<Type> stops = cadence.Until switch
+                {
+                    CadenceStop.RoundEnded => [.. LogicalTypes("round_end")],
+                    CadenceStop.NextFreezeEnd => [.. anchors],
+                    _ => []
+                };
+                relevantTypes.UnionWith(anchors);
+                relevantTypes.UnionWith(stops);
+                plans.Add(new CadencePlan(cadence, anchors, stops));
+            }
+        }
+
+        return plans;
+    }
+
+    private IEnumerable<Type> LogicalTypes(string logical)
+    {
+        foreach (string concrete in _logicalResolver.Resolve(logical)?.ConcreteEventNames ?? [])
+        {
+            if (_registry.TryResolve(concrete, out Type? type))
+            {
+                yield return type;
+            }
+        }
     }
 
     /// <summary>
