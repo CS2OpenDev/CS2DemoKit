@@ -220,6 +220,14 @@
         {
           "const": "player.weapon_recoil_index",
           "markdownDescription": "\u0060player.weapon_recoil_index\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.weapon.recoil_index\u0060. Read at a rule site from the frame BEFORE the triggering event. A raw engine accumulator in no unit, scaled per weapon. Its useful property is that it rises within a spray and falls between sprays (a run over which it never drops is one spray), not its absolute magnitude, which is not comparable across weapons. Not the same number as the \u0060recoil_index\u0060 FACET on \u0060shot_landed\u0060: that one is \u0060bullet_damage.RecoilIndex\u0060, the index the server fired the shot at, and is authoritative for \u0022what did this shot fire at\u0022. This column is the entity read as it stood BEFORE the frame, so it answers \u0022where was the spray up to when the shot site fired\u0022 and is the only answer on a demo carrying no \u0060bullet_damage\u0060 or for a shot that missed. Do not pool the two in one stat."
+        },
+        {
+          "const": "team.clan_name",
+          "markdownDescription": "\u0060team.clan_name\u0060 (type \u0060string\u0060) - an entity read, from \u0060entity.team.clan_name\u0060."
+        },
+        {
+          "const": "team.score",
+          "markdownDescription": "\u0060team.score\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.team.score\u0060."
         }
       ]
     },

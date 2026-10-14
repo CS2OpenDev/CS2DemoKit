@@ -282,6 +282,26 @@ public static class BuiltinProviderSpecs
         typeof(int));
 
     /// <summary>
+    ///     entity.team.score: a side's rounds won, <c>CCSTeam.m_iScore</c>. Read per side
+    ///     (<see cref="GenericSideFieldProvider" />), so it is <c>team.score</c> in a
+    ///     <c>for: each_team</c> ruleset. The engine credits a round at its decision.
+    /// </summary>
+    public static ProviderSpec TeamScore { get; } = new(
+        "entity.team.score", "CCSTeam",
+        SchemaNames.CTeam.Score, typeof(int));
+
+    /// <summary>
+    ///     entity.team.clan_name: a side's clan name, <c>CCSTeam.m_szClanTeamname</c>, as the server
+    ///     set it. Empty when the server set none, which is the usual matchmaking case.
+    /// </summary>
+    public static ProviderSpec TeamClanName { get; } = new(
+        "entity.team.clan_name", "CCSTeam",
+        SchemaNames.CCSTeam.ClanTeamName, typeof(string));
+
+    /// <summary>The per-side reads, one spec each; <see cref="CreateTeamProviders" /> instantiates them per side.</summary>
+    public static IReadOnlyList<ProviderSpec> TeamSpecs { get; } = [TeamScore, TeamClanName];
+
+    /// <summary>
     ///     The generic per-player providers equivalent to
     ///     <see cref="PerPlayerEntityValueProviderRegistry.CreateDefault" />.
     /// </summary>
@@ -354,6 +374,19 @@ public static class BuiltinProviderSpecs
             typeof(CCSGameRulesBombPlantedMarker), false),
         new GenericSingletonFieldProvider(GameRoundTime, ChangeDirection.RisingOnly,
             typeof(CCSGameRulesRoundTimeMarker), 0)
+    ];
+
+    /// <summary>
+    ///     The per-side team reads: each of <see cref="TeamSpecs" /> for side 2 then side 3. They emit
+    ///     on every change (a string has no rising edge) from a null default, so the first read emits
+    ///     even when it is 0.
+    /// </summary>
+    public static IReadOnlyList<IEntityValueProvider> CreateTeamProviders() =>
+    [
+        new GenericSideFieldProvider(TeamScore, 2, ChangeDirection.Both, typeof(CCSTeamScoreTMarker), null),
+        new GenericSideFieldProvider(TeamScore, 3, ChangeDirection.Both, typeof(CCSTeamScoreCTMarker), null),
+        new GenericSideFieldProvider(TeamClanName, 2, ChangeDirection.Both, typeof(CCSTeamClanNameTMarker), null),
+        new GenericSideFieldProvider(TeamClanName, 3, ChangeDirection.Both, typeof(CCSTeamClanNameCTMarker), null)
     ];
 
     /// <summary>The generic singleton provider equivalent to <see cref="FreezePeriodProvider" />.</summary>

@@ -1,6 +1,8 @@
 #region
 
+using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Output;
+using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
 
 #endregion
@@ -123,5 +125,32 @@ public class SingletonProviderReadTests
         await Assert.That(RoundFactsTestSupport.Int(row, "KW")).IsEqualTo(RoundFactsTestSupport.Int(row, "K"));
         await Assert.That(RoundFactsTestSupport.Int(row, "B")).IsEqualTo(9);
         await Assert.That(RoundFactsTestSupport.Int(row, "BF")).IsEqualTo(9);
+    }
+
+    /// <summary>
+    ///     The per-side instances read different <c>CCSTeam</c> entities: on the sample's last frame
+    ///     each side's score and clan name are what the hand walk finds for that side, and the two
+    ///     clan names differ.
+    /// </summary>
+    [Test]
+    public async Task SideInstances_ResolveDifferentEntities()
+    {
+        ParsedDemo demo = RoundFactsTestSupport.Sample();
+        Dictionary<int, (int Score, string Clan)> oracle = TeamScopeTests.LastFrameTeams(demo);
+        EntityStateLayer layer = new();
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            layer.Apply(frame);
+        }
+
+        Dictionary<string, object?> read = BuiltinProviderSpecs.CreateTeamProviders()
+            .ToDictionary(p => p.ContextName, p => p.Read(layer));
+        foreach (int side in (int[])[2, 3])
+        {
+            await Assert.That(read[$"entity.team.score@{side}"]).IsEqualTo(oracle[side].Score).Because($"side {side}");
+            await Assert.That(read[$"entity.team.clan_name@{side}"]).IsEqualTo(oracle[side].Clan).Because($"side {side}");
+        }
+
+        await Assert.That(read["entity.team.clan_name@2"]).IsNotEqualTo(read["entity.team.clan_name@3"]);
     }
 }

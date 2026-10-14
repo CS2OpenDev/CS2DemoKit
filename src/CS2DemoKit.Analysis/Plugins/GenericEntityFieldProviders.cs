@@ -559,42 +559,44 @@ public sealed class GenericSingletonFieldProvider(
     public object? Read(EntityStateLayer layer)
     {
         EntityState? entity = ResolveEntity(layer.Tracker);
-        if (entity is null)
-        {
-            return null;
-        }
-
-        // Read once per frame for every singleton, so the int lane is read unboxed and handed out
-        // as a shared box: the game-rules singletons would otherwise allocate two boxes each per
-        // frame. Anything off the int lane takes the boxed indexer, as before.
-        LaneHit hit = PawnCellCoercion.Probe(entity, Spec.Path, _cursor, out int lane, out _, out object? boxed);
-        if (hit == LaneHit.Int)
-        {
-            if (Spec.ValueType == typeof(bool))
-            {
-                return lane != 0 ? PawnCellBoxes.True : PawnCellBoxes.False;
-            }
-
-            return Spec.ValueType == typeof(int) ? PawnCellBoxes.Int(lane) : null;
-        }
-
-        object? v = hit == LaneHit.Object ? boxed : entity[Spec.Path];
-        return v switch
-        {
-            null => null,
-            bool when Spec.ValueType == typeof(bool) => v,
-            int i when Spec.ValueType == typeof(bool) => i != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
-            uint u when Spec.ValueType == typeof(bool) => u != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
-            int when Spec.ValueType == typeof(int) => v,
-            uint u when Spec.ValueType == typeof(int) => PawnCellBoxes.Int((int)u),
-            string s when Spec.ValueType == typeof(string) => s,
-            _ => null
-        };
+        return entity is null ? null : ReadField(Spec, entity, _cursor);
     }
 
     /// <inheritdoc />
     public IEntityValueProvider CloneForWorker() =>
         new GenericSingletonFieldProvider(Spec, EmitOn, markerType, defaultValue);
+
+    // Read once per frame for every singleton, so the int lane is read unboxed and handed out
+    // as a shared box: the game-rules singletons would otherwise allocate two boxes each per
+    // frame. Anything off the int lane takes the boxed indexer.
+    internal static object? ReadField(ProviderSpec spec, EntityState entity, LaneCursor cursor)
+    {
+        LaneHit hit = PawnCellCoercion.Probe(entity, spec.Path, cursor, out int lane, out _, out object? boxed);
+        if (hit == LaneHit.Int)
+        {
+            if (spec.ValueType == typeof(bool))
+            {
+                return lane != 0 ? PawnCellBoxes.True : PawnCellBoxes.False;
+            }
+
+            return spec.ValueType == typeof(int) ? PawnCellBoxes.Int(lane) : null;
+        }
+
+        return Convert(spec, hit == LaneHit.Object ? boxed : entity[spec.Path]);
+    }
+
+    private static object? Convert(ProviderSpec spec, object? v) =>
+        v switch
+        {
+            null => null,
+            bool when spec.ValueType == typeof(bool) => v,
+            int i when spec.ValueType == typeof(bool) => i != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
+            uint u when spec.ValueType == typeof(bool) => u != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
+            int when spec.ValueType == typeof(int) => v,
+            uint u when spec.ValueType == typeof(int) => PawnCellBoxes.Int((int)u),
+            string s when spec.ValueType == typeof(string) => s,
+            _ => null
+        };
 
     private EntityState? ResolveEntity(EntityTracker tracker)
     {
@@ -621,5 +623,109 @@ public sealed class GenericSingletonFieldProvider(
         }
 
         return null;
+    }
+}
+
+/// <summary>
+///     A singleton read of the one entity of a class whose <c>m_iTeamNum</c> is a fixed side: the
+///     <see cref="GenericSingletonFieldProvider" /> shape with the class scan narrowed to that side.
+///     One instance per (spec, side), registered under <c>{spec name}@{side}</c>.
+/// </summary>
+/// <param name="spec">The read; its entity class must carry <c>m_iTeamNum</c>.</param>
+/// <param name="side">The side whose entity this instance reads: 2 (T) or 3 (CT).</param>
+/// <param name="emitOn">The change direction a synthesized change event follows.</param>
+/// <param name="markerType">The change event's marker, unique per instance.</param>
+/// <param name="defaultValue">The value node's seed before the entity is seen.</param>
+public sealed class GenericSideFieldProvider(
+    ProviderSpec spec,
+    int side,
+    ChangeDirection emitOn,
+    Type markerType,
+    object? defaultValue) : IEntityValueProvider, IWorkerCloneable<IEntityValueProvider>
+{
+    private readonly LaneCursor _cursor = new();
+    private readonly LaneCursor _teamCursor = new();
+    private int _cachedEntityIndex = -1;
+
+    /// <summary>The spec this provider reads.</summary>
+    public ProviderSpec Spec { get; } = spec;
+
+    /// <summary>The side whose entity this instance reads: 2 (T) or 3 (CT).</summary>
+    public int Side { get; } = side;
+
+    /// <inheritdoc />
+    public string ContextName => InstanceName(Spec.Name, Side);
+
+    /// <inheritdoc />
+    public ChangeDirection EmitOn { get; } = emitOn;
+
+    /// <inheritdoc />
+    public string EntityClass => Spec.EntityClass;
+
+    /// <inheritdoc />
+    public string FieldName => Spec.Path;
+
+    /// <inheritdoc />
+    public Type ValueType => Spec.ValueType;
+
+    /// <inheritdoc />
+    public object? DefaultValue => defaultValue;
+
+    /// <inheritdoc />
+    public Type MarkerType => markerType;
+
+    /// <summary>The registry name of the instance of <paramref name="specName" /> for <paramref name="side" />.</summary>
+    public static string InstanceName(string specName, int side) =>
+        $"{specName}@{side.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    /// <inheritdoc />
+    public object? Read(EntityStateLayer layer)
+    {
+        EntityState? entity = ResolveEntity(layer.Tracker);
+        return entity is null ? null : GenericSingletonFieldProvider.ReadField(Spec, entity, _cursor);
+    }
+
+    /// <inheritdoc />
+    public IEntityValueProvider CloneForWorker() =>
+        new GenericSideFieldProvider(Spec, Side, EmitOn, markerType, defaultValue);
+
+    private EntityState? ResolveEntity(EntityTracker tracker)
+    {
+        if (_cachedEntityIndex >= 0)
+        {
+            EntityState? cached = tracker.CurrentEntities[_cachedEntityIndex];
+            if (cached is not null && cached.ClassName == Spec.EntityClass && IsSide(cached))
+            {
+                return cached;
+            }
+
+            _cachedEntityIndex = -1;
+        }
+
+        foreach ((int idx, EntityState ent) in tracker.CurrentEntities.AllIndexed())
+        {
+            if (ent.ClassName != Spec.EntityClass || !IsSide(ent))
+            {
+                continue;
+            }
+
+            _cachedEntityIndex = idx;
+            return ent;
+        }
+
+        return null;
+    }
+
+    private bool IsSide(EntityState entity)
+    {
+        const string teamNum = "m_iTeamNum";
+        LaneHit hit = PawnCellCoercion.Probe(entity, teamNum, _teamCursor, out int lane, out _, out object? boxed);
+        if (hit == LaneHit.Int)
+        {
+            return lane == Side;
+        }
+
+        return PawnCellCoercion.TryCoerceInt(hit == LaneHit.Object ? boxed : entity[teamNum], out int team)
+               && team == Side;
     }
 }

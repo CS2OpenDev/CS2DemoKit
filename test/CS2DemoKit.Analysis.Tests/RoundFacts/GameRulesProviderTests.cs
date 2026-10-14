@@ -53,7 +53,11 @@ public class GameRulesProviderTests
     {
         List<string> names = EntityValueProviderRegistry.CreateDefault().All.Select(p => p.ContextName).ToList();
         await Assert.That(names[0]).IsEqualTo("entity.game.freeze_period");
-        await Assert.That(names.Skip(1).ToList()).IsEquivalentTo(_names.Select(n => "entity.game." + n).ToList());
+        await Assert.That(names.Skip(1).Take(_names.Length).ToList()).IsEquivalentTo(_names.Select(n => "entity.game." + n).ToList());
+
+        // The per-side team reads follow, one instance per side.
+        await Assert.That(names.Skip(1 + _names.Length).ToList()).IsEquivalentTo(
+            ["entity.team.score@2", "entity.team.score@3", "entity.team.clan_name@2", "entity.team.clan_name@3"]);
     }
 
     /// <summary>

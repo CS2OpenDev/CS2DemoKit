@@ -344,9 +344,15 @@ public static class CatalogBuilder
                     p.Name, "perPlayer", FriendlyTypeName(p.ValueType),
                     ProviderV2Name(p.Name), RulesType(FriendlyTypeName(p.ValueType))))),
             .. EntityValueProviderRegistry.CreateDefault().All
+                .Where(p => p is not GenericSideFieldProvider)
                 .Select(p => Annotate(new CatalogProvider(
                     p.ContextName, "singleton", FriendlyTypeName(p.ValueType),
-                    ProviderV2Name(p.ContextName), RulesType(FriendlyTypeName(p.ValueType)))))
+                    ProviderV2Name(p.ContextName), RulesType(FriendlyTypeName(p.ValueType))))),
+            // Listed once per spec; the registry holds one instance per side.
+            .. BuiltinProviderSpecs.TeamSpecs
+                .Select(s => Annotate(new CatalogProvider(
+                    s.Name, "perTeam", FriendlyTypeName(s.ValueType),
+                    ProviderV2Name(s.Name), RulesType(FriendlyTypeName(s.ValueType)))))
         ];
 
         return providers.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
@@ -641,7 +647,8 @@ public static class CatalogBuilder
     /// <summary>
     ///     Provider name → v2 namespace path: <c>entity.pawn.* → player.*</c>,
     ///     <c>entity.controller.* → player.*</c> (the controller is the player's too: its cash),
-    ///     <c>entity.weapon.* → player.weapon_*</c>, <c>entity.game.* → match.*</c>.
+    ///     <c>entity.weapon.* → player.weapon_*</c>, <c>entity.game.* → match.*</c>,
+    ///     <c>entity.team.* → team.*</c>.
     ///     <para>
     ///         The weapon arm FLATTENS to an underscore rather than nesting under
     ///         <c>player.weapon.</c>, and the reason is load-bearing. Weapon providers reach the
@@ -664,9 +671,11 @@ public static class CatalogBuilder
                 ? "player.weapon_" + name["entity.weapon.".Length..]
                 : name.StartsWith("entity.game.", StringComparison.Ordinal)
                     ? "match." + name["entity.game.".Length..]
-                    : throw new InvalidOperationException(
-                        $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
-                        + "(expected entity.pawn.*, entity.controller.*, entity.weapon.* or entity.game.*)");
+                    : name.StartsWith("entity.team.", StringComparison.Ordinal)
+                        ? "team." + name["entity.team.".Length..]
+                        : throw new InvalidOperationException(
+                            $"catalog v2 adapter: no v2 namespace mapping for provider '{name}' "
+                            + "(expected entity.pawn.*, entity.controller.*, entity.weapon.*, entity.game.* or entity.team.*)");
 
     private static string ContextV2Name(string ruleId) =>
         _contextV2Names.TryGetValue(ruleId, out string? v2)

@@ -62,6 +62,7 @@ public sealed class CatalogScopeAdapter
         IScopeSymbol round,
         IScopeSymbol match,
         IScopeSymbol enrich,
+        IScopeSymbol team,
         Dictionary<string, IScopeSymbol> eventNamespaces,
         Dictionary<string, IScopeSymbol> netMessageNamespaces,
         IReadOnlyList<IScopeSymbol> roleMembers,
@@ -72,7 +73,7 @@ public sealed class CatalogScopeAdapter
         Round = round;
         Match = match;
         Enrich = enrich;
-        Team = ScopeSymbol.Namespace("team", [ScopeSymbol.Value("side", RulesType.Int)]);
+        Team = team;
         _eventNamespaces = eventNamespaces;
         _netMessageNamespaces = netMessageNamespaces;
         _roleMembers = roleMembers;
@@ -96,7 +97,7 @@ public sealed class CatalogScopeAdapter
 
     /// <summary>
     ///     The <c>team.*</c> root, in scope only for a <c>for: each_team</c> ruleset: <c>team.side</c>,
-    ///     the side the instance is for.
+    ///     the side the instance is for, and the per-side providers (<c>team.score</c>, ...).
     /// </summary>
     public IScopeSymbol Team { get; }
 
@@ -145,8 +146,10 @@ public sealed class CatalogScopeAdapter
         tree.Add("player.name", RulesType.String);
         tree.Add("match.tick", RulesType.Instant); // instant — no catalog event field
         tree.AddIfAbsent(BombWasPlantedPath, RulesType.Bool); // sticky; the catalog gains it later
+        tree.Add(TeamSidePath, RulesType.Int);
 
         IScopeSymbol player = tree.Build("player");
+        IScopeSymbol team = tree.Build("team");
         IScopeSymbol round = tree.Build("round");
         IScopeSymbol match = tree.Build("match");
 
@@ -178,7 +181,7 @@ public sealed class CatalogScopeAdapter
             netMessageNamespaces[netMessage.Name] = BuildEventNamespaceCore(netMessage.Fields);
         }
 
-        return new CatalogScopeAdapter(catalog, player, round, match, enrich, eventNamespaces,
+        return new CatalogScopeAdapter(catalog, player, round, match, enrich, team, eventNamespaces,
             netMessageNamespaces, roleMembers, enrichmentsByName);
     }
 

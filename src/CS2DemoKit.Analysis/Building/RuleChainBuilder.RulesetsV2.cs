@@ -47,6 +47,14 @@ public sealed partial class RuleChainBuilder
     /// <summary>The (absent) player name for a game-scoped node — no player attribution (empty subtitle).</summary>
     private const string GameScopePlayerName = "";
 
+    private static readonly MethodInfo _entityChangeCopyEdgeMethod =
+        typeof(RuleChainBuilder).GetMethod(nameof(CreateEntityChangeCopyEdgeGeneric),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static readonly MethodInfo _matchRestartReseedEdgeMethod =
+        typeof(RuleChainBuilder).GetMethod(nameof(CreateMatchRestartReseedEdgeGeneric),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
     private static readonly MethodInfo _listAppendEdgeMethod =
         typeof(RuleChainBuilder).GetMethod(nameof(CreateListAppendEdgeGeneric),
             BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -409,7 +417,19 @@ public sealed partial class RuleChainBuilder
 
         _currentPlayerTeam = null;
         _teamSubjectSide = side;
-        _v2ConditionNodeOverlay = BuildV2ConditionOverlay(localLookup, []);
+        Dictionary<string, object> overlay = BuildV2ConditionOverlay(localLookup, [])!;
+        _v2ConditionNodeOverlay = overlay;
+
+        // A team.* read lowers to the spec name, which names this side's instance here. The instance
+        // name itself carries '@', which the expression tokenizer does not read.
+        foreach (ProviderSpec spec in BuiltinProviderSpecs.TeamSpecs)
+        {
+            if (_entityContextNodes?.GetValueOrDefault(GenericSideFieldProvider.InstanceName(spec.Name, side)) is { } sideNode)
+            {
+                localLookup[spec.Name] = sideNode;
+                overlay[spec.Name] = sideNode;
+            }
+        }
         try
         {
             foreach (CheckedRuleset rs in rulesets)
@@ -750,7 +770,7 @@ public sealed partial class RuleChainBuilder
         foreach (CatalogProvider provider in catalog.Providers)
         {
             if (provider.V2Name is { } v2
-                && string.Equals(provider.Scope, "singleton", StringComparison.Ordinal))
+                && provider.Scope is "singleton" or "perTeam")
             {
                 contextV2ToV1[v2] = provider.Name;
             }
@@ -830,7 +850,9 @@ public sealed partial class RuleChainBuilder
         {
             foreach (IEntityValueProvider provider in _entityProviders.All)
             {
-                if (providerNames.Contains(provider.ContextName) && !matched.Contains(provider))
+                // A team.* read names the spec; both sides' instances activate, one per side build.
+                string name = provider is GenericSideFieldProvider side ? side.Spec.Name : provider.ContextName;
+                if (providerNames.Contains(name) && !matched.Contains(provider))
                 {
                     matched.Add(provider);
                 }
@@ -1308,6 +1330,37 @@ public sealed partial class RuleChainBuilder
                         GraphEdgeKind.Trigger, ev, condition, GateReads(sourceGate, null));
                 }
 
+                break;
+            }
+
+            case RuleNodeKind.Capture when stat.ConcreteEvents.Count == 0:
+            {
+                // No event to capture at: the node follows the side provider's change events, so a
+                // table reads the latest value as it samples the row. The resolver admits only a
+                // per-team read here.
+                EntityProviderReference read = stat.EntityReads.Single();
+                IEntityValueProvider provider =
+                    (_teamSubjectSide is { } side
+                        ? _entityProviders?.Get(GenericSideFieldProvider.InstanceName(read.ProviderName, side))
+                        : null)
+                    ?? throw new InvalidOperationException(
+                        $"stat '{rs.Id.Id}.{stat.StatId}' captures '{read.Path}' with no on:, and no side "
+                        + "provider backs that read in this build.");
+                StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
+                RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
+                Type valueType = stat.ValueType.Kind == RulesTypeKind.String ? typeof(string) : typeof(int);
+                StateEdge edge = (StateEdge)_entityChangeCopyEdgeMethod
+                    .MakeGenericMethod(provider.MarkerType, valueType)
+                    .Invoke(null, [source, node])!;
+                wiring.AddEdge(edge, GraphEdgeKind.Trigger, provider.ContextName);
+
+                // A match restart resets the node, and a value set before it (a clan name set in
+                // warmup) never changes again, so the restart re-seeds it from the provider.
+                StateNode providerNode = _entityContextNodes![provider.ContextName];
+                StateEdge reseed = (StateEdge)_matchRestartReseedEdgeMethod
+                    .MakeGenericMethod(valueType)
+                    .Invoke(null, [source, node, providerNode])!;
+                wiring.AddEdge(reseed, GraphEdgeKind.Trigger, "begin_new_match", null, [providerNode]);
                 break;
             }
 
@@ -3022,6 +3075,18 @@ public sealed partial class RuleChainBuilder
         Func<GameEvent, bool>? cond = (Func<GameEvent, bool>?)condition;
         return new OnGameEventSetValue<TEvent, IReadOnlyList<int>>(
             source, target, evt => AppendCopy(target.Value, element(evt)), cond, declaredReads: declaredReads);
+    }
+
+    private static OnEntityChangeSetValue<TMarker, TValue> CreateEntityChangeCopyEdgeGeneric<TMarker, TValue>(
+        StateNode source, StateNode target) =>
+        new(source, (ValueNode<TValue>)target, evt => (TValue)evt.NewValue!);
+
+    private static OnGameEventSetValue<BeginNewMatchEvent, TValue> CreateMatchRestartReseedEdgeGeneric<TValue>(
+        StateNode source, StateNode target, StateNode providerNode)
+    {
+        ValueNode<TValue> from = (ValueNode<TValue>)providerNode;
+        return new OnGameEventSetValue<BeginNewMatchEvent, TValue>(
+            source, (ValueNode<TValue>)target, _ => from.Value, _ => from.IsActive, declaredReads: [providerNode]);
     }
 
     private static int[] AppendCopy(IReadOnlyList<int>? old, int item)

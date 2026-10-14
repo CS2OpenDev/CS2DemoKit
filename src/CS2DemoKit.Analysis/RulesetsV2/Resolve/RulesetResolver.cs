@@ -568,6 +568,7 @@ public static class RulesetResolver
             }
 
             RejectNonIntKeepList(stat, valueSelector);
+            RejectTriggerlessCapture(stat, trigger, condition, whileGate, valueSelector, reads);
             RejectUngatedSentinelAggregate(stat, keep, bucketReducer, condition, valueSelector);
 
             return new CheckedStat(
@@ -1429,6 +1430,33 @@ public static class RulesetResolver
             }
         }
 
+        /// <summary>
+        ///     A capture with no <c>on:</c> follows its read's change events, so it holds the latest value
+        ///     when a table samples it. Only a per-team read emits on every change, and only a per: match
+        ///     node keeps a value that changes once (a clan name) past the first round's reset.
+        /// </summary>
+        private void RejectTriggerlessCapture(StatDef stat, ResolvedTrigger trigger, CheckedExpression? condition,
+            CheckedExpression? whileGate, CheckedExpression? valueSelector, ReadCollector reads)
+        {
+            if (stat.Kind != StatKind.Capture || trigger.HasEventSource || valueSelector is null)
+            {
+                return;
+            }
+
+            bool bareTeamRead = valueSelector.Root is ReferenceNode
+                                && reads.EntityReads is [{ } read]
+                                && _providerByV2Name.TryGetValue(read.Path, out CatalogProvider? provider)
+                                && provider.Scope == "perTeam";
+            if (!bareTeamRead || MapKeep(stat) != KeepKind.Last || stat.Per != PerScope.Match
+                || condition is not null || whileGate is not null)
+            {
+                Report(ResolveDiagnosticCodes.TriggerUnsupportedForKind,
+                    $"stat '{stat.Id}' is a capture with no on:, which reads a bare team.* value, per: match, "
+                    + "kept last and ungated; give it an on: to capture anything else",
+                    stat.Position);
+            }
+        }
+
         private CheckedExpression? BuildWhileGate(StatDef stat, ResolvedTrigger trigger, RulesType thisType,
             ReadCollector reads)
         {
@@ -1568,7 +1596,9 @@ public static class RulesetResolver
         {
             if (sourceRef is null)
             {
-                resolved.Ok = stat.Kind is StatKind.Flag or StatKind.Compute; // expression flag / compute need no source
+                // Expression flag / compute need no source. RejectTriggerlessCapture narrows what a
+                // capture without one may read.
+                resolved.Ok = stat.Kind is StatKind.Flag or StatKind.Compute or StatKind.Capture;
                 return;
             }
 
@@ -2186,7 +2216,7 @@ public static class RulesetResolver
             if (_providerByV2Name.TryGetValue(reference.Path, out CatalogProvider? provider))
             {
                 entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject,
-                    IsSingleton: string.Equals(provider.Scope, "singleton", StringComparison.Ordinal));
+                    IsSingleton: provider.Scope is "singleton" or "perTeam");
                 return true;
             }
 
@@ -2311,7 +2341,7 @@ public static class RulesetResolver
 
             internal IReadOnlyList<string> DeclaredReads => _reads;
 
-            internal IReadOnlyList<EntityProviderReference> EntityReads => _entities;
+            internal List<EntityProviderReference> EntityReads => _entities;
 
             /// <summary>Declares a read the planner performs on the stat's behalf (no expression carries it).</summary>
             internal void Declare(string path)

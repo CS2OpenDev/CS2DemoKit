@@ -25,6 +25,11 @@ public sealed class EntityValueProviderRegistry
             registry.Register(provider);
         }
 
+        foreach (IEntityValueProvider provider in BuiltinProviderSpecs.CreateTeamProviders())
+        {
+            registry.Register(provider);
+        }
+
         return registry;
     }
 

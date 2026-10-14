@@ -3179,6 +3179,20 @@
       "note": "Position within the CURRENT burst, not a round or match total: it resets on trigger release and on weapon change."
     },
     {
+      "name": "entity.team.clan_name",
+      "scope": "perTeam",
+      "clrType": "string",
+      "v2Name": "team.clan_name",
+      "v2Type": "String"
+    },
+    {
+      "name": "entity.team.score",
+      "scope": "perTeam",
+      "clrType": "int",
+      "v2Name": "team.score",
+      "v2Type": "Int"
+    },
+    {
       "name": "entity.weapon.accuracy_penalty",
       "scope": "perPlayer",
       "clrType": "float",
