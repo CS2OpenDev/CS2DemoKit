@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime;
 using CS2DemoKit.Analysis;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
@@ -95,6 +96,35 @@ internal static class Measurement
             per: match
         """;
 
+    /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries R6's template cost.</summary>
+    public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
+
+    private const string ProjectileOverlayLabel = "bench-projectile.rules.yaml";
+
+    private const string ProjectileOverlayYaml =
+        """
+        ruleset: bench_projectile
+        for: each_projectile
+        stats:
+          class:        { capture: projectile.class,   keep: first }
+          thrower:      { capture: projectile.thrower, keep: first }
+          spawn_x:      { capture: projectile.pos_x,   keep: first }
+          end_x:        { capture: projectile.pos_x,   keep: last }
+          bounces:      { capture: projectile.bounces, keep: last }
+          thrower_walk: { capture: thrower.is_walking,  on: raw.projectile_created }
+        show:
+          tables:
+            grenades:
+              per: projectile
+              columns:
+                - { stat: class, label: class }
+                - { stat: thrower, label: thrower }
+                - { stat: spawn_x, label: spawn_x }
+                - { stat: end_x, label: end_x }
+                - { stat: bounces, label: bounces }
+                - { stat: thrower_walk, label: thrower_walk }
+        """;
+
     private static double Ms(long t) => (Stopwatch.GetTimestamp() - t) * 1000.0 / Stopwatch.Frequency;
 
     private static void Settle()
@@ -171,10 +201,19 @@ internal static class Measurement
     {
         byte[] bytes = File.ReadAllBytes(demoPath);
         bool userCmdLane = Environment.GetEnvironmentVariable(UserCmdLaneVariable) == "1";
-        (string, string)[] overlays = userCmdLane
-            ? [(VisibilityOverlayLabel, VisibilityOverlayYaml), (UserCmdOverlayLabel, UserCmdOverlayYaml)]
-            : [(VisibilityOverlayLabel, VisibilityOverlayYaml)];
-        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(overlays);
+        bool projectileLane = Environment.GetEnvironmentVariable(ProjectileLaneVariable) == "1";
+        List<(string, string)> overlayList = [(VisibilityOverlayLabel, VisibilityOverlayYaml)];
+        if (userCmdLane)
+        {
+            overlayList.Add((UserCmdOverlayLabel, UserCmdOverlayYaml));
+        }
+
+        if (projectileLane)
+        {
+            overlayList.Add((ProjectileOverlayLabel, ProjectileOverlayYaml));
+        }
+
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(overlayList.ToArray());
         if (!rules.Success)
         {
             // The overlay tier is error-contained by design, so a broken overlay would otherwise
@@ -232,7 +271,20 @@ internal static class Measurement
                     $"{UserCmdLaneVariable} is set but the build does not decode user commands");
             }
 
-            _ = DemoAnalysis.Evaluate(w, wb, options);
+            AnalysisRun wr = DemoAnalysis.Evaluate(w, wb, options);
+            if (projectileLane)
+            {
+                // A ruleset that builds clean but materializes no instance would otherwise
+                // measure the lane off under an "on" label.
+                MetricTable? grenades = wr.ProjectConfiguredOutputs(w)
+                    .SingleOrDefault(t => t.Name == "grenades");
+                if (grenades is null || grenades.Rows.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProjectileLaneVariable} is set but the grenades table is missing or empty");
+                }
+            }
+
             VisibilityCounters.Enabled = false;
             VisibilityCountersSnapshot rays = VisibilityCounters.Snapshot();
             VisibilityCounters.Reset();
