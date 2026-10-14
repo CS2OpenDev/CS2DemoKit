@@ -758,6 +758,24 @@ golden suites pin.
 read `ProjectileSampler` makes, which refuses a zero cell index. The one-argument overload is
 unchanged.
 
+### Two projectile events (0.14.0)
+
+`ProjectileCreatedEvent` and `ProjectileRemovedEvent` (new, `CS2DemoKit.Analysis.Events`) are
+synthesized from the digest's projectile rows, registered as `projectile_created` and
+`projectile_removed`, and bound on every profile. The catalog gains both events (`unmeasured`) and
+two views, `projectile_thrown` and `projectile_landed`, with facets `class`, `x`, `y`, `z` and, on
+landing, `bounces`. Created waits for the thrower to resolve, the `molotov_thrown` rule, so a
+`CMolotovProjectile` fires both on the same frame with the same slot; removed fires for every
+projectile, with `PlayerSlot = -1` when the thrower never resolved. A position that was not readable
+is NaN. Both events carry the frame clock in all three tick slots.
+
+A subscription to either event, through a view or `raw.`, turns the digest's rows on for all five
+classes; nothing narrows the set to the classes a `match:` names yet. With no subscription the
+digest, the goldens and the rules output are unchanged. `EntityIntegrationTests` pins the counts
+against `ProjectileSampler.Walk`, `PipelinedDigestEquivalenceTests` the event stream at the
+sequential and default caps, and `ProjectileEventRulesTests` the activation on both run paths.
+`molotov_thrown` is unchanged.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

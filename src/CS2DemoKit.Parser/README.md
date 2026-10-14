@@ -275,6 +275,10 @@ smoke's first cell was wrong, and on a build-10924 de_dust2 7 of 72 were wrong w
 What stays with the consumer: the release tick (the `weapon_fire` event, 7 to 15 ticks before
 creation), joining a projectile to its detonation event, and jump-throw classification.
 
+A rule that only needs each projectile's start and end reads them without the walk: the Analysis
+package synthesizes `projectile_created` and `projectile_removed` from the same lifecycle, behind the
+`projectile_thrown` and `projectile_landed` views (see `docs/RULES_AUTHORING.md`, section 3).
+
 Measured on a 154,869-frame de_nuke, Release, warm: 229 projectiles and 148,495 samples at stride 1
 in 0.54 s and 98 MB over a retained `ParsedDemo`, after a 0.25 s, 578 MB parse; 0.7 s and 251 MB end
 to end through `DemoReader` with `DecodePlan.EntityReplay`.

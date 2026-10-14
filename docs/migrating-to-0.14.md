@@ -77,3 +77,9 @@ the existing Analysis evaluator `Meter`) sum to decodes per visit. See
 index is 0, which puts the axis outside every map. `CS2DemoKit.Analysis.Observation.ProjectileRow`
 is the per-frame projectile record the entity digest carries for the five grenade classes; nothing
 public produces one yet, the frame observer that does follows in this release.
+
+`projectile_thrown` and `projectile_landed` are new views over two synthesized events,
+`projectile_created` and `projectile_removed`, for all five grenades: thrower-bound, with `class`,
+`x`, `y` and `z` facets. A host that walked `ProjectileSampler` beside a run to find throw origins or
+landing points can subscribe instead, or collect `GameEventEdge<ProjectileRemovedEvent>`. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#3-views-and-facets--the-vocabulary).

@@ -106,7 +106,7 @@ know the CS2 conventions. Common views:
 
 `kill` · `death` · `assist` · `damage_dealt` · `shot` · `blinded_enemy` ·
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
-`round_won` · `round_lost` · `round_decided` · `round_ended`
+`projectile_thrown` · `projectile_landed` · `round_won` · `round_lost` · `round_decided` · `round_ended`
 
 A round ends twice. **`round_decided`** fires on the frame the server decides the round, read off
 the game rules' round-win status: its facets are `winner_side` (2 = T, 3 = CT), `reason` (the
@@ -129,6 +129,27 @@ the engine opens the round itself: it dispatches a synthesized `round_freeze_end
 frame, just before the `round_decided`, which moves `round.number`, resets the round's stats and
 samples the freeze-end economy and rosters like a real one. That round gets its own rows, and
 `round.number` stays level with `rounds_played`. A `raw.round_freeze_end` stat sees it too.
+
+**`projectile_thrown`** and **`projectile_landed`** are a grenade projectile's first and last frame,
+for all five grenades, bound to the thrower. Their facets are `class` (`smoke`, `molotov`, `he`,
+`flash` or `decoy`; an incendiary is a `molotov`), `x`, `y` and `z`, and `projectile_landed` adds
+`bounces`. Both are synthesized from entity state, so `event.tick` is the frame clock. A throw fires
+on the first frame its thrower resolves, which for a molotov is the frame `molotov` fires, and its
+position is where the projectile was first seen. A projectile lands on the first frame it is gone:
+right after the burst for an HE, a flash or a molotov, but only when the cloud or the sound ends for
+a smoke or a decoy. A projectile whose thrower never resolves never fires `projectile_thrown`, and
+its `projectile_landed` binds to nobody. `x`, `y` and `z` read NaN when the position was not
+readable. The events behind them are `projectile_created` and `projectile_removed`; under a view,
+`event.*` also reads `EntityIndex`, `Serial` and `ClassName`. A `raw.projectile_created` trigger
+reads only the tick, because raw triggers expose no fields, so filter through the views.
+
+```yaml
+stats:
+  smokes_thrown:
+    count: projectile_thrown
+    match: { class: smoke }
+    per: round
+```
 
 `enemy_spotted` is a view as well, but it is *synthesized* from recomputed visibility rather than
 read off the wire, so it only fires on a run set up for it — read "Facets that need a map bake" in
@@ -279,7 +300,8 @@ is the frame clock on every event: the index `DemoFrame`, timeline events and hi
 the one a video or clip consumer seeks by. `event.tick` is the absolute server tick on a wire event
 (`kill`, `shot`, `bomb_planted`, ...), higher by the demo's `ServerStartTick` (about 20,000 ticks on
 a typical GOTV demo). On the views the engine synthesizes from entity state (`enemy_spotted`,
-`molotov`, `round_decided`) there is no server stamp, and `event.tick` is the frame clock too.
+`molotov`, `projectile_thrown`, `projectile_landed`, `round_decided`) there is no server stamp, and
+`event.tick` is the frame clock too.
 
 Capture `event.frame_tick` when the tick is going to a consumer, and whenever you compare ticks
 across views: it is one clock everywhere, so a `where:` that differences a molotov tick against a
