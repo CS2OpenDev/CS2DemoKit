@@ -84,7 +84,8 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
 
         foreach (OutputDef output in build.Outputs ?? [])
         {
-            if (output.Scope == OutputScope.PerEvent)
+            // A projectile table's rows come from the evaluator's records on either path.
+            if (output.Scope is OutputScope.PerEvent or OutputScope.PerProjectile)
             {
                 continue;
             }
@@ -126,7 +127,7 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
 
     /// <summary>Whether a build has any output this recorder can project.</summary>
     public static bool Serves(BuildResult build) =>
-        build.Outputs?.Any(o => o.Enabled && o.Scope != OutputScope.PerEvent) == true;
+        build.Outputs?.Any(o => o.Enabled && o.Scope is not (OutputScope.PerEvent or OutputScope.PerProjectile)) == true;
 
     /// <inheritdoc />
     public void BeforeMessage(Type dispatchKey)

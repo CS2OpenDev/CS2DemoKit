@@ -51,6 +51,10 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     private const string DimSide = "side";
     private const string DimSlots = "slots";
     private const string DimSteamId = "steam_id";
+    private const string DimCreatedTick = "created_tick";
+    private const string DimRemovedTick = "removed_tick";
+    private const string DimEntityIndex = "entity_index";
+    private const string DimSerial = "serial";
 
     private readonly IReadOnlyDictionary<string, StateNode>? _gameNodesByRuleId;
     private readonly OutputDef _output;
@@ -78,6 +82,12 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
     /// <summary>The per-side roster nodes (<c>BuildResult.TeamRosterNodes</c>) a team table's <c>slots</c> reads.</summary>
     public IReadOnlyDictionary<int, StateNode>? TeamRosterNodes { get; init; }
+
+    /// <summary>
+    ///     The projectile instances the run finished (<c>AnalysisRun.Projectiles</c>), the rows of a
+    ///     <c>per: projectile</c> table on either path. Without them such a table has no rows.
+    /// </summary>
+    public IReadOnlyList<ProjectileRecord>? Projectiles { get; init; }
 
     /// <summary>
     ///     The match identifier used in the <c>match_id</c> dimension (typically the demo filename).
@@ -128,6 +138,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
             OutputScope.PerTeamPerGame => ProjectPerTeam(source, demo, false),
             OutputScope.PerPlayerPerEvent or OutputScope.PerTeamPerEvent or OutputScope.PerMatchPerEvent =>
                 ProjectEventTable(source, demo),
+            OutputScope.PerProjectile => ProjectProjectiles(demo),
             _ => throw new InvalidOperationException(
                 $"output '{_output.Id}' logs timeline events, which only a snapshot run records.")
         };
@@ -145,6 +156,11 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         if (ConfiguredOutputRecorder.IsEventScope(output.Scope))
         {
             clocks[DimTick] = MetricTable.FrameClock;
+        }
+        else if (output.Scope == OutputScope.PerProjectile)
+        {
+            clocks[DimCreatedTick] = MetricTable.FrameClock;
+            clocks[DimRemovedTick] = MetricTable.FrameClock;
         }
 
         foreach (MetricRef metric in output.Metrics)
@@ -415,9 +431,78 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
     }
 
+    // ── per_projectile: one row per finished projectile instance ───────────
+
+    private MetricTable ProjectProjectiles(DemoDescriptor demo)
+    {
+        List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
+        List<MetricRow> rows = [];
+        foreach (ProjectileRecord record in Projectiles ?? [])
+        {
+            Dictionary<string, object?> dimensions = new(StringComparer.Ordinal);
+            foreach (string dimension in _output.Dimensions)
+            {
+                switch (dimension)
+                {
+                    case DimMatchId:
+                        if (MatchId is not null)
+                        {
+                            dimensions[DimMatchId] = MatchId;
+                        }
+
+                        break;
+                    case DimMap:
+                        dimensions[DimMap] = demo.MapName;
+                        break;
+                    case DimRoundNumber:
+                        dimensions[DimRoundNumber] = record.RoundNumber;
+                        break;
+                    case DimCreatedTick:
+                        dimensions[DimCreatedTick] = record.CreatedTick;
+                        break;
+                    case DimRemovedTick:
+                        dimensions[DimRemovedTick] = record.RemovedTick;
+                        break;
+                    case DimEntityIndex:
+                        dimensions[DimEntityIndex] = record.EntityIndex;
+                        break;
+                    case DimSerial:
+                        dimensions[DimSerial] = record.Serial;
+                        break;
+                    case DimPlayerSlot:
+                        dimensions[DimPlayerSlot] = record.ThrowerSlot;
+                        break;
+                    case DimPlayerName:
+                        dimensions[DimPlayerName] = record.ThrowerName;
+                        break;
+                    case DimSteamId:
+                        dimensions[DimSteamId] = SteamId(demo, record.ThrowerSlot);
+                        break;
+                    case DimTeam:
+                        dimensions[DimTeam] = record.Team;
+                        break;
+                }
+            }
+
+            Dictionary<string, object?> values = new(StringComparer.Ordinal);
+            foreach (MetricRef metric in _output.Metrics)
+            {
+                values[metric.Label] = StatValues.ApplyColumnFormat(
+                    record.Values.GetValueOrDefault(metric.RuleRef), metric.Format, demo.TickRate);
+            }
+
+            rows.Add(new MetricRow(dimensions, values));
+        }
+
+        return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
+    }
+
     // A string: a SteamID64 does not survive a double, which is what a JSON reader may parse it into.
     private static string? SteamId(DemoDescriptor demo, PerPlayerNodeTemplate.MaterializedPlayer? player) =>
-        player is { } p && demo.Players.TryGetValue(p.PlayerSlot, out PlayerInfo? pi) && pi.SteamId64 != 0
+        player is { } p ? SteamId(demo, p.PlayerSlot) : null;
+
+    private static string? SteamId(DemoDescriptor demo, int slot) =>
+        demo.Players.TryGetValue(slot, out PlayerInfo? pi) && pi.SteamId64 != 0
             ? pi.SteamId64.ToString(CultureInfo.InvariantCulture)
             : null;
 

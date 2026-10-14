@@ -1,6 +1,7 @@
 #region
 
 using System.Diagnostics;
+using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Diagnostics;
@@ -8,6 +9,7 @@ using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Analysis.Observation;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
@@ -103,6 +105,14 @@ public sealed class StateGraphEvaluator
 
     private readonly IReadOnlyList<PerPlayerNodeTemplate> _perPlayerTemplates;
 
+    // ── Per-projectile materialization ──────────────────────────────────────
+    // One instance per (entity index, serial) from projectile_created to projectile_removed. Its
+    // nodes never join the snapshot node list, so a snapshot row does not widen per grenade; its
+    // edges are registered on creation and unregistered at removal.
+    private readonly IReadOnlyList<ProjectileNodeTemplate> _projectileTemplates;
+    private readonly Dictionary<(int Index, int Serial), LiveProjectile> _liveProjectiles = [];
+    private readonly List<ProjectileRecord> _projectileRecords = [];
+
     private readonly PlayerContextIndex? _playerContextIndex;
 
     // Multi-action per trigger (registration used to silently last-wins).
@@ -189,6 +199,7 @@ public sealed class StateGraphEvaluator
         _conjunctionIndex = BuildLogicNodeIndex(graph.Edges, graph.ConjunctionNodes);
         _disjunctionIndex = BuildLogicNodeIndex(graph.Edges, graph.DisjunctionNodes);
         _perPlayerTemplates = graph.PerPlayerTemplates;
+        _projectileTemplates = graph.ProjectileTemplates;
 
         foreach ((StateNode trigger, List<(Action Invoke, StateNode? Writes)> actions) in graph.RisingEdgeActions)
         {
@@ -289,6 +300,15 @@ public sealed class StateGraphEvaluator
 
     /// <summary>Every player materialised so far, in order. Both modes.</summary>
     public IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> MaterializedPlayers => _materializedPlayers;
+
+    /// <summary>
+    ///     Every projectile instance the most recent evaluation finished, in the order they were
+    ///     removed, with the ones still live at the end last. Both modes. Reset per evaluation.
+    /// </summary>
+    public IReadOnlyList<ProjectileRecord> ProjectileRecords => _projectileRecords;
+
+    /// <summary>The build's live round-number node, which a projectile record's round reads; null when the build has none.</summary>
+    internal StateNode? RoundNumberNode { get; set; }
 
     /// <summary>Frames read by the most recent evaluation.</summary>
     public int FramesConsumed { get; private set; }
@@ -516,6 +536,8 @@ public sealed class StateGraphEvaluator
         RoundOfficiallyEndedSeen = 0;
         CsPreRestartSeen = 0;
         _roundDecidedSinceFreezeEnd = false;
+        ReleaseProjectiles();
+        _projectileRecords.Clear();
 
         // Static ruleset nodes start from their build-time values, so evaluating one build twice
         // does not carry the first run's totals into the second. A no-op on a fresh build.
@@ -577,6 +599,7 @@ public sealed class StateGraphEvaluator
 
         int frameIdx = 0;
         int runPos = 0;
+        int lastFrameTick = 0;
         List<DemoFrame> run = new(4);
         try
         {
@@ -606,6 +629,7 @@ public sealed class StateGraphEvaluator
 
             DemoFrame frame = run[runPos++];
             int frameTick = frame.GameTick ?? frame.ServerTick;
+            lastFrameTick = frameTick;
             long frameStart = timeFrame ? Stopwatch.GetTimestamp() : 0;
             int frameMessageCount = 0;
 
@@ -656,6 +680,10 @@ public sealed class StateGraphEvaluator
                         {
                             SeedObservedTeam(observedTeam);
                         }
+                        else if (sgem.DecodedEvent is ProjectileCreatedEvent createdProjectile)
+                        {
+                            MaterializeProjectile(createdProjectile, frameTick);
+                        }
                     }
 
                     Type sKey = GetDispatchKey(syntheticMsg);
@@ -668,6 +696,12 @@ public sealed class StateGraphEvaluator
 
                     FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
                     Observer?.AfterMessage(frame.ServerTick);
+
+                    // After the message settles, so a capture on projectile_removed is in the row.
+                    if (syntheticMsg is GameEventMessage { DecodedEvent: ProjectileRemovedEvent removedProjectile })
+                    {
+                        FinalizeProjectile((removedProjectile.EntityIndex, removedProjectile.Serial), frameTick, true);
+                    }
                 }
             }
 
@@ -844,6 +878,7 @@ public sealed class StateGraphEvaluator
 
         FramesConsumed = frameIdx;
         MessagesConsumed = totalMessages;
+        FinalizeLiveProjectiles(lastFrameTick);
         Observer?.Finish();
         frameObserver?.Finish();
 
@@ -1637,6 +1672,161 @@ public sealed class StateGraphEvaluator
         }
 
         ResortAllSlots();
+    }
+
+    // ── Per-projectile materialization ──────────────────────────────────────
+
+    private void MaterializeProjectile(ProjectileCreatedEvent created, int tick)
+    {
+        (int Index, int Serial) key = (created.EntityIndex, created.Serial);
+        if (_projectileTemplates.Count == 0 || _liveProjectiles.ContainsKey(key))
+        {
+            return;
+        }
+
+        // The scanner's live row carries the thrower held from its first resolution; the event is
+        // the fallback for a scanner that does not keep rows.
+        ProjectileRow row = new(created.EntityIndex, created.Serial, created.ClassName, created.PlayerSlot, -1,
+            new Vector3(created.X, created.Y, created.Z), null, null, 0, 0, null, null);
+        if (_entityScanner is { } scanner)
+        {
+            foreach (ProjectileRow live in scanner.Projectiles.Live)
+            {
+                if (live.EntityIndex == created.EntityIndex && live.Serial == created.Serial)
+                {
+                    row = live;
+                    break;
+                }
+            }
+        }
+
+        List<ProjectileNodeTemplate.MaterializedProjectile> instances = new(_projectileTemplates.Count);
+        HashSet<Type> touched = [];
+        foreach (ProjectileNodeTemplate template in _projectileTemplates)
+        {
+            ProjectileNodeTemplate.MaterializedProjectile instance = template.Materialize(row);
+            foreach (StateEdge edge in instance.Edges)
+            {
+                RegisterEdge(edge);
+                touched.Add(edge.MessageType);
+            }
+
+            if (instance.RisingEdgeActions is { } actions)
+            {
+                foreach ((StateNode trigger, Action action, StateNode? writes) in actions)
+                {
+                    if (!_risingEdgeActions.TryGetValue(trigger, out List<RegisteredRisingEdgeAction>? registered))
+                    {
+                        _risingEdgeActions[trigger] = registered = [];
+                        _risingEdgeFireCounts[trigger] = 0;
+                    }
+
+                    registered.Add(new RegisteredRisingEdgeAction(action, null, writes));
+                }
+            }
+
+            instances.Add(instance);
+        }
+
+        // Only the keys this instance's edges joined: a full resort per grenade would walk every
+        // edge list of the graph hundreds of times a demo.
+        Dictionary<Type, List<StateEdge>> sub = new(touched.Count);
+        foreach (Type key2 in touched)
+        {
+            sub[key2] = _edgeIndex[key2];
+        }
+
+        TopologicalSortEdges(sub);
+        _liveProjectiles[key] = new LiveProjectile(tick, row.Team, instances);
+    }
+
+    private void FinalizeProjectile((int Index, int Serial) key, int tick, bool removed)
+    {
+        if (!_liveProjectiles.Remove(key, out LiveProjectile? live))
+        {
+            return;
+        }
+
+        Dictionary<string, object?> values = new(StringComparer.OrdinalIgnoreCase);
+        ProjectileNodeTemplate.MaterializedProjectile first = live.Instances[0];
+        foreach (ProjectileNodeTemplate.MaterializedProjectile instance in live.Instances)
+        {
+            // A round-end compute has no round end of its own; it settles on the instance's.
+            foreach (StateNode node in instance.Nodes)
+            {
+                if (node is ComputedStatNode compute)
+                {
+                    compute.Recompute();
+                }
+            }
+
+            foreach ((string id, StateNode node) in instance.NodesByRuleId)
+            {
+                values[id] = StatValues.ReadSnapshotValue(
+                    new NodeSnapshot(node.IsActive, node.GetDisplayValue(), node.GetNumericValue()), node);
+            }
+
+            ReleaseInstance(instance);
+        }
+
+        _projectileRecords.Add(new ProjectileRecord(
+            first.EntityIndex, first.Serial, first.ClassName, first.ThrowerSlot, ResolvePlayerName(first.ThrowerSlot),
+            live.Team, live.CreatedTick, tick, CurrentRoundNumber(), removed, values));
+    }
+
+    private void FinalizeLiveProjectiles(int tick)
+    {
+        foreach ((int Index, int Serial) key in _liveProjectiles.Keys.ToList())
+        {
+            FinalizeProjectile(key, tick, false);
+        }
+    }
+
+    private void ReleaseProjectiles()
+    {
+        foreach (LiveProjectile live in _liveProjectiles.Values)
+        {
+            foreach (ProjectileNodeTemplate.MaterializedProjectile instance in live.Instances)
+            {
+                ReleaseInstance(instance);
+            }
+        }
+
+        _liveProjectiles.Clear();
+    }
+
+    private void ReleaseInstance(in ProjectileNodeTemplate.MaterializedProjectile instance)
+    {
+        foreach (StateEdge edge in instance.Edges)
+        {
+            if (_edgeIndex.TryGetValue(edge.MessageType, out List<StateEdge>? list))
+            {
+                list.Remove(edge);
+            }
+
+            _edgeIds.Remove(edge);
+        }
+
+        if (instance.RisingEdgeActions is { } actions)
+        {
+            foreach ((StateNode trigger, _, _) in actions)
+            {
+                _risingEdgeActions.Remove(trigger);
+                _risingEdgeFireCounts.Remove(trigger);
+            }
+        }
+    }
+
+    private int CurrentRoundNumber() =>
+        RoundNumberNode is { IsActive: true } node && node.GetNumericValue() is { } round ? (int)round : 0;
+
+    private sealed class LiveProjectile(int createdTick, int team, List<ProjectileNodeTemplate.MaterializedProjectile> instances)
+    {
+        public int CreatedTick { get; } = createdTick;
+
+        public int Team { get; } = team;
+
+        public List<ProjectileNodeTemplate.MaterializedProjectile> Instances { get; } = instances;
     }
 
     private void ProcessWrittenNodes(bool[]? snapshotDirty = null,

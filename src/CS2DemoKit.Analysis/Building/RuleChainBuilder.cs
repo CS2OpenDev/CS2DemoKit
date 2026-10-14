@@ -404,7 +404,8 @@ public sealed partial class RuleChainBuilder
         bool emitProjectiles = IsReferencedByBuiltins("projectile_created", builtinContexts)
                                || IsReferencedByBuiltins("projectile_removed", builtinContexts)
                                || RulesetsSubscribeToEvent("projectile_created", rulesets)
-                               || RulesetsSubscribeToEvent("projectile_removed", rulesets);
+                               || RulesetsSubscribeToEvent("projectile_removed", rulesets)
+                               || rulesets.Any(rs => rs.For == RulesetsV2.Model.RulesetScope.EachProjectile);
 
         // Built only when something asks for them, so an ordinary run allocates none and the
         // per-frame consume short-circuits on the null check. The team callback is where liveness

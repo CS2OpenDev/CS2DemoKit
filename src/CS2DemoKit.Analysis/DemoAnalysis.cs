@@ -193,6 +193,13 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
     public IReadOnlyList<StateNode> MaterializedNodes { get; init; } = [];
 
     /// <summary>
+    ///     Every <c>for: each_projectile</c> instance the run finished, removed ones in removal order
+    ///     and the ones still live at the end last. The rows of a <c>per: projectile</c> table.
+    ///     Populated in both capture modes; empty when no projectile ruleset built.
+    /// </summary>
+    public IReadOnlyList<ProjectileRecord> Projectiles { get; init; } = [];
+
+    /// <summary>
     ///     The graph's static nodes followed by the materialised per-player nodes the snapshot table
     ///     would track. The same list in both capture modes, which is what lets a bare run be
     ///     compared with a snapshot run node for node.
@@ -263,7 +270,8 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
             {
                 MatchId = matchId,
                 TeamNodesByRuleId = Build.TeamNodesByRuleId,
-                TeamRosterNodes = Build.TeamRosterNodes
+                TeamRosterNodes = Build.TeamRosterNodes,
+                Projectiles = Projectiles
             };
             tables.AddRange(Snapshots is not null
                 ? projector.Project(Snapshots, demo)
@@ -700,7 +708,8 @@ public static class DemoAnalysis
             FrameObserver = options.FrameObserver,
             ObservedProviders = options.ObservedProviders,
             DecodeUserCommands = build.DecodesUserCommands || options.DecodeUserCommands,
-            Cadences = build.CadencePlans
+            Cadences = build.CadencePlans,
+            RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId)
         };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;
 
@@ -733,6 +742,7 @@ public static class DemoAnalysis
             Demo = source.Enrichment.Snapshot(),
             MaterializedPlayers = evaluator.MaterializedPlayers,
             MaterializedNodes = evaluator.MaterializedNodes,
+            Projectiles = [.. evaluator.ProjectileRecords],
             Provenance = new AnalysisProvenance(
                 source.SupportsRandomAccess ? AnalysisSourceKind.Materialised : AnalysisSourceKind.Stream,
                 build.Profile,

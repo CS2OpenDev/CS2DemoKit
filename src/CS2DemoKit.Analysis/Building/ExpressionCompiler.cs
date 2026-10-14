@@ -393,6 +393,12 @@ public static class ExpressionCompiler
         Expression body = Parse(expression, bindings);
         if (body.Type != valueType)
         {
+            // No coercion exists from bool, so a flag captured into a number reads 1 or 0.
+            if (body.Type == typeof(bool) && valueType.IsPrimitive && valueType != typeof(bool))
+            {
+                body = Expression.Condition(body, Expression.Constant(1.0), Expression.Constant(0.0));
+            }
+
             body = Expression.Convert(body, valueType);
         }
 
