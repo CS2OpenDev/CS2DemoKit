@@ -788,13 +788,10 @@ internal sealed record ProjectionSource(
                 round ??= roundIndex >= 0 && table[m, roundIndex] is { IsActive: true, NumericValue: { } rn }
                     ? (int)rn
                     : 0;
+                // Cell reads, not a materialized row: a cadence table holds tens of thousands of rows.
                 int row = m;
-                NodeSnapshot[]? snapshot = null;
                 events.Add(new EventRow(nodes[i], result.Messages[m].Tick, round.Value, node =>
-                {
-                    snapshot ??= table.MaterializeRow(row);
-                    return StatValues.ReadColumnValue(snapshot, nodeIndex, node);
-                }));
+                    nodeIndex.TryGetValue(node, out int idx) ? StatValues.ReadSnapshotValue(table[row, idx], node) : null));
             }
         }
 
