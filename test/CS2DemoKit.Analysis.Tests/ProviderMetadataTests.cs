@@ -97,6 +97,25 @@ public class ProviderMetadataTests
     }
 
     /// <summary>
+    ///     Walking provider (spec-constructed, no hand-written twin) exposes expected metadata: a
+    ///     plain bool read of <c>m_bIsWalking</c>, no handle hop, no emit gates.
+    /// </summary>
+    [Test]
+    public async Task PawnIsWalkingProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.PawnIsWalking);
+        await Assert.That(provider.Name).IsEqualTo("entity.pawn.is_walking");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo(SchemaNames.CCSPlayerPawn.IsWalking);
+        await Assert.That(provider.FieldName).IsEqualTo("m_bIsWalking");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(bool));
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+        await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
+        await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+    }
+
+    /// <summary>
     ///     The parity gate's structural precondition (<c>ProviderDigestParityTests</c> compares
     ///     value arrays index-by-index): the hand-written default registry and the generic spec
     ///     list must carry the SAME providers in the SAME order. Guarded here demo-free so a
