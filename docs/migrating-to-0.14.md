@@ -58,6 +58,15 @@ rounded to `AngleDecimals` (9) and is exactly 0 for identical views. A value mov
 and macOS. `flick_error_deg` moves with `travel_from_spot_deg`, but its chest-angle term is not
 rounded and can still differ between them.
 
+**The per-pawn fold runs at the end of the frame.** `EntityChangeScanner` folded frame N's per-pawn
+digest into the pre-frame snapshot at the start of frame N+1; it now folds it at the end of frame
+N, from the new `CompleteFrame`, which the evaluator calls after each frame's post-frame messages.
+Edges read the same values on the same frames, the decode-compromise latch sets at the same digest,
+and a caller that walks the scanner through `AdvanceAndPollAt` without calling `CompleteFrame`
+still gets the fold at its next poll. The one visible difference: `GetPreFrameValue` read between a
+frame's last message and the next poll returns that frame's end state instead of the previous
+frame's. The frame observer below reads at exactly that point.
+
 ## 5. New things worth adopting
 
 `BuildDiagnosticCodes.LoweringFailed` (`build.lowering-failed`) and the three new
@@ -75,8 +84,17 @@ the existing Analysis evaluator `Meter`) sum to decodes per visit. See
 `PositionUtil.CellToWorld(entity, rejectZeroCell: true)` is the projectile position read
 `ProjectileSampler` makes, now callable on any entity carrying the cell leaves: null when a cell
 index is 0, which puts the axis outside every map. `CS2DemoKit.Analysis.Observation.ProjectileRow`
-is the per-frame projectile record the entity digest carries for the five grenade classes; nothing
-public produces one yet, the frame observer that does follows in this release.
+is the per-frame projectile record the entity digest carries for the five grenade classes, read
+through the frame observer below.
+
+`AnalysisOptions.FrameObserver`, with `ObservedProviders` and `ObservedProjectileClasses`, is the
+per-frame hook: an `IFrameObserver` called once per frame on the evaluation thread with a
+`FrameView` over the declared per-player columns, the declared grenade projectiles (`Projectiles`,
+`Created`, `Removed`) and each slot's team, as of the end of that frame, at the engine's default
+parallelism. A host that ran its own `EntityTracker` beside a run to sample positions, places or
+grenade flights can declare those reads instead and drop the second decode. Resolve each declared
+name once with `FrameView.Provider` and read through the handle; the view is readable only inside
+`OnFrame`. See the README's "Reading state frame by frame".
 
 `projectile_thrown` and `projectile_landed` are new views over two synthesized events,
 `projectile_created` and `projectile_removed`, for all five grenades: thrower-bound, with `class`,

@@ -778,6 +778,35 @@ against `ProjectileSampler.Walk`, `PipelinedDigestEquivalenceTests` the event st
 sequential and default caps, and `ProjectileEventRulesTests` the activation on both run paths.
 `molotov_thrown` is unchanged.
 
+### The per-pawn fold moved to the end of the frame, and a frame observer reads it (0.14.0)
+
+`AnalysisOptions` gains `FrameObserver`, `ObservedProviders` and `ObservedProjectileClasses`.
+`IFrameObserver.OnFrame(FrameView)` (new, `CS2DemoKit.Analysis.Observation`) is called once per
+frame on the evaluation thread after the frame's post-frame messages, and `Finish` after the last
+frame; a throwing observer aborts the run. `FrameView` is one instance per run, readable only inside
+`OnFrame` (every read but `Generation` throws outside it): `Frame`, `FrameIndex`, `Tick` (the frame
+clock), `Projectiles`, `Created` and `Removed` as `ReadOnlySpan<ProjectileRow>`, `Team(slot)`, and
+the declared providers by name or through an `ObservedProvider` handle from `FrameView.Provider`
+(`Read`, `TryReadInt`, `TryReadFloat`, `TryReadString`). The handle reads skip the name lookup,
+which at seven columns and 64 slots a frame was most of the read.
+
+A declared provider activates its digest column as a rule reference would; a name no registered
+provider carries throws at `Build`, and an undeclared name read inside `OnFrame` throws. Declared
+projectile classes carry their rows alone; a `projectile_created` or `projectile_removed`
+subscription still widens the rows to all five. `RuleChainBuilder`'s constructor gains the two
+lists as optional trailing parameters.
+
+The per-pawn fold that fed the pre-frame snapshot ran at the start of frame N+1's consume; it now
+runs at the end of frame N, from the new public `EntityChangeScanner.CompleteFrame`, which the
+evaluator calls after the post-frame block. Nothing an edge reads changed: the snapshot frame N+1's
+edges see is the same, and the decode-compromise latch sets at the same digest. A caller that polls
+`AdvanceAndPollAt` without calling `CompleteFrame` gets the fold at the next poll, as before.
+`GetPreFrameValue` now documents both points. With nothing declared the digest, the goldens and
+the rules output are byte-identical, which `ForwardPathParityTests`, `BareScanParityTests`,
+`RulesOutputGoldenTests` and `StatParityTests` pin; `FrameViewPawnReadTests` pins the fold
+move, `ProjectileDigestParityTests` the observer's stream against `ProjectileSampler.Walk`, and
+`PipelinedDigestEquivalenceTests` the observer at the sequential and default caps.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

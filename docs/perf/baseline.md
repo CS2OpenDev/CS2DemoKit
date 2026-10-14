@@ -490,6 +490,13 @@ session (2.49 s and 3.13 s). The retained peak heap is the `ParsedDemo` and its 
 it moves only on the small demos, where the digest array the old producer held for every frame
 was a visible share of it.
 
+**Where the fold lands (0.14.0).** The consume side used to fold frame N's per-pawn digest into
+the pre-frame snapshot at the start of frame N+1; since the frame observer it folds at the end of
+frame N (`EntityChangeScanner.CompleteFrame`, called by the evaluator after the post-frame
+block), so the observer and the next frame's first edge read the same cells. Same fold, same
+digest, one frame earlier on the loop thread; the producer is untouched. Measured under "The
+frame observer" below.
+
 **The control.** Nothing on the forward path changed in a way that should move it, and the
 single-run rows above move both ways because the default collector is bimodal on this arm (the
 base build measured 2.7 s and 3.8 s on consecutive runs of the 524 MB demo). Three rounds each,
