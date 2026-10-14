@@ -852,6 +852,26 @@ fire, so a round's step count is `floor((close - freeze_end) / period) + 1` less
 lands exactly on a due tick. `FrameTickTests.CadenceTick_FiresOncePerPeriod_OnFrameClock` pins the ticks and
 steps on both run paths against the sample's frames.
 
+### Event tables project without snapshots, and per-player rows carry steam_id (0.14.0)
+
+A `show:` table can be `per: player_event`, `team_event` or `match_event` with an `on:` trigger: one
+row per firing, columns read right after the firing message, with `round_number`, `tick` (frame
+clock, listed in `ColumnClocks`) and, on player rows, `steam_id` as a decimal string. Additive
+surface: `OutputScope.PerPlayerPerEvent`, `PerTeamPerEvent` and `PerMatchPerEvent` (a consumer
+`switch` over `OutputScope` with no default arm stops compiling); `OutputDef.Trigger` and
+`TableDef.On` / `TableDef.OnPosition` as init properties; `EventTableSequence` (new,
+`CS2DemoKit.Analysis.RulesetsV2.Resolve`); `ShowReferenceValidator.Validate(CheckedRuleset,
+CatalogRoot?)`; and `ResolveDiagnosticCodes.ShowEventTableTrigger`
+(`resolve.show.event-table-trigger`) and `ShowEventTableFrequency`
+(`resolve.show.event-table-frequency`). The schema gains the three grains and the table `on:`.
+
+Each event table resolves with one extra stat, a match-scoped `count:` of its trigger under the
+reserved id `#seq_<table>`, which is the row key; a host that lists `CheckedRuleset.Stats` sees it and
+can drop it with `EventTableSequence.IsSequenceStat`. A ruleset with no event table hashes and builds
+as before, and output on the shipped rulesets does not move. `ProjectConfiguredOutputs` on a run
+without snapshots still throws only for a v1 `PerEvent` output. `steam_id` on the existing per-player
+tables lands separately, as its own re-baseline.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

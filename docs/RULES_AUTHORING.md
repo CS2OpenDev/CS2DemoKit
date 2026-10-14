@@ -575,6 +575,30 @@ ruleset has no subject and cannot read any of them.
   `for:`, or validation reports `resolve.show.table-scope-mismatch`: `player_round` /
   `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`, and
   `match` (a single match-level row) in `for: match`.
+- **Event tables: one row per firing.** `per: player_event`, `team_event` or `match_event` (one
+  per `for:`, in the same order) takes an `on:` trigger, written as a stat's `on:` is, and emits a
+  row each time it fires for an instance, with the columns read right after that message. Rows
+  carry `round_number` and `tick` (the frame clock, listed in `ColumnClocks`); player rows also
+  carry `player_slot`, `player_name`, `steam_id` (a string) and `team`, side rows `side`. A
+  cadence is the usual trigger. The checker refuses a trigger that fires too often to keep a row
+  per firing (`resolve.show.event-table-frequency`): a `perTick` or `frequent` catalog event, or a
+  wire event whose frequency was never measured. Synthesized events pass. A missing `on:`, or an
+  `on:` on any other grain, is `resolve.show.event-table-trigger`. Event tables project with or
+  without snapshots.
+
+  ```yaml
+  cadences:
+    second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
+  stats:
+    pos_x: { capture: player.pos_x, on: cadence.second, per: match }
+    pos_y: { capture: player.pos_y, on: cadence.second, per: match }
+  show:
+    tables:
+      positions:
+        per: player_event
+        on: cadence.second
+        columns: [ { stat: pos_x }, { stat: pos_y } ]
+  ```
 - **Which clock a tick column is on.** A table lists its bare tick columns in
   `MetricTable.ColumnClocks` (`frame` or `server`), so a consumer knows whether to subtract the
   demo's `ServerStartTick` without knowing which views are synthesized.

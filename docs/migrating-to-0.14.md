@@ -26,6 +26,9 @@ before.
 **`TriggerRefKind` gained `Cadence`.** A `switch` over it with no default arm stops compiling; add
 the arm, or a default.
 
+**`OutputScope` gained `PerPlayerPerEvent`, `PerTeamPerEvent` and `PerMatchPerEvent`.** The same
+fix: add the arms, or a default.
+
 ## 4. Behaviour that moved without a compile error
 
 **A ruleset that cannot be lowered is excluded, not thrown.** Through 0.13.0 a ruleset that resolved
@@ -151,4 +154,19 @@ cadences:
   second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
 stats:
   pos_x: { capture: player.pos_x, on: cadence.second, per: round }
+```
+
+An event table records one row per firing of a trigger, on either run path, so a host that sampled
+positions on its own walk can declare a cadence and a `per: player_event` table instead. Player rows
+carry `steam_id`, so they join to players by SteamID64 rather than by slot. A ruleset that resolves
+an event table also carries a hidden `#seq_<table>` stat; `EventTableSequence.IsSequenceStat` tells
+a stat list which ones to skip. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#8-displaying-results--show).
+
+```yaml
+show:
+  tables:
+    positions:
+      per: player_event
+      on: cadence.second
+      columns: [ { stat: pos_x }, { stat: pos_y } ]
 ```
