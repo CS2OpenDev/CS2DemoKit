@@ -99,9 +99,11 @@ internal static class Measurement
     /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries R6's template cost.</summary>
     public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
 
-    private const string ProjectileOverlayLabel = "bench-projectile.rules.yaml";
+    /// <summary>Shared with <see cref="PathMeasurement" /> so the forward-path WS arm can load the same overlay.</summary>
+    internal const string ProjectileOverlayLabel = "bench-projectile.rules.yaml";
 
-    private const string ProjectileOverlayYaml =
+    /// <summary>Shared with <see cref="PathMeasurement" /> so the forward-path WS arm can load the same overlay.</summary>
+    internal const string ProjectileOverlayYaml =
         """
         ruleset: bench_projectile
         for: each_projectile

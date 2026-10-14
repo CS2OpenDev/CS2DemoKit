@@ -272,6 +272,7 @@ internal static class PathMeasurement
         RuleConfigLoadResult rules = LoadRules();
         ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
         AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets, new AnalysisOptions { MaxDegreeOfParallelism = Dop });
+        CheckProjectileLane(run);
         ArmResult result = new(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
         GC.KeepAlive(demo);
         return result;
@@ -323,6 +324,7 @@ internal static class PathMeasurement
                 $"observer: frames={observer.Frames} projectile rows={observer.Rows} created={observer.Created} pawn cells={observer.Cells}");
         }
 
+        CheckProjectileLane(run);
         return new ArmResult(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
     }
 
@@ -471,9 +473,14 @@ internal static class PathMeasurement
 
     private static int? Dop => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null;
 
+    /// <summary>Set to make a run materialize for: each_projectile, so the WS arm carries R6's template cost.</summary>
+    private static bool ProjectileLane => Environment.GetEnvironmentVariable(Measurement.ProjectileLaneVariable) == "1";
+
     private static RuleConfigLoadResult LoadRules()
     {
-        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+        RuleConfigLoadResult rules = ProjectileLane
+            ? YamlConfigLoader.LoadShippedWithOverlay([(Measurement.ProjectileOverlayLabel, Measurement.ProjectileOverlayYaml)])
+            : YamlConfigLoader.LoadShippedEmbedded();
         if (!rules.Success)
         {
             throw new InvalidOperationException(
@@ -481,6 +488,19 @@ internal static class PathMeasurement
         }
 
         return rules;
+    }
+
+    /// <summary>
+    ///     A silent miss here would label a lane-off run as lane-on; <see cref="AnalysisRun.Projectiles" /> is
+    ///     populated in both capture modes, so it needs no demo and no show table.
+    /// </summary>
+    private static void CheckProjectileLane(AnalysisRun run)
+    {
+        if (ProjectileLane && run.Projectiles.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{Measurement.ProjectileLaneVariable} is set but the run materialized no projectiles");
+        }
     }
 
     /// <summary>

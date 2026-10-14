@@ -134,10 +134,12 @@ static int Help()
         only the newer arm runs the lane.
 
         CS2DEMOKIT_BENCH_PROJECTILE=1 loads a for: each_projectile overlay (grenade_rows), so
-        eval_ms carries R6's per-projectile template cost. measure, sweep and compare all read
-        it; an arm published before the scope existed ignores it and measures with no projectile
-        ruleset built regardless, so in a compare only the newer arm materializes instances. The
-        warm-up pass fails loud if the overlay builds but projects zero grenades rows.
+        eval_ms carries R6's per-projectile template cost. measure, sweep, compare and paths all
+        read it; an arm published before the scope existed ignores it and measures with no
+        projectile ruleset built regardless, so in a compare only the newer arm materializes
+        instances. The warm-up pass (measure, sweep, compare) fails loud if the overlay builds
+        but projects zero grenades rows; paths fails loud if the run finished with zero
+        projectiles in AnalysisRun.Projectiles, since a forward run has no show table to check.
 
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the
