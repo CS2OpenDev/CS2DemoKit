@@ -669,41 +669,55 @@ below: still fails.
 
 **Re-run after row storage recycling.**
 
-    commit    cf67326
-    runs      45 (3 rounds x 5 demos x 3 arms, paths), zero failures, zero digest mismatches
-    load      1.99 to 3.78
+    commit    cf67326, and 39cbb45 (its parent) in the second session
+    runs      45 (session 1: 3 rounds x 5 demos x 3 arms, cf67326 alone),
+              90 (session 2: 3 rounds x 5 demos x 3 arms x 2 builds, builds alternating which
+              goes first per round), zero failures, zero digest mismatches, digests equal
+              across the two builds on every demo
+    load      1.99 to 3.78 (session 1), 2.52 to 5.28 (session 2)
 
 The same protocol as the three-arm leg above: same demos, `--cooldown 5`, `--rounds 1` three
 times with the same three rotated arm orders. `cf67326` pools the per-frame `PerPawnColumns` and
-projectile row storage, which a sampled trace blamed for the observer-pawns overhead. Before and
-after, observer-pawns-stream's delta against `scoreboard-stream` paired within demo and round
-(15 pairs), median and range:
+projectile row storage, which a sampled trace blamed for the observer-pawns overhead.
 
-| observer-pawns-stream minus scoreboard-stream | f6dccfc | cf67326 |
-|---|---|---|
-| `alloc_mb` | +97.8 (69.4 to 113.3) | +35.3 (30.0 to 45.5) |
-| `gen0` | +16 (11 to 20) | +4 (3 to 5) |
-| `pause_ms` | +84.8 (50.7 to 99.2) | +118.2 (63.5 to 156.0) |
-| working set, pooled median | +17.0 MB | +48.0 MB |
-| peak heap, pooled median | +15.3 MB | +73.1 MB |
+Collector counters, observer-pawns-stream minus `scoreboard-stream` paired within demo and round,
+median (range). The f6dccfc column is the leg above; session 2's `39cbb45` arm reproduces it
+(+98.0 MB, +16 gen0, +78.0 ms pause).
 
-The pool did what it was for: allocation down by two thirds, gen0 to a quarter, and gen1 and
-gen2 back to the no-observer arm's medians (24 and 7 against 23 and 8; before, 33 and 12). The
-collector's total pause did not follow. Fewer collections over a heap the pool keeps larger
-pause longer in sum, and the retained rows cost 31 MB of working set the old build did not hold.
+| | f6dccfc | cf67326, session 1 | cf67326, session 2 |
+|---|---|---|---|
+| `alloc_mb` | +97.8 (69.4 to 113.3) | +35.3 (30.0 to 45.5) | +32.5 (27.0 to 44.4) |
+| `gen0` | +16 (11 to 20) | +4 (3 to 5) | +4 (2 to 5) |
+| `pause_ms` | +84.8 (50.7 to 99.2) | +118.2 (63.5 to 156.0) | +113.8 (76.3 to 164.4) |
+| working set, pooled median | +17.0 MB | +48.0 MB | +39.0 MB |
+| peak heap, pooled median | +15.3 MB | +73.1 MB | +71.8 MB |
 
-Wall clock, observer-pawns-stream against scoreboard-stream: pooled +49.9%, paired median +44.9%,
-paired mean +38.4%, per-demo +48.9% (per demo +81.5, +48.9, -18.5, +17.3, +76.5%). This session
-is noisier than the first: projectiles-only `observer-stream`, which `cf67326` barely touches
-(26 MB less allocation, 3 fewer gen0), reads pooled +34.4%, paired +10.5%, paired range -30 to
-+91%, and the no-observer arm's own three rounds spread 9 to 111 percent per demo. So the wall
-readings do not show the pool making things worse, and none of them shows it clearing the budget.
-Observer-pawns-stream per-demo medians (3375, 3431, 2718, 2641, 3607 ms) sit 16 to 43 percent
-below the fresh arm (c) above; that comparison is cross-session.
+Allocation is down by two thirds and gen0 to a quarter, and gen1 and gen2 are back to the
+no-observer arm's medians (24 and 7 against 23 and 8; before, 33 and 12). Total pause went up
+by 30 to 36 ms and peak heap by about 57 MB, in both sessions. Why is not measured; the pool has
+no cap and keeps as many instances as were ever in flight at once, which may be the heap.
 
-**Gate at `cf67326`.** Run 3, budget +10%: every aggregation reads over, fails. The allocation
-the trace named is mostly gone; the remaining cost is collector pause and is not yet diagnosed.
-The hook's run-3 gate is open.
+Wall clock. Session 2 runs both builds against each other in the same rounds: `cf67326` over
+`39cbb45`, paired within demo, round and arm, median -1.5% on observer-pawns-stream, +3.6% on
+observer-stream and +2.7% on `scoreboard-stream`, which declares nothing. No wall
+difference between the two builds separates from that.
+
+Observer-pawns-stream against `scoreboard-stream` at `cf67326`, all six rounds pooled: pooled
++35.4%, paired median +29.9%, paired mean +29.0%, per-demo +27.0%. Session 1 alone reads +49.9,
++44.9, +38.4 and +48.9%; session 2 alone +5.0, +3.3, +19.6 and +3.3%. The no-observer arm's own
+rounds spread 9 to 111 percent per demo in session 1 and 17 to 66 percent at `cf67326` in
+session 2, so a single session's three rounds can land on either side of +10%.
+Observer-pawns-stream per-demo medians over the six rounds sit 16 to 41 percent below the fresh
+arm (c) above (cross-session).
+
+Run 2 at `cf67326`, observer-stream against `scoreboard-stream`, six rounds: pooled +24.0%, paired
+median +5.8%, paired mean +14.4%, per-demo +8.6%; working set +17.4 MB. `39cbb45` in session 2
+reads paired +4.4%, per-demo +9.3% on the same arm, so this is not a change `cf67326` made.
+
+**Gate at `cf67326`.** Run 3, budget +10%: over on every six-round aggregation, fails. The
+pooling removed the allocation the trace named and did not move wall clock. Run 2, budget +5%
+and +20 MB: wall over on every six-round aggregation, working set inside. Both readings are from
+a machine at load 2 to 5; neither gate is cleared, and the hook's perf gate is open.
 
 ## Reading these numbers later
 
