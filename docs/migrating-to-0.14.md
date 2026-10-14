@@ -23,7 +23,8 @@ before.
 
 ## 3. Compile errors, in the order they show up
 
-None so far.
+**`TriggerRefKind` gained `Cadence`.** A `switch` over it with no default arm stops compiling; add
+the arm, or a default.
 
 ## 4. Behaviour that moved without a compile error
 
@@ -139,3 +140,15 @@ Both are keyed by side, not by team, and a demo cut off at the buzzer can miss t
 point, as a replay would. `GenericSideFieldProvider` is the provider shape behind them: a singleton
 read narrowed to the entity whose `m_iTeamNum` is the side. See
 [`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-side-stats--for-each_team).
+
+A ruleset can sample state once per period instead of on every frame: declare `cadences:` and
+trigger on `cadence.<id>`. A host that ran a tick-rate `net.CNETMsg_Tick` stat, or sampled positions
+on its own walk at fixed intervals, can use a cadence instead. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#cadences).
+
+```yaml
+cadences:
+  second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
+stats:
+  pos_x: { capture: player.pos_x, on: cadence.second, per: round }
+```

@@ -830,6 +830,28 @@ A `capture:` with no `on:` used to resolve to nothing without a diagnostic. It n
 No shipped ruleset reads them, so no golden moves; the round facts example gains a `team_final`
 table that does.
 
+### Cadence triggers (0.14.0)
+
+A ruleset can declare `cadences:` and trigger a stat on `cadence.<id>`: one fire per period on the
+frame clock, anchored on the profile's `$round_freeze_end`. Additive surface: `CadenceDef`,
+`CadenceAnchor` and `CadenceStop` (new, `CS2DemoKit.Analysis.RulesetsV2.Model`);
+`RulesetDoc.Cadences`, `CheckedRuleset.Cadences` and `BuildResult.Cadences` as init properties;
+`CadenceTickEvent` (new, `CS2DemoKit.Analysis.Events`), registered as `cadence_tick` and bound through
+the new public virtual `DemoSourceProfile.CadenceTick`, which `Cs2GotvProfile` overrides, so a custom
+profile that does not derive from it has no `cadence_tick` view; and
+`RulesetDiagnosticCodes.BadCadence` (`ruleset.bad-cadence`). `TriggerRefKind` gains `Cadence`: a
+consumer `switch` over it with no default arm stops compiling. The catalog gains the event
+(`unmeasured`) and the `cadence_tick` view, and the schema a `cadences:` block.
+
+`cadence.<id>` lowers to the `cadence_tick` view with the trigger condition
+`event.Cadence == "<id>:<ticks>:<anchor>:<until>"`, so the period enters the stat hash through the
+existing trigger row and two rulesets that reuse an id with different periods never share a stat.
+A ruleset with no cadence hashes as before, which `RulesV2HasherTests` and
+`RulesetV2PlannerHashTests` pin, and builds no scheduler. A step due on the stop's own frame does not
+fire, so a round's step count is `floor((close - freeze_end) / period) + 1` less one when the close
+lands exactly on a due tick. `FrameTickTests.CadenceTick_FiresOncePerPeriod_OnFrameClock` pins the ticks and
+steps on both run paths against the sample's frames.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

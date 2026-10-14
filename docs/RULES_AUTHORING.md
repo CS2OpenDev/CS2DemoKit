@@ -183,6 +183,32 @@ close, like any view without a subject.
 If you need a raw event with no view, use `raw.<event>`; net messages are `net.<Message>`. Views
 are almost always what you want.
 
+### Cadences
+
+A stat that samples state at a fixed rate triggers on a **cadence**, not on `net.CNETMsg_Tick`. A
+tick trigger evaluates every edge on every frame; a cadence fires once per period. Declare it at the
+top of the ruleset and trigger on `cadence.<id>`:
+
+```yaml
+ruleset: round_positions
+for: each_player
+cadences:
+  second: { seconds: 1, anchor: round_freeze_end, until: round_ended }   # or ticks: 64
+stats:
+  pos_x: { capture: player.pos_x, on: cadence.second, per: round }
+```
+
+Give the period as `ticks:` or `seconds:`, not both; seconds are rounded to ticks at the demo's
+tick rate. `anchor: round_freeze_end` is required and starts step 0 on the freeze end's frame.
+`until:` stops it: `round_ended` on the round's close, `next_freeze_end` on the next freeze end, and
+with neither it runs until the next anchor restarts it. A match restart stops every cadence. Each
+step fires on the first frame at or after its due tick, after everything else that frame
+dispatches, so a frame gap longer than a period fires the missed steps together on that frame, and
+a step due on the stop's own frame does not fire. The ticks are the frame clock: `event.tick` reads
+the frame the step fired on, and `event.Step` counts from 0 at the anchor. A cadence binds to
+nobody, so an each_player stat fires for every player on every step. Trigger on `cadence.<id>`
+only: a bare `cadence_tick` reference would fire on every cadence in the build and is rejected.
+
 ---
 
 ## 4. The stat kinds

@@ -500,6 +500,10 @@ public class RulesetV2ResolverTests
                                       samples:
                                         count: cadence.second
                                         per: round
+                                      sampled_x:
+                                        capture: player.pos_x
+                                        on: cadence.second
+                                        per: round
                                     """;
 
     /// <summary>
@@ -515,7 +519,7 @@ public class RulesetV2ResolverTests
         CheckedRuleset rs = result.Ruleset!;
 
         const string Key = "second:64:round_freeze_end:round_ended";
-        foreach (string id in (string[])["pos_x", "samples"])
+        foreach (string id in (string[])["pos_x", "samples", "sampled_x"])
         {
             CheckedStat stat = Stat(rs, id);
             await Assert.That(stat.ResolvedView).IsEqualTo("cadence_tick");
