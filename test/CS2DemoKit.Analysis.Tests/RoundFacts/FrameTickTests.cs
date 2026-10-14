@@ -50,6 +50,12 @@ public class FrameTickTests
                 capture: event.tick
                 on: raw.projectile_removed
                 per: round
+              cadence_tick:
+                capture: event.tick
+                on: cadence.second
+                per: round
+            cadences:
+              second: { ticks: 64, anchor: round_freeze_end }
             """);
 
         CheckedStat Stat(string id) => rs.Stats.Single(s => s.StatId == id);
@@ -61,6 +67,7 @@ public class FrameTickTests
         // So are the projectile lifecycle events, through a view or raw.
         await Assert.That(Stat("thrown_tick").Clock).IsEqualTo(TickClock.Frame);
         await Assert.That(Stat("removed_tick").Clock).IsEqualTo(TickClock.Frame);
+        await Assert.That(Stat("cadence_tick").Clock).IsEqualTo(TickClock.Frame);
         // Arithmetic over a tick is on no single clock the table could promise.
         await Assert.That(Stat("plant_shifted").Clock).IsEqualTo(TickClock.None);
     }
@@ -161,12 +168,17 @@ public class FrameTickTests
           samples:
             count: cadence.second
             per: match
+          pos_x:
+            capture: player.pos_x
+            on: cadence.second
+            per: match
         show:
           tables:
             cadence_samples:
               per: player_match
               columns:
                 - { stat: samples, label: Samples }
+                - { stat: pos_x, label: PosX }
         """;
 
     /// <summary>
@@ -284,6 +296,9 @@ public class FrameTickTests
             await Assert.That(table.Rows.Count).IsEqualTo(run.MaterializedPlayers.Count).Because(label);
             await Assert.That(table.Rows.Sum(r => RoundFactsTestSupport.Int(r, "Samples") ?? 0))
                 .IsEqualTo(run.MaterializedPlayers.Count * expectedTicks.Count).Because(label);
+            // An entity read whose only trigger is the cadence still turns the scanner on.
+            await Assert.That(table.Rows.Count(r => r.Values.GetValueOrDefault("PosX") is double x
+                                                    && !double.IsNaN(x) && x != 0)).IsGreaterThan(0).Because(label);
         }
     }
 
