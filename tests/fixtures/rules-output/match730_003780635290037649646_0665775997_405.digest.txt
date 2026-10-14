@@ -18,4 +18,4 @@ _chain_post_plant_double=1
 _chain_traded_death=12
 has_kast=78
 traded=12
-sha256=9f29d6345b9f2d793be8add09ed638229bc088b814696842cfd0b4a22e347946
+sha256=1ef98983567e4055607ca9734491ae22f2086cf98b501186be64f8df3a8c1eb0
