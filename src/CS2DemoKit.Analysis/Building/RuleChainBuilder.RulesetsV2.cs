@@ -80,6 +80,11 @@ public sealed partial class RuleChainBuilder
     // serial to it.
     private (int Index, int Serial)? _projectileSubject;
 
+    // Stat hashes by qualified path for the projectile factory now running; null everywhere
+    // else. Every instance lowers the same stats over the same game hashes in the same order, so
+    // the trial materialization's hashes serve the hundreds that follow.
+    private Dictionary<string, byte[]>? _projectileStatHashes;
+
     // The for: each_team build's per-side outputs: side → {ruleset}.{stat} node map, and side → the
     // roster node its tables' `slots` dimension reads. Empty when no team ruleset was built.
     private readonly Dictionary<int, IReadOnlyDictionary<string, StateNode>> _teamNodesByRuleId = [];
@@ -640,20 +645,33 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, StateNode> parentNodeLookup,
         Dictionary<string, StateNode> gameNodesByRuleId)
     {
+        // The lookup every instance starts from: the graph's nodes plus a match ruleset's
+        // qualified nodes, for a projectile ruleset's use: of one. Copied once here, not per grenade.
+        Dictionary<string, StateNode> baseLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
+        foreach ((string key, StateNode node) in gameNodesByRuleId)
+        {
+            if (key.Contains('.', StringComparison.Ordinal))
+            {
+                baseLookup.TryAdd(key, node);
+            }
+        }
+
+        Dictionary<string, byte[]> statHashes = new(StringComparer.Ordinal);
         return row =>
         {
             // Hundreds of instances a demo, each edge firing a few times: interpretation beats a
             // JIT compile per instance.
             bool interpret = ExpressionCompiler.Interpret;
             ExpressionCompiler.Interpret = true;
+            _projectileStatHashes = statHashes;
             try
             {
-                return LowerV2Projectile(row, rulesets, options, views, contextV2ToV1, externals, parentNodeLookup,
-                    gameNodesByRuleId);
+                return LowerV2Projectile(row, rulesets, options, views, contextV2ToV1, externals, baseLookup);
             }
             finally
             {
                 ExpressionCompiler.Interpret = interpret;
+                _projectileStatHashes = null;
             }
         };
     }
@@ -665,24 +683,13 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, CatalogView> views,
         Dictionary<string, string> contextV2ToV1,
         GraphExternals externals,
-        Dictionary<string, StateNode> parentNodeLookup,
-        Dictionary<string, StateNode> gameNodesByRuleId)
+        Dictionary<string, StateNode> baseLookup)
     {
         ProjectileInstanceState state = new(_entityScanner, row);
         string subtitle = $"{ProjectileGrenadeName.Of(row.ClassName)} {row.EntityIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
                           + $":{row.Serial.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
-        Dictionary<string, StateNode> localLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
-
-        // A match ruleset's qualified nodes, for a projectile ruleset's use: of one.
-        foreach ((string key, StateNode node) in gameNodesByRuleId)
-        {
-            if (key.Contains('.', StringComparison.Ordinal))
-            {
-                localLookup.TryAdd(key, node);
-            }
-        }
-
+        Dictionary<string, StateNode> localLookup = new(baseLookup, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(_gameStatHashes, StringComparer.Ordinal);
         MapStatHashSource hashSource = new(statHashesByPath);
@@ -1456,9 +1463,15 @@ public sealed partial class RuleChainBuilder
         _loweringPosition = stat.Position;
 
         // Resolved-identity dedup (obligation 3): a hash-equal stat shares the existing node.
-        byte[] hash = V2StatHasher.Hash(stat, hashSource);
+        string qualifiedId = $"{rs.Id.Id}.{stat.StatId}";
+        if (_projectileStatHashes is not { } knownHashes || !knownHashes.TryGetValue(qualifiedId, out byte[]? hash))
+        {
+            hash = V2StatHasher.Hash(stat, hashSource);
+            _projectileStatHashes?.Add(qualifiedId, hash);
+        }
+
         statHashesByPath[stat.StatId] = hash;
-        statHashesByPath[$"{rs.Id.Id}.{stat.StatId}"] = hash;
+        statHashesByPath[qualifiedId] = hash;
         string hex = Convert.ToHexString(hash);
         if (nodesByHash.TryGetValue(hex, out StateNode? shared))
         {
