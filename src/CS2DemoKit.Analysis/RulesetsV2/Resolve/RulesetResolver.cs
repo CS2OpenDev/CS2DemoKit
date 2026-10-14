@@ -51,7 +51,7 @@ public static class RulesetResolver
         ArgumentNullException.ThrowIfNull(doc);
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(context);
-        return new Session(doc, adapter, context, exports).Run();
+        return new Session(EventTableSequence.WithSequenceStats(doc), adapter, context, exports).Run();
     }
 
     private sealed class Session

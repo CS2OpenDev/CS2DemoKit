@@ -1462,14 +1462,27 @@ public static class RulesSchemaBuilder
                     "player_match",
                     "match",
                     "team_round",
-                    "team_match"
+                    "team_match",
+                    "player_event",
+                    "team_event",
+                    "match_event"
                 },
                 ["description"] = "The export dimension (the closed table registry), which must match the "
                                   + "ruleset's for:. `player_round` / `player_match` are per-player (for: "
                                   + "each_player); `team_round` / `team_match` are per-side (for: each_team), "
                                   + "and team_round carries a `side` and a `slots` dimension (the side's "
                                   + "players at that round's freeze end); `match` is a single match-level row "
-                                  + "(for: match)."
+                                  + "(for: match). `player_event` / `team_event` / `match_event` (one per for:) "
+                                  + "emit one row per firing of the table's `on:` trigger, with `round_number` "
+                                  + "and `tick` (frame clock) dimensions; player rows also carry `steam_id`."
+            },
+            ["on"] = new JsonObject
+            {
+                ["$ref"] = "#/$defs/triggerRef",
+                ["markdownDescription"] =
+                    "Required on an event table (`per: *_event`), refused on any other: the trigger whose every "
+                    + "firing is one row. A cadence, a synthesized event, or a wire event that fires at most a "
+                    + "few times a round; `perTick` and `frequent` events are refused."
             },
             ["columns"] = new JsonObject
             {

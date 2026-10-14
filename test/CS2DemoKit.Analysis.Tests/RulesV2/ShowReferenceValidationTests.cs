@@ -160,6 +160,75 @@ public class ShowReferenceValidationTests
             .Because("the attributed mirror must stay 1:1 with the raw list");
     }
 
+    private static string EventTable(string per, string? on) => $$"""
+        ruleset: event_probe
+        for: each_player
+        cadences:
+          second: { ticks: 64, anchor: round_freeze_end }
+        stats:
+          pos_x:
+            capture: player.pos_x
+            on: cadence.second
+            per: match
+        show:
+          tables:
+            positions:
+              per: {{per}}
+        {{(on is null ? "" : $"      on: {on}\n")}}      columns:
+                - { stat: pos_x }
+        """;
+
+    private static async Task<List<RulesetDiagnostic>> EventTableDiagnostics(string per, string? on)
+    {
+        RulesetComposition.Result result = RulesetComposition.ComposeDraft([Load(EventTable(per, on))], Adapter());
+        return ShowDiagnostics(result);
+    }
+
+    [Test]
+    public async Task EventTable_WithoutOn_IsRejected()
+    {
+        List<RulesetDiagnostic> diagnostics = await EventTableDiagnostics("player_event", null);
+        await Assert.That(diagnostics.Select(d => d.Code))
+            .IsEquivalentTo([ResolveDiagnosticCodes.ShowEventTableTrigger]);
+    }
+
+    [Test]
+    public async Task OnOnARoundTable_IsRejected()
+    {
+        List<RulesetDiagnostic> diagnostics = await EventTableDiagnostics("player_match", "cadence.second");
+        await Assert.That(diagnostics.Select(d => d.Code))
+            .IsEquivalentTo([ResolveDiagnosticCodes.ShowEventTableTrigger]);
+    }
+
+    [Test]
+    [Arguments("net.CNETMsg_Tick")]
+    [Arguments("raw.weapon_fire")]
+    [Arguments("raw.round_end")]
+    public async Task EventTable_OnAFrequentOrUnmeasuredWireTrigger_IsRejected(string on)
+    {
+        List<RulesetDiagnostic> diagnostics = await EventTableDiagnostics("player_event", on);
+        await Assert.That(diagnostics.Select(d => d.Code))
+            .IsEquivalentTo([ResolveDiagnosticCodes.ShowEventTableFrequency]);
+    }
+
+    [Test]
+    [Arguments("cadence.second")]
+    [Arguments("kill")]
+    [Arguments("raw.molotov_thrown")]
+    public async Task EventTable_OnACadenceOrARareOrSynthesizedEvent_IsAccepted(string on)
+    {
+        List<RulesetDiagnostic> diagnostics = await EventTableDiagnostics("player_event", on);
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task EventTable_OfTheWrongScope_IsAScopeMismatch()
+    {
+        List<RulesetDiagnostic> diagnostics = await EventTableDiagnostics("match_event", "cadence.second");
+        await Assert.That(diagnostics.Select(d => d.Code))
+            .IsEquivalentTo([ResolveDiagnosticCodes.ShowTableScopeMismatch]);
+    }
+
     private static CatalogScopeAdapter Adapter() => CatalogScopeAdapter.From(CatalogResource.Load());
 
     private static List<RulesetDiagnostic> ShowDiagnostics(RulesetComposition.Result result) =>

@@ -929,6 +929,8 @@ public static class RulesetYamlMapper
             }
 
             string? tablePer = null;
+            string? tableOn = null;
+            SourcePosition onPosition = default;
             List<TableColumn> columns = [];
             foreach ((YamlNode k, YamlNode v) in body.Children)
             {
@@ -936,6 +938,10 @@ public static class RulesetYamlMapper
                 {
                     case "per":
                         tablePer = ScalarText(v);
+                        break;
+                    case "on":
+                        tableOn = ScalarText(v);
+                        onPosition = Pos(v, file);
                         break;
                     case "columns":
                         columns = MapTableColumns(v, file, diagnostics);
@@ -947,7 +953,11 @@ public static class RulesetYamlMapper
                 }
             }
 
-            result.Add(new TableDef(tableName, tablePer, columns, Pos(keyNode, file)));
+            result.Add(new TableDef(tableName, tablePer, columns, Pos(keyNode, file))
+            {
+                On = tableOn,
+                OnPosition = onPosition
+            });
         }
 
         return result;

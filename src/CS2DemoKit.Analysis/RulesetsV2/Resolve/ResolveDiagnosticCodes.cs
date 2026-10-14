@@ -88,6 +88,19 @@ public static class ResolveDiagnosticCodes
     /// </summary>
     public const string ShowTableScopeMismatch = "resolve.show.table-scope-mismatch";
 
+    /// <summary>
+    ///     An event table (<c>per: player_event</c>, <c>team_event</c>, <c>match_event</c>) with no
+    ///     <c>on:</c>, or a table of any other grain that declares one.
+    /// </summary>
+    public const string ShowEventTableTrigger = "resolve.show.event-table-trigger";
+
+    /// <summary>
+    ///     An event table whose trigger fires too often to keep a row per firing: a catalog
+    ///     <c>frequencyClass</c> of <c>perTick</c> or <c>frequent</c>, or a wire event whose
+    ///     frequency was never measured. Cadences and synthesized events pass.
+    /// </summary>
+    public const string ShowEventTableFrequency = "resolve.show.event-table-frequency";
+
     /// <summary>A <c>show: scoreboard:</c> in a ruleset that is not <c>for: each_player</c>: a scoreboard is per-player.</summary>
     public const string ShowScoreboardScope = "resolve.show.scoreboard-scope";
 

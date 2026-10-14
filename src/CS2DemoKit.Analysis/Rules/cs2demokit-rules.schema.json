@@ -1943,9 +1943,16 @@
             "player_match",
             "match",
             "team_round",
-            "team_match"
+            "team_match",
+            "player_event",
+            "team_event",
+            "match_event"
           ],
-          "description": "The export dimension (the closed table registry), which must match the ruleset\u0027s for:. \u0060player_round\u0060 / \u0060player_match\u0060 are per-player (for: each_player); \u0060team_round\u0060 / \u0060team_match\u0060 are per-side (for: each_team), and team_round carries a \u0060side\u0060 and a \u0060slots\u0060 dimension (the side\u0027s players at that round\u0027s freeze end); \u0060match\u0060 is a single match-level row (for: match)."
+          "description": "The export dimension (the closed table registry), which must match the ruleset\u0027s for:. \u0060player_round\u0060 / \u0060player_match\u0060 are per-player (for: each_player); \u0060team_round\u0060 / \u0060team_match\u0060 are per-side (for: each_team), and team_round carries a \u0060side\u0060 and a \u0060slots\u0060 dimension (the side\u0027s players at that round\u0027s freeze end); \u0060match\u0060 is a single match-level row (for: match). \u0060player_event\u0060 / \u0060team_event\u0060 / \u0060match_event\u0060 (one per for:) emit one row per firing of the table\u0027s \u0060on:\u0060 trigger, with \u0060round_number\u0060 and \u0060tick\u0060 (frame clock) dimensions; player rows also carry \u0060steam_id\u0060."
+        },
+        "on": {
+          "$ref": "#/$defs/triggerRef",
+          "markdownDescription": "Required on an event table (\u0060per: *_event\u0060), refused on any other: the trigger whose every firing is one row. A cadence, a synthesized event, or a wire event that fires at most a few times a round; \u0060perTick\u0060 and \u0060frequent\u0060 events are refused."
         },
         "columns": {
           "type": "array",
