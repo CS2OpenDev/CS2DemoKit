@@ -1300,6 +1300,16 @@ public sealed class StateGraphEvaluator
 
                 break;
 
+            case ProjectileCreatedEvent created:
+                yield return created.PlayerSlot;
+
+                break;
+
+            case ProjectileRemovedEvent removed:
+                yield return removed.PlayerSlot;
+
+                break;
+
             // Both halves of a spot materialize: the viewer because the view binds its actor slot
             // to them, and the target because a role handle on `target` reads that player's own
             // nodes, which do not exist until the slot is materialized.

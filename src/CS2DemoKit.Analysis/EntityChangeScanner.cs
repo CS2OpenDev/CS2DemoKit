@@ -6,6 +6,7 @@ using System.Reflection;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Diagnostics;
 using CS2DemoKit.Analysis.Events;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
@@ -110,6 +111,12 @@ public sealed class EntityChangeScanner
     // 0 → 2/3 step: a demo that starts inside a decided round has no decision to report.
     private int _lastWinStatus = -1;
     private readonly HashSet<(int Index, int Serial)> _seenMolotovs = [];
+
+    // projectile_created / projectile_removed synthesis. A projectile waits here, keyed by
+    // (index, serial), from its first row until its thrower resolves; its first row supplies the
+    // created event's position.
+    private readonly bool _emitProjectileEvents;
+    private readonly Dictionary<(int Index, int Serial), ProjectileRow> _pendingProjectiles = [];
 
     // The singleton providers in _tracked order — the digest's Singletons[] aligns with these. Held
     // separately so the shared EntityDigestExtractor (used by the pipelined producer too) reads the
@@ -219,7 +226,9 @@ public sealed class EntityChangeScanner
     ///     change marker. The builder tracks the three game-rules singletons in every build and
     ///     passes the ones no rule reads here. <paramref name="projectileClasses" /> names the
     ///     grenade projectile classes every digest carries rows for, read back through
-    ///     <see cref="Projectiles" />; null or empty carries none.
+    ///     <see cref="Projectiles" />; null or empty carries none. <paramref name="emitProjectileEvents" />
+    ///     synthesizes <c>projectile_created</c> and <c>projectile_removed</c> from that lifecycle,
+    ///     for those classes only.
     /// </summary>
     internal EntityChangeScanner(
         EntityStateLayer layer,
@@ -229,11 +238,13 @@ public sealed class EntityChangeScanner
         AimVantageScanner? vantageScanner,
         VisibilityTransitionScanner? transitionScanner,
         IReadOnlySet<IEntityValueProvider>? silentProviders,
-        IReadOnlySet<string>? projectileClasses = null)
+        IReadOnlySet<string>? projectileClasses = null,
+        bool emitProjectileEvents = false)
     {
         Layer = layer;
         _emitMolotovThrows = emitMolotovThrows;
         _projectileClasses = projectileClasses is { Count: > 0 } ? projectileClasses : null;
+        _emitProjectileEvents = emitProjectileEvents && _projectileClasses is not null;
         _projectiles = new ProjectileSlotIndex(_projectileClasses);
         _vantageScanner = vantageScanner;
         _transitionScanner = transitionScanner;
@@ -443,6 +454,7 @@ public sealed class EntityChangeScanner
         _prevDigest = null;
         _seenMolotovs.Clear();
         Projectiles.Reset();
+        _pendingProjectiles.Clear();
         _postFrame.Clear();
         _lastWinStatus = -1;
         _preFrameSnapshotFrozen = false;
@@ -903,6 +915,10 @@ public sealed class EntityChangeScanner
         if (_projectileClasses is not null)
         {
             Projectiles.Step(digest.Projectiles);
+            if (_emitProjectileEvents)
+            {
+                ConsumeProjectiles(tick);
+            }
         }
 
         ConsumeAimVantage(digest, tick);
@@ -1192,6 +1208,48 @@ public sealed class EntityChangeScanner
                 new MolotovThrownEvent(tick, tick, tick, slot)));
         }
     }
+
+    /// <summary>
+    ///     Synthesizes the frame's <c>projectile_removed</c> events, then its <c>projectile_created</c>
+    ///     ones, each ascending by entity index. A created event waits for the projectile's thrower
+    ///     to resolve, as <see cref="ConsumeMolotovs" /> does, and is dropped if the projectile goes
+    ///     first; its removal is still emitted, with slot -1.
+    /// </summary>
+    private void ConsumeProjectiles(int tick)
+    {
+        foreach (ProjectileRow row in Projectiles.Removed)
+        {
+            _pendingProjectiles.Remove((row.EntityIndex, row.Serial));
+            (float x, float y, float z) = Coordinates(row);
+            _scratch.Add(GameEventMessage.ForSynthesizedEvent(new ProjectileRemovedEvent(
+                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z, row.Bounces)));
+        }
+
+        foreach (ProjectileRow row in Projectiles.Created)
+        {
+            _pendingProjectiles.Add((row.EntityIndex, row.Serial), row);
+        }
+
+        if (_pendingProjectiles.Count == 0)
+        {
+            return;
+        }
+
+        foreach (ProjectileRow row in Projectiles.Live)
+        {
+            if (row.ThrowerSlot < 0 || !_pendingProjectiles.Remove((row.EntityIndex, row.Serial), out ProjectileRow first))
+            {
+                continue;
+            }
+
+            (float x, float y, float z) = Coordinates(first);
+            _scratch.Add(GameEventMessage.ForSynthesizedEvent(new ProjectileCreatedEvent(
+                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z)));
+        }
+    }
+
+    private static (float X, float Y, float Z) Coordinates(in ProjectileRow row) =>
+        row.Position is { } p ? (p.X, p.Y, p.Z) : (float.NaN, float.NaN, float.NaN);
 
     /// <summary>
     ///     Returns the scanner's per-frame profiling accumulators. Returns <c>default</c>

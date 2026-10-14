@@ -544,6 +544,22 @@ public class PipelinedDigestEquivalenceTests
     ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
     ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
     /// </summary>
+    /// <summary>
+    ///     The projectile event stream is the same at the sequential cap and the default one: the
+    ///     pipelined producer re-primes a worker per chunk, and the lifecycle is what hides that.
+    /// </summary>
+    [Test]
+    public async Task ProjectileEvents_AtTheDefaultCap_MatchTheSequentialCap()
+    {
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        List<string> sequential = [.. EntityIntegrationTests.ScanProjectileEvents(parsed, 1).Select(e => $"f{e.FrameIndex} {e.Event}")];
+        List<string> pipelined = [.. EntityIntegrationTests.ScanProjectileEvents(parsed, null).Select(e => $"f{e.FrameIndex} {e.Event}")];
+
+        await Assert.That(sequential.Count).IsGreaterThan(0);
+        await Assert.That(EntityIntegrationTests.FirstDifference(sequential, pipelined)).IsNull();
+    }
+
     private static EntityFrameDigest[] BuildSequential(
         IReadOnlyList<DemoFrame> frames, bool dedup = false, bool captureSmokes = false,
         IReadOnlySet<string>? projectileClasses = null)
