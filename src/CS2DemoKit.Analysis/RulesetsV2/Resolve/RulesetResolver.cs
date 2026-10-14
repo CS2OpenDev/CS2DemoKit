@@ -1808,6 +1808,11 @@ public static class RulesetResolver
                 return new TriggerRef(TriggerRefKind.Net, trimmed["net.".Length..], pos);
             }
 
+            if (trimmed.StartsWith("cadence.", StringComparison.Ordinal))
+            {
+                return new TriggerRef(TriggerRefKind.Cadence, trimmed["cadence.".Length..], pos);
+            }
+
             return new TriggerRef(TriggerRefKind.ViewOrDefine, trimmed, pos);
         }
 

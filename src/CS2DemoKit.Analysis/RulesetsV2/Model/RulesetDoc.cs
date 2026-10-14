@@ -51,7 +51,11 @@ public sealed record RulesetDoc(
     ShowDef? Show,
     string? CatalogVersion,
     string? MinAppVersion,
-    SourcePosition Position);
+    SourcePosition Position)
+{
+    /// <summary>The declared <c>cadences:</c>, in source order (empty when none).</summary>
+    public IReadOnlyList<CadenceDef> Cadences { get; init; } = [];
+}
 
 /// <summary>The two v2 ruleset materialization scopes (<c>for:</c>).</summary>
 public enum RulesetScope

@@ -528,4 +528,61 @@ public class RulesetV2DocumentModelTests
             dir.Delete(true);
         }
     }
+
+    // ── Cadences ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     <c>cadences:</c> maps each entry's period, anchor and stop, and <c>cadence.&lt;id&gt;</c>
+    ///     maps to its own reference kind in both an <c>on:</c> and a kind argument.
+    /// </summary>
+    [Test]
+    public async Task Cadences_Parse()
+    {
+        const string Yaml = """
+                            ruleset: round_positions
+                            for: each_player
+                            cadences:
+                              second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
+                              quarter: { ticks: 16, anchor: round_freeze_end }
+                            stats:
+                              pos_x:
+                                capture: player.pos_x
+                                on: cadence.second
+                                per: round
+                              samples:
+                                count: cadence.quarter
+                                per: round
+                            """;
+
+        RulesetDocumentLoader.Outcome outcome = RulesetDocumentLoader.Load(Yaml, null);
+        await Assert.That(outcome.Diagnostics).IsEmpty();
+        RulesetDoc doc = outcome.Doc!;
+
+        await Assert.That(doc.Cadences.Count).IsEqualTo(2);
+        CadenceDef second = doc.Cadences[0];
+        await Assert.That(second.Id).IsEqualTo("second");
+        await Assert.That(second.Seconds).IsEqualTo(1d);
+        await Assert.That(second.Ticks).IsNull();
+        await Assert.That(second.Anchor).IsEqualTo(CadenceAnchor.RoundFreezeEnd);
+        await Assert.That(second.Until).IsEqualTo(CadenceStop.RoundEnded);
+
+        CadenceDef quarter = doc.Cadences[1];
+        await Assert.That(quarter.Ticks).IsEqualTo(16);
+        await Assert.That(quarter.Seconds).IsNull();
+        await Assert.That(quarter.Until).IsEqualTo(CadenceStop.None);
+        await Assert.That(quarter.Key).IsEqualTo("quarter:16:round_freeze_end:none");
+
+        TriggerRef on = doc.Stats[0].Trigger!.On!;
+        await Assert.That(on.Kind).IsEqualTo(TriggerRefKind.Cadence);
+        await Assert.That(on.Name).IsEqualTo("second");
+        await Assert.That(doc.Stats[1].KindArg).IsEqualTo("cadence.quarter");
+    }
+
+    /// <summary>A document with no <c>cadences:</c> carries an empty list.</summary>
+    [Test]
+    public async Task Cadences_AbsentIsEmpty()
+    {
+        RulesetDoc doc = LoadDoc(PostPlantDouble);
+        await Assert.That(doc.Cadences).IsEmpty();
+    }
 }

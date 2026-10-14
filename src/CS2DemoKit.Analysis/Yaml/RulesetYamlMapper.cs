@@ -24,7 +24,7 @@ public static class RulesetYamlMapper
     private static readonly HashSet<string> _knownTopKeys =
     [
         "ruleset", "title", "summary", "for", "enabled", "use", "exports", "params", "define", "stats", "highlights",
-        "show", "catalog_version", "min_app_version"
+        "show", "catalog_version", "min_app_version", "cadences"
     ];
 
     private static readonly HashSet<string> _statKindKeys =
@@ -62,6 +62,7 @@ public static class RulesetYamlMapper
         ShowDef? show = null;
         string? catalogVersion = null;
         string? minAppVersion = null;
+        List<CadenceDef> cadences = [];
 
         foreach ((YamlNode keyNode, YamlNode valueNode) in root.Children)
         {
@@ -115,6 +116,9 @@ public static class RulesetYamlMapper
                 case "min_app_version":
                     minAppVersion = ScalarText(valueNode);
                     break;
+                case "cadences":
+                    cadences = MapCadences(valueNode, file, diagnostics);
+                    break;
                 default:
                     diagnostics.Add(new RulesetDiagnostic(RulesetDiagnosticCodes.UnknownKey,
                         $"unknown top-level key '{key}'", Pos(keyNode, file)));
@@ -130,8 +134,76 @@ public static class RulesetYamlMapper
         }
 
         RulesetDoc doc = new(id, title, summary, forScope, enabled, use, exports, parameters, defines, stats,
-            highlights, show, catalogVersion, minAppVersion, Pos(root, file));
+            highlights, show, catalogVersion, minAppVersion, Pos(root, file))
+        {
+            Cadences = cadences
+        };
         return new MapResult(doc, diagnostics);
+    }
+
+    // ── Cadences ─────────────────────────────────────────────────────────────
+
+    private static List<CadenceDef> MapCadences(YamlNode node, string? file, List<RulesetDiagnostic> diagnostics)
+    {
+        List<CadenceDef> result = [];
+        if (node is not YamlMappingNode map)
+        {
+            diagnostics.Add(WrongShape("cadences:", "a map of id → { ticks | seconds, anchor, until }", node, file));
+            return result;
+        }
+
+        foreach ((YamlNode keyNode, YamlNode valueNode) in map.Children)
+        {
+            string? id = ScalarText(keyNode);
+            if (id is null || valueNode is not YamlMappingNode body)
+            {
+                diagnostics.Add(WrongShape($"cadence '{id}'", "a map with 'ticks' or 'seconds' and 'anchor'",
+                    valueNode, file));
+                continue;
+            }
+
+            int? ticks = null;
+            double? seconds = null;
+            CadenceAnchor anchor = CadenceAnchor.None;
+            CadenceStop until = CadenceStop.None;
+            foreach ((YamlNode k, YamlNode v) in body.Children)
+            {
+                switch (ScalarText(k))
+                {
+                    case "ticks":
+                        long? parsed = MapLong(v, "ticks", file, diagnostics);
+                        ticks = parsed is null ? null : (int)Math.Clamp(parsed.Value, int.MinValue, int.MaxValue);
+                        break;
+                    case "seconds":
+                        seconds = MapDouble(v, "seconds", file, diagnostics);
+                        break;
+                    case "anchor":
+                        anchor = ScalarText(v) switch
+                        {
+                            "round_freeze_end" => CadenceAnchor.RoundFreezeEnd,
+                            _ => BadEnum(v, "anchor", "round_freeze_end", CadenceAnchor.None, file, diagnostics)
+                        };
+                        break;
+                    case "until":
+                        until = ScalarText(v) switch
+                        {
+                            "round_ended" => CadenceStop.RoundEnded,
+                            "next_freeze_end" => CadenceStop.NextFreezeEnd,
+                            _ => BadEnum(v, "until", "round_ended | next_freeze_end", CadenceStop.None, file,
+                                diagnostics)
+                        };
+                        break;
+                    default:
+                        diagnostics.Add(new RulesetDiagnostic(RulesetDiagnosticCodes.UnknownKey,
+                            $"unknown key '{ScalarText(k)}' in cadence '{id}'", Pos(k, file)));
+                        break;
+                }
+            }
+
+            result.Add(new CadenceDef(id, ticks, seconds, anchor, until, Pos(keyNode, file)));
+        }
+
+        return result;
     }
 
     // ── Params ───────────────────────────────────────────────────────────────
@@ -985,6 +1057,11 @@ public static class RulesetYamlMapper
         if (text.StartsWith("net.", StringComparison.Ordinal))
         {
             return new TriggerRef(TriggerRefKind.Net, text["net.".Length..], pos);
+        }
+
+        if (text.StartsWith("cadence.", StringComparison.Ordinal))
+        {
+            return new TriggerRef(TriggerRefKind.Cadence, text["cadence.".Length..], pos);
         }
 
         return new TriggerRef(TriggerRefKind.ViewOrDefine, text, pos);
