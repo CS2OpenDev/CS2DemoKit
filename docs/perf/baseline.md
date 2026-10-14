@@ -606,8 +606,9 @@ alone). `frames` and `inner_messages` are equal to the base build on every demo 
 so nothing structural moved. The one demo at +21% is the smallest file, and both builds' three
 rounds span it: base 541 to 974 ms, this commit 548 to 1177 ms, the same bimodal collector
 "GC configuration" above describes, not a figure that separates from its own round-to-round
-range. Step 0's own base-vs-base noise floor on this corpus (`compare-5.csv`, 1 round) reads
-median 1.7%, max 4.2%. Within noise.
+range. Step 0's own base-vs-base noise floor on this corpus (`compare-5.csv`, 5 rounds) reads
+median 1.7%, max 4.2%; this three-round median, +3.1%, is above that floor and inside that max.
+Within noise.
 
 **The digest.** The item build's `scoreboard-stream` digest (`60F7A3ED714DA9FB`, smallest demo)
 differs from `a728ae3`'s (`56A790526144AEA6`), but a one-demo spot check at two earlier publishes
@@ -643,23 +644,25 @@ Pooled medians over all 15 samples per arm: scoreboard-stream 2788.7 ms, observe
 rounds, then medianed over the five demos: observer-stream +5.0%, observer-pawns-stream +27.9%.
 Every reading for observer-stream (-3.0 to +5.1%) sits inside the 25 to 48 percent control
 spread above, so it is not distinguishable from noise. Every reading for observer-pawns-stream
-(+10.6, +13.0, +15.3, +27.9%) is also inside that same spread, so the control cannot rule out
-this item's design on its own; the point test below is on the stated budget, not on separating
-signal from this corpus's noise.
+(+10.6, +13.0, +15.3, +27.9%) is also inside that same spread, so three rounds cannot separate
+it from noise either; the gate below is a point test on the median against the stated budget.
 
 Working set (`peak_working_set_mb` minus `size_mb`, `peak_private_mb` reads 0 on this OS):
 scoreboard-stream median 180.5 MB, observer-stream 185.9 MB (+5.4 MB), observer-pawns-stream
 197.5 MB (+17.0 MB).
 
-**Arm (c), fresh.** Step 0's dop=1 arm is cross-session (base build ran 22% faster there than
-`scoreboard-stream` reads this session), so it does not settle this leg on its own. Re-run this
-session, base build, `CS2DEMOKIT_PATHS_DOP=1`, `scoreboard-stream`, 3 rounds, after the item
-rounds above rather than interleaved with them: medians 4015, 4631, 4469, 4633 and 4426 ms per
-demo. Observer-pawns-stream's medians (3128, 2880, 3086, 2884, 3567 ms) sit 19 to 38 percent
+**Arm (c), fresh.** Step 0's dop=1 arm is cross-session, and this session's own no-observer
+`scoreboard-stream` pools 22% faster than step 0's default-parallel arm (a), so that pair alone
+does not settle this leg. Re-run this session, base build, `CS2DEMOKIT_PATHS_DOP=1`,
+`scoreboard-stream`, 3 rounds, after the item rounds above rather than interleaved with them:
+pooled median 4479 ms, within 1% of step 0's arm (c), 4510 ms; the dop=1 arm reproduces across
+sessions where the default-parallel one does not. Per-demo medians 4015, 4631, 4469, 4633 and
+4426 ms. Observer-pawns-stream's medians (3128, 2880, 3086, 2884, 3567 ms) sit 19 to 38 percent
 below arm (c) on every demo.
 
 **Gate.** Nothing declared: within noise, pass. Digest: unmoved by this item, pass. Projectiles
-only: within noise, pass. Below step-0 arm (c): 19 to 38 percent under on every demo, pass.
+only: within noise, pass. Below arm (c) (fresh, within 1% of step 0): 19 to 38 percent under on
+every demo, pass.
 Observer-pawns-stream against scoreboard-stream, budget +10%: pooled +10.6%, paired +13.0%, mean
 +15.3%, per-demo +27.9%. Every aggregation reads over budget. Fails.
 
