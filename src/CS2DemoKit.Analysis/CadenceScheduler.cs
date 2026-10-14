@@ -21,7 +21,8 @@ internal sealed record CadencePlan(CadenceDef Def, IReadOnlySet<Type> Anchors, I
 internal sealed class CadenceScheduler
 {
     private readonly bool[] _armed;
-    private readonly int[] _due;
+    // long: a due tick is anchor + steps * period, which passes int.MaxValue for a large period.
+    private readonly long[] _due;
     private readonly string[] _keys;
     private readonly int[] _periods;
     private readonly CadencePlan[] _plans;
@@ -31,7 +32,7 @@ internal sealed class CadenceScheduler
     {
         _plans = [.. plans];
         _armed = new bool[_plans.Length];
-        _due = new int[_plans.Length];
+        _due = new long[_plans.Length];
         _steps = new int[_plans.Length];
         _keys = _plans.Select(p => p.Def.Key).ToArray();
         _periods = _plans.Select(p => p.Def.Ticks ?? throw new InvalidOperationException(
