@@ -637,6 +637,12 @@ row per side: `per: team_round` gives one row per round per side, `per: team_mat
   `round.team.money`, `round.team.alive`, and the enemies' twins.
 - `team.side` is the side, `2` or `3`. `player.*` is not in scope, and neither are
   `round.alive.in_clutch` / `round.clutch.size`, whose subject is a player.
+- `team.score` (rounds won) and `team.clan_name` read the side's own team entity, so they are keyed
+  by side, not by team: after halftime the team that started T is the CT row. Read them anywhere an
+  expression goes, or capture them with no `on:` to get the value the side ends on:
+  `score: { capture: team.score, per: match }`. A capture with no `on:` takes only a bare `team.*`
+  read, `per: match`, kept last; anything else is `resolve.trigger.unsupported-for-kind`. On a demo
+  cut off at the buzzer the last round's point can be missing.
 - A `team_round` table carries two dimensions besides the round: `side`, and `slots`, the
   comma-joined slots of the side's connected players at that round's freeze end. `slots` is the join
   key to a per-player table: it says which side a player was on *in that round*, where a
@@ -667,7 +673,8 @@ show:
 
 `src/CS2DemoKit.Analysis/Rules/examples/round_facts.rules.yaml` is a complete one: the side's buy
 (with its thresholds as `params:`), the decision, the plant, and the kill timeline with the
-man-count after each kill, per round per side, every tick on the frame clock. A tick column of a
+man-count after each kill, per round per side, every tick on the frame clock, and a `team_final`
+table with each side's final score and clan name. A tick column of a
 thing that did not happen that round reads `0`. A string column does not read `""`: a capture of
 `round.bomb.site` or `round.bomb.plant_place` on a round with no plant projects as null (the
 expression reads `""`, and an empty string capture comes out null), so test a table cell for null,

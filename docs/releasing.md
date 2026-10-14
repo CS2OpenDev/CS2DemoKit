@@ -816,6 +816,19 @@ changes: a consumer that reads digest columns by provider name is unaffected, an
 by position needs to rebuild its index, for the same reason as the 0.13.0 "Singleton reads build,
 and a new per-player column shifts the digest" entry above.
 
+### Per-side team reads, and a capture with no `on:` (0.14.0)
+
+`entity.team.score` and `entity.team.clan_name` (`team.score`, `team.clan_name`) are the first
+providers with catalog scope `perTeam`: one `GenericSideFieldProvider` per spec and side in
+`EntityValueProviderRegistry.CreateDefault()`, registered as `entity.team.score@2` and so on after
+the game-rules singletons, each with its own marker. `CatalogProvider.Scope` is a string, so the new
+value breaks nothing at compile time; a consumer that switches on it needs the third arm.
+
+A `capture:` with no `on:` used to resolve to nothing without a diagnostic. It now lowers for a bare
+`team.*` read `per: match` kept last (a node written by the provider's change events and re-seeded at
+`begin_new_match`), and any other shape is `resolve.trigger.unsupported-for-kind` at validation.
+No shipped or example ruleset had one, so no golden moves.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

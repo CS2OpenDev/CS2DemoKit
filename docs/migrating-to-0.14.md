@@ -71,6 +71,16 @@ frame's. The frame observer below reads at exactly that point.
 per-pawn digest**, the same shape the 0.13.0 `entity.controller.money` column caused for every
 column after it: index digest columns by provider name, not position.
 
+**A capture with no `on:` is no longer dropped.** Through 0.13.0 such a stat resolved to nothing
+at all: no diagnostic, no node, no column. It now lowers when it reads a bare `team.*` value
+`per: match`, and every other shape fails validation with `resolve.trigger.unsupported-for-kind`, so
+a directory that validated with one now reports it.
+
+**`EntityValueProviderRegistry.CreateDefault()` registers four more providers** after the
+game-rules ones: `entity.team.score@2`, `@3`, `entity.team.clan_name@2`, `@3`. A host that counts
+or indexes the registry's list moves with it; the catalog lists the two specs once each with
+`scope: "perTeam"`.
+
 ## 5. New things worth adopting
 
 `BuildDiagnosticCodes.LoweringFailed` (`build.lowering-failed`) and the three new
@@ -105,3 +115,27 @@ name once with `FrameView.Provider` and read through the handle; the view is rea
 `x`, `y` and `z` facets. A host that walked `ProjectileSampler` beside a run to find throw origins or
 landing points can subscribe instead, or collect `GameEventEdge<ProjectileRemovedEvent>`. See
 [`RULES_AUTHORING.md`](RULES_AUTHORING.md#3-views-and-facets--the-vocabulary).
+
+`team.score` and `team.clan_name` read a side's `CCSTeam` in a `for: each_team` ruleset. A host that
+replayed a demo to the last frame for the final score and clan names can capture them with no `on:`
+and read a `team_match` table instead:
+
+```yaml
+ruleset: library_teams
+for: each_team
+stats:
+  score:     { capture: team.score,     per: match }
+  clan_name: { capture: team.clan_name, per: match }
+show:
+  tables:
+    team_final:
+      per: team_match
+      columns:
+        - { stat: score, label: score }
+        - { stat: clan_name, label: clan_name }
+```
+
+Both are keyed by side, not by team, and a demo cut off at the buzzer can miss the last round's
+point, as a replay would. `GenericSideFieldProvider` is the provider shape behind them: a singleton
+read narrowed to the entity whose `m_iTeamNum` is the side. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-side-stats--for-each_team).
