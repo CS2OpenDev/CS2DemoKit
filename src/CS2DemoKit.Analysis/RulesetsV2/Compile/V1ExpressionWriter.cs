@@ -63,6 +63,11 @@ public static class V1ExpressionWriter
                     contextV2ToV1 is not null && contextV2ToV1.TryGetValue(reference.Path, out string? v1Id)
                         ? v1Id
                         : reference.Path));
+                if (reference.LookBackTicks > 0)
+                {
+                    sb.Append("@-").Append(reference.LookBackTicks.ToString(CultureInfo.InvariantCulture));
+                }
+
                 break;
             case IntLiteralNode intLiteral:
                 sb.Append(intLiteral.Value.ToString(CultureInfo.InvariantCulture));

@@ -193,13 +193,20 @@ public static class ExpressionChecker
             }
 
             bool isStat = statSymbol is not null;
+            if (reference.LookBackTicks > 0 && (isStat || pseudoType is not null))
+            {
+                return Fail(DiagnosticCodes.LookBackStat,
+                    $"'{reference.Path}' has no history to look back on: a look-back reads a value off the demo, not a stat",
+                    reference.Span, reference.Path);
+            }
+
             ResolvedReference resolved = new(reference, reference.Path, resultType,
                 statSymbol ?? symbol, isStat,
                 isStat ? string.Join('.', segments.Take(statDepth)) : null,
                 isStat ? [.. segments.Skip(statDepth)] : []);
 
             ByNode[reference] = resolved;
-            if (_seenPaths.Add(reference.Path))
+            if (_seenPaths.Add(reference.LookBackTicks == 0 ? reference.Path : reference.CanonicalText))
             {
                 References.Add(resolved);
             }

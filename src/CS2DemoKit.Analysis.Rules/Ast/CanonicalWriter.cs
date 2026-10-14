@@ -67,7 +67,7 @@ internal static class CanonicalWriter
             case ReferenceNode r:
                 if (writeReference is null)
                 {
-                    text.Append("(ref ").Append(r.Path).Append(')');
+                    AppendReference(text, r.Path, r.LookBackTicks);
                 }
                 else
                 {
@@ -143,6 +143,21 @@ internal static class CanonicalWriter
             default:
                 throw new InvalidOperationException($"unknown AST node type {node.GetType().Name}");
         }
+    }
+
+    /// <summary>The <c>(ref path)</c> form, with <c> @-N</c> before the paren for a look-back.</summary>
+    /// <param name="text">The target builder.</param>
+    /// <param name="path">The reference path.</param>
+    /// <param name="lookBackTicks">The look-back, 0 for none.</param>
+    internal static void AppendReference(StringBuilder text, string path, int lookBackTicks)
+    {
+        text.Append("(ref ").Append(path);
+        if (lookBackTicks > 0)
+        {
+            text.Append(" @-").Append(lookBackTicks.ToString(CultureInfo.InvariantCulture));
+        }
+
+        text.Append(')');
     }
 
     private static string Escape(string value) =>

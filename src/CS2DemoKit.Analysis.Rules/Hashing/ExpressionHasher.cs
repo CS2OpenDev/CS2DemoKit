@@ -63,7 +63,7 @@ public static class ExpressionHasher
 
             if (!resolved.IsStatReference)
             {
-                builder.Append("(ref ").Append(resolved.Path).Append(')');
+                CanonicalWriter.AppendReference(builder, resolved.Path, reference.LookBackTicks);
                 return;
             }
 

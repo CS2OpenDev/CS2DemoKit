@@ -241,4 +241,34 @@ public class RulesExpressionLexerTests
         IReadOnlyList<Token> mixed = Lex("And OR Not IN True FALSE Null");
         await Assert.That(mixed.Take(7).All(t => t.Kind == TokenKind.Identifier)).IsTrue();
     }
+
+    // ── Look-back ────────────────────────────────────────────────────────────────
+
+    /// <summary><c>@-N</c> is one token carrying N, so <c>x@-8 - 2</c> stays unambiguous.</summary>
+    [Test]
+    public async Task Tokenize_LookBack_IsOneToken()
+    {
+        IReadOnlyList<Token> tokens = Lex("player.pos_x@-8 - 2");
+        await Assert.That(tokens.Select(t => t.Kind).ToArray()).IsEquivalentTo(
+        [
+            TokenKind.Identifier, TokenKind.Dot, TokenKind.Identifier, TokenKind.LookBack,
+            TokenKind.Minus, TokenKind.IntLiteral, TokenKind.EndOfInput
+        ]);
+        await Assert.That(tokens[3].IntegerValue).IsEqualTo(8L);
+        await Assert.That(tokens[3].Text).IsEqualTo("@-8");
+    }
+
+    /// <summary>
+    ///     <c>@-</c> without whole digits after it is a lexical error, never a skip; an <c>@</c> with
+    ///     no <c>-</c> stays an unknown character.
+    /// </summary>
+    [Test]
+    public async Task Tokenize_MalformedLookBack_Errors()
+    {
+        await Assert.That(FirstError("a@-x").Code).IsEqualTo(DiagnosticCodes.InvalidLookBack);
+        await Assert.That(FirstError("a@-").Code).IsEqualTo(DiagnosticCodes.InvalidLookBack);
+        await Assert.That(FirstError("a@-8s").Code).IsEqualTo(DiagnosticCodes.InvalidLookBack);
+        await Assert.That(FirstError("a@8").Code).IsEqualTo(DiagnosticCodes.UnknownCharacter);
+        await Assert.That(FirstError("a@").Code).IsEqualTo(DiagnosticCodes.UnknownCharacter);
+    }
 }

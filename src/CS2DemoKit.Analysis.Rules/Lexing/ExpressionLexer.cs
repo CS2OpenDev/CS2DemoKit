@@ -76,6 +76,19 @@ public static class ExpressionLexer
                 continue;
             }
 
+            // A bare '@' stays an unknown character; only '@-' starts a look-back.
+            if (c == '@' && offset + 1 < source.Length && source[offset + 1] == '-')
+            {
+                LanguageResult<Token> lookBack = ReadLookBack(source, ref offset, line, ref column);
+                if (!lookBack.Success)
+                {
+                    return LanguageResult.Fail<IReadOnlyList<Token>>(lookBack.Diagnostics);
+                }
+
+                tokens.Add(lookBack.Require());
+                continue;
+            }
+
             if (c == '"')
             {
                 LanguageResult<Token> str = ReadString(source, ref offset, line, ref column);
@@ -189,6 +202,39 @@ public static class ExpressionLexer
                     $"'{fullText}' is not a valid number — the only numeric suffixes are the duration units 's' and 'ms'",
                     span, fullText);
         }
+    }
+
+    // '@-' digits, with no identifier character after the digits.
+    private static LanguageResult<Token> ReadLookBack(string source, ref int offset, int line, ref int column)
+    {
+        int start = offset;
+        int digitsStart = start + 2;
+        int digitsEnd = digitsStart;
+        while (digitsEnd < source.Length && IsDigit(source[digitsEnd]))
+        {
+            digitsEnd++;
+        }
+
+        int end = digitsEnd;
+        while (end < source.Length && IsIdentifierPart(source[end]))
+        {
+            end++;
+        }
+
+        string text = source[start..end];
+        SourceSpan span = new(start, text.Length, line, column);
+        offset = end;
+        column += text.Length;
+        if (digitsEnd == digitsStart || end != digitsEnd
+            || !long.TryParse(source.AsSpan(digitsStart, digitsEnd - digitsStart), NumberStyles.None,
+                CultureInfo.InvariantCulture, out long ticks))
+        {
+            return Error(DiagnosticCodes.InvalidLookBack,
+                $"'{text}' is not a look-back: write '@-N' with N a whole number of ticks",
+                span, text);
+        }
+
+        return LanguageResult.Ok(new Token(TokenKind.LookBack, text, span) { IntegerValue = ticks });
     }
 
     private static LanguageResult<Token> ReadString(string source, ref int offset, int line, ref int column)

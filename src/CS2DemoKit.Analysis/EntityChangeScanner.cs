@@ -140,6 +140,13 @@ public sealed class EntityChangeScanner
     private EntityFrameDigest? _prevDigest;
     private bool _prevFolded = true;
 
+    // Look-back: the frame clock of the poll in flight, of _prevDigest, and of the state the
+    // snapshot holds, plus the per-column histories KeepHistory asked for (null when none).
+    private int _pollClock;
+    private int _prevClock;
+    private int _snapshotClock = int.MinValue;
+    private ColumnHistory?[]? _history;
+
     private int _profFramesPolled;
 
     // Whether this scanner captured profiling data — latched the first time a profiled per-frame seam runs.
@@ -339,8 +346,16 @@ public sealed class EntityChangeScanner
     /// </summary>
     /// <param name="frameIndex">Index of the frame in the evaluation's read order, from zero.</param>
     /// <param name="tick">The frame's server tick.</param>
-    public IReadOnlyList<NetMessage> AdvanceAndPollAt(int frameIndex, int tick)
+    public IReadOnlyList<NetMessage> AdvanceAndPollAt(int frameIndex, int tick) =>
+        AdvanceAndPollOnClock(frameIndex, tick, tick);
+
+    /// <summary>
+    ///     <see cref="AdvanceAndPollAt" /> with the frame clock the look-back history is
+    ///     stamped with (<c>GameTick ?? ServerTick</c>), which the server tick is not.
+    /// </summary>
+    internal IReadOnlyList<NetMessage> AdvanceAndPollOnClock(int frameIndex, int tick, int frameClock)
     {
+        _pollClock = frameClock;
         if (Profiling.Enabled)
         {
             _profiled = true;
@@ -467,6 +482,15 @@ public sealed class EntityChangeScanner
         _lastWinStatus = -1;
         _preFrameSnapshotFrozen = false;
         _lastCompatibleLayout = null;
+        _snapshotClock = int.MinValue;
+        if (_history is not null)
+        {
+            foreach (ColumnHistory? history in _history)
+            {
+                history?.Reset();
+            }
+        }
+
         _pendingFrames.Clear();
         _runDriven = false;
         Array.Fill(_lastTeam, -1);
@@ -937,6 +961,7 @@ public sealed class EntityChangeScanner
         ConsumeAimVantage(digest, tick);
 
         _prevDigest = digest;
+        _prevClock = _pollClock;
         _prevFolded = false;
         return _scratch;
     }
@@ -1118,6 +1143,7 @@ public sealed class EntityChangeScanner
             return;
         }
 
+        _snapshotClock = _prevClock;
         PerPawnColumns rows = prev.PerPawn;
         if (rows.Count == 0)
         {
@@ -1141,6 +1167,175 @@ public sealed class EntityChangeScanner
         }
 
         _preFrameSnapshot.Fold(rows);
+        if (_history is not null)
+        {
+            RecordHistory(rows);
+        }
+    }
+
+    // A cell absent from a row did not change, so the history keeps change points only.
+    private void RecordHistory(PerPawnColumns rows)
+    {
+        for (int column = 0; column < _history!.Length; column++)
+        {
+            if (_history[column] is not { } history)
+            {
+                continue;
+            }
+
+            int word = column >> 6;
+            ulong bit = 1UL << (column & 63);
+            for (int r = 0; r < rows.Count; r++)
+            {
+                if ((rows.PresentWord(r, word) & bit) == 0)
+                {
+                    continue;
+                }
+
+                int slot = rows.SlotAt(r);
+                switch (history.Kind)
+                {
+                    case PawnCellKind.Int:
+                    case PawnCellKind.Bool:
+                        history.Push(slot, _snapshotClock, new HistoryEntry { Int = rows.GetInt(r, column) });
+                        break;
+                    case PawnCellKind.Float:
+                        history.Push(slot, _snapshotClock, new HistoryEntry { Float = rows.GetFloat(r, column) });
+                        break;
+                    default:
+                        history.Push(slot, _snapshotClock, new HistoryEntry { String = rows.GetString(r, column) });
+                        break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Keeps <paramref name="provider" />'s values for <paramref name="ticks" /> ticks of the frame
+    ///     clock, for <see cref="GetPreFrameValueAt" />. The longest request per provider wins.
+    /// </summary>
+    internal void KeepHistory(IPerPlayerEntityValueProvider provider, int ticks)
+    {
+        if (!_perPlayerProviderIndex.TryGetValue(provider, out int column))
+        {
+            throw new InvalidOperationException(
+                $"per-player provider '{provider.Name}' is not registered on this scanner, so it keeps no history");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(ticks, 1);
+        _history ??= new ColumnHistory?[_perPlayerProviders.Count];
+        if (_history[column] is not { } held || held.Ticks < ticks)
+        {
+            _history[column] = new ColumnHistory(_layout.Kinds[column], ticks);
+        }
+    }
+
+    /// <summary>
+    ///     <paramref name="provider" />'s value for <paramref name="playerSlot" /> as
+    ///     <see cref="GetPreFrameValue" /> would have returned it <paramref name="ticksBack" /> ticks
+    ///     earlier on the frame clock: the newest value at or before the snapshot's tick minus
+    ///     <paramref name="ticksBack" />. Null when the slot had no value by then.
+    /// </summary>
+    public object? GetPreFrameValueAt(IPerPlayerEntityValueProvider provider, int playerSlot, int ticksBack)
+    {
+        if (!_perPlayerProviderIndex.TryGetValue(provider, out int column)
+            || _history?[column] is not { } history || ticksBack < 1 || ticksBack > history.Ticks)
+        {
+            throw new InvalidOperationException(
+                $"per-player provider '{provider.Name}' keeps no {ticksBack}-tick history on this scanner; "
+                + "the build gates a look-back in through KeepHistory");
+        }
+
+        if (_snapshotClock == int.MinValue || !history.TryAt(playerSlot, _snapshotClock - ticksBack, out HistoryEntry entry))
+        {
+            return null;
+        }
+
+        return history.Kind switch
+        {
+            PawnCellKind.Int => entry.Int,
+            PawnCellKind.Bool => entry.Int != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
+            PawnCellKind.Float => entry.Float,
+            _ => entry.String
+        };
+    }
+
+    private struct HistoryEntry
+    {
+        public int Tick;
+        public int Int;
+        public float Float;
+        public string? String;
+    }
+
+    // Per slot, a ring of change points with strictly rising ticks, so Ticks + 1 entries always
+    // reach back far enough: the entry a read wants is at most Ticks entries behind the newest.
+    private sealed class ColumnHistory(PawnCellKind kind, int ticks)
+    {
+        private Ring?[] _bySlot = new Ring?[64];
+
+        public PawnCellKind Kind => kind;
+
+        public int Ticks => ticks;
+
+        public void Push(int slot, int tick, HistoryEntry entry)
+        {
+            if ((uint)slot >= (uint)_bySlot.Length)
+            {
+                Array.Resize(ref _bySlot, Math.Max(slot + 1, _bySlot.Length * 2));
+            }
+
+            entry.Tick = tick;
+            (_bySlot[slot] ??= new Ring(ticks + 1)).Push(entry);
+        }
+
+        public bool TryAt(int slot, int tick, out HistoryEntry entry)
+        {
+            if ((uint)slot < (uint)_bySlot.Length && _bySlot[slot] is { } ring)
+            {
+                return ring.TryAt(tick, out entry);
+            }
+
+            entry = default;
+            return false;
+        }
+
+        public void Reset() => Array.Clear(_bySlot);
+    }
+
+    private sealed class Ring(int capacity)
+    {
+        private readonly HistoryEntry[] _entries = new HistoryEntry[capacity];
+        private int _count;
+        private int _newest = capacity - 1;
+
+        public void Push(HistoryEntry entry)
+        {
+            if (_count > 0 && _entries[_newest].Tick == entry.Tick)
+            {
+                _entries[_newest] = entry;
+                return;
+            }
+
+            _newest = (_newest + 1) % _entries.Length;
+            _entries[_newest] = entry;
+            _count = Math.Min(_count + 1, _entries.Length);
+        }
+
+        public bool TryAt(int tick, out HistoryEntry entry)
+        {
+            for (int k = 0; k < _count; k++)
+            {
+                entry = _entries[(_newest - k + _entries.Length) % _entries.Length];
+                if (entry.Tick <= tick)
+                {
+                    return true;
+                }
+            }
+
+            entry = default;
+            return false;
+        }
     }
 
     /// <summary>

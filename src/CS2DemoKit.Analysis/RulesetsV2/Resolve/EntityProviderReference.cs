@@ -40,4 +40,10 @@ public sealed record EntityProviderReference(
 {
     /// <summary>The <see cref="Subject" /> sentinel for a read keyed by the ruleset's own player.</summary>
     public const string PlayerSubject = "player";
+
+    /// <summary>
+    ///     How many ticks earlier the read looks (<c>player.pos_x@-8</c>), 0 for a plain read. The
+    ///     same path read plainly and with a look-back is two entries.
+    /// </summary>
+    public int LookBackTicks { get; init; }
 }

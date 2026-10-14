@@ -816,6 +816,7 @@ public sealed partial class RuleChainBuilder
         List<IEntityValueProvider> matched,
         List<IPerPlayerEntityValueProvider> perPlayerList)
     {
+        _lookBackTicks.Clear();
         if (rulesets.Count == 0)
         {
             return;
@@ -829,6 +830,10 @@ public sealed partial class RuleChainBuilder
                 foreach (EntityProviderReference read in stat.EntityReads)
                 {
                     providerNames.Add(read.ProviderName);
+                    if (read.LookBackTicks > _lookBackTicks.GetValueOrDefault(read.ProviderName))
+                    {
+                        _lookBackTicks[read.ProviderName] = read.LookBackTicks;
+                    }
                 }
             }
 

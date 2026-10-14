@@ -136,6 +136,12 @@ public static class ResolveDiagnosticCodes
     /// </summary>
     public const string WhileUnsupported = "resolve.while.unsupported";
 
+    /// <summary>
+    ///     A look-back (<c>@-N</c>) this build cannot serve: one outside a <c>where:</c> or the value
+    ///     of an event-triggered stat, or on anything but the ruleset player's per-player entity read.
+    /// </summary>
+    public const string LookBackUnsupported = "resolve.look-back.unsupported";
+
     /// <summary>A <c>keep: list</c> element that is not int-typed.</summary>
     public const string KeepListElementType = "resolve.keep-list.element-type";
 }

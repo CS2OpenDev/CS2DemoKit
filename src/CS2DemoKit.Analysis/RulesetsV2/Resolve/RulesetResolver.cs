@@ -485,7 +485,7 @@ public static class RulesetResolver
             }
 
             RulesType thisType = valueType;
-            ReadCollector reads = new(this, trigger.View);
+            ReadCollector reads = new(this, trigger.View, stat.Position);
 
             CheckedExpression? condition;
             CheckedExpression? valueSelector;
@@ -809,7 +809,7 @@ public static class RulesetResolver
                 return null;
             }
 
-            ReadCollector reads = new(this, null);
+            ReadCollector reads = new(this, null, stat.Position);
             IScopeEnvironment scope = StateScope(RulesType.Int, "tally:", []);
             CheckedExpression? source =
                 CheckExpressionText(stat.KindArg, "tally:", stat.Position, scope, RulesType.Int);
@@ -932,7 +932,7 @@ public static class RulesetResolver
             // Synthesize the of / per division into the row-5 expression slot (identity for free). The two
             // ids resolve as sibling stat references in state scope, so the checked expression carries their
             // resolved-reference identities — ExpressionHasher row 6 embeds each bucket's own node hash.
-            ReadCollector reads = new(this, null);
+            ReadCollector reads = new(this, null, stat.Position);
             IScopeEnvironment scope = StateScope(RulesType.Float, "rate:", []);
             CheckedExpression? ratio =
                 CheckExpressionText($"{ofId} / {perId}", "rate:", stat.Position, scope, null);
@@ -1187,7 +1187,7 @@ public static class RulesetResolver
                 new BinaryNode(BinaryOperator.And, left, right));
             IScopeEnvironment scope = EventScope(trigger, thisType, "where:");
             CheckedExpression? checkedExpression = CheckNode(composed, scope, RulesType.Bool, "where:", stat.Position);
-            reads.Collect(checkedExpression);
+            reads.Collect(checkedExpression, lookBackSite: true);
             return checkedExpression;
         }
 
@@ -1298,7 +1298,7 @@ public static class RulesetResolver
                 ValidateSelectorType(stat, checkedExpression);
             }
 
-            reads.Collect(checkedExpression);
+            reads.Collect(checkedExpression, lookBackSite: true);
             return checkedExpression;
         }
 
@@ -1508,7 +1508,7 @@ public static class RulesetResolver
 
         private CheckedHighlight? ResolveHighlight(HighlightDef highlight)
         {
-            ReadCollector reads = new(this, null);
+            ReadCollector reads = new(this, null, highlight.Position);
             IScopeEnvironment scope = StateScope(null, "when:", []);
             CheckedExpression? when = CheckExpressionText(highlight.When, "when:", highlight.Position, scope,
                 RulesType.Bool);
@@ -2354,6 +2354,20 @@ public static class RulesetResolver
             return false;
         }
 
+        /// <summary>Only the ruleset player's per-player entity reads carry a history the scanner can keep.</summary>
+        private bool CanLookBack(EntityProviderReference entity) =>
+            entity is { Subject: EntityProviderReference.PlayerSubject, IsSingleton: false }
+            && _providerByV2Name.TryGetValue(entity.Path, out CatalogProvider? provider)
+            && string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal);
+
+        private void ReportLookBack(ResolvedReference reference, bool lookBackSite, SourcePosition position) =>
+            Report(ResolveDiagnosticCodes.LookBackUnsupported,
+                lookBackSite
+                    ? $"'{reference.Path}' cannot look back: only a player.* entity read keeps a history"
+                    : $"'{reference.Path}@-{reference.LookBackTicks.ToString(CultureInfo.InvariantCulture)}' looks back "
+                      + "outside a where: or an event-triggered value, the only places a look-back is served",
+                position);
+
         // ── Mapping helpers ────────────────────────────────────────────────────────
 
         private static RuleNodeKind MapNodeKind(StatKind kind) =>
@@ -2448,7 +2462,7 @@ public static class RulesetResolver
 
         // ── Read-set / entity-provider extraction ──────────────────────────────────
 
-        private sealed class ReadCollector(Session session, CatalogView? view)
+        private sealed class ReadCollector(Session session, CatalogView? view, SourcePosition position)
         {
             private readonly List<EntityProviderReference> _entities = [];
             private readonly HashSet<string> _entitySeen = new(StringComparer.Ordinal);
@@ -2468,7 +2482,12 @@ public static class RulesetResolver
                 }
             }
 
-            internal void Collect(CheckedExpression? expression)
+            /// <param name="expression">The checked expression, or null when it failed to check.</param>
+            /// <param name="lookBackSite">
+            ///     True for the fire-time slots that lower through the event-condition seam, the only
+            ///     place a look-back is served.
+            /// </param>
+            internal void Collect(CheckedExpression? expression, bool lookBackSite = false)
             {
                 if (expression is null)
                 {
@@ -2482,8 +2501,21 @@ public static class RulesetResolver
                         _reads.Add(reference.Path);
                     }
 
-                    if (session.TryEntityRead(reference, view, out EntityProviderReference? entity)
-                        && _entitySeen.Add(entity.Path))
+                    bool isEntity = session.TryEntityRead(reference, view, out EntityProviderReference? entity);
+                    if (reference.LookBackTicks > 0)
+                    {
+                        if (!lookBackSite || !isEntity || !session.CanLookBack(entity!))
+                        {
+                            session.ReportLookBack(reference, lookBackSite, position);
+                            continue;
+                        }
+
+                        entity = entity! with { LookBackTicks = reference.LookBackTicks };
+                    }
+
+                    if (isEntity && _entitySeen.Add(entity!.LookBackTicks == 0
+                            ? entity.Path
+                            : $"{entity.Path}@-{entity.LookBackTicks.ToString(CultureInfo.InvariantCulture)}"))
                     {
                         _entities.Add(entity);
                     }

@@ -816,7 +816,7 @@ public static class ExpressionCompiler
     ///     same previous-frame semantics <c>HurtTeamEnrichmentEdge</c> relies on). A null snapshot value
     ///     degrades to the provider's default; a missing scanner/registry/slot is a compile-time error.
     /// </summary>
-    private static UnaryExpression ResolvePlayerEntity(ExpressionBindings b, string providerName)
+    private static UnaryExpression ResolvePlayerEntity(ExpressionBindings b, string providerName, int ticksBack = 0)
     {
         if (b.EntityScanner is null || b.PerPlayerProviders is null || !b.PlayerSlot.HasValue)
         {
@@ -833,13 +833,18 @@ public static class ExpressionCompiler
                 $"Unknown per-player entity provider: '{providerName}' (from 'player.{providerName}').");
         }
 
-        MethodInfo getPreFrame =
-            typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetPreFrameValue))!;
-        Expression call = Expression.Call(
-            Expression.Constant(b.EntityScanner),
-            getPreFrame,
-            Expression.Constant(provider, typeof(IPerPlayerEntityValueProvider)),
-            Expression.Constant(b.PlayerSlot.Value)); // object? (boxed value or null)
+        Expression call = ticksBack > 0
+            ? Expression.Call(
+                Expression.Constant(b.EntityScanner),
+                typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetPreFrameValueAt))!,
+                Expression.Constant(provider, typeof(IPerPlayerEntityValueProvider)),
+                Expression.Constant(b.PlayerSlot.Value),
+                Expression.Constant(ticksBack))
+            : Expression.Call(
+                Expression.Constant(b.EntityScanner),
+                typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetPreFrameValue))!,
+                Expression.Constant(provider, typeof(IPerPlayerEntityValueProvider)),
+                Expression.Constant(b.PlayerSlot.Value)); // object? (boxed value or null)
 
         // null snapshot → provider default (0 for value types, "" for string), then unbox/cast to ValueType.
         object? boxedDefault = provider.ValueType.IsValueType
@@ -1327,6 +1332,19 @@ public static class ExpressionCompiler
 
                         string providerName = string.Join(".", entityPath);
 
+                        if (pos < tokens.Length && tokens[pos].Kind == TokenKind.LookBack)
+                        {
+                            int ticksBack = int.Parse(tokens[pos].Text, CultureInfo.InvariantCulture);
+                            pos++;
+                            if (b.EntityValueAtParam is not null && b.SelectedPlayerSlot.HasValue)
+                            {
+                                throw new InvalidOperationException(
+                                    $"'player.{providerName}@-{ticksBack}': a breakpoint condition cannot look back");
+                            }
+
+                            return ResolvePlayerEntity(b, providerName, ticksBack);
+                        }
+
                         // EDGE breakpoint substrate: read via the positioned accessor at the SELECTED
                         // slot (the host's EntityValueCache). Falls back to the per-player-chain scanner
                         // path (fixed compile-time slot) when no accessor is bound.
@@ -1807,6 +1825,20 @@ public static class ExpressionCompiler
                 continue;
             }
 
+            // '@-N': a look-back, as V1ExpressionWriter emits it after an entity read.
+            if (c == '@' && i + 2 < input.Length && input[i + 1] == '-' && char.IsAsciiDigit(input[i + 2]))
+            {
+                int start = i + 2;
+                i = start;
+                while (i < input.Length && char.IsAsciiDigit(input[i]))
+                {
+                    i++;
+                }
+
+                tokens.Add(new Token(TokenKind.LookBack, input[start..i]));
+                continue;
+            }
+
             if (c == '[')
             {
                 tokens.Add(new Token(TokenKind.LBracket, "["));
@@ -2031,7 +2063,8 @@ public static class ExpressionCompiler
         OpMod,
         OpAnd,
         OpOr,
-        OpNot
+        OpNot,
+        LookBack
     }
 
     private readonly record struct Token(TokenKind Kind, string Text);

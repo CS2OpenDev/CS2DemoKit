@@ -285,4 +285,40 @@ public class RulesExpressionParserTests
         await Assert.That(FirstError("a.").Code).IsEqualTo(DiagnosticCodes.UnexpectedToken);
         await Assert.That(FirstError("xs[1").Code).IsEqualTo(DiagnosticCodes.UnexpectedToken);
     }
+
+    // ── Look-back ────────────────────────────────────────────────────────────────
+
+    /// <summary>A look-back is part of the reference's identity: it canonicalizes, so it dedups and hashes apart.</summary>
+    [Test]
+    public async Task Parse_LookBack_IsPartOfTheReference()
+    {
+        await Assert.That(Canon("player.pos_x@-8")).IsEqualTo("(ref player.pos_x @-8)");
+        await Assert.That(Canon("player.pos_x@-8 - player.pos_x"))
+            .IsEqualTo("(sub (ref player.pos_x @-8) (ref player.pos_x))");
+        await Assert.That(ExpressionParser.Parse("player.pos_x@-8").Require())
+            .IsNotEqualTo(ExpressionParser.Parse("player.pos_x").Require());
+        ReferenceNode node = (ReferenceNode)ExpressionParser.Parse("player.pos_x@-64").Require();
+        await Assert.That(node.LookBackTicks).IsEqualTo(64);
+        await Assert.That(node.Path).IsEqualTo("player.pos_x");
+    }
+
+    /// <summary>A plain reference keeps the canonical form it always had, so no existing hash moves.</summary>
+    [Test]
+    public async Task Parse_PlainReference_CanonicalUnchanged()
+    {
+        await Assert.That(Canon("player.pos_x")).IsEqualTo("(ref player.pos_x)");
+        await Assert.That(((ReferenceNode)ExpressionParser.Parse("player.pos_x").Require()).LookBackTicks).IsEqualTo(0);
+    }
+
+    /// <summary>N is a literal from 1 to 64, and only a reference looks back.</summary>
+    [Test]
+    public async Task Parse_LookBack_RangeAndTarget_Errors()
+    {
+        await Assert.That(FirstError("player.pos_x@-0").Code).IsEqualTo(DiagnosticCodes.LookBackRange);
+        await Assert.That(FirstError("player.pos_x@-65").Code).IsEqualTo(DiagnosticCodes.LookBackRange);
+        await Assert.That(FirstError("(a + b)@-8").Code).IsEqualTo(DiagnosticCodes.LookBackTarget);
+        await Assert.That(FirstError("xs[0]@-8").Code).IsEqualTo(DiagnosticCodes.LookBackTarget);
+        await Assert.That(FirstError("player.pos_x@-8@-8").Code).IsEqualTo(DiagnosticCodes.LookBackTarget);
+        await Assert.That(FirstError("player@-8.pos_x").Code).IsEqualTo(DiagnosticCodes.LookBackTarget);
+    }
 }

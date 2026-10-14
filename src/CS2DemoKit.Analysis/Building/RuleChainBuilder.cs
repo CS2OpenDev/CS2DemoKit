@@ -104,6 +104,9 @@ public sealed partial class RuleChainBuilder
     // materialize contract (same as _currentPlayerTeam) means no two slots race on it.
     private Dictionary<string, object>? _v2ConditionNodeOverlay;
 
+    // Per-player provider name to the longest look-back any v2 read takes on it.
+    private readonly Dictionary<string, int> _lookBackTicks = new(StringComparer.Ordinal);
+
     /// <param name="registry">Event / net-message registry used to resolve trigger names to CLR types.</param>
     /// <param name="target">The tick rate and resolved profile the graph is built for; the defaults are 64 and the fallback profile.</param>
     /// <param name="entityProviders">Optional singleton-entity providers (game-rules etc.).</param>
@@ -503,6 +506,14 @@ public sealed partial class RuleChainBuilder
             if (ReadsUserCommands(rulesets))
             {
                 entityScanner.Commands = new UserCmdReconstructor();
+            }
+
+            foreach ((string providerName, int ticks) in _lookBackTicks)
+            {
+                if (perPlayerList.FirstOrDefault(p => p.Name == providerName) is { } provider)
+                {
+                    entityScanner.KeepHistory(provider, ticks);
+                }
             }
         }
 

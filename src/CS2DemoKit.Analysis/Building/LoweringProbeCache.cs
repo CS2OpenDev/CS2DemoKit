@@ -285,6 +285,7 @@ internal sealed class LoweringProbeCache
                 Str(r.Subject);
                 Str(r.RoleSlotField);
                 Bool(r.IsSingleton);
+                Int(r.LookBackTicks);
             }
         }
 

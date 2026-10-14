@@ -11,7 +11,7 @@ namespace CS2DemoKit.Analysis.Rules.Lexing;
 /// <param name="Span">The token's position within the expression source.</param>
 public sealed record Token(TokenKind Kind, string Text, SourceSpan Span)
 {
-    /// <summary>Parsed value of an <see cref="TokenKind.IntLiteral" />; 0 otherwise.</summary>
+    /// <summary>Parsed value of an <see cref="TokenKind.IntLiteral" />, or N of a <see cref="TokenKind.LookBack" />; 0 otherwise.</summary>
     public long IntegerValue { get; init; }
 
     /// <summary>Parsed value of a <see cref="TokenKind.FloatLiteral" />; 0 otherwise.</summary>

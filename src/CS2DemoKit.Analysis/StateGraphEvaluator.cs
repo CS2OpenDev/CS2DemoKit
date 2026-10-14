@@ -630,7 +630,7 @@ public sealed class StateGraphEvaluator
             //    snapshot/dirty bookkeeping exactly like a real frame message. ──
             if (_entityScanner is not null)
             {
-                IReadOnlyList<NetMessage> synthesized = _entityScanner.AdvanceAndPollAt(frameIdx, frame.ServerTick);
+                IReadOnlyList<NetMessage> synthesized = _entityScanner.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
                 for (int s = 0; s < synthesized.Count; s++)
                 {
                     NetMessage syntheticMsg = synthesized[s];
