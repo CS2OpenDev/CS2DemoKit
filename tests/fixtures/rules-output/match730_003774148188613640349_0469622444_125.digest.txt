@@ -4,10 +4,10 @@ highlights=247
 ruleChainEvents=424
 materializedPlayers=10
 == kast_game_totals
-dims=match_id,map,player_slot,player_name,team
+dims=match_id,map,player_slot,player_name,steam_id,team
 vals=KASTRounds,KAST%,2K,3K,4K,5K
 == post_plant_double_context
-dims=match_id,map,round_number,player_slot,player_name,team
+dims=match_id,map,round_number,player_slot,player_name,steam_id,team
 vals=Achieved,PostPlantKills,PlantTick,KillTick
 nodeCount=1655
 chains
@@ -19,4 +19,4 @@ _chain_post_plant_double=1
 _chain_traded_death=31
 has_kast=146
 traded=31
-sha256=e242f7063557d396c8c3a67194e26cc5637e8362ff7053ab4689dff88e73f0e9
+sha256=ffa44a909c5590d892492095e06cce45695b384e386694ab38343785f0f873c9
