@@ -99,6 +99,9 @@ internal static class Measurement
     /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries R6's template cost.</summary>
     public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
 
+    /// <summary>Set to print the timed evaluation's allocation by type to stderr, after the row.</summary>
+    public const string AllocTickVariable = "CS2DEMOKIT_BENCH_ALLOCTICK";
+
     /// <summary>Shared with <see cref="PathMeasurement" /> so the forward-path WS arm can load the same overlay.</summary>
     internal const string ProjectileOverlayLabel = "bench-projectile.rules.yaml";
 
@@ -342,12 +345,19 @@ internal static class Measurement
         long allocEval = GC.GetTotalAllocatedBytes();
         TimeSpan pauseEval = GC.GetTotalPauseDuration();
         int e0 = GC.CollectionCount(0), e1 = GC.CollectionCount(1), e2 = GC.CollectionCount(2);
+        AllocationTicks? evalTicks = AllocationTicks.StartIfRequested(AllocTickVariable);
         long te = Stopwatch.GetTimestamp();
-        _ = DemoAnalysis.Evaluate(demo, build, options);
+        AnalysisRun run = DemoAnalysis.Evaluate(demo, build, options);
         double evalMs = Ms(te);
         double evalPause = (GC.GetTotalPauseDuration() - pauseEval).TotalMilliseconds;
         long evalAlloc = GC.GetTotalAllocatedBytes() - allocEval;
         int ev0 = GC.CollectionCount(0) - e0, ev1 = GC.CollectionCount(1) - e1, ev2 = GC.CollectionCount(2) - e2;
+        if (evalTicks is not null)
+        {
+            evalTicks.Dispose();
+            Console.Error.WriteLine($"eval allocation by type ({Path.GetFileName(demoPath)}, projectiles={run.Projectiles.Count}):");
+            evalTicks.Report(Console.Error);
+        }
 
         // Full enumeration of InnerMessages across every frame: what a consumer walking the message
         // list actually pays. Under a lazy view this is where synthesis lands, so it is the number that

@@ -10,8 +10,10 @@ namespace CS2DemoKit.Bench;
 /// <summary>
 ///     Allocation by type, from the runtime's <c>GCAllocationTick</c> events: one sample per
 ///     roughly 100 KB allocated, attributed to the type being allocated. Enabled by
-///     <c>CS2DEMOKIT_PATHS_ALLOCTICK=1</c> on a <c>path-measure</c> run; the top types go to
-///     stderr after the row. A sample, not a count: it says what allocates, not how many times.
+///     <c>CS2DEMOKIT_PATHS_ALLOCTICK=1</c> on a <c>path-measure</c> run, or
+///     <c>CS2DEMOKIT_BENCH_ALLOCTICK=1</c> on a <c>measure</c> run (the timed evaluation only); the
+///     top types go to stderr after the row. A sample, not a count: it says what allocates, not
+///     how many times.
 /// </summary>
 internal sealed class AllocationTicks : EventListener
 {
@@ -19,8 +21,8 @@ internal sealed class AllocationTicks : EventListener
     private readonly object _gate = new();
     private long _totalBytes;
 
-    public static AllocationTicks? StartIfRequested() =>
-        Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_ALLOCTICK") == "1" ? new AllocationTicks() : null;
+    public static AllocationTicks? StartIfRequested(string variable = "CS2DEMOKIT_PATHS_ALLOCTICK") =>
+        Environment.GetEnvironmentVariable(variable) == "1" ? new AllocationTicks() : null;
 
     protected override void OnEventSourceCreated(EventSource eventSource)
     {
