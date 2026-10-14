@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using CS2DemoKit.Analysis.Plugins;
 
 #endregion
@@ -96,6 +97,7 @@ internal sealed class PreFrameSnapshot
     }
 
     /// <summary>An int or bool column's held value, unboxed. The caller has checked the column's kind.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetInt(int column, int slot, out int value)
     {
         if (TryRow(column, slot, out TypedSlotRow? row))
@@ -109,6 +111,7 @@ internal sealed class PreFrameSnapshot
     }
 
     /// <summary>A float column's held value, unboxed. The caller has checked the column's kind.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetFloat(int column, int slot, out float value)
     {
         if (TryRow(column, slot, out TypedSlotRow? row))
@@ -122,6 +125,7 @@ internal sealed class PreFrameSnapshot
     }
 
     /// <summary>A string column's held value. The caller has checked the column's kind.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetString(int column, int slot, out string? value)
     {
         if (TryRow(column, slot, out TypedSlotRow? row))
@@ -134,6 +138,7 @@ internal sealed class PreFrameSnapshot
         return false;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryRow(int column, int slot, [NotNullWhen(true)] out TypedSlotRow? row)
     {
         if ((uint)slot >= (uint)_bySlot.Length || _bySlot[slot] is not { } held

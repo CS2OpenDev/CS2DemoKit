@@ -286,7 +286,7 @@ public sealed class EntityChangeScanner
 
         // In this order: the delta state and the snapshot are both indexed by the layout.
         _layout = DigestColumnLayout.For(_perPlayerProviders);
-        _delta = new PerPawnDeltaState(_layout);
+        _delta = new PerPawnDeltaState(_layout) { Storage = new DigestStoragePool() };
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
 
@@ -470,7 +470,7 @@ public sealed class EntityChangeScanner
         _pendingFrames.Clear();
         _runDriven = false;
         Array.Fill(_lastTeam, -1);
-        _delta = new PerPawnDeltaState(_layout);
+        _delta = new PerPawnDeltaState(_layout) { Storage = new DigestStoragePool() };
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
         Span<TrackedProvider> tracked = CollectionsMarshal.AsSpan(_tracked);
         for (int i = 0; i < tracked.Length; i++)
@@ -914,6 +914,7 @@ public sealed class EntityChangeScanner
         if (!_prevFolded)
         {
             MergePreFrameSnapshot(_prevDigest);
+            _prevDigest?.ReleaseStorage();
         }
 
         ConsumeSingletons(digest, tick);
@@ -955,6 +956,7 @@ public sealed class EntityChangeScanner
         }
 
         MergePreFrameSnapshot(_prevDigest);
+        _prevDigest?.ReleaseStorage();
         _prevFolded = true;
     }
 

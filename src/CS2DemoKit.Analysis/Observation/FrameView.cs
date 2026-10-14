@@ -1,5 +1,6 @@
 #region
 
+using System.Runtime.CompilerServices;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
 
@@ -165,12 +166,14 @@ public sealed class FrameView
         _frame = null;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private FrameView Open() =>
         _open
             ? this
             : throw new InvalidOperationException(
                 "FrameView is readable only inside IFrameObserver.OnFrame; copy what you keep before returning");
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ObservedProvider Own(in ObservedProvider provider) =>
         ReferenceEquals(provider.Owner, this)
             ? provider

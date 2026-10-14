@@ -95,6 +95,7 @@ internal static class EntityDigestExtractor
         EntityTracker tracker = layer.Tracker;
         EntityFrameDigest d = new()
         {
+            Pool = delta.Storage,
             // Stamp decode integrity at build time. LastEntityError is sticky per tracker, so on
             // the sequential path every digest from the first error onward is flagged; on the parallel
             // path each chunk worker flags from its own first error (the scanner's consume latch makes
@@ -296,7 +297,10 @@ internal static class EntityDigestExtractor
         EntityFrameDigest digest = sweep.Digest;
         if (ReferenceEquals(digest.PerPawn, PerPawnColumns.Empty))
         {
-            digest.PerPawn = new PerPawnColumns(layout, Math.Max(PerPawnColumns.InitialCapacity, delta.LastRowCount));
+            int capacity = Math.Max(PerPawnColumns.InitialCapacity, delta.LastRowCount);
+            digest.PerPawn = delta.Storage is { } pool
+                ? pool.RentColumns(layout, capacity)
+                : new PerPawnColumns(layout, capacity);
         }
 
         digest.PerPawn.AppendRow(slot, row, present);

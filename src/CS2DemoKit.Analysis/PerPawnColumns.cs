@@ -14,10 +14,11 @@ namespace CS2DemoKit.Analysis;
 ///     <para>
 ///         Sized for the frame it describes. <see cref="Empty" /> is the shared, immutable
 ///         zero-row instance every digest starts with, so a frame where nothing changed allocates
-///         no row storage at all; the first row allocates storage for
+///         no row storage at all; the first row takes storage for
 ///         <see cref="InitialCapacity" /> rows or the producing stream's previous row count,
 ///         whichever is larger, and each kind's array is exactly as wide as that kind's column
-///         count (a kind with no columns shares the empty array).
+///         count (a kind with no columns shares the empty array). A stream with a
+///         <see cref="DigestStoragePool" /> recycles that storage once the consumer has folded it.
 ///     </para>
 /// </summary>
 internal sealed class PerPawnColumns
@@ -34,10 +35,12 @@ internal sealed class PerPawnColumns
 
     /// <param name="layout">The column plan of every row.</param>
     /// <param name="capacity">Rows to reserve up front.</param>
-    internal PerPawnColumns(DigestColumnLayout layout, int capacity)
+    /// <param name="pool">The pool this instance returns to once consumed, or null for one that is dropped.</param>
+    internal PerPawnColumns(DigestColumnLayout layout, int capacity, DigestStoragePool? pool = null)
     {
         ArgumentNullException.ThrowIfNull(layout);
         Layout = layout;
+        Pool = pool;
         _capacity = capacity;
         _slots = capacity > 0 ? new int[capacity] : [];
         _present = capacity > 0 && layout.Words > 0 ? new ulong[capacity * layout.Words] : [];
@@ -50,10 +53,35 @@ internal sealed class PerPawnColumns
     public static PerPawnColumns Empty { get; } = new(DigestColumnLayout.Empty, 0);
 
     /// <summary>The column plan of every row.</summary>
-    public DigestColumnLayout Layout { get; }
+    public DigestColumnLayout Layout { get; private set; }
+
+    /// <summary>The pool a consumed instance returns to; null for one the garbage collector takes.</summary>
+    internal DigestStoragePool? Pool { get; }
 
     /// <summary>Number of rows.</summary>
     public int Count { get; private set; }
+
+    /// <summary>Drops every row. The storage behind them stays allocated for the next frame.</summary>
+    internal void Reset() => Count = 0;
+
+    /// <summary>
+    ///     Points a recycled instance at the layout its next rows follow. Only a compatible layout
+    ///     is accepted: the kind arrays are sized by column counts the two then share.
+    /// </summary>
+    internal void Rebind(DigestColumnLayout layout)
+    {
+        if (ReferenceEquals(layout, Layout))
+        {
+            return;
+        }
+
+        if (!layout.IsCompatibleWith(Layout))
+        {
+            throw new InvalidOperationException("recycled row storage was rented for an incompatible column layout");
+        }
+
+        Layout = layout;
+    }
 
     /// <summary>The player slot of <paramref name="row" />.</summary>
     public int SlotAt(int row)
@@ -128,17 +156,17 @@ internal sealed class PerPawnColumns
 
         if (layout.IntCount > 0)
         {
-            Array.Copy(source.Ints, 0, _ints, row * layout.IntCount, layout.IntCount);
+            source.Ints.AsSpan(0, layout.IntCount).CopyTo(_ints.AsSpan(row * layout.IntCount));
         }
 
         if (layout.FloatCount > 0)
         {
-            Array.Copy(source.Floats, 0, _floats, row * layout.FloatCount, layout.FloatCount);
+            source.Floats.AsSpan(0, layout.FloatCount).CopyTo(_floats.AsSpan(row * layout.FloatCount));
         }
 
         if (layout.StringCount > 0)
         {
-            Array.Copy(source.Strings, 0, _strings, row * layout.StringCount, layout.StringCount);
+            source.Strings.AsSpan(0, layout.StringCount).CopyTo(_strings.AsSpan(row * layout.StringCount));
         }
     }
 

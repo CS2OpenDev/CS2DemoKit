@@ -104,5 +104,34 @@ internal sealed class EntityFrameDigest
     public void AddSmoke(Vector4 sphere) => (_smokes ??= new List<Vector4>(4)).Add(sphere);
 
     /// <summary>Records one live projectile of an asked-for class.</summary>
-    public void AddProjectile(in ProjectileRow row) => (_projectiles ??= new List<ProjectileRow>(4)).Add(row);
+    public void AddProjectile(in ProjectileRow row) =>
+        (_projectiles ??= Pool?.RentProjectiles() ?? new List<ProjectileRow>(4)).Add(row);
+
+    /// <summary>The pool the row storage came from, set by the extractor; null for a digest that owns its storage.</summary>
+    internal DigestStoragePool? Pool;
+
+    /// <summary>
+    ///     Hands pooled row storage back once the consumer has folded this digest. A digest without
+    ///     a pool keeps its rows, so tests that hold digests see them unchanged. After this,
+    ///     <see cref="PerPawn" /> and <see cref="Projectiles" /> read empty.
+    /// </summary>
+    public void ReleaseStorage()
+    {
+        if (Pool is null)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(PerPawn, PerPawnColumns.Empty))
+        {
+            Pool.Return(PerPawn);
+            PerPawn = PerPawnColumns.Empty;
+        }
+
+        if (_projectiles is not null)
+        {
+            Pool.Return(_projectiles);
+            _projectiles = null;
+        }
+    }
 }

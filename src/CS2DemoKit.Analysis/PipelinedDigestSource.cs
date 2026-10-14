@@ -648,7 +648,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         EntityStateLayer layer = worker.Layer;
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = _perPlayerFactory();
         IReadOnlyList<IEntityValueProvider> singletons = _singletonFactory();
-        PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer));
+        PerPawnDeltaState delta = new(DigestColumnLayout.For(perPlayer)) { Storage = worker.Storage };
 
         int next = 0;
         if (chunk.Checkpoint is not null)
@@ -785,6 +785,7 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
         public readonly EntityStateLayer Layer = new() { StoreUnlensedFields = false };
         public readonly ProjectileSlotIndex Projectiles = new(projectileClasses);
         public readonly PawnSlotIndex Pawns = new();
+        public readonly DigestStoragePool Storage = new();
         public bool SchemaLoaded;
     }
 
