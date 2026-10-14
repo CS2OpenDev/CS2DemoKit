@@ -876,6 +876,37 @@ without snapshots still throws only for a v1 `PerEvent` output.
 This moves the `dims=` line and hash of all 15 rules-output digests, re-recorded in their own commit;
 StatParity and the rules-v2 fixtures do not move. The built-in projectors are unchanged.
 
+### Player commands and look-back reads (0.14.0)
+
+`player.cmd.buttons` (long), `player.cmd.forward`, `player.cmd.left`, `player.cmd.view_pitch`,
+`player.cmd.view_yaw` (float) and `player.cmd.tick` (int, `base.client_tick`) read the player's
+latest user command. They are `IPerPlayerCommandProvider`s (new, `CS2DemoKit.Analysis.Plugins`,
+with the built-in set on `UserCommandProviders`), catalog scope `perPlayerCommand` under the names
+`usercmd.*`, and have no digest column, so the per-pawn layout and its fixtures do not move. A build
+that reads one gives its scanner a `UserCmdReconstructor` the evaluator resets per run and advances
+before each frame's poll, served through the new public `EntityChangeScanner.GetCommandValue`.
+`AnalysisOptions.DecodeUserCommands` and `BuildResult.DecodesUserCommands` (init properties) turn the
+lane on for an observer, which reads `FrameView.Command(slot)`; that read throws when the run decodes
+no commands. `PlanDecode` adds `MessageCategories.UserCmds` for either. A command read sees the
+frame's own commands, one frame later than an entity read. The `ExpressionCompiler` now coerces
+`long` against `int`. `UserCommandLaneCorpusTests` checks `player.cmd.tick` and a
+`player.cmd.buttons` gate at an 8-tick cadence against an independent rebuild, on both paths.
+
+`player.pos_x@-8` reads a per-player entity value N ticks back on the frame clock, N from 1 to 64.
+Additive surface in `CS2DemoKit.Analysis.Rules`: `TokenKind.LookBack` (appended after
+`EndOfInput`), `ReferenceNode.LookBackTicks`, `ReferenceNode.MaxLookBackTicks`, a
+`ReferenceNode(segments, lookBackTicks, span)` constructor, `ReferenceNode.WithLookBack`,
+`ResolvedReference.LookBackTicks`, and the codes `lex.invalid-look-back`, `parse.look-back-range`,
+`parse.look-back-target` and `check.look-back-stat`. In the engine: `EntityProviderReference.LookBackTicks`,
+`EntityChangeScanner.GetPreFrameValueAt`, and `resolve.look-back.unsupported`. A look-back writes
+` @-N` into its canonical `(ref ...)` form, so it hashes apart from the plain read; a reference
+without one canonicalizes exactly as before, so no hash or golden moves. `CheckedExpression.References`
+lists a path once per look-back it is read with. The scanner keeps a ring of change points per slot
+for each column a build looks back on, and nothing for a build that does not. Look-back is served at
+`where:` and event-triggered values only, on the ruleset player's per-player entity reads;
+`LookBackCorpusTests` checks `player.pos_x@-8` at an 8-tick cadence against the plain capture eight
+ticks earlier, on both paths.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

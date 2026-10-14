@@ -558,6 +558,36 @@ time*. Both are useful — pick the site that matches the question. (Under an ev
 read a role's entity state, using the role name in place of `player`: `victim.health` in a
 `kill`-view `where:`.)
 
+**Player input.** `player.cmd.*` reads the player's latest user command, rebuilt from the demo's
+`svc_UserCmds` (matchmaking demos carry them; a demo without them reads `0`):
+
+- `player.cmd.buttons`: the held-button mask (`base.buttons_pb.buttonstate1`), a 64-bit int.
+  `!= 0` is "pressing something"; the language has no bitwise operators yet.
+- `player.cmd.forward` / `player.cmd.left`: the movement inputs, `forwardmove` and `leftmove`.
+- `player.cmd.view_pitch` / `player.cmd.view_yaw`: the view angles the client sent, in degrees.
+- `player.cmd.tick`: the client tick the command was built on.
+
+Unlike the entity reads above, a command read is not one frame behind: it includes the commands of
+the frame the event fires on. Commands are served at event sites only (`where:`, a `sum:` /
+`capture:` value); a `compute:` or `flag: when:` that reads one fails to lower. Reading any of them
+makes the run decode user commands, which costs a run that reads none nothing.
+
+**Looking back.** `player.pos_x@-8` reads what `player.pos_x` read 8 ticks earlier on the frame
+clock. N is a whole number from 1 to 64. It works on the ruleset player's per-player entity reads
+(the `player.*` names above, not `player.cmd.*`, a role handle, `match.*` or an event field), in a
+`where:` or the value of an event-triggered stat; anywhere else is
+`resolve.look-back.unsupported`. Before the player has a value that far back it reads `0`.
+
+```yaml
+cadences:
+  step: { ticks: 8, anchor: round_freeze_end }
+stats:
+  moved_x:
+    sum: abs(player.pos_x - player.pos_x@-8)
+    on: cadence.step
+    per: round
+```
+
 The `round.*` and `match.*` contexts read the same in every scope. `player.*` needs a player, so
 only a `for: each_player` ruleset has it. The team aggregates (`round.team.*` / `round.enemies.*`)
 are relative to a subject: the player's team in `for: each_player`, the ruleset's side in

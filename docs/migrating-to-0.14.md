@@ -29,6 +29,9 @@ the arm, or a default.
 **`OutputScope` gained `PerPlayerPerEvent`, `PerTeamPerEvent` and `PerMatchPerEvent`.** The same
 fix: add the arms, or a default.
 
+**`TokenKind` gained `LookBack`, after `EndOfInput`.** A `switch` over it with no default arm stops
+compiling; existing values keep their numbers.
+
 ## 4. Behaviour that moved without a compile error
 
 **A ruleset that cannot be lowered is excluded, not thrown.** Through 0.13.0 a ruleset that resolved
@@ -84,6 +87,14 @@ a directory that validated with one now reports it.
 game-rules ones: `entity.team.score@2`, `@3`, `entity.team.clan_name@2`, `@3`. A host that counts
 or indexes the registry's list moves with it; the catalog lists the two specs once each with
 `scope: "perTeam"`.
+
+**The catalog lists six `perPlayerCommand` providers** (`usercmd.buttons` and the rest, read as
+`player.cmd.*`). A consumer that switches on `CatalogProvider.Scope` needs the fourth arm. They are
+not role-handle members and have no digest column.
+
+**`CheckedExpression.References` lists a look-back as its own entry.** `player.pos_x` and
+`player.pos_x@-8` in one expression are two references with the same `Path`; read
+`ResolvedReference.LookBackTicks` to tell them apart.
 
 **Per-player `show:` tables carry `steam_id`.** `per: player_round` and `per: player_match` rows
 gain a `steam_id` dimension between `player_name` and `team`: the SteamID64 as a decimal string, null
@@ -175,4 +186,17 @@ show:
       per: player_event
       on: cadence.second
       columns: [ { stat: pos_x }, { stat: pos_y } ]
+```
+
+A ruleset can read the player's input: `player.cmd.buttons`, `forward`, `left`, `view_pitch`,
+`view_yaw` and `tick`, off the latest user command. A host that rebuilt commands itself for a frame
+observer can set `AnalysisOptions.DecodeUserCommands` and read `FrameView.Command(slot)` instead, and
+`PlanDecode` asks the reader for the commands either way. A read looks back with `@-N`, up to 64
+ticks on the frame clock, so a host that kept its own ring of recent positions can ask for
+`player.pos_x@-8`. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#7-contexts--reading-the-game-state).
+
+```yaml
+stats:
+  moved_x: { sum: abs(player.pos_x - player.pos_x@-8), on: cadence.step, per: round }
+  pressing: { count: cadence.step, where: player.cmd.buttons != 0, per: round }
 ```
