@@ -56,7 +56,7 @@ public static class CrossRulesetReferenceValidator
             }
         }
 
-        if (doc.For == RulesetScope.EachTeam)
+        if (doc.For is RulesetScope.EachTeam or RulesetScope.EachProjectile)
         {
             RejectTeamReadsOutsideCompute(doc, use, localIds, graph, diagnostics);
         }
@@ -125,9 +125,12 @@ public static class CrossRulesetReferenceValidator
                     string read = $"{head}.{reference.Segments[1]}";
                     if (reported.Add(read))
                     {
-                        diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.TeamScopeUnsupported,
-                            $"stat '{stat.Id}' reads '{read}' outside compute: — a for: each_team ruleset reads "
-                            + "another ruleset's stat only in a compute:",
+                        bool team = doc.For == RulesetScope.EachTeam;
+                        diagnostics.Add(new RulesetDiagnostic(
+                            team ? ResolveDiagnosticCodes.TeamScopeUnsupported : ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                            $"stat '{stat.Id}' reads '{read}' outside compute:; a for: "
+                            + $"{(team ? "each_team" : "each_projectile")} ruleset reads another ruleset's stat "
+                            + "only in a compute:",
                             pos));
                     }
                 }
@@ -217,7 +220,29 @@ public static class CrossRulesetReferenceValidator
                 $"per-side ruleset '{doc.Id}' may not read per-player stat '{head}.{stat}' — a side is "
                 + "not a player", pos));
         }
+        else if (entry.For == RulesetScope.EachProjectile)
+        {
+            diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
+                $"ruleset '{doc.Id}' may not read per-projectile stat '{head}.{stat}': a projectile "
+                + "instance lives only from projectile_created to projectile_removed, and nothing outside "
+                + "its own ruleset is bound to one", pos));
+        }
+        else if (doc.For == RulesetScope.EachProjectile && entry.For != RulesetScope.Match)
+        {
+            diagnostics.Add(new RulesetDiagnostic(ResolveDiagnosticCodes.CrossRefReadScope,
+                $"per-projectile ruleset '{doc.Id}' may not read stat '{head}.{stat}' of a for: "
+                + $"{ScopeName(entry.For)} ruleset; a projectile reads only a for: match ruleset", pos));
+        }
     }
+
+    private static string ScopeName(RulesetScope scope) =>
+        scope switch
+        {
+            RulesetScope.EachPlayer => "each_player",
+            RulesetScope.EachTeam => "each_team",
+            RulesetScope.EachProjectile => "each_projectile",
+            _ => "match"
+        };
 
     private static HashSet<string> CollectLocalIds(RulesetDoc doc)
     {

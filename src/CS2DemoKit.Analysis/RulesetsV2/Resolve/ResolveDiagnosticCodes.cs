@@ -112,6 +112,14 @@ public static class ResolveDiagnosticCodes
     public const string TeamScopeUnsupported = "resolve.team-scope.unsupported";
 
     /// <summary>
+    ///     Something a <c>for: each_projectile</c> ruleset cannot lower: a highlight, or a stat kind
+    ///     whose nodes outlive a message (<c>tally</c>, <c>streak</c>, <c>burst</c>, <c>bucket</c>,
+    ///     <c>rate</c>, a <c>flag:</c> with no trigger, a live <c>compute:</c>). An instance is
+    ///     released when its projectile is removed, and only plain value nodes and their edges release.
+    /// </summary>
+    public const string ProjectileScopeUnsupported = "resolve.projectile-scope.unsupported";
+
+    /// <summary>
     ///     A stat kind the resolver cannot yet lower faithfully — gated loudly rather than emitting a
     ///     config-less node. All eight base kinds now lower (tally/streak/bucket completed the set);
     ///     this code is <b>reserved</b> for the C8 bucket lifts still on the roadmap (composite keys +

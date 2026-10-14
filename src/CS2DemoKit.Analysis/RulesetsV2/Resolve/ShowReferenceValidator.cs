@@ -137,10 +137,14 @@ public sealed class ShowReferenceIds
 /// </summary>
 public static class ShowReferenceValidator
 {
+    /// <summary>The <c>per:</c> grain of a <c>for: each_projectile</c> ruleset's table: one row per projectile.</summary>
+    public const string ProjectileGrain = "projectile";
+
     private static readonly string[] _supportedPer =
     [
         "player_round", "player_match", "match", "team_round", "team_match",
-        EventTableSequence.PlayerEvent, EventTableSequence.TeamEvent, EventTableSequence.MatchEvent
+        EventTableSequence.PlayerEvent, EventTableSequence.TeamEvent, EventTableSequence.MatchEvent,
+        ProjectileGrain
     ];
 
     /// <summary>The <c>per:</c> values each <c>for:</c> scope's tables may use.</summary>
@@ -149,6 +153,7 @@ public static class ShowReferenceValidator
         {
             RulesetScope.EachPlayer => ["player_round", "player_match", EventTableSequence.PlayerEvent],
             RulesetScope.EachTeam => ["team_round", "team_match", EventTableSequence.TeamEvent],
+            RulesetScope.EachProjectile => [ProjectileGrain],
             _ => ["match", EventTableSequence.MatchEvent]
         };
 
@@ -157,6 +162,7 @@ public static class ShowReferenceValidator
         {
             RulesetScope.EachPlayer => "each_player",
             RulesetScope.EachTeam => "each_team",
+            RulesetScope.EachProjectile => "each_projectile",
             _ => "match"
         };
 

@@ -80,6 +80,31 @@ public class RulesV2HasherScopeTests
         }));
     }
 
+    /// <summary>
+    ///     The projectile axis is its own row-3 value: a capture in a <c>for: each_projectile</c>
+    ///     ruleset hashes apart from the same capture at every other scope, and its name is pinned so
+    ///     no ruleset that does not use the scope moves.
+    /// </summary>
+    [Test]
+    public async Task Axis_Projectile_HashesApart_AndIsPinned()
+    {
+        RuleNodeDescriptor projectile = new("bounces", RuleNodeKind.Capture, RulesType.Int,
+            ScopeAxis.Projectile, ["projectile_removed"], Keep: KeepKind.Last);
+
+        foreach (ScopeAxis other in new[]
+                 {
+                     ScopeAxis.Match, ScopeAxis.Round, ScopeAxis.PlayerMatch, ScopeAxis.PlayerRound,
+                     ScopeAxis.TeamRound, ScopeAxis.TeamMatch
+                 })
+        {
+            await Assert.That(Hash(projectile)).IsNotEqualTo(Hash(projectile with { Per = other }))
+                .Because($"projectile must hash apart from {other}");
+        }
+
+        await Assert.That(RuleHasher.BuildPreimage(projectile, new FakeStatHashes()))
+            .IsEqualTo("dvr2|1:7:capture|2:3:int|3:10:projectile|4:18:projectile_removed|5:0:|7:0:|8:4:last|9:0:");
+    }
+
     // ── Row 5: value-selector packing ────────────────────────────────────────────
 
     /// <summary>

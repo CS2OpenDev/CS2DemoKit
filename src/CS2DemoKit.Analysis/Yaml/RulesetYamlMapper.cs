@@ -1170,7 +1170,9 @@ public static class RulesetYamlMapper
             "match" => RulesetScope.Match,
             "each_player" => RulesetScope.EachPlayer,
             "each_team" => RulesetScope.EachTeam,
-            _ => BadEnum(node, "for", "match | each_player | each_team", RulesetScope.Match, file, diagnostics)
+            "each_projectile" => RulesetScope.EachProjectile,
+            _ => BadEnum(node, "for", "match | each_player | each_team | each_projectile", RulesetScope.Match, file,
+                diagnostics)
         };
 
     private static PerScope MapPerScope(YamlNode node, string? file, List<RulesetDiagnostic> diagnostics) =>

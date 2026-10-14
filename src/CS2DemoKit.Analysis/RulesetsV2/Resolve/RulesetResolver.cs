@@ -84,6 +84,10 @@ public static class RulesetResolver
         // for: each_team — one instance per side. The player root is out of scope (the subject is a
         // side, not a player); the team root (team.side) is in.
         private readonly bool _forEachTeam;
+
+        // for: each_projectile: one instance per grenade projectile. The player root is out of scope;
+        // the projectile root and the thrower role are in, in every expression slot.
+        private readonly bool _forEachProjectile;
         private readonly Dictionary<string, ParamDef> _paramDefsByName = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, ExpressionNode> _paramLiterals = new(StringComparer.Ordinal);
@@ -117,6 +121,7 @@ public static class RulesetResolver
             _rulesetId = new RulesetId(doc.Id, doc.For);
             _forEachPlayer = doc.For == RulesetScope.EachPlayer;
             _forEachTeam = doc.For == RulesetScope.EachTeam;
+            _forEachProjectile = doc.For == RulesetScope.EachProjectile;
 
             _viewsByName = adapter.Catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
             _synthesizedEvents = new HashSet<string>(
@@ -520,6 +525,7 @@ public static class RulesetResolver
             }
 
             RejectPlayerSubjectReads(stat, reads);
+            RejectProjectileScopeKind(stat, trigger);
 
             RuleNodeKind kind = MapNodeKind(stat.Kind);
             KeepKind keep = MapKeep(stat);
@@ -806,6 +812,15 @@ public static class RulesetResolver
             if (string.IsNullOrWhiteSpace(stat.KindArg) || stat.Thresholds is not { Count: > 0 } thresholds)
             {
                 // Structural validation already reported the missing source/thresholds; nothing to build.
+                return null;
+            }
+
+            if (_forEachProjectile)
+            {
+                Report(ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                    $"stat '{stat.Id}': a tally: settles at round end through the evaluator, which a projectile "
+                    + "instance cannot release when its projectile is removed; a for: each_projectile ruleset "
+                    + "takes count, sum, capture, a triggered flag and a round-end compute", stat.Position);
                 return null;
             }
 
@@ -1459,6 +1474,25 @@ public static class RulesetResolver
                 return;
             }
 
+            if (_forEachProjectile)
+            {
+                // A bare projectile.* read: kept first, it is sampled when the instance materializes;
+                // kept last, it reads the row live, so the table sees the value at removal.
+                bool bareProjectileRead = valueSelector.Root is ReferenceNode { Segments: [var root, _] }
+                                          && string.Equals(root, CatalogScopeAdapter.ProjectileRoot, StringComparison.Ordinal);
+                if (!bareProjectileRead || MapKeep(stat) is not (KeepKind.First or KeepKind.Last)
+                    || condition is not null || whileGate is not null)
+                {
+                    Report(ResolveDiagnosticCodes.TriggerUnsupportedForKind,
+                        $"stat '{stat.Id}' is a capture with no on:, which in a for: each_projectile ruleset "
+                        + "reads a bare projectile.* value, kept first or last and ungated; give it an on: to "
+                        + "capture anything else",
+                        stat.Position);
+                }
+
+                return;
+            }
+
             bool bareTeamRead = valueSelector.Root is ReferenceNode
                                 && reads.EntityReads is [{ } read]
                                 && _providerByV2Name.TryGetValue(read.Path, out CatalogProvider? provider)
@@ -1525,6 +1559,15 @@ public static class RulesetResolver
                 Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
                     $"highlight '{highlight.Id}': a for: each_team ruleset cannot declare highlights (a "
                     + "highlight is attributed to a player); count the moments with a stat instead",
+                    highlight.Position);
+                return null;
+            }
+
+            if (_forEachProjectile)
+            {
+                Report(ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                    $"highlight '{highlight.Id}': a for: each_projectile ruleset cannot declare highlights (a "
+                    + "highlight is attributed to a player); capture the moment's tick with a stat instead",
                     highlight.Position);
                 return null;
             }
@@ -2140,6 +2183,12 @@ public static class RulesetResolver
                 AddRoot(roots, _adapter.Team);
             }
 
+            if (_forEachProjectile)
+            {
+                AddRoot(roots, _adapter.Projectile);
+                AddRoot(roots, _adapter.RoleNamespace(CatalogScopeAdapter.ThrowerRole));
+            }
+
             AddRoot(roots, _adapter.Round);
             AddRoot(roots, _adapter.Match);
             if (_paramsNamespace is not null)
@@ -2336,11 +2385,22 @@ public static class RulesetResolver
                 return true;
             }
 
+            // The projectile subject's thrower: the role's slot is the instance's, fixed at
+            // materialization, so the read lowers like the ruleset player's own.
+            string[] segments = reference.Path.Split('.');
+            if (_forEachProjectile && segments.Length == 2
+                                   && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
+                                   && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider))
+            {
+                entity = new EntityProviderReference(reference.Path, throwerProvider.Name,
+                    EntityProviderReference.PlayerSubject);
+                return true;
+            }
+
             // Role handle: <role>.<member> where the role is one of the view's roles. The role
             // resolves to its event slot-field (killer → Attacker) via the view's roles table, threaded
             // onto the reference so the planner emits `<SlotField>.<provider>` — the read of the ROLE's
             // per-fire entity value, not the ruleset player's.
-            string[] segments = reference.Path.Split('.');
             if (view is not null && segments.Length == 2
                                  && view.Roles.FirstOrDefault(r => string.Equals(r.Role, segments[0], StringComparison.Ordinal)) is { } viewRole
                                  && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? roleProvider))
@@ -2410,6 +2470,7 @@ public static class RulesetResolver
                 (RulesetScope.EachPlayer, _) => ScopeAxis.PlayerRound,
                 (RulesetScope.EachTeam, PerScope.Match) => ScopeAxis.TeamMatch,
                 (RulesetScope.EachTeam, _) => ScopeAxis.TeamRound,
+                (RulesetScope.EachProjectile, _) => ScopeAxis.Projectile,
                 (_, PerScope.Match) => ScopeAxis.Match,
                 _ => ScopeAxis.Round
             };
@@ -2434,6 +2495,37 @@ public static class RulesetResolver
                         $"stat '{stat.Id}' reads '{read}', whose subject is a player (the clutching player); "
                         + "a for: each_team ruleset's subject is a side", stat.Position);
                 }
+            }
+        }
+
+        /// <summary>
+        ///     In a <c>for: each_projectile</c> ruleset, refuses the kinds whose nodes the evaluator
+        ///     cannot release with the instance: the ones that register logic nodes, transient pulses or
+        ///     settle edges (<c>streak</c>, <c>burst</c>, <c>bucket</c>, <c>rate</c>, a <c>flag:</c>
+        ///     with no trigger, a live <c>compute:</c>). <c>tally:</c> is refused on its own path.
+        /// </summary>
+        private void RejectProjectileScopeKind(StatDef stat, ResolvedTrigger trigger)
+        {
+            if (!_forEachProjectile)
+            {
+                return;
+            }
+
+            string? why = stat.Kind switch
+            {
+                StatKind.Streak or StatKind.Burst or StatKind.Bucket or StatKind.Rate =>
+                    $"a {stat.Kind.ToString().ToLowerInvariant()}: keeps state past a message",
+                StatKind.Flag when !trigger.HasEventSource => "a flag: with no on: is a logic node",
+                StatKind.Compute when stat.Live => "a live compute: registers with the evaluator",
+                _ => null
+            };
+
+            if (why is not null)
+            {
+                Report(ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                    $"stat '{stat.Id}': {why}, which a projectile instance cannot release when its projectile "
+                    + "is removed; a for: each_projectile ruleset takes count, sum, capture, a triggered flag "
+                    + "and a round-end compute", stat.Position);
             }
         }
 

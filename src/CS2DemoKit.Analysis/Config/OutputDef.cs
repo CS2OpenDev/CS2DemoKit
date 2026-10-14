@@ -122,5 +122,12 @@ public enum OutputScope
     PerTeamPerEvent,
 
     /// <summary>One row per firing of the table's trigger: a <c>for: match</c> ruleset's <c>per: match_event</c> table.</summary>
-    PerMatchPerEvent
+    PerMatchPerEvent,
+
+    /// <summary>
+    ///     One row per grenade projectile: a <c>for: each_projectile</c> ruleset's <c>per: projectile</c>
+    ///     table, sampled when the projectile is removed (or at the end of the run for one still live).
+    ///     Projects with or without snapshots; the evaluator records the rows as the instances finish.
+    /// </summary>
+    PerProjectile
 }

@@ -57,6 +57,17 @@ public static class ShowLowering
     private static readonly string[] _perTeamMatchDimensions =
         ["match_id", "map", "side"];
 
+    /// <summary>
+    ///     One row per grenade projectile: its entity index and serial, the thrower (slot, name,
+    ///     <c>steam_id</c>, the projectile's team), the round it was removed in, and both lifetime
+    ///     ticks on the frame clock.
+    /// </summary>
+    public static IReadOnlyList<string> PerProjectileDimensions { get; } =
+    [
+        "match_id", "map", "round_number", "created_tick", "removed_tick", "entity_index", "serial",
+        "player_slot", "player_name", "steam_id", "team"
+    ];
+
     /// <summary>One row per (player, firing): <c>tick</c> is on the frame clock.</summary>
     private static readonly string[] _perPlayerEventDimensions =
         ["match_id", "map", "round_number", "tick", "player_slot", "player_name", "steam_id", "team"];
@@ -256,10 +267,12 @@ public static class ShowLowering
             EventTableSequence.PlayerEvent => (OutputScope.PerPlayerPerEvent, _perPlayerEventDimensions),
             EventTableSequence.TeamEvent => (OutputScope.PerTeamPerEvent, _perTeamEventDimensions),
             EventTableSequence.MatchEvent => (OutputScope.PerMatchPerEvent, _perMatchEventDimensions),
+            // A for: each_projectile ruleset's table: one row per projectile, recorded as it is removed.
+            ShowReferenceValidator.ProjectileGrain => (OutputScope.PerProjectile, PerProjectileDimensions),
             _ => throw new InvalidOperationException(
                 $"show: table dimension 'per: {per ?? "<null>"}' is not a supported v2.0 table dimension "
                 + "(player_round | player_match | match | team_round | team_match | player_event | team_event "
-                + "| match_event).")
+                + "| match_event | projectile).")
         };
 
     /// <summary>A resolved scoreboard reference: its node-map key, per:-inferred board, and column label.</summary>

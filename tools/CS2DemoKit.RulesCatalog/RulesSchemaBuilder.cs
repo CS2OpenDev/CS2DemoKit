@@ -95,7 +95,8 @@ public static class RulesSchemaBuilder
             {
                 "match",
                 "each_player",
-                "each_team"
+                "each_team",
+                "each_projectile"
             },
             ["default"] = "match",
             ["markdownDescription"] =
@@ -103,8 +104,10 @@ public static class RulesSchemaBuilder
                 + "actor-anchored views (kill, damage_dealt, ...) to that player; `each_team` instantiates "
                 + "one per side (T and CT), binds an actor-anchored view to the actor's live side and "
                 + "round_won / round_lost to the round's winner, and reads round.team.* / round.enemies.* "
-                + "relative to the side (team.side is the side, 2 or 3); `match` is one instance for the "
-                + "whole demo with no implicit binding."
+                + "relative to the side (team.side is the side, 2 or 3); `each_projectile` instantiates one "
+                + "per grenade projectile from projectile_created to projectile_removed, binds the projectile "
+                + "events to it, reads its row as projectile.* and the thrower's per-player values as "
+                + "thrower.*; `match` is one instance for the whole demo with no implicit binding."
         },
         ["enabled"] = new JsonObject
         {
@@ -1469,7 +1472,8 @@ public static class RulesSchemaBuilder
                     "team_match",
                     "player_event",
                     "team_event",
-                    "match_event"
+                    "match_event",
+                    "projectile"
                 },
                 ["description"] = "The export dimension (the closed table registry), which must match the "
                                   + "ruleset's for:. `player_round` / `player_match` are per-player (for: "
@@ -1478,7 +1482,11 @@ public static class RulesSchemaBuilder
                                   + "players at that round's freeze end); `match` is a single match-level row "
                                   + "(for: match). `player_event` / `team_event` / `match_event` (one per for:) "
                                   + "emit one row per firing of the table's `on:` trigger, with `round_number` "
-                                  + "and `tick` (frame clock) dimensions. Every per-player row carries `steam_id`."
+                                  + "and `tick` (frame clock) dimensions. `projectile` (for: each_projectile) "
+                                  + "emits one row per grenade projectile as it is removed, with `entity_index`, "
+                                  + "`serial`, `created_tick` and `removed_tick` (frame clock), the thrower's "
+                                  + "`player_slot`, `player_name` and `steam_id`, and `team`. Every per-player "
+                                  + "row carries `steam_id`."
             },
             ["on"] = new JsonObject
             {

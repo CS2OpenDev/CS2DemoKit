@@ -89,7 +89,10 @@ public enum ScopeAxis
     TeamRound,
 
     /// <summary>Per-side, match-scoped (one value per side for the whole match).</summary>
-    TeamMatch
+    TeamMatch,
+
+    /// <summary>Per-projectile (one value per grenade projectile, for the projectile's life; no round reset).</summary>
+    Projectile
 }
 
 /// <summary>Preimage row 8 — a capture's keep policy (spec §6).</summary>
