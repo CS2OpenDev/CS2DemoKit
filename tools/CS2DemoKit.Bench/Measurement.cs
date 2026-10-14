@@ -76,7 +76,7 @@ internal static class Measurement
             per: match
         """;
 
-    /// <summary>Set to measure the R7 part 2b user-command lane cost (eval_ms with it on).</summary>
+    /// <summary>Set to make a build decode user commands, so eval_ms carries the lane's cost.</summary>
     public const string UserCmdLaneVariable = "CS2DEMOKIT_BENCH_USERCMD";
 
     private const string UserCmdOverlayLabel = "bench-usercmd.rules.yaml";
@@ -218,8 +218,11 @@ internal static class Measurement
             BuildResult wb = DemoAnalysis.Build(w, rules.Rulesets, options);
             if (wb.ExcludedRulesets.Count > 0)
             {
+                // Could be a shipped ruleset, not just a bench overlay; either way the row
+                // would otherwise measure less than its label claims.
                 throw new InvalidOperationException(
-                    "a bench overlay was excluded: " + string.Join("; ", wb.ExcludedRulesets.Select(r => r.ToString())));
+                    "a ruleset failed to compose and was excluded: "
+                    + string.Join("; ", wb.ExcludedRulesets.Select(r => r.ToString())));
             }
 
             if (userCmdLane && !wb.DecodesUserCommands)

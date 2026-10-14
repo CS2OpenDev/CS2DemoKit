@@ -129,9 +129,9 @@ static int Help()
 
         CS2DEMOKIT_BENCH_USERCMD=1 loads an overlay that reads player.cmd.tick on an infrequent
         event, so eval_ms carries the user-command lane's reconstructor cost without the read
-        itself adding any. measure, sweep and compare all read it; an arm published before the
-        lane existed does not decode user commands under it and fails the guard instead of
-        silently measuring the lane off.
+        itself adding any. measure, sweep and compare all read it; an arm published before this
+        variable existed ignores it and measures with the lane off regardless, so in a compare
+        only the newer arm runs the lane.
 
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the
