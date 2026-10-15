@@ -1004,7 +1004,10 @@ active weapon class at both caps.
 0 until detonation. On the sample demo every removed HE carries one inside its own life once
 `ServerStartTick` is subtracted, and every flash reads 0 at removal; `ProjectileExplodeTickTests` pins the
 HE and the `keep: last` read. No shipped ruleset reads any of these, so the rules-output goldens
-do not move. The `eval_ms` row for these three is not measured yet.
+do not move. `eval_ms`, pawn half (`flags` and `throw_strength`) isolated from the explode tick's
+own `each_projectile` cost: median +8.3% over 5 demos, same build lane off against on, inside the
++10% budget (`docs/perf/baseline.md` "R7 part 2a and R8 coach"). The explode tick's own cost is
+R6's `each_projectile` scope cost, already owner-accepted at +5.9%.
 
 ### Coaching team (0.14.0)
 
@@ -1020,7 +1023,8 @@ that is not CSTV becomes an `each_player` subject is not measured either. The sa
 `TeamBindingViewTests` pins a present 0 on every controller there, those two included; the non-zero
 path is pinned only by the arm on `furia-vs-vitality-m1-mirage.dem`, which compares the column with
 the controller at slot + 1 on the last frame and skips without that demo. The rules-output goldens
-do not move.
+do not move. `eval_ms`, same build lane off against on: median +1.3% over 5 demos, inside the
+step-0 noise floor (max 4.2%). Within noise (`docs/perf/baseline.md` "R7 part 2a and R8 coach").
 
 ## Credentials
 

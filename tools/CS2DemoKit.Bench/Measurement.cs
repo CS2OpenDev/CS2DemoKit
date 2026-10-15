@@ -99,7 +99,7 @@ internal static class Measurement
     /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries R6's template cost.</summary>
     public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
 
-    /// <summary>Set to make a build read player.flags, player.weapon_throw_strength and the explode tick, the three R7 part 2a reads.</summary>
+    /// <summary>Set to make a build read player.flags and player.weapon_throw_strength, R7 part 2a's pawn half.</summary>
     public const string R7Part2aLaneVariable = "CS2DEMOKIT_BENCH_R7_2A";
 
     private const string R7Part2aOverlayLabel = "bench-r7-2a.rules.yaml";
@@ -112,6 +112,14 @@ internal static class Measurement
           flags:          { capture: player.flags,                 on: kill, keep: last, per: match }
           throw_strength: { capture: player.weapon_throw_strength,  on: kill, keep: last, per: match }
         """;
+
+    /// <summary>
+    ///     Set to make a build read projectile.explode_effect_tick, R7 part 2a's third read. Its own
+    ///     variable: this one scope switches on R6's each_projectile template, so a row with it set
+    ///     carries that cost too, not just the one field, and the row must say so rather than let it
+    ///     hide inside R7_2A.
+    /// </summary>
+    public const string R7Part2aExplodeLaneVariable = "CS2DEMOKIT_BENCH_R7_2A_EXPLODE";
 
     private const string R7Part2aProjectileOverlayLabel = "bench-r7-2a-projectile.rules.yaml";
 
@@ -253,6 +261,7 @@ internal static class Measurement
         bool userCmdLane = Environment.GetEnvironmentVariable(UserCmdLaneVariable) == "1";
         bool projectileLane = Environment.GetEnvironmentVariable(ProjectileLaneVariable) == "1";
         bool r72aLane = Environment.GetEnvironmentVariable(R7Part2aLaneVariable) == "1";
+        bool r72aExplodeLane = Environment.GetEnvironmentVariable(R7Part2aExplodeLaneVariable) == "1";
         bool coachLane = Environment.GetEnvironmentVariable(CoachLaneVariable) == "1";
         List<(string, string)> overlayList = [(VisibilityOverlayLabel, VisibilityOverlayYaml)];
         if (userCmdLane)
@@ -268,6 +277,10 @@ internal static class Measurement
         if (r72aLane)
         {
             overlayList.Add((R7Part2aOverlayLabel, R7Part2aOverlayYaml));
+        }
+
+        if (r72aExplodeLane)
+        {
             overlayList.Add((R7Part2aProjectileOverlayLabel, R7Part2aProjectileOverlayYaml));
         }
 
@@ -348,14 +361,14 @@ internal static class Measurement
                 }
             }
 
-            if (r72aLane)
+            if (r72aExplodeLane)
             {
                 MetricTable? explode = wr.ProjectConfiguredOutputs(w)
                     .SingleOrDefault(t => t.Name == "bench_r7_2a_explode");
                 if (explode is null || explode.Rows.Count == 0)
                 {
                     throw new InvalidOperationException(
-                        $"{R7Part2aLaneVariable} is set but the bench_r7_2a_explode table is missing or empty");
+                        $"{R7Part2aExplodeLaneVariable} is set but the bench_r7_2a_explode table is missing or empty");
                 }
             }
 

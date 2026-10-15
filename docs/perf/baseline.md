@@ -719,6 +719,75 @@ pooling removed the allocation the trace named and did not move wall clock. Run 
 and +20 MB: wall over on every six-round aggregation, working set inside. Both readings are from
 a machine at load 2 to 5; neither gate is cleared, and the hook's perf gate is open.
 
+### R7 part 2a and R8 coach
+
+`compare`, `CS2DEMOKIT_BENCH_R7_2A` (flags, throw_strength), `CS2DEMOKIT_BENCH_R7_2A_EXPLODE`
+(the third read, `projectile.explode_effect_tick`, on its own `each_projectile` ruleset so it
+never touches R6's own `grenades` table) and `CS2DEMOKIT_BENCH_COACH` (coaching_team), added to
+the bench at 675f11a. `eval_ms` had no row for any of the three until this session.
+
+**Cumulative against `a728ae3`, both lanes on, 5 rounds, demos/benchmarks:**
+
+| demo | base median | M8 median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 601.0 ms | 673.3 ms | +12.0% |
+| ...7406845372_0003771537.dem | 652.3 ms | 733.3 ms | +12.4% |
+| ...0180689112_1066991563.dem | 635.9 ms | 706.3 ms | +11.1% |
+| ...1231606001_0126308730.dem | 679.0 ms | 773.6 ms | +13.9% |
+| ...3634708_1168926414.dem | 650.3 ms | 746.2 ms | +14.8% |
+
+Median +12.4%, load1 1.79 to 4.63, zero failures and zero rejected rows over 50. This is every
+item from R1 through the lens pin, not R7 part 2a and coach alone, the same caveat the frame
+observer table above carries.
+
+**Isolated, same build, lane off against on (`/tmp/arm-M8-split`), both lanes together, 5 rounds:**
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 1110.9 ms | 676.7 ms | -39.1% (bimodal, smallest file) |
+| ...7406845372_0003771537.dem | 711.1 ms | 785.1 ms | +10.4% |
+| ...0180689112_1066991563.dem | 700.7 ms | 776.5 ms | +10.8% |
+| ...1231606001_0126308730.dem | 744.8 ms | 810.2 ms | +8.8% |
+| ...3634708_1168926414.dem | 696.0 ms | 788.0 ms | +13.2% |
+
+Median +10.4% (the smallest file's own round-to-round spread is wider than its delta here; the
+frame observer section above reads the same file the same way). This number is R7 part 2a and
+coach together and does not split them.
+
+**Isolated, split by item, 3 rounds, cooldown 5s.** `CS2DEMOKIT_BENCH_R7_2A_EXPLODE` stayed off on
+both arms, so the explode tick's each_projectile cost (R6's own, owner-accepted at +5.9%) is not
+in either table.
+
+R7 part 2a's pawn half, `flags` and `throw_strength`:
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 638.2 ms | 815.1 ms | +27.7% |
+| ...7406845372_0003771537.dem | 695.1 ms | 766.6 ms | +10.3% |
+| ...0180689112_1066991563.dem | 709.6 ms | 707.2 ms | -0.3% |
+| ...1231606001_0126308730.dem | 757.1 ms | 765.8 ms | +1.1% |
+| ...3634708_1168926414.dem | 668.4 ms | 723.7 ms | +8.3% |
+
+Median +8.3%, load1 3.17 to 7.73. Inside the +10% budget, but on a machine that was not quiet
+(load1 crossed 7 twice; the step-0 noise floor on this corpus is median 1.7%, max 4.2%, taken at
+load 2 to 5) and over 3 rounds rather than 5. The smallest file reads +27.7%, the same bimodal
+file the frame observer and cumulative tables above both flag; the other four sit -0.3% to
++10.3%. Pass, with the margin noted rather than hidden.
+
+R8 coach, `coaching_team`:
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 602.5 ms | 624.0 ms | +3.6% |
+| ...7406845372_0003771537.dem | 698.9 ms | 708.1 ms | +1.3% |
+| ...0180689112_1066991563.dem | 718.6 ms | 698.4 ms | -2.8% |
+| ...1231606001_0126308730.dem | 728.1 ms | 741.2 ms | +1.8% |
+| ...3634708_1168926414.dem | 679.7 ms | 683.5 ms | +0.6% |
+
+Median +1.3%, load1 3.64 to 5.32, every reading inside the step-0 noise floor (max 4.2%). Within
+noise. One controller-class scan per frame, the same shape as the other singleton providers
+(`team.score`, `team.clan_name`) that read within noise at R8 part 1.
+
 ## Reading these numbers later
 
 **Compare like for like.** Absolute values here are only valid for this machine, quiet. An

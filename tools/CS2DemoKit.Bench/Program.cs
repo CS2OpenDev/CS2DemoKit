@@ -142,11 +142,15 @@ static int Help()
         projectiles in AnalysisRun.Projectiles, since a forward run has no show table to check.
 
         CS2DEMOKIT_BENCH_R7_2A=1 loads an each_player overlay reading player.flags and
-        player.weapon_throw_strength, plus a second, unrelated each_projectile scope reading
-        projectile.explode_effect_tick (its own ruleset, so it never touches CS2DEMOKIT_BENCH_PROJECTILE's
-        grenades table), so eval_ms carries R7 part 2a's three reads. measure, sweep and compare
-        read it; paths does not. The warm-up pass fails loud if the explode overlay builds but
-        projects zero rows.
+        player.weapon_throw_strength, R7 part 2a's pawn half. measure, sweep and compare read it;
+        paths does not.
+
+        CS2DEMOKIT_BENCH_R7_2A_EXPLODE=1 loads an each_projectile overlay (its own ruleset, so it
+        never touches CS2DEMOKIT_BENCH_PROJECTILE's grenades table) reading
+        projectile.explode_effect_tick, R7 part 2a's third read. This scope switches on R6's
+        per-projectile template, so a row with it set carries that cost too, not the field alone.
+        measure, sweep and compare read it; paths does not. The warm-up pass fails loud if the
+        overlay builds but projects zero rows.
 
         CS2DEMOKIT_BENCH_COACH=1 loads an each_player overlay reading player.coaching_team, so
         eval_ms carries R8 coach's one read. measure, sweep and compare read it; paths does not.
