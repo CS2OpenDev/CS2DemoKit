@@ -587,7 +587,9 @@ public sealed class UserCmdReconstructor
         for (int seq = toSeq; seq >= fromSeq; seq--)
         {
             QueuedFrame frame = _queue[seq - _firstSeq];
-            if (frame.FromFullPacket)
+            // A checkpoint never starts the forward pass, but a slot it alone touches must still
+            // be replayed, or a flush drops the slot's prime or mismatch with the frame.
+            if (frame.FromFullPacket && only is not null)
             {
                 continue;
             }
@@ -609,7 +611,7 @@ public sealed class UserCmdReconstructor
                     slot.SeenInRange = true;
                 }
 
-                if (cmd.Data.IsEmpty)
+                if (cmd.Data.IsEmpty || frame.FromFullPacket)
                 {
                     continue;
                 }

@@ -477,6 +477,34 @@ public class UserCmdReconstructorTests
         await Assert.That(lazy.Stats.DecodeFailed + lazy.Stats.MissingBaseline + lazy.Stats.OutOfOrder).IsEqualTo(0L);
     }
 
+    [Test]
+    public async Task OnDemand_BoundedQueue_AppliesAFlushedRangeOfOnlySnapshots()
+    {
+        // The second flush covers frames 2 and 3, which hold only full-packet commands: one
+        // overwrites slot 3's stale baseline, the other primes slot 9 for the first time.
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true, OnDemandFrameBound = 4 };
+        DemoFrame[] frames =
+        [
+            Packet(Keyframe(1, 1, 0, slot: 3)),
+            Packet(),
+            Snapshot(Keyframe(1, 1, 9, slot: 3), Keyframe(5, 5, 7, slot: 9)),
+            Snapshot(),
+            Packet(),
+            Packet(),
+            Packet(),
+        ];
+        foreach (DemoFrame frame in frames)
+        {
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        await Assert.That(eager.Current(3)!.Base.Mousedx).IsEqualTo(9);
+        await Assert.That(eager.Current(9)).IsNotNull();
+        await Assert.That(lazy.Current(3)).IsEqualTo(eager.Current(3));
+        await Assert.That(lazy.Current(9)).IsEqualTo(eager.Current(9));
+    }
+
     private static DemoFrame Packet(params CMsgServerUserCmd[] commands) => Frame(EDemoCommands.DemPacket, Message(commands));
 
     private static DemoFrame Snapshot(params CMsgServerUserCmd[] commands) =>
