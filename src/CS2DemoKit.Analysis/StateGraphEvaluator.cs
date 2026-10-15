@@ -578,14 +578,10 @@ public sealed class StateGraphEvaluator
         // run's baselines.
         UserCmdReconstructor? commands = _entityScanner?.Commands
                                          ?? (DecodeUserCommands ? _observerCommands ??= new UserCmdReconstructor { OnDemand = true } : null);
+        // The queue keeps its default bound over a frame list too: a bound of the demo's length
+        // is 32 bytes a frame of large-object growth held for the whole run, and a flush over
+        // frames every slot has already consumed is a header walk.
         commands?.Reset();
-        if (commands is not null)
-        {
-            // Retained frames keep their payload blocks alive anyway, so the queue need not bound them.
-            commands.OnDemandFrameBound = source.SupportsRandomAccess
-                ? int.MaxValue
-                : UserCmdReconstructor.DefaultOnDemandFrameBound;
-        }
 
         // One view per run; the observer reads it inside OnFrame only.
         IFrameObserver? frameObserver = FrameObserver;

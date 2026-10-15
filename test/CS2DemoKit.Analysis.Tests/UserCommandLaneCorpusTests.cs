@@ -240,6 +240,37 @@ public class UserCommandLaneCorpusTests
         await Assert.That(off.Failure).IsTypeOf<InvalidOperationException>();
     }
 
+    /// <summary>
+    ///     The lane's queue keeps its bound over a retained frame list, so a run of more frames than
+    ///     the bound flushes: a read on every frame and a read after gaps wider than the bound both
+    ///     equal an eager rebuild walked alongside, slot by slot.
+    /// </summary>
+    [Test]
+    [Arguments(1)]
+    [Arguments(UserCmdReconstructor.DefaultOnDemandFrameBound + 517)]
+    public async Task FrameViewCommand_OverARetainedList_EqualsAnEagerRebuild_AcrossQueueFlushes(int every)
+    {
+        string path = Demo();
+        ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(path).AsMemory());
+        if (demo.Frames.Count <= UserCmdReconstructor.DefaultOnDemandFrameBound)
+        {
+            throw new SkipTestException($"{Path.GetFileName(path)} is shorter than the queue bound");
+        }
+
+        LockstepProbe probe = new(every);
+        DemoAnalysis.Run(demo, [], new AnalysisOptions { FrameObserver = probe, DecodeUserCommands = true });
+        if (probe.Oracle.Stats.Full + probe.Oracle.Stats.Delta == 0)
+        {
+            throw new SkipTestException($"{Path.GetFileName(path)} carries no player commands");
+        }
+
+        Console.WriteLine($"every {every}: {probe.Frames} frames, {probe.Compared} reads compared, {probe.NonNull} non-null; "
+                          + $"first difference: {probe.FirstDifference ?? "none"}");
+        await Assert.That(probe.Frames).IsGreaterThan(UserCmdReconstructor.DefaultOnDemandFrameBound);
+        await Assert.That(probe.NonNull).IsGreaterThan(0);
+        await Assert.That(probe.FirstDifference).IsNull();
+    }
+
     private static object? Value(PerPlayerNodeTemplate.MaterializedPlayer player, string stat)
     {
         StateNode node = player.NodesByRuleId![$"cmd_lane.{stat}"];
@@ -248,6 +279,49 @@ public class UserCommandLaneCorpusTests
 
     private static int[] Ints(PerPlayerNodeTemplate.MaterializedPlayer player, string stat) =>
         Value(player, stat) is IReadOnlyList<int> values ? [.. values] : [];
+
+    // An eager reconstructor fed the same frame the view shows, compared on every slot each time it reads.
+    private sealed class LockstepProbe(int every) : IFrameObserver
+    {
+        public UserCmdReconstructor Oracle { get; } = new();
+
+        public int Frames { get; private set; }
+
+        public long Compared { get; private set; }
+
+        public long NonNull { get; private set; }
+
+        public string? FirstDifference { get; private set; }
+
+        public void OnFrame(FrameView view)
+        {
+            Oracle.AdvanceOneFrame(view.Frame);
+            Frames++;
+            if (Frames % every != 0 || FirstDifference is not null)
+            {
+                return;
+            }
+
+            for (int slot = 0; slot < 64; slot++)
+            {
+                CSGOUserCmdPB? expected = Oracle.Current(slot);
+                CSGOUserCmdPB? actual = view.Command(slot);
+                Compared++;
+                NonNull += expected is null ? 0 : 1;
+                if (!Equals(expected, actual))
+                {
+                    FirstDifference = $"frame {view.FrameIndex} slot {slot}: "
+                                      + $"lane {actual?.Base?.ClientTick.ToString(CultureInfo.InvariantCulture) ?? "null"} "
+                                      + $"against eager {expected?.Base?.ClientTick.ToString(CultureInfo.InvariantCulture) ?? "null"}";
+                    return;
+                }
+            }
+        }
+
+        public void Finish()
+        {
+        }
+    }
 
     private sealed class CommandProbe : IFrameObserver
     {

@@ -198,9 +198,10 @@ public sealed class UserCmdReconstructor
     /// <summary>
     ///     How many frames an on-demand reconstructor holds before it applies the oldest half of them
     ///     to every slot. A queued frame pins its payload block, about 1 MB per 600 frames of a
-    ///     matchmaking demo, which is what the bound limits; a caller whose frames stay alive anyway,
-    ///     such as one walking <see cref="ParsedDemo.Frames" />, can lift it to
-    ///     <see cref="int.MaxValue" /> and never pay for a slot it does not read.
+    ///     matchmaking demo, and the queue itself grows by 32 bytes a frame, so a bound of a whole
+    ///     demo's length is several MB of large-object growth even over <see cref="ParsedDemo.Frames" />,
+    ///     whose blocks stay alive anyway. A flush over frames every slot has already consumed
+    ///     applies nothing and only walks the command headers.
     /// </summary>
     public int OnDemandFrameBound { get; set; } = DefaultOnDemandFrameBound;
 
@@ -555,7 +556,16 @@ public sealed class UserCmdReconstructor
         }
 
         _c.DecodeFailed += commands.DecodeFailed;
-        foreach (SlotState slot in AllSlots())
+        // Once per frame for a reader that polls every slot: no iterator.
+        foreach (SlotState? slot in _direct)
+        {
+            if (slot is not null && slot.ConsumedSeq == seq - 1)
+            {
+                slot.ConsumedSeq = seq;
+            }
+        }
+
+        foreach (SlotState slot in _slots.Values)
         {
             if (slot.ConsumedSeq == seq - 1)
             {
