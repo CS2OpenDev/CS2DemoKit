@@ -66,7 +66,8 @@ public sealed class CatalogScopeAdapter
     ///     <c>molotov</c>, ...), <c>class_name</c> the server class, <c>thrower</c> the thrower's slot
     ///     held from its first resolution, <c>pos_*</c> the live position, <c>initial_*</c> where it
     ///     left the hand and <c>velocity_*</c> the release velocity. A position component reads NaN
-    ///     while the position is unreadable; <c>is_incendiary</c> reads false off any class but a molotov.
+    ///     while the position is unreadable; <c>is_incendiary</c> reads false off any class but a molotov;
+    ///     <c>explode_effect_tick</c> reads 0 until the grenade detonates, and when unseen.
     /// </summary>
     public static IReadOnlyList<(string Member, RulesType Type)> ProjectileMembers { get; } =
     [
@@ -87,7 +88,8 @@ public sealed class CatalogScopeAdapter
         ("velocity_z", RulesType.Float),
         ("bounces", RulesType.Int),
         ("smoke_effect_tick", RulesType.Int),
-        ("is_incendiary", RulesType.Bool)
+        ("is_incendiary", RulesType.Bool),
+        ("explode_effect_tick", RulesType.Int)
     ];
 
     private readonly Dictionary<string, CatalogEnrichment> _enrichmentsByName;

@@ -141,6 +141,7 @@ internal static class ProjectileMemberNodes
             "bounces" => Number(name, subtitle, state, r => r.Bounces),
             "smoke_effect_tick" => Number(name, subtitle, state, r => r.SmokeEffectTickBegin),
             "is_incendiary" => new ProjectileValuePullNode<bool>(name, subtitle, state, r => r.IsIncendiary ?? false),
+            "explode_effect_tick" => Number(name, subtitle, state, r => r.ExplodeEffectTickBegin ?? 0),
             _ => throw new InvalidOperationException($"'projectile.{member}' is not a projectile member")
         };
 

@@ -51,4 +51,12 @@ public readonly record struct ProjectileRow(
     int Bounces,
     int SmokeEffectTickBegin,
     Vector3? SmokeDetonationPosition,
-    bool? IsIncendiary);
+    bool? IsIncendiary)
+{
+    /// <summary>
+    ///     <c>m_nExplodeEffectTickBegin</c>, on the server-boot clock (the frame clock plus
+    ///     <see cref="CS2DemoKit.Parser.ParsedDemo.ServerStartTick" />): 0 while the grenade flies, the
+    ///     tick its explosion effect began once an HE detonates. Null when unseen.
+    /// </summary>
+    public int? ExplodeEffectTickBegin { get; init; }
+}

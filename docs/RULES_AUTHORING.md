@@ -779,7 +779,8 @@ and the instance is released. A grenade still in the air when the demo ends gets
   class), `thrower` (the slot, held from its first resolution), `team`, `entity_index`, `serial`,
   `pos_x` / `pos_y` / `pos_z` (the live position, `NaN` while unreadable), `initial_x` / `_y` /
   `_z` (where it left the hand), `velocity_x` / `_y` / `_z` (the release velocity), `bounces`,
-  `smoke_effect_tick` and `is_incendiary`.
+  `smoke_effect_tick`, `is_incendiary` and `explode_effect_tick` (the server tick the explosion
+  effect began, 0 until it detonates).
 - A capture with no `on:` takes a bare `projectile.*` read: `keep: first` samples it on the frame
   the instance materializes, `keep: last` reads it live, so the table sees the value at removal.
   Anything else with no `on:` is `resolve.trigger.unsupported-for-kind`.

@@ -237,7 +237,7 @@ internal static class EntityDigestExtractor
             ent.TryGet<int>("m_nBounces") ?? 0,
             smoke ? ent.TryGet<int>("m_nSmokeEffectTickBegin") ?? 0 : 0,
             smoke ? ent.TryGet<Vector3>("m_vSmokeDetonationPos") : null,
-            incendiary);
+            incendiary) { ExplodeEffectTickBegin = ent.TryGet<int>("m_nExplodeEffectTickBegin") };
     }
 
     /// <summary>
