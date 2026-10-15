@@ -83,6 +83,9 @@ frame's. The frame observer below reads at exactly that point.
 per-pawn digest**, the same shape the 0.13.0 `entity.controller.money` column caused for every
 column after it: index digest columns by provider name, not position.
 
+**Two more per-player columns, `entity.pawn.is_alive` and `entity.pawn.entity_index`, sit after
+`is_walking` and move the position trio by two more.** Same advice: index by provider name.
+
 **A capture with no `on:` is no longer dropped.** Through 0.13.0 such a stat resolved to nothing
 at all: no diagnostic, no node, no column. It now lowers when it reads a bare `team.*` value
 `per: match`, and every other shape fails validation with `resolve.trigger.unsupported-for-kind`, so
@@ -135,6 +138,10 @@ parallelism. A host that ran its own `EntityTracker` beside a run to sample posi
 grenade flights can declare those reads instead and drop the second decode. Resolve each declared
 name once with `FrameView.Provider` and read through the handle; the view is readable only inside
 `OnFrame`. See the README's "Reading state frame by frame".
+
+A host replacing `PositionSampler.Walk` with the observer declares `entity.pawn.is_alive` for the
+walk's `IsAlive` and sorts each frame's slots by `entity.pawn.entity_index` for its order. The
+snapshot never clears a slot, so a slot whose pawn left keeps its last cells; it reads not alive.
 
 `projectile_thrown` and `projectile_landed` are new views over two synthesized events,
 `projectile_created` and `projectile_removed`, for all five grenades: thrower-bound, with `class`,

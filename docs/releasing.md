@@ -816,6 +816,17 @@ changes: a consumer that reads digest columns by provider name is unaffected, an
 by position needs to rebuild its index, for the same reason as the 0.13.0 "Singleton reads build,
 and a new per-player column shifts the digest" entry above.
 
+### Liveness and pawn order for a frame observer (0.14.0)
+
+`entity.pawn.is_alive` (`player.is_alive`, bool) is `PawnLookup.IsAlive` for every controller-bound
+pawn, false included, so a dead slot reads dead through `FrameView` instead of keeping its last
+health. `entity.pawn.entity_index` (`player.entity_index`, int) is the pawn's entity index, the order
+`PositionSampler.Walk` visits pawns in. Both sit after `is_walking`, before the position trio, which
+moves by two more; the per-pawn fold fixtures moved for it. Both are computed, so schema validation
+checks only that `m_lifeState` and `m_hController` exist. `FrameViewLivenessOrderTests` pins both
+against the walk at the end of every tick run; frames earlier in a tick run see the run's end state,
+as every observer read does.
+
 ### Per-side team reads, and a capture with no `on:` (0.14.0)
 
 `entity.team.score` and `entity.team.clan_name` (`team.score`, `team.clan_name`) are the first
