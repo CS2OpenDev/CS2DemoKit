@@ -987,6 +987,25 @@ number read from 0.13.0's lens is stale. No shipped read changes, and the golden
 The SDK wrappers read `CSPlayerPawn.Flags` as `int?` and `BaseCSGrenade.ThrowStrength` as
 `float?`, null when the field was never received; the other three default to 0.
 
+### Pawn flags, throw strength and the explode tick (0.14.0)
+
+Reads of three fields the 1.2.0 lens binds. `entity.pawn.flags` (`player.flags`, int) is `m_fFlags`;
+`entity.pawn.on_ground` and `entity.pawn.ducking` (bool) are its `FL_ONGROUND` and `FL_DUCKING`
+bits, computed off the same leaf by `PawnFlagBitProvider`, since the rules language has no bitwise
+operators; `entity.weapon.throw_strength` (`player.weapon_throw_strength`, float) is the
+active-weapon hop to `m_flThrowStrength`. The four sit after `entity_index`, before the position
+trio, which moves by four more; the per-pawn fold fixtures moved for it. A non-grenade weapon reads
+no value, so the pre-frame snapshot keeps the last grenade's strength: 36,780 slot-frames on the
+sample demo. `PawnFlagsObserverTests` pins the bits against the flags and the strength against the
+active weapon class at both caps.
+
+`ProjectileRow.ExplodeEffectTickBegin` (`int?`, an `init` property) carries
+`m_nExplodeEffectTickBegin` on the server-boot clock, and `projectile.explode_effect_tick` reads it,
+0 until detonation. On the sample demo every removed HE carries one inside its own life once
+`ServerStartTick` is subtracted, and flashes read 0 throughout; `ProjectileExplodeTickTests` pins the
+HE and the `keep: last` read. No shipped ruleset reads any of these, so the rules-output goldens
+do not move. The `eval_ms` row for these three is not measured yet.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

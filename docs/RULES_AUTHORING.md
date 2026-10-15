@@ -530,6 +530,13 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
     thresholding across weapons compares nothing. It is the weapon's own decaying penalty and does
     NOT include the movement contribution, so reading it alone as "how inaccurate was this shot"
     understates a running player.
+  - `player.on_ground` / `player.ducking`: the ground and crouch bits of the pawn's flags, as
+    bools. `player.ducking` is the flag, not the ramp `player.duck_amount` gives. `player.flags` is
+    the raw bitfield; the language has no bitwise operators, so test the two named bits instead.
+  - `player.weapon_throw_strength`: the held grenade's throw strength: `1` for a full throw, `0`
+    for an underhand lob, about `0.5` with both buttons. Only a grenade carries it, and a read that
+    stops resolving does not clear the column, so after the grenade leaves the hand it keeps its
+    last value. Test it together with `player.active_weapon_class`.
 
 **The four angle columns wrap at 360.** `eye_pitch`, `eye_yaw`, `punch_pitch` and `punch_yaw` are
 raw `QAngle` components as the engine networks them, over **[0, 360)** — a -2 degree kick arrives

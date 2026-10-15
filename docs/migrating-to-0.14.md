@@ -86,6 +86,11 @@ column after it: index digest columns by provider name, not position.
 **Two more per-player columns, `entity.pawn.is_alive` and `entity.pawn.entity_index`, sit after
 `is_walking` and move the position trio by two more.** Same advice: index by provider name.
 
+**Four more, `entity.pawn.flags`, `entity.pawn.on_ground`, `entity.pawn.ducking` and
+`entity.weapon.throw_strength`, sit after `entity_index` and move the position trio by four more.**
+Same advice. `ProjectileRow` gains `ExplodeEffectTickBegin` as an `init` property, so positional
+construction and deconstruction are unchanged; record equality now includes it.
+
 **A capture with no `on:` is no longer dropped.** Through 0.13.0 such a stat resolved to nothing
 at all: no diagnostic, no node, no column. It now lowers when it reads a bare `team.*` value
 `per: match`, and every other shape fails validation with `resolve.trigger.unsupported-for-kind`, so
