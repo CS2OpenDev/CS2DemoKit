@@ -1004,10 +1004,11 @@ active weapon class at both caps.
 0 until detonation. On the sample demo every removed HE carries one inside its own life once
 `ServerStartTick` is subtracted, and every flash reads 0 at removal; `ProjectileExplodeTickTests` pins the
 HE and the `keep: last` read. No shipped ruleset reads any of these, so the rules-output goldens
-do not move. `eval_ms`, pawn half (`flags` and `throw_strength`) isolated from the explode tick's
-own `each_projectile` cost: median +8.3% over 5 demos, same build lane off against on, inside the
-+10% budget (`docs/perf/baseline.md` "R7 part 2a and R8 coach"). The explode tick's own cost is
-R6's `each_projectile` scope cost, already owner-accepted at +5.9%.
+do not move. `eval_ms`, pawn half (`flags` and `throw_strength`) isolated from the explode tick:
+median +8.3% over 5 demos, same build lane off against on, inside the +10% budget. The explode
+tick reads under `each_projectile`, whose scope cost is R6's own owner-accepted row; it was not
+isolated on its own. All three reads together, derived as the joint reading minus coach's, come
+to about +9.1% (`docs/perf/baseline.md` "R7 part 2a and R8 coach").
 
 ### Coaching team (0.14.0)
 
