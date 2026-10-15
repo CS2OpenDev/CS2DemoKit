@@ -91,6 +91,9 @@ column after it: index digest columns by provider name, not position.
 Same advice. `ProjectileRow` gains `ExplodeEffectTickBegin` as an `init` property, so positional
 construction and deconstruction are unchanged; record equality now includes it.
 
+**One more, `entity.controller.coaching_team`, sits after `throw_strength` and moves the position
+trio by one more.** Same advice.
+
 **A capture with no `on:` is no longer dropped.** Through 0.13.0 such a stat resolved to nothing
 at all: no diagnostic, no node, no column. It now lowers when it reads a bare `team.*` value
 `per: match`, and every other shape fails validation with `resolve.trigger.unsupported-for-kind`, so

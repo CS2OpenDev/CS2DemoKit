@@ -1006,6 +1006,17 @@ active weapon class at both caps.
 HE and the `keep: last` read. No shipped ruleset reads any of these, so the rules-output goldens
 do not move. The `eval_ms` row for these three is not measured yet.
 
+### Coaching team (0.14.0)
+
+`entity.controller.coaching_team` (`player.coaching_team`, int) is `m_iCoachingTeam`, bound by the
+1.2.0 lens, read through the pawn's `m_hController` like `player.money`: 0 for a player, else the
+side coached. It sits after `throw_strength`, before the position trio; the per-pawn fold fixtures
+moved by 10 cells, rows unchanged. Only a slot with a controller-bound `CCSPlayerPawn` reads. The
+sample demo has no coach, so `TeamBindingViewTests` pins a present 0 on every side slot there; the
+non-zero path is pinned only by the arm on `furia-vs-vitality-m1-mirage.dem`, which compares the
+column with the controller at slot + 1 on the last frame and skips without that demo. Whether a
+coach has a player pawn at all is not measured. The rules-output goldens do not move.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

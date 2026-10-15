@@ -537,6 +537,8 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
     for an underhand lob, about `0.5` with both buttons. Only a grenade carries it, and a read that
     stops resolving does not clear the column, so after the grenade leaves the hand it keeps its
     last value. Test it together with `player.active_weapon_class`.
+  - `player.coaching_team`: the side this player coaches, `2` or `3`, and `0` for everyone else.
+    It is read through the pawn's controller handle, so a slot with no player pawn has no value.
 
 **The four angle columns wrap at 360.** `eye_pitch`, `eye_yaw`, `punch_pitch` and `punch_yaw` are
 raw `QAngle` components as the engine networks them, over **[0, 360)** — a -2 degree kick arrives
