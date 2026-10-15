@@ -141,7 +141,8 @@ name once with `FrameView.Provider` and read through the handle; the view is rea
 
 A host replacing `PositionSampler.Walk` with the observer declares `entity.pawn.is_alive` for the
 walk's `IsAlive` and sorts each frame's slots by `entity.pawn.entity_index` for its order. The
-snapshot never clears a slot, so a slot whose pawn left keeps its last cells; it reads not alive.
+snapshot never clears a slot, so a slot whose pawn left keeps its last cells. Measured on the sample
+demo, no such slot reads alive (16,616 slot-frames); nothing in the snapshot guarantees it.
 
 `projectile_thrown` and `projectile_landed` are new views over two synthesized events,
 `projectile_created` and `projectile_removed`, for all five grenades: thrower-bound, with `class`,
