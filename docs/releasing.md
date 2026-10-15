@@ -847,9 +847,11 @@ consumer `switch` over it with no default arm stops compiling. The catalog gains
 `event.Cadence == "<id>:<ticks>:<anchor>:<until>"`, so the period enters the stat hash through the
 existing trigger row and two rulesets that reuse an id with different periods never share a stat.
 A ruleset with no cadence hashes as before, which `RulesV2HasherTests` and
-`RulesetV2PlannerHashTests` pin, and builds no scheduler. A step due on the stop's own frame does not
-fire, so a round's step count is `floor((close - freeze_end) / period) + 1` less one when the close
-lands exactly on a due tick. `FrameTickTests.CadenceTick_FiresOncePerPeriod_OnFrameClock` pins the ticks and
+`RulesetV2PlannerHashTests` pin, and builds no scheduler. The stop disarms the cadence before its
+frame drains, so a step whose first frame at or after its due tick is the stop's frame never fires,
+whether it was due exactly on the close or carried there by a frame gap. On a gapless frame stream a
+round's step count is `floor((close - freeze_end) / period) + 1`, less one when the close lands
+exactly on a due tick. `FrameTickTests.CadenceTick_FiresOncePerPeriod_OnFrameClock` pins the ticks and
 steps on both run paths against the sample's frames.
 
 ### Event tables project without snapshots, and per-player rows carry steam_id (0.14.0)

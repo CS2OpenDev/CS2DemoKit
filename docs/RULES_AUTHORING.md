@@ -202,7 +202,10 @@ stats:
 Give the period as `ticks:` or `seconds:`, not both; seconds are rounded to ticks at the demo's
 tick rate. `anchor: round_freeze_end` is required and starts step 0 on the freeze end's frame.
 `until:` stops it: `round_ended` on the round's close, `next_freeze_end` on the next freeze end, and
-with neither it runs until the next anchor restarts it. A match restart stops every cadence. Each
+with neither it runs until the next anchor restarts it. Both follow the active profile's bindings:
+the anchor is any concrete event of `$round_freeze_end`, plus the freeze end the evaluator
+synthesizes for a round decided in freeze time, and `round_ended` is any concrete event of
+`$round_end`. A custom profile binds `cadence_tick` through `DemoSourceProfile.CadenceTick`. A match restart stops every cadence. Each
 step fires on the first frame at or after its due tick, after everything else that frame
 dispatches, so a frame gap longer than a period fires the missed steps together on that frame, and
 a step due on the stop's own frame does not fire. The ticks are the frame clock: `event.tick` reads
