@@ -20,7 +20,7 @@ public sealed class PawnFlagBitProvider
     /// <summary><c>FL_ONGROUND</c>.</summary>
     public const int OnGroundBit = 1 << 0;
 
-    /// <summary><c>FL_DUCKING</c>: fully crouched, not partway into the crouch.</summary>
+    /// <summary><c>FL_DUCKING</c>.</summary>
     public const int DuckingBit = 1 << 1;
 
     // Holds lane cursors, so one per worker.

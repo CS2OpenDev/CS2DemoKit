@@ -1002,7 +1002,7 @@ active weapon class at both caps.
 `ProjectileRow.ExplodeEffectTickBegin` (`int?`, an `init` property) carries
 `m_nExplodeEffectTickBegin` on the server-boot clock, and `projectile.explode_effect_tick` reads it,
 0 until detonation. On the sample demo every removed HE carries one inside its own life once
-`ServerStartTick` is subtracted, and flashes read 0 throughout; `ProjectileExplodeTickTests` pins the
+`ServerStartTick` is subtracted, and every flash reads 0 at removal; `ProjectileExplodeTickTests` pins the
 HE and the `keep: last` read. No shipped ruleset reads any of these, so the rules-output goldens
 do not move. The `eval_ms` row for these three is not measured yet.
 

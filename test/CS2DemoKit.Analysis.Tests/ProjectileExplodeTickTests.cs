@@ -15,7 +15,7 @@ namespace CS2DemoKit.Analysis.Tests;
 ///     <see cref="ProjectileRow.ExplodeEffectTickBegin" /> on the sample demo: every HE removed in
 ///     the demo carries a server tick inside its own life, and <c>projectile.explode_effect_tick</c>
 ///     with <c>keep: last</c> reads the same value the observer saw on the row at removal. Flashes
-///     read 0 throughout on this demo, so only the HE is held to a detonation.
+///     read 0 at removal on this demo, so only the HE is held to a detonation.
 /// </summary>
 [Category("Integration")]
 [NotInParallel]
