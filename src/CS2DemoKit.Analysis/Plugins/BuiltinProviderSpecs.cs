@@ -344,6 +344,9 @@ public static class BuiltinProviderSpecs
         // Same position in CreateDefault. Before the position trio, not appended:
         // PawnPositionProviderTests pins those three as the last three.
         new GenericPerPlayerFieldProvider(PawnIsWalking),
+        // Computed, no spec form; the same classes at the same position in CreateDefault.
+        new PawnAliveProvider(),
+        new PawnEntityIndexProvider(),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
         // parity gate rather than a hand-written-vs-spec comparison. The gate's population is

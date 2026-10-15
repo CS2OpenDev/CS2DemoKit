@@ -100,6 +100,7 @@ public sealed class PawnReadContext
     private AimPunchLayout _punchLayout;
     private bool _punchResolved;
     private CSPlayerPawn? _wrapper;
+    private int _entityIndex = -1;
 
     /// <summary>The tracker the bound pawn lives in.</summary>
     public EntityTracker Tracker { get; private set; } = null!;
@@ -177,11 +178,22 @@ public sealed class PawnReadContext
         return _punchHasValue;
     }
 
+    /// <summary>
+    ///     The bound pawn's entity index, the order <see cref="PawnLookup.ForEachLivePawn(EntityTracker, Action{int, EntityState})" />
+    ///     visits pawns in. Handed over by the sweep that bound the pawn; resolved by a scan when it was not.
+    /// </summary>
+    internal int EntityIndex =>
+        _entityIndex >= 0 ? _entityIndex : _entityIndex = PawnEntityIndexProvider.Find(Tracker, Pawn);
+
     /// <summary>Points the context at a pawn and forgets everything cached for the previous one.</summary>
-    internal void Bind(EntityTracker tracker, EntityState pawn)
+    /// <param name="tracker">The tracker the pawn lives in.</param>
+    /// <param name="pawn">The pawn to read.</param>
+    /// <param name="entityIndex">The pawn's entity index when the caller's sweep has it, or -1.</param>
+    internal void Bind(EntityTracker tracker, EntityState pawn, int entityIndex = -1)
     {
         Tracker = tracker;
         Pawn = pawn;
+        _entityIndex = entityIndex;
         _wrapper = null;
         _originResolved = false;
         _eyeAnglesResolved = false;

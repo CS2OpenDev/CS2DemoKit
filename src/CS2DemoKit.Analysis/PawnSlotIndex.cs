@@ -34,9 +34,10 @@ internal sealed class PawnSlotIndex
 
     /// <summary>
     ///     The controller-bound pawn walk over the index: a pawn with a live controller yields its
-    ///     slot, whether the player is dead or alive.
+    ///     slot, whether the player is dead or alive. The callback gets the slot, the pawn's entity
+    ///     index and the pawn.
     /// </summary>
-    public void ForEachLivePawn<TState>(EntityTracker tracker, TState state, Action<TState, int, EntityState> onPawn)
+    public void ForEachLivePawn<TState>(EntityTracker tracker, TState state, Action<TState, int, int, EntityState> onPawn)
     {
         Sync(tracker);
         EntitySet entities = tracker.CurrentEntities;
@@ -66,7 +67,7 @@ internal sealed class PawnSlotIndex
                 continue;
             }
 
-            onPawn(state, slot, ent);
+            onPawn(state, slot, index, ent);
         }
     }
 

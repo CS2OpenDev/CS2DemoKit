@@ -760,7 +760,9 @@ public sealed class EntityChangeScanner
                 continue;
             }
 
-            ValidateOne(tracker, p.Name, p.EntityClass, p.FieldName, p.ValueType);
+            // A derived value's type is not its source leaf's wire type, so only the leaf's
+            // existence is the drift signal.
+            ValidateOne(tracker, p.Name, p.EntityClass, p.FieldName, p is IDerivedPawnValue ? null : p.ValueType);
         }
 
         foreach (IEntityValueProvider p in _singletonProviders)
@@ -772,7 +774,7 @@ public sealed class EntityChangeScanner
     }
 
     private static void ValidateOne(EntityTracker tracker, string providerName,
-        string entityClass, string fieldPath, Type declaredType)
+        string entityClass, string fieldPath, Type? declaredType)
     {
         RuntimeField? meta = tracker.GetFieldMeta(entityClass, fieldPath);
         if (meta is null)
@@ -783,7 +785,7 @@ public sealed class EntityChangeScanner
                 + "provider's field path (schema reference: cs2-opendocs).");
         }
 
-        if (!IsWireTypeCompatible(declaredType, meta.TypeName))
+        if (declaredType is not null && !IsWireTypeCompatible(declaredType, meta.TypeName))
         {
             throw new InvalidOperationException(
                 $"provider '{providerName}': declared type '{declaredType.Name}' is not "

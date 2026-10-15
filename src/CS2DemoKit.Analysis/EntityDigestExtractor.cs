@@ -108,12 +108,12 @@ internal static class EntityDigestExtractor
             if (pawns is not null)
             {
                 pawns.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
-                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+                    static (sweep, slot, index, pawn) => ReadPawn(sweep, slot, index, pawn));
             }
             else
             {
                 PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
-                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, pawn));
+                    static (sweep, slot, pawn) => ReadPawn(sweep, slot, -1, pawn));
             }
 
             delta.LastRowCount = d.PerPawn.Count;
@@ -246,12 +246,12 @@ internal static class EntityDigestExtractor
     ///     changed (so the row is emitted) but is not present in it, which is the boxed digest's
     ///     "null cell means no update" restated.
     /// </summary>
-    private static void ReadPawn(PawnSweep sweep, int slot, EntityState pawn)
+    private static void ReadPawn(PawnSweep sweep, int slot, int entityIndex, EntityState pawn)
     {
         PerPawnDeltaState delta = sweep.Delta;
         DigestColumnLayout layout = delta.Layout;
         PawnReadContext context = delta.Context;
-        context.Bind(sweep.Tracker, pawn);
+        context.Bind(sweep.Tracker, pawn, entityIndex);
 
         TypedSlotRow row = delta.RowFor(slot);
         ulong[] present = delta.PresentScratch;

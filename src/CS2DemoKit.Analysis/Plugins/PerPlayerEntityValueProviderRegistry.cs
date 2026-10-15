@@ -89,6 +89,10 @@ public sealed class PerPlayerEntityValueProviderRegistry
         // Same position in CreateGenericPerPlayerProviders(). Before the position trio, not
         // appended: PawnPositionProviderTests pins those three as the last three.
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnIsWalking));
+        // Liveness and pawn order for a frame observer replaying PositionSampler.Walk. Computed,
+        // so hand-written with no spec form; same instances, same position, in the twin list.
+        registry.Register(new PawnAliveProvider());
+        registry.Register(new PawnEntityIndexProvider());
         // World position, one provider per axis. Computed from CBodyComponent's cell + offset
         // pair rather than a single leaf, so there is no ProviderSpec form; both sides of the
         // parity gate register these same instances, appended last in the same order.
