@@ -1009,14 +1009,16 @@ do not move. The `eval_ms` row for these three is not measured yet.
 ### Coaching team (0.14.0)
 
 `entity.controller.coaching_team` (`player.coaching_team`, int) is `m_iCoachingTeam`, bound by the
-1.2.0 lens, read through the pawn's `m_hController` like `player.money`: 0 for a player, else the
-side coached. It sits after `throw_strength`, before the position trio; the per-pawn fold fixtures
-moved by 10 cells, rows unchanged. Only a slot with a controller-bound `CCSPlayerPawn` reads, and a
-`capture:` cell shows a slot that read nothing as 0, the same as a non-coach. The
-sample demo has no coach, so `TeamBindingViewTests` pins a present 0 on every side slot there; the
-non-zero path is pinned only by the arm on `furia-vs-vitality-m1-mirage.dem`, which compares the
-column with the controller at slot + 1 on the last frame and skips without that demo. Whether a
-coach has a player pawn at all is not measured. The rules-output goldens do not move.
+1.2.0 lens: 0 for a player, else the side coached. `ControllerFieldProvider` reads it off the
+controller at entity index slot + 1, not through a pawn's `m_hController`, because the pawn sweep
+visits only `CCSPlayerPawn` and a coach fields none. A slot with a controller and no pawn row gets a
+row of that column alone. It sits after `throw_strength`, before the position trio; the per-pawn
+fold fixtures moved by 10 cells for the column, then by 2 rows and 2 cells for slots 10 and 11 of
+the sample, which have a controller and no player pawn. The sample has no coach, so
+`TeamBindingViewTests` pins a present 0 on every controller there, those two included; the non-zero
+path is pinned only by the arm on `furia-vs-vitality-m1-mirage.dem`, which compares the column with
+the controller at slot + 1 on the last frame and skips without that demo. The rules-output goldens
+do not move.
 
 ## Credentials
 
