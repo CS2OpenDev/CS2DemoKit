@@ -141,6 +141,16 @@ static int Help()
         but projects zero grenades rows; paths fails loud if the run finished with zero
         projectiles in AnalysisRun.Projectiles, since a forward run has no show table to check.
 
+        CS2DEMOKIT_BENCH_R7_2A=1 loads an each_player overlay reading player.flags and
+        player.weapon_throw_strength, plus a second, unrelated each_projectile scope reading
+        projectile.explode_effect_tick (its own ruleset, so it never touches CS2DEMOKIT_BENCH_PROJECTILE's
+        grenades table), so eval_ms carries R7 part 2a's three reads. measure, sweep and compare
+        read it; paths does not. The warm-up pass fails loud if the explode overlay builds but
+        projects zero rows.
+
+        CS2DEMOKIT_BENCH_COACH=1 loads an each_player overlay reading player.coaching_team, so
+        eval_ms carries R8 coach's one read. measure, sweep and compare read it; paths does not.
+
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the
           eight-wide tree on the same seeded corpus, interleaved for R rounds and reported as

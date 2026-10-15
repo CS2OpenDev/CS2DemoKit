@@ -99,6 +99,51 @@ internal static class Measurement
     /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries R6's template cost.</summary>
     public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
 
+    /// <summary>Set to make a build read player.flags, player.weapon_throw_strength and the explode tick, the three R7 part 2a reads.</summary>
+    public const string R7Part2aLaneVariable = "CS2DEMOKIT_BENCH_R7_2A";
+
+    private const string R7Part2aOverlayLabel = "bench-r7-2a.rules.yaml";
+
+    private const string R7Part2aOverlayYaml =
+        """
+        ruleset: bench_r7_2a
+        for: each_player
+        stats:
+          flags:          { capture: player.flags,                 on: kill, keep: last, per: match }
+          throw_strength: { capture: player.weapon_throw_strength,  on: kill, keep: last, per: match }
+        """;
+
+    private const string R7Part2aProjectileOverlayLabel = "bench-r7-2a-projectile.rules.yaml";
+
+    // Its own scope family, separate from ProjectileOverlayYaml, so this row never touches R6's
+    // already-measured grenades table.
+    private const string R7Part2aProjectileOverlayYaml =
+        """
+        ruleset: bench_r7_2a_explode
+        for: each_projectile
+        stats:
+          explode: { capture: projectile.explode_effect_tick, keep: last }
+        show:
+          tables:
+            bench_r7_2a_explode:
+              per: projectile
+              columns:
+                - { stat: explode, label: explode }
+        """;
+
+    /// <summary>Set to make a build read player.coaching_team, the one R8 coach read.</summary>
+    public const string CoachLaneVariable = "CS2DEMOKIT_BENCH_COACH";
+
+    private const string CoachOverlayLabel = "bench-coach.rules.yaml";
+
+    private const string CoachOverlayYaml =
+        """
+        ruleset: bench_coach
+        for: each_player
+        stats:
+          coaching_team: { capture: player.coaching_team, on: kill, keep: last, per: match }
+        """;
+
     /// <summary>Set to print the timed evaluation's allocation by type to stderr, after the row.</summary>
     public const string AllocTickVariable = "CS2DEMOKIT_BENCH_ALLOCTICK";
 
@@ -207,6 +252,8 @@ internal static class Measurement
         byte[] bytes = File.ReadAllBytes(demoPath);
         bool userCmdLane = Environment.GetEnvironmentVariable(UserCmdLaneVariable) == "1";
         bool projectileLane = Environment.GetEnvironmentVariable(ProjectileLaneVariable) == "1";
+        bool r72aLane = Environment.GetEnvironmentVariable(R7Part2aLaneVariable) == "1";
+        bool coachLane = Environment.GetEnvironmentVariable(CoachLaneVariable) == "1";
         List<(string, string)> overlayList = [(VisibilityOverlayLabel, VisibilityOverlayYaml)];
         if (userCmdLane)
         {
@@ -216,6 +263,17 @@ internal static class Measurement
         if (projectileLane)
         {
             overlayList.Add((ProjectileOverlayLabel, ProjectileOverlayYaml));
+        }
+
+        if (r72aLane)
+        {
+            overlayList.Add((R7Part2aOverlayLabel, R7Part2aOverlayYaml));
+            overlayList.Add((R7Part2aProjectileOverlayLabel, R7Part2aProjectileOverlayYaml));
+        }
+
+        if (coachLane)
+        {
+            overlayList.Add((CoachOverlayLabel, CoachOverlayYaml));
         }
 
         RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(overlayList.ToArray());
@@ -287,6 +345,17 @@ internal static class Measurement
                 {
                     throw new InvalidOperationException(
                         $"{ProjectileLaneVariable} is set but the grenades table is missing or empty");
+                }
+            }
+
+            if (r72aLane)
+            {
+                MetricTable? explode = wr.ProjectConfiguredOutputs(w)
+                    .SingleOrDefault(t => t.Name == "bench_r7_2a_explode");
+                if (explode is null || explode.Rows.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{R7Part2aLaneVariable} is set but the bench_r7_2a_explode table is missing or empty");
                 }
             }
 
