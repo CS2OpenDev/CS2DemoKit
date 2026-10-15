@@ -143,6 +143,57 @@ public class ProviderMetadataTests
         await Assert.That(provider.Spec.ViaHandleToField).IsNull();
     }
 
+    /// <summary>The raw flags column: a plain int read of <c>m_fFlags</c>, no hop, no gates.</summary>
+    [Test]
+    public async Task PawnFlagsProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.PawnFlags);
+        await Assert.That(provider.Name).IsEqualTo("entity.pawn.flags");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo("m_fFlags");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(int));
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+        await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
+        await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+    }
+
+    /// <summary>The two flag bits: bool columns over <c>m_fFlags</c>, cloned per worker with their mask.</summary>
+    [Test]
+    public async Task PawnFlagBitProviders_ExposeExpectedMetadata()
+    {
+        PawnFlagBitProvider onGround = PawnFlagBitProvider.OnGround();
+        PawnFlagBitProvider ducking = PawnFlagBitProvider.Ducking();
+        await Assert.That(onGround.Name).IsEqualTo("entity.pawn.on_ground");
+        await Assert.That(onGround.Mask).IsEqualTo(1);
+        await Assert.That(ducking.Name).IsEqualTo("entity.pawn.ducking");
+        await Assert.That(ducking.Mask).IsEqualTo(2);
+        foreach (PawnFlagBitProvider provider in new[] { onGround, ducking })
+        {
+            await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+            await Assert.That(provider.FieldName).IsEqualTo("m_fFlags");
+            await Assert.That(provider.ValueType).IsEqualTo(typeof(bool));
+            IPerPlayerEntityValueProvider clone = provider.CloneForWorker();
+            await Assert.That(clone).IsNotSameReferenceAs(provider);
+            await Assert.That(clone.Name).IsEqualTo(provider.Name);
+            await Assert.That(((PawnFlagBitProvider)clone).Mask).IsEqualTo(provider.Mask);
+        }
+    }
+
+    /// <summary>Throw strength: a float two-hop read through the active-weapon handle to <c>m_flThrowStrength</c>.</summary>
+    [Test]
+    public async Task WeaponThrowStrengthProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.WeaponThrowStrength);
+        await Assert.That(provider.Name).IsEqualTo("entity.weapon.throw_strength");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo("m_pWeaponServices.m_hActiveWeapon");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(float));
+        await Assert.That(provider.Spec.ViaHandleToField!.TargetField).IsEqualTo("m_flThrowStrength");
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+    }
+
     /// <summary>
     ///     The parity gate's structural precondition (<c>ProviderDigestParityTests</c> compares
     ///     value arrays index-by-index): the hand-written default registry and the generic spec

@@ -93,6 +93,11 @@ public sealed class PerPlayerEntityValueProviderRegistry
         // so hand-written with no spec form; same instances, same position, in the twin list.
         registry.Register(new PawnAliveProvider());
         registry.Register(new PawnEntityIndexProvider());
+        // Same position in CreateGenericPerPlayerProviders(), before the position trio.
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnFlags));
+        registry.Register(PawnFlagBitProvider.OnGround());
+        registry.Register(PawnFlagBitProvider.Ducking());
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.WeaponThrowStrength));
         // World position, one provider per axis. Computed from CBodyComponent's cell + offset
         // pair rather than a single leaf, so there is no ProviderSpec form; both sides of the
         // parity gate register these same instances, appended last in the same order.

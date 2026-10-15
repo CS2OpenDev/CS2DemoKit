@@ -182,6 +182,10 @@
           "markdownDescription": "\u0060player.duck_amount\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060entity.pawn.duck_amount\u0060. Read at a rule site from the frame BEFORE the triggering event. Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
         },
         {
+          "const": "player.ducking",
+          "markdownDescription": "\u0060player.ducking\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.pawn.ducking\u0060. Read at a rule site from the frame BEFORE the triggering event. The crouch bit of \u0060player.flags\u0060 (FL_DUCKING). A flag, unlike \u0060player.duck_amount\u0060, which ramps across the transition."
+        },
+        {
           "const": "player.entity_index",
           "markdownDescription": "\u0060player.entity_index\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.entity_index\u0060. Read at a rule site from the frame BEFORE the triggering event. The pawn\u0027s entity index. Only an order key: it changes when the slot gets a new pawn and means nothing compared across players."
         },
@@ -196,6 +200,10 @@
         {
           "const": "player.eye_yaw",
           "markdownDescription": "\u0060player.eye_yaw\u0060 (type \u0060float\u0060, in degrees) - an entity read, from \u0060entity.pawn.eye_yaw\u0060. Read at a rule site from the frame BEFORE the triggering event. Counter-clockwise from world \u002BX, and it wraps at 360, so subtract two of these only after normalising the difference."
+        },
+        {
+          "const": "player.flags",
+          "markdownDescription": "\u0060player.flags\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.flags\u0060. Read at a rule site from the frame BEFORE the triggering event. The pawn\u0027s raw m_fFlags bitfield. The rules language has no bitwise operators, so test \u0060player.on_ground\u0060 or \u0060player.ducking\u0060 rather than this."
         },
         {
           "const": "player.flash_duration",
@@ -224,6 +232,10 @@
         {
           "const": "player.money",
           "markdownDescription": "\u0060player.money\u0060 (type \u0060int\u0060, in dollars) - an entity read, from \u0060entity.controller.money\u0060. Read at a rule site from the frame BEFORE the triggering event. The player\u0027s cash, off the controller. Read before the event\u0027s frame, like every player column. At round_freeze_end it is the money left after the freeze-time buys, the same sample point as round.team.money; a purchase later in buy time is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold more than 5 x 16000)."
+        },
+        {
+          "const": "player.on_ground",
+          "markdownDescription": "\u0060player.on_ground\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.pawn.on_ground\u0060. Read at a rule site from the frame BEFORE the triggering event. The ground bit of \u0060player.flags\u0060 (FL_ONGROUND): false through a jump or a fall."
         },
         {
           "const": "player.place",
@@ -260,6 +272,10 @@
         {
           "const": "player.weapon_recoil_index",
           "markdownDescription": "\u0060player.weapon_recoil_index\u0060 (type \u0060float\u0060) - an entity read, from \u0060entity.weapon.recoil_index\u0060. Read at a rule site from the frame BEFORE the triggering event. A raw engine accumulator in no unit, scaled per weapon. Its useful property is that it rises within a spray and falls between sprays (a run over which it never drops is one spray), not its absolute magnitude, which is not comparable across weapons. Not the same number as the \u0060recoil_index\u0060 FACET on \u0060shot_landed\u0060: that one is \u0060bullet_damage.RecoilIndex\u0060, the index the server fired the shot at, and is authoritative for \u0022what did this shot fire at\u0022. This column is the entity read as it stood BEFORE the frame, so it answers \u0022where was the spray up to when the shot site fired\u0022 and is the only answer on a demo carrying no \u0060bullet_damage\u0060 or for a shot that missed. Do not pool the two in one stat."
+        },
+        {
+          "const": "player.weapon_throw_strength",
+          "markdownDescription": "\u0060player.weapon_throw_strength\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060entity.weapon.throw_strength\u0060. Read at a rule site from the frame BEFORE the triggering event. The held grenade\u0027s throw strength: 1 for a full throw, 0 for an underhand lob, about 0.5 with both buttons. Only a grenade carries it, and a read that stops resolving does not clear a player column: after the grenade is thrown or put away this keeps its last value, so test it together with \u0060player.active_weapon_class\u0060. Read before the event\u0027s frame, like every player column."
         },
         {
           "const": "team.clan_name",

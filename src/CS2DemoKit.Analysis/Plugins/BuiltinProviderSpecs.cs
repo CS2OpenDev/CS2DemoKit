@@ -213,6 +213,28 @@ public static class BuiltinProviderSpecs
         "entity.pawn.is_walking", "CCSPlayerPawn",
         SchemaNames.CCSPlayerPawn.IsWalking, typeof(bool));
 
+    /// <summary>
+    ///     entity.pawn.flags: the pawn's raw <c>m_fFlags</c> bitfield, a <c>uint32</c> on the int lane.
+    ///     The rules language has no bitwise operators, so the two bits a rule wants are their own
+    ///     columns, <see cref="PawnFlagBitProvider.OnGround" /> and <see cref="PawnFlagBitProvider.Ducking" />.
+    /// </summary>
+    public static ProviderSpec PawnFlags { get; } = new(
+        "entity.pawn.flags", "CCSPlayerPawn",
+        SchemaNames.CBaseEntity.Flags, typeof(int));
+
+    /// <summary>
+    ///     entity.weapon.throw_strength: the active weapon's <c>m_flThrowStrength</c> through the
+    ///     active-weapon handle: 1 for a full throw, 0 for an underhand lob, about 0.5 with both
+    ///     buttons. Only grenade weapons carry the field, so any other weapon reads no value, which
+    ///     leaves the pre-frame snapshot holding the last grenade's strength.
+    /// </summary>
+    public static ProviderSpec WeaponThrowStrength { get; } = new(
+        "entity.weapon.throw_strength", "CCSPlayerPawn",
+        "", typeof(float),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
+            SchemaNames.CBaseCSGrenade.ThrowStrength));
+
     /// <summary>entity.game.freeze_period — the singleton freeze-period poll.</summary>
     public static ProviderSpec GameFreezePeriod { get; } = new(
         "entity.game.freeze_period", "CCSGameRulesProxy",
@@ -347,6 +369,11 @@ public static class BuiltinProviderSpecs
         // Computed, no spec form; the same classes at the same position in CreateDefault.
         new PawnAliveProvider(),
         new PawnEntityIndexProvider(),
+        // Same position in CreateDefault, before the position trio.
+        new GenericPerPlayerFieldProvider(PawnFlags),
+        PawnFlagBitProvider.OnGround(),
+        PawnFlagBitProvider.Ducking(),
+        new GenericPerPlayerFieldProvider(WeaponThrowStrength),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
         // parity gate rather than a hand-written-vs-spec comparison. The gate's population is

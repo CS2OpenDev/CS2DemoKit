@@ -124,6 +124,23 @@ public class EntityReadSiteSweepTests
             per: round
         """;
 
+    // The flag bits and the throw-strength hop, one where: site each.
+    private static string OnGroundSite => Site("on_ground", "player.on_ground");
+    private static string DuckingSite => Site("ducking", "player.ducking");
+    private static string FlagsSite => Site("flags", "player.flags > 0");
+    private static string ThrowStrengthSite => Site("throw_strength", "player.weapon_throw_strength > 0.5");
+
+    private static string Site(string id, string where) =>
+        $$"""
+        ruleset: sweep_{{id}}
+        for: each_player
+        stats:
+          {{id}}_kills:
+            count: kill
+            where: "{{where}}"
+            per: round
+        """;
+
     [Test]
     public async Task Where_Site_Probe()
     {
@@ -194,6 +211,25 @@ public class EntityReadSiteSweepTests
     {
         (string outcome, string detail) = Probe(IsWalkingSite, "entity.pawn.is_walking");
         Console.WriteLine($"[sweep] where: player.is_walking outcome={outcome} detail={detail}");
+        await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
+    }
+
+    /// <summary>The R7 part 2a reads route to the entity seam under their own provider names.</summary>
+    [Test]
+    [Arguments("entity.pawn.on_ground")]
+    [Arguments("entity.pawn.ducking")]
+    [Arguments("entity.pawn.flags")]
+    [Arguments("entity.weapon.throw_strength")]
+    public async Task FlagsAndThrowStrength_Site_Probe(string provider)
+    {
+        string yaml = provider switch
+        {
+            "entity.pawn.on_ground" => OnGroundSite,
+            "entity.pawn.ducking" => DuckingSite,
+            "entity.pawn.flags" => FlagsSite,
+            _ => ThrowStrengthSite
+        };
+        (string outcome, string detail) = Probe(yaml, provider);
         await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
     }
 

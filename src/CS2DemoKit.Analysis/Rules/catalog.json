@@ -3080,6 +3080,14 @@
       "note": "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
     },
     {
+      "name": "entity.pawn.ducking",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.ducking",
+      "v2Type": "Bool",
+      "note": "The crouch bit of \u0060player.flags\u0060 (FL_DUCKING). A flag, unlike \u0060player.duck_amount\u0060, which ramps across the transition."
+    },
+    {
       "name": "entity.pawn.entity_index",
       "scope": "perPlayer",
       "clrType": "int",
@@ -3111,6 +3119,14 @@
       "v2Type": "Float",
       "unit": "degrees",
       "note": "Counter-clockwise from world \u002BX, and it wraps at 360, so subtract two of these only after normalising the difference."
+    },
+    {
+      "name": "entity.pawn.flags",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.flags",
+      "v2Type": "Int",
+      "note": "The pawn\u0027s raw m_fFlags bitfield. The rules language has no bitwise operators, so test \u0060player.on_ground\u0060 or \u0060player.ducking\u0060 rather than this."
     },
     {
       "name": "entity.pawn.flash_duration",
@@ -3158,6 +3174,14 @@
       "v2Type": "Float",
       "unit": "units/second",
       "note": "Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
+    },
+    {
+      "name": "entity.pawn.on_ground",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.on_ground",
+      "v2Type": "Bool",
+      "note": "The ground bit of \u0060player.flags\u0060 (FL_ONGROUND): false through a jump or a fall."
     },
     {
       "name": "entity.pawn.place",
@@ -3246,6 +3270,15 @@
       "v2Name": "player.weapon_recoil_index",
       "v2Type": "Float",
       "note": "A raw engine accumulator in no unit, scaled per weapon. Its useful property is that it rises within a spray and falls between sprays (a run over which it never drops is one spray), not its absolute magnitude, which is not comparable across weapons. Not the same number as the \u0060recoil_index\u0060 FACET on \u0060shot_landed\u0060: that one is \u0060bullet_damage.RecoilIndex\u0060, the index the server fired the shot at, and is authoritative for \u0022what did this shot fire at\u0022. This column is the entity read as it stood BEFORE the frame, so it answers \u0022where was the spray up to when the shot site fired\u0022 and is the only answer on a demo carrying no \u0060bullet_damage\u0060 or for a shot that missed. Do not pool the two in one stat."
+    },
+    {
+      "name": "entity.weapon.throw_strength",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.weapon_throw_strength",
+      "v2Type": "Float",
+      "unit": "fraction",
+      "note": "The held grenade\u0027s throw strength: 1 for a full throw, 0 for an underhand lob, about 0.5 with both buttons. Only a grenade carries it, and a read that stops resolving does not clear a player column: after the grenade is thrown or put away this keeps its last value, so test it together with \u0060player.active_weapon_class\u0060. Read before the event\u0027s frame, like every player column."
     },
     {
       "name": "usercmd.buttons",

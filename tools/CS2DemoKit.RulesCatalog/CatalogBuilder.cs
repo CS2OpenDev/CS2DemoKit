@@ -119,6 +119,9 @@ public static class CatalogBuilder
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),
+            ["entity.pawn.ducking"] = (null,
+                "The crouch bit of `player.flags` (FL_DUCKING). A flag, unlike `player.duck_amount`, "
+                + "which ramps across the transition."),
             ["entity.pawn.entity_index"] = (null,
                 "The pawn's entity index. Only an order key: it changes when the slot gets a new "
                 + "pawn and means nothing compared across players."),
@@ -132,6 +135,9 @@ public static class CatalogBuilder
             ["entity.pawn.eye_yaw"] = ("degrees",
                 "Counter-clockwise from world +X, and it wraps at 360, so subtract two of these "
                 + "only after normalising the difference."),
+            ["entity.pawn.flags"] = (null,
+                "The pawn's raw m_fFlags bitfield. The rules language has no bitwise operators, so "
+                + "test `player.on_ground` or `player.ducking` rather than this."),
             ["entity.pawn.flash_duration"] = ("seconds",
                 "The duration the server LATCHED for the flash, not a countdown: probed on the "
                 + "bundled GOTV sample it holds one value for the whole blind and then steps to 0, "
@@ -141,6 +147,8 @@ public static class CatalogBuilder
             ["entity.pawn.max_speed"] = ("units/second",
                 "Per-weapon (an AWP out caps far lower than a knife), which is what makes it the "
                 + "denominator of a counter-strafe test rather than a fixed speed."),
+            ["entity.pawn.on_ground"] = (null,
+                "The ground bit of `player.flags` (FL_ONGROUND): false through a jump or a fall."),
             ["entity.pawn.punch_pitch"] = ("degrees",
                 "NOT USABLE AS RECOIL TODAY. It is the raw aim-punch spring sample, correct only "
                 + "at its own base tick, and on the bundled GOTV sample it does not decode to "
@@ -165,6 +173,12 @@ public static class CatalogBuilder
                 + "the shot, and no entity read can better it. This column is the accumulator as it "
                 + "stood BEFORE the frame, which is the only answer available on a demo that emits "
                 + "no `bullet_damage` and the only one available at all for a shot that missed."),
+            ["entity.weapon.throw_strength"] = ("fraction",
+                "The held grenade's throw strength: 1 for a full throw, 0 for an underhand lob, "
+                + "about 0.5 with both buttons. Only a grenade carries it, and a read that stops "
+                + "resolving does not clear a player column: after the grenade is thrown or put away "
+                + "this keeps its last value, so test it together with `player.active_weapon_class`. "
+                + "Read before the event's frame, like every player column."),
             ["entity.weapon.recoil_index"] = (null,
                 "A raw engine accumulator in no unit, scaled per weapon. Its useful property is "
                 + "that it rises within a spray and falls between sprays (a run over which it never "
