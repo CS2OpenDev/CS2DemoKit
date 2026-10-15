@@ -116,6 +116,10 @@ public static class CatalogBuilder
                 + "buys, the same sample point as round.team.money; a purchase later in buy time "
                 + "is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold "
                 + "more than 5 x 16000)."),
+            ["entity.controller.coaching_team"] = (null,
+                "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a "
+                + "registered coach, 0 for everyone else. Read through the pawn's controller handle, "
+                + "so a slot with no player pawn reads no value rather than 0."),
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),

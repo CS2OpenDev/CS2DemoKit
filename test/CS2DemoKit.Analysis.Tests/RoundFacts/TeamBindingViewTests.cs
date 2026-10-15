@@ -1,8 +1,10 @@
 #region
 
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 using CS2DemoKit.TestSupport;
 
@@ -237,5 +239,127 @@ public class TeamBindingViewTests
         // Both sides win at least once on the sample, so neither Won nor Lost can pass by being
         // constant.
         await Assert.That(winners.Distinct().Count()).IsEqualTo(2);
+    }
+
+    private const string CoachRuleset = """
+        ruleset: coach
+        for: each_player
+        stats:
+          coaching:
+            capture: player.coaching_team
+            on: round_ended
+            per: match
+        show:
+          tables:
+            coach:
+              per: player_match
+              columns:
+                - { stat: coaching, label: Coaching }
+        """;
+
+    /// <summary>
+    ///     <c>entity.controller.coaching_team</c> through a <see cref="FrameView" /> on the sample, which
+    ///     carries no coach: a slot reads a value only while its pawn is controller-bound, the value is
+    ///     always 0, and on the last frame all ten players on a side read a present 0. A capture cell
+    ///     reads 0 for "no value" as well, so the presence check has to go through the observer.
+    /// </summary>
+    [Test]
+    [Arguments(1)]
+    [Arguments(null)]
+    public async Task CoachingTeam_ReadsAPresentZero_WhileThePawnIsBound(int? maxDegreeOfParallelism)
+    {
+        ParsedDemo demo = RoundFactsTestSupport.Sample();
+        CoachRecorder observer = new();
+        DemoAnalysis.Run(demo, [], new AnalysisOptions
+        {
+            MaxDegreeOfParallelism = maxDegreeOfParallelism,
+            CaptureSnapshots = false,
+            ObservedProviders = [CoachingTeam, EntityIndex],
+            FrameObserver = observer
+        });
+
+        Console.WriteLine($"[coach] valued slot-frames {observer.Valued}");
+        await Assert.That(observer.First).IsNull().Because(observer.First ?? "");
+        await Assert.That(LastFrameCoaches(demo)).IsEmpty();
+        foreach (int slot in demo.Players.Values.Where(p => p.Team is 2 or 3 && !p.IsHltv).Select(p => p.Slot))
+        {
+            await Assert.That(observer.Last[slot]).IsEqualTo(0).Because($"slot {slot} on the last frame");
+        }
+
+        await Assert.That(demo.Players.Values.Count(p => p.Team is 2 or 3 && !p.IsHltv)).IsEqualTo(10);
+    }
+
+    private const string CoachingTeam = "entity.controller.coaching_team";
+    private const string EntityIndex = "entity.pawn.entity_index";
+
+    private sealed class CoachRecorder : IFrameObserver
+    {
+        public readonly int?[] Last = new int?[64];
+        public string? First;
+        public int Valued;
+
+        public void OnFrame(FrameView frame)
+        {
+            ObservedProvider coach = frame.Provider(CoachingTeam);
+            ObservedProvider index = frame.Provider(EntityIndex);
+            for (int slot = 0; slot < 64 && First is null; slot++)
+            {
+                bool has = frame.TryReadInt(coach, slot, out int team);
+                bool bound = frame.TryReadInt(index, slot, out _);
+                Last[slot] = has ? team : null;
+                if (has && (!bound || team != 0))
+                {
+                    First = $"frame {frame.FrameIndex} slot {slot}: coaching_team {team}, pawn bound {bound}";
+                    return;
+                }
+
+                Valued += has ? 1 : 0;
+            }
+        }
+
+        public void Finish()
+        {
+        }
+    }
+
+    /// <summary>
+    ///     On a tournament demo with coaches, the slots reading a non-zero <c>player.coaching_team</c>
+    ///     at the last <c>round_ended</c> are exactly the slots whose controller (entity index slot + 1) holds a
+    ///     non-zero <c>m_iCoachingTeam</c> on the last frame, with the same side. Skips without the demo.
+    /// </summary>
+    [Test]
+    public async Task EachPlayer_CoachingTeam_MatchesTheControllersOnATournamentDemo()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo("furia-vs-vitality-m1-mirage.dem"));
+        Dictionary<int, int> expected = LastFrameCoaches(demo);
+        MetricTable table = RoundFactsTestSupport.Table(RoundFactsTestSupport.Run(demo, CoachRuleset), "coach", demo);
+        Dictionary<int, int> actual = table.Rows
+            .Select(r => (Slot: RoundFactsTestSupport.Dim(r, "player_slot"), Team: RoundFactsTestSupport.Int(r, "Coaching") ?? 0))
+            .Where(r => r.Team != 0)
+            .ToDictionary(r => r.Slot, r => r.Team);
+
+        Console.WriteLine($"[coach] controllers={string.Join(",", expected.Select(kv => $"{kv.Key}:{kv.Value}"))} "
+                          + $"rows={string.Join(",", actual.Select(kv => $"{kv.Key}:{kv.Value}"))}");
+        await Assert.That(expected).IsNotEmpty();
+        await Assert.That(actual).IsEquivalentTo(expected);
+    }
+
+    // Slot to coached side, off the controllers at the last frame, the way the host's library read takes it.
+    private static Dictionary<int, int> LastFrameCoaches(ParsedDemo demo)
+    {
+        EntityTracker tracker = new() { StoreClassFilter = new HashSet<string>(StringComparer.Ordinal) { "CCSPlayerController" } };
+        tracker.ReplayToIndex(demo.Frames.Count - 1, demo.Frames);
+        Dictionary<int, int> coaches = [];
+        foreach (int slot in demo.Players.Keys)
+        {
+            if (tracker.CurrentEntities[slot + 1] is { } controller
+                && controller.ClassName == "CCSPlayerController"
+                && controller.TryGet<int>("m_iCoachingTeam") is int team and not 0)
+            {
+                coaches[slot] = team;
+            }
+        }
+
+        return coaches;
     }
 }

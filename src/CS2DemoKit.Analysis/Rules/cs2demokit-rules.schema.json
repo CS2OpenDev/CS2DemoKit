@@ -178,6 +178,10 @@
           "markdownDescription": "\u0060player.cmd.view_yaw\u0060 (type \u0060float\u0060) - an entity read, from \u0060usercmd.view_yaw\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
         },
         {
+          "const": "player.coaching_team",
+          "markdownDescription": "\u0060player.coaching_team\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.controller.coaching_team\u0060. Read at a rule site from the frame BEFORE the triggering event. The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a registered coach, 0 for everyone else. Read through the pawn\u0027s controller handle, so a slot with no player pawn reads no value rather than 0."
+        },
+        {
           "const": "player.duck_amount",
           "markdownDescription": "\u0060player.duck_amount\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060entity.pawn.duck_amount\u0060. Read at a rule site from the frame BEFORE the triggering event. Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
         },

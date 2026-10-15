@@ -194,6 +194,20 @@ public class ProviderMetadataTests
         await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
     }
 
+    /// <summary>Coaching team: an int two-hop read through the pawn's controller handle to <c>m_iCoachingTeam</c>.</summary>
+    [Test]
+    public async Task ControllerCoachingTeamProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.ControllerCoachingTeam);
+        await Assert.That(provider.Name).IsEqualTo("entity.controller.coaching_team");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo("m_hController");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(int));
+        await Assert.That(provider.Spec.ViaHandleToField!.TargetField).IsEqualTo("m_iCoachingTeam");
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+    }
+
     /// <summary>
     ///     The parity gate's structural precondition (<c>ProviderDigestParityTests</c> compares
     ///     value arrays index-by-index): the hand-written default registry and the generic spec

@@ -129,6 +129,7 @@ public class EntityReadSiteSweepTests
     private static string DuckingSite => Site("ducking", "player.ducking");
     private static string FlagsSite => Site("flags", "player.flags > 0");
     private static string ThrowStrengthSite => Site("throw_strength", "player.weapon_throw_strength > 0.5");
+    private static string CoachingTeamSite => Site("coaching_team", "player.coaching_team == 0");
 
     private static string Site(string id, string where) =>
         $$"""
@@ -230,6 +231,14 @@ public class EntityReadSiteSweepTests
             _ => ThrowStrengthSite
         };
         (string outcome, string detail) = Probe(yaml, provider);
+        await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
+    }
+
+    /// <summary>The R8 part 2 coach read routes to the entity seam under its own provider name.</summary>
+    [Test]
+    public async Task CoachingTeam_Site_Probe()
+    {
+        (string outcome, string detail) = Probe(CoachingTeamSite, "entity.controller.coaching_team");
         await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
     }
 
