@@ -744,7 +744,7 @@ angle from travel, so it can still differ by OS.
 `GrenadeProjectileClasses` as the per-frame entity digest read it at the end of a frame: the
 `ProjectileSample` fields without the walk's bookkeeping, plus the projectile's team, a smoke's
 `m_nSmokeEffectTickBegin` and `m_vSmokeDetonationPos`, and a molotov's `m_bIsIncGrenade`.
-`m_nExplodeEffectTickBegin` is not on it; the lens does not carry that field yet. The digest
+`m_nExplodeEffectTickBegin` is not on it yet. The digest
 records rows only for the classes a run declares, the scanner derives created, removed and the
 live set from them on the consume side (one continuous diff, so a pipelined worker re-primed at a
 checkpoint cannot report a projectile it just met as created), and the thrower is held from its
@@ -965,6 +965,27 @@ per grenade, and both paths project the `per: projectile` table from the same re
 numeric node as 1 or 0; before, the build threw on the missing coercion. No shipped ruleset uses the
 scope, so no hash, digest or fixture moves. `ProjectileScopeTests` checks the grenade row shape on
 the sample demo on both paths against the parser's `ProjectileSampler`.
+
+### The lens pins `CS2OpenDev.Sdk.Entities` 1.2.0 and binds five more fields (0.14.0)
+
+The pin moves from 1.1.3 to 1.2.0, so a consumer that also references the SDK package directly
+must move with it. 1.2.0 curates `m_fFlags` and `m_pMovementServices.m_bDucked` on
+`CCSPlayerPawn`, `m_iCoachingTeam` on `CCSPlayerController`, `m_flThrowStrength` on
+`CBaseCSGrenade` and `m_nExplodeEffectTickBegin` on `CBaseCSGrenadeProjectile`. The regenerated
+lens has 751 rules on 61 classes (735 before; the grenade and projectile fields repeat on every
+derived class), and `GeneratedLensRegistry.LensHash` is now
+`sha256:8d2d061954ecee9009123114f37679aa8471faae546b104b4b8f028071feb294`. The SDK's own
+`EntityWrapperRegistry.LensHash` is a different hash over the SDK's state and reads
+`sha256:1fa558b39fef18823e699444e4054ee153b4750782a0df5a1926b92e19b014bf`.
+
+The five fields decode onto the int and float lanes instead of the unlensed fallback dictionary,
+which the analysis engine leaves off, so `EntityState.TryGetValue` now returns them where it
+returned nothing there: a boxed `int` for the flags, ducked, coaching team and explode tick, a
+boxed `float` for throw strength. Lane slots after a new field on the same class shift, so a slot
+number read from 0.13.0's lens is stale. No shipped read changes, and the goldens do not move.
+
+The SDK wrappers read `CSPlayerPawn.Flags` as `int?` and `BaseCSGrenade.ThrowStrength` as
+`float?`, null when the field was never received; the other three default to 0.
 
 ## Credentials
 

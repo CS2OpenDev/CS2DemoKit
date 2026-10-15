@@ -47,11 +47,12 @@ public class EmittedWrappersStage2Tests
     // each of the same three classes (cell 0 is a LEGAL world cell: a 0-default would
     // fabricate −16384 through the (cell − 32) × 512 arithmetic, so int?/float? is load-
     // bearing, not style). Absence is null, never a coordinate nobody is standing on.
+    // Since 1.2.0, pawn Flags and grenade ThrowStrength: 0 is a real reading for both.
     private static readonly string[] ExpectedNullableProperties = BuildExpectedNullableProperties();
 
     private static string[] BuildExpectedNullableProperties()
     {
-        List<string> expected = ["CSPlayerPawn.LifeState"];
+        List<string> expected = ["BaseCSGrenade.ThrowStrength", "CSPlayerPawn.Flags", "CSPlayerPawn.LifeState"];
         foreach (string cls in new[] { "BaseCSGrenadeProjectile", "CSPlayerPawn", "PlantedC4" })
         {
             expected.Add($"{cls}.Origin");
@@ -143,22 +144,22 @@ public class EmittedWrappersStage2Tests
     // ── 2.1 Structural assertions on the package ──────────────────────────────
 
     /// <summary>
-    ///     Wrapper census on the 0.3.0 inheritance emit: 59 concrete EntityWrapper subclasses
-    ///     (CIncendiaryGrenade curated — our SDK#34 footnote), 13 with DECLARED properties, 46
-    ///     markers that declare nothing but now INHERIT their base's surface. The 0.1.1/0.2.0
+    ///     Wrapper census, measured at Sdk.Entities 1.2.0: 61 concrete EntityWrapper subclasses,
+    ///     16 with DECLARED properties (CBaseCSGrenade joined with ThrowStrength), 45 markers that
+    ///     declare nothing but INHERIT their base's surface. The 0.1.1/0.2.0
     ///     pin "property-carrying == non-empty bindings" died with the flat emission: under
-    ///     prefix layout a marker's binding IS its base's layout, so all 59 are non-empty
-    ///     (674 paths total).
+    ///     prefix layout a marker's binding IS its base's layout, so all 61 are non-empty
+    ///     (751 paths total).
     /// </summary>
     [Test]
-    public async Task Package_Census_SixtyOneWrappers_FifteenDeclaring_AllBindingsNonEmpty()
+    public async Task Package_Census_SixtyOneWrappers_SixteenDeclaring_AllBindingsNonEmpty()
     {
         Type[] wrappers = WrapperTypes();
         List<Type> withProperties = wrappers.Where(t => DeclaredProperties(t).Length > 0).ToList();
 
         await Assert.That(wrappers.Length).IsEqualTo(61);
-        await Assert.That(withProperties.Count).IsEqualTo(15);
-        await Assert.That(wrappers.Length - withProperties.Count).IsEqualTo(46);
+        await Assert.That(withProperties.Count).IsEqualTo(16);
+        await Assert.That(wrappers.Length - withProperties.Count).IsEqualTo(45);
 
         // Wrapper types and binding manifests are two views of one emitted set: they must
         // agree name-for-name, and under prefix layout every binding has ordinals.
@@ -170,7 +171,7 @@ public class EmittedWrappersStage2Tests
         await Assert.That(EntityWrapperRegistry.Bindings.Count(b => b.CanonicalPaths.Count == 0))
             .IsEqualTo(0);
         await Assert.That(EntityWrapperRegistry.Bindings.Sum(b => b.CanonicalPaths.Count))
-            .IsEqualTo(735);
+            .IsEqualTo(751);
     }
 
     /// <summary>
@@ -345,6 +346,10 @@ public class EmittedWrappersStage2Tests
             .IsEqualTo(typeof(int?));
         await Assert.That(typeof(CSPlayerPawn).GetProperty("Origin")!.PropertyType)
             .IsEqualTo(typeof(Vector3?));
+        await Assert.That(typeof(CSPlayerPawn).GetProperty("Flags")!.PropertyType)
+            .IsEqualTo(typeof(int?));
+        await Assert.That(typeof(BaseCSGrenade).GetProperty("ThrowStrength")!.PropertyType)
+            .IsEqualTo(typeof(float?));
         await Assert.That(typeof(CSPlayerPawn).GetProperty("Buttons")!.PropertyType)
             .IsEqualTo(typeof(ulong));
         await Assert.That(typeof(CSPlayerPawn).GetProperty("ControllerHandle")!.PropertyType)
