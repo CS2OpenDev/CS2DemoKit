@@ -3080,6 +3080,14 @@
       "note": "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
     },
     {
+      "name": "entity.pawn.entity_index",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.entity_index",
+      "v2Type": "Int",
+      "note": "The pawn\u0027s entity index. Only an order key: it changes when the slot gets a new pawn and means nothing compared across players."
+    },
+    {
       "name": "entity.pawn.equipment_value",
       "scope": "perPlayer",
       "clrType": "int",
@@ -3119,6 +3127,14 @@
       "clrType": "int",
       "v2Name": "player.health",
       "v2Type": "Int"
+    },
+    {
+      "name": "entity.pawn.is_alive",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.is_alive",
+      "v2Type": "Bool",
+      "note": "Entity liveness: life state alive and health above zero. Not \u0060player.alive\u0060, which follows events: a player who disconnects reads false here with no player_death."
     },
     {
       "name": "entity.pawn.is_scoped",

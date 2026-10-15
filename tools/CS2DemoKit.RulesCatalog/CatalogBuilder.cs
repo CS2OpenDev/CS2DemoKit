@@ -119,6 +119,13 @@ public static class CatalogBuilder
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),
+            ["entity.pawn.entity_index"] = (null,
+                "The pawn's entity index. Only an order key: it changes when the slot gets a new "
+                + "pawn and means nothing compared across players."),
+            ["entity.pawn.is_alive"] = (null,
+                "Entity liveness: life state alive and health above zero. Not `player.alive`, "
+                + "which follows events: a player who disconnects reads false here with no "
+                + "player_death."),
             ["entity.pawn.eye_pitch"] = ("degrees",
                 "CS2's convention: NEGATIVE is up. Wraps, so subtract two of these only after "
                 + "normalising the difference."),

@@ -182,6 +182,10 @@
           "markdownDescription": "\u0060player.duck_amount\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060entity.pawn.duck_amount\u0060. Read at a rule site from the frame BEFORE the triggering event. Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
         },
         {
+          "const": "player.entity_index",
+          "markdownDescription": "\u0060player.entity_index\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.entity_index\u0060. Read at a rule site from the frame BEFORE the triggering event. The pawn\u0027s entity index. Only an order key: it changes when the slot gets a new pawn and means nothing compared across players."
+        },
+        {
           "const": "player.equipment_value",
           "markdownDescription": "\u0060player.equipment_value\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.equipment_value\u0060. Read at a rule site from the frame BEFORE the triggering event."
         },
@@ -200,6 +204,10 @@
         {
           "const": "player.health",
           "markdownDescription": "\u0060player.health\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.pawn.health\u0060. Read at a rule site from the frame BEFORE the triggering event."
+        },
+        {
+          "const": "player.is_alive",
+          "markdownDescription": "\u0060player.is_alive\u0060 (type \u0060bool\u0060) - an entity read, from \u0060entity.pawn.is_alive\u0060. Read at a rule site from the frame BEFORE the triggering event. Entity liveness: life state alive and health above zero. Not \u0060player.alive\u0060, which follows events: a player who disconnects reads false here with no player_death."
         },
         {
           "const": "player.is_scoped",
