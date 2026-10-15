@@ -119,7 +119,8 @@ public static class CatalogBuilder
             ["entity.controller.coaching_team"] = (null,
                 "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a "
                 + "registered coach, 0 for everyone else. Read through the pawn's controller handle, "
-                + "so a slot with no player pawn reads no value rather than 0."),
+                + "so a slot with no player pawn reads no value, which a capture column shows as 0, "
+                + "the same as a player who is not a coach."),
             ["entity.pawn.duck_amount"] = ("fraction",
                 "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a "
                 + "threshold on it reads as \"how far into the crouch\", not \"is crouching\"."),

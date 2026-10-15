@@ -2990,7 +2990,7 @@
       "clrType": "int",
       "v2Name": "player.coaching_team",
       "v2Type": "Int",
-      "note": "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a registered coach, 0 for everyone else. Read through the pawn\u0027s controller handle, so a slot with no player pawn reads no value rather than 0."
+      "note": "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a registered coach, 0 for everyone else. Read through the pawn\u0027s controller handle, so a slot with no player pawn reads no value, which a capture column shows as 0, the same as a player who is not a coach."
     },
     {
       "name": "entity.controller.money",
