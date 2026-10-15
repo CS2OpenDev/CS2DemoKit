@@ -85,4 +85,72 @@ public class BareScanParityTests
         await Assert.That(ForwardPathParityTests.RunDigest.Render(bare)).IsEqualTo(expected);
         await Assert.That(ForwardPathParityTests.RunDigest.Render(bareAgain)).IsEqualTo(expected);
     }
+
+    // Same table name and on:, so the two sequence stats hash alike and share one node. Loaded
+    // separately, since one load rejects the duplicate table name.
+    private const string SharedSequenceRulesets = """
+        ruleset: shared_seq_a
+        for: each_player
+        stats:
+          kills:
+            count: kill
+            per: match
+        show:
+          tables:
+            kill_log:
+              per: player_event
+              on: kill
+              columns:
+                - { stat: kills, label: K }
+        ---
+        ruleset: shared_seq_b
+        for: each_player
+        stats:
+          deaths:
+            count: death
+            per: match
+        show:
+          tables:
+            kill_log:
+              per: player_event
+              on: kill
+              columns:
+                - { stat: deaths, label: D }
+        """;
+
+    /// <summary>
+    ///     Two event tables on one shared sequence node still get one row per firing each, every row
+    ///     carrying that table's own columns, on both paths.
+    /// </summary>
+    [Test]
+    public async Task BareScan_EventTablesSharingASequence_OneRowPerFiringEach()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        string[] docs = SharedSequenceRulesets.Split("---\n");
+        RuleConfigLoadResult a = YamlConfigLoader.LoadDocuments([("a.rules.yaml", docs[0])]);
+        RuleConfigLoadResult b = YamlConfigLoader.LoadDocuments([("b.rules.yaml", docs[1])]);
+        await Assert.That(string.Join("; ", [.. a.Errors, .. b.Errors])).IsEqualTo("");
+        BuildResult build = DemoAnalysis.Build(demo,
+            [.. YamlConfigLoader.LoadShippedEmbedded().Rulesets, .. a.Rulesets, .. b.Rulesets]);
+
+        AnalysisRun bare = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = false });
+        AnalysisRun snapshot = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = true });
+
+        foreach (AnalysisRun run in (AnalysisRun[])[snapshot, bare])
+        {
+            List<MetricTable> logs = run.ProjectConfiguredOutputs().Where(t => t.Name == "kill_log").ToList();
+            await Assert.That(logs.Count).IsEqualTo(2);
+            await Assert.That(logs[0].Rows.Count).IsGreaterThan(0);
+            await Assert.That(logs[1].Rows.Count).IsEqualTo(logs[0].Rows.Count);
+            foreach (MetricTable log in logs)
+            {
+                await Assert.That(log.Rows.Count(r => r.Values.Values.All(v => v is null))).IsEqualTo(0)
+                    .Because($"{log.ValueColumns.Single()} must be read on every row");
+            }
+        }
+
+        await Assert.That(ForwardPathParityTests.RunDigest.Render(bare))
+            .IsEqualTo(ForwardPathParityTests.RunDigest.Render(snapshot));
+    }
 }

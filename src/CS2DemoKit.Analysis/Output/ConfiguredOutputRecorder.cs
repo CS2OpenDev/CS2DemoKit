@@ -251,6 +251,14 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
             }
         }
 
+        // Hash-equal sequence stats share one node, so tables can share an instance. One row per
+        // firing, carrying every sharing table's columns: the projector routes rows by node.
+        if (_eventInstances.Find(i => ReferenceEquals(i.Sequence, sequence)) is { } existing)
+        {
+            existing.Columns = [.. existing.Columns, .. columns.Where(c => !existing.Columns.Contains(c))];
+            return;
+        }
+
         _eventInstances.Add(new EventInstance(sequence, [.. columns]));
     }
 
@@ -334,7 +342,7 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
     {
         public StateNode Sequence { get; } = sequence;
 
-        public StateNode[] Columns { get; } = columns;
+        public StateNode[] Columns { get; set; } = columns;
 
         public double Last { get; set; }
     }
