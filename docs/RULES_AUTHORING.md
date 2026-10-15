@@ -538,8 +538,8 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
     stops resolving does not clear the column, so after the grenade leaves the hand it keeps its
     last value. Test it together with `player.active_weapon_class`.
   - `player.coaching_team`: the side this player coaches, `2` or `3`, and `0` for everyone else.
-    It is read off the slot's controller, not through a pawn, so a coach or spectator with no
-    player pawn has a value too.
+    It is read off the slot's controller, not through a pawn, so a slot with no player pawn bound
+    has a value too.
 
 **The four angle columns wrap at 360.** `eye_pitch`, `eye_yaw`, `punch_pitch` and `punch_yaw` are
 raw `QAngle` components as the engine networks them, over **[0, 360)** — a -2 degree kick arrives

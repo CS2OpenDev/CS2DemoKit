@@ -25,7 +25,7 @@ public interface IControllerIntCellReader
 /// <summary>
 ///     A per-player <c>int</c> read of one field on the slot's <c>CCSPlayerController</c>, found by
 ///     entity index (slot + 1) and identity-checked, never through a pawn's <c>m_hController</c>.
-///     A slot whose controller has no <c>CCSPlayerPawn</c> (a coach, a spectator) still reads.
+///     A slot whose controller has no <c>CCSPlayerPawn</c> bound still reads.
 /// </summary>
 public sealed class ControllerFieldProvider
     : IPerPlayerEntityValueProvider, IPawnStateReader, IPawnIntCellReader, IControllerIntCellReader,

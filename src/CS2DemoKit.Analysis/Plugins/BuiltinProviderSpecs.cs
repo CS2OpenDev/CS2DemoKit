@@ -210,8 +210,8 @@ public static class BuiltinProviderSpecs
     ///     <see cref="ControllerFieldProvider" />. 0 for a player who is not a coach, else the side
     ///     coached (2 or 3).
     ///     <para>
-    ///         Not a pawn hop like <see cref="ControllerMoney" />: a coach fields no
-    ///         <c>CCSPlayerPawn</c>, and the pawn sweep visits nothing else.
+    ///         Not a pawn hop like <see cref="ControllerMoney" />: the pawn sweep visits only
+    ///         <c>CCSPlayerPawn</c>, and this reads every controller, pawn bound or not.
     ///     </para>
     /// </summary>
     public static ProviderSpec ControllerCoachingTeam { get; } = new(
