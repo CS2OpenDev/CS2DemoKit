@@ -109,6 +109,9 @@ internal sealed class PerPawnDeltaState
     /// </summary>
     internal int LastRowCount { get; set; }
 
+    /// <summary>Bit per slot 0..63: the slot got a pawn row on the frame being built.</summary>
+    internal ulong PawnSlotsRead { get; set; }
+
     /// <summary>The slot's row, created on first use; slots beyond 63 grow the table.</summary>
     public TypedSlotRow RowFor(int slot)
     {

@@ -179,7 +179,7 @@
         },
         {
           "const": "player.coaching_team",
-          "markdownDescription": "\u0060player.coaching_team\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.controller.coaching_team\u0060. Read at a rule site from the frame BEFORE the triggering event. The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a registered coach, 0 for everyone else. Read through the pawn\u0027s controller handle, so a slot with no player pawn reads no value, which a capture column shows as 0, the same as a player who is not a coach."
+          "markdownDescription": "\u0060player.coaching_team\u0060 (type \u0060int\u0060) - an entity read, from \u0060entity.controller.coaching_team\u0060. Read at a rule site from the frame BEFORE the triggering event. The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a registered coach, 0 for everyone else. Read off the slot\u0027s controller, not through a pawn, so a coach or spectator with no player pawn reads it too."
         },
         {
           "const": "player.duck_amount",

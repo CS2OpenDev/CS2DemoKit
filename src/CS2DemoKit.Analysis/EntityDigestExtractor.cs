@@ -105,6 +105,7 @@ internal static class EntityDigestExtractor
 
         if (delta.Layout.Count > 0)
         {
+            delta.PawnSlotsRead = 0;
             if (pawns is not null)
             {
                 pawns.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
@@ -114,6 +115,11 @@ internal static class EntityDigestExtractor
             {
                 PawnLookup.ForEachLivePawn(tracker, new PawnSweep(tracker, delta, d),
                     static (sweep, slot, pawn) => ReadPawn(sweep, slot, -1, pawn));
+            }
+
+            if (delta.Layout.ControllerColumns > 0)
+            {
+                ReadPawnlessControllers(tracker, delta, d);
             }
 
             delta.LastRowCount = d.PerPawn.Count;
@@ -252,6 +258,15 @@ internal static class EntityDigestExtractor
         DigestColumnLayout layout = delta.Layout;
         PawnReadContext context = delta.Context;
         context.Bind(sweep.Tracker, pawn, entityIndex);
+        EntityState? controller = null;
+        if (slot is >= 0 and < MaxSlots)
+        {
+            delta.PawnSlotsRead |= 1UL << slot;
+            if (layout.ControllerColumns > 0)
+            {
+                controller = ControllerFieldProvider.ResolveController(sweep.Tracker, slot);
+            }
+        }
 
         TypedSlotRow row = delta.RowFor(slot);
         ulong[] present = delta.PresentScratch;
@@ -267,7 +282,17 @@ internal static class EntityDigestExtractor
             {
                 case PawnCellKind.Int:
                 case PawnCellKind.Bool:
-                    hasValue = ReadInt(layout, p, context, out int intValue);
+                    int intValue;
+                    if (layout.ControllerReaders[p] is { } controllerReader)
+                    {
+                        intValue = 0;
+                        hasValue = controller is not null && controllerReader.TryReadInt(controller, out intValue);
+                    }
+                    else
+                    {
+                        hasValue = ReadInt(layout, p, context, out intValue);
+                    }
+
                     changed = delta.RecordInt(row, p, hasValue, intValue);
                     break;
                 case PawnCellKind.Float:
@@ -296,13 +321,59 @@ internal static class EntityDigestExtractor
             return;
         }
 
-        EntityFrameDigest digest = sweep.Digest;
+        AppendRow(sweep.Digest, delta, slot, row, present);
+    }
+
+    // A slot with a controller and no pawn row this frame gets a row of its controller columns
+    // alone. Its pawn columns are left unrecorded, so they keep their last values as before.
+    private static void ReadPawnlessControllers(EntityTracker tracker, PerPawnDeltaState delta, EntityFrameDigest digest)
+    {
+        DigestColumnLayout layout = delta.Layout;
+        ulong[] present = delta.PresentScratch;
+        for (int slot = 0; slot < MaxSlots; slot++)
+        {
+            if ((delta.PawnSlotsRead & (1UL << slot)) != 0
+                || ControllerFieldProvider.ResolveController(tracker, slot) is not { } controller)
+            {
+                continue;
+            }
+
+            TypedSlotRow row = delta.RowFor(slot);
+            Array.Clear(present);
+            bool anyChanged = false;
+            for (int p = 0; p < layout.Count; p++)
+            {
+                if (layout.ControllerReaders[p] is not { } reader)
+                {
+                    continue;
+                }
+
+                bool hasValue = reader.TryReadInt(controller, out int value);
+                if (delta.RecordInt(row, p, hasValue, value))
+                {
+                    anyChanged = true;
+                    if (hasValue)
+                    {
+                        present[p >> 6] |= 1UL << (p & 63);
+                    }
+                }
+            }
+
+            if (anyChanged)
+            {
+                AppendRow(digest, delta, slot, row, present);
+            }
+        }
+    }
+
+    private static void AppendRow(EntityFrameDigest digest, PerPawnDeltaState delta, int slot, TypedSlotRow row, ulong[] present)
+    {
         if (ReferenceEquals(digest.PerPawn, PerPawnColumns.Empty))
         {
             int capacity = Math.Max(PerPawnColumns.InitialCapacity, delta.LastRowCount);
             digest.PerPawn = delta.Storage is { } pool
-                ? pool.RentColumns(layout, capacity)
-                : new PerPawnColumns(layout, capacity);
+                ? pool.RentColumns(delta.Layout, capacity)
+                : new PerPawnColumns(delta.Layout, capacity);
         }
 
         digest.PerPawn.AppendRow(slot, row, present);

@@ -259,14 +259,14 @@ public class TeamBindingViewTests
 
     /// <summary>
     ///     <c>entity.controller.coaching_team</c> through a <see cref="FrameView" /> on the sample, which
-    ///     carries no coach: a slot reads a value only while its pawn is controller-bound, the value is
-    ///     always 0, and on the last frame all ten players on a side read a present 0. A capture cell
-    ///     reads 0 for "no value" as well, so the presence check has to go through the observer.
+    ///     carries no coach: every value read is 0, and on the last frame every slot with a
+    ///     <c>CCSPlayerController</c> reads a present 0, including slots with no player pawn bound.
+    ///     A capture cell reads 0 for "no value" as well, so the presence check goes through the observer.
     /// </summary>
     [Test]
     [Arguments(1)]
     [Arguments(null)]
-    public async Task CoachingTeam_ReadsAPresentZero_WhileThePawnIsBound(int? maxDegreeOfParallelism)
+    public async Task CoachingTeam_ReadsEveryController_WithOrWithoutAPawn(int? maxDegreeOfParallelism)
     {
         ParsedDemo demo = RoundFactsTestSupport.Sample();
         CoachRecorder observer = new();
@@ -278,15 +278,25 @@ public class TeamBindingViewTests
             FrameObserver = observer
         });
 
-        Console.WriteLine($"[coach] valued slot-frames {observer.Valued}");
+        Dictionary<int, int> controllers = LastFrameControllers(demo);
+        int[] pawnless = controllers.Keys.Where(slot => !observer.LastBound[slot]).Order().ToArray();
+        Console.WriteLine($"[coach] valued slot-frames {observer.Valued}, pawnless valued {observer.PawnlessValued}, "
+                          + $"controllers {string.Join(",", controllers.Keys.Order())}, pawnless at the end {string.Join(",", pawnless)}");
         await Assert.That(observer.First).IsNull().Because(observer.First ?? "");
-        await Assert.That(LastFrameCoaches(demo)).IsEmpty();
-        foreach (int slot in demo.Players.Values.Where(p => p.Team is 2 or 3 && !p.IsHltv).Select(p => p.Slot))
+        await Assert.That(controllers.Values.Where(team => team != 0)).IsEmpty();
+        foreach (int slot in controllers.Keys)
         {
             await Assert.That(observer.Last[slot]).IsEqualTo(0).Because($"slot {slot} on the last frame");
         }
 
-        await Assert.That(demo.Players.Values.Count(p => p.Team is 2 or 3 && !p.IsHltv)).IsEqualTo(10);
+        foreach (int slot in demo.Players.Values.Where(p => p.Team is 2 or 3 && !p.IsHltv).Select(p => p.Slot))
+        {
+            await Assert.That(controllers.ContainsKey(slot)).IsTrue().Because($"player slot {slot}");
+        }
+
+        // A pawn-rooted read never reaches these, which is the coach's case.
+        await Assert.That(pawnless).IsNotEmpty();
+        await Assert.That(observer.PawnlessValued).IsGreaterThan(0);
     }
 
     private const string CoachingTeam = "entity.controller.coaching_team";
@@ -295,8 +305,10 @@ public class TeamBindingViewTests
     private sealed class CoachRecorder : IFrameObserver
     {
         public readonly int?[] Last = new int?[64];
+        public readonly bool[] LastBound = new bool[64];
         public string? First;
         public int Valued;
+        public int PawnlessValued;
 
         public void OnFrame(FrameView frame)
         {
@@ -307,13 +319,15 @@ public class TeamBindingViewTests
                 bool has = frame.TryReadInt(coach, slot, out int team);
                 bool bound = frame.TryReadInt(index, slot, out _);
                 Last[slot] = has ? team : null;
-                if (has && (!bound || team != 0))
+                LastBound[slot] = bound;
+                if (has && team != 0)
                 {
                     First = $"frame {frame.FrameIndex} slot {slot}: coaching_team {team}, pawn bound {bound}";
                     return;
                 }
 
                 Valued += has ? 1 : 0;
+                PawnlessValued += has && !bound ? 1 : 0;
             }
         }
 
@@ -345,21 +359,25 @@ public class TeamBindingViewTests
     }
 
     // Slot to coached side, off the controllers at the last frame, the way the host's library read takes it.
-    private static Dictionary<int, int> LastFrameCoaches(ParsedDemo demo)
+    private static Dictionary<int, int> LastFrameCoaches(ParsedDemo demo) =>
+        LastFrameControllers(demo).Where(kv => kv.Value != 0 && demo.Players.ContainsKey(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+    // Every slot whose entity index slot + 1 holds a CCSPlayerController on the last frame, to its m_iCoachingTeam.
+    private static Dictionary<int, int> LastFrameControllers(ParsedDemo demo)
     {
         EntityTracker tracker = new() { StoreClassFilter = new HashSet<string>(StringComparer.Ordinal) { "CCSPlayerController" } };
         tracker.ReplayToIndex(demo.Frames.Count - 1, demo.Frames);
-        Dictionary<int, int> coaches = [];
-        foreach (int slot in demo.Players.Keys)
+        Dictionary<int, int> controllers = [];
+        for (int slot = 0; slot < 64; slot++)
         {
             if (tracker.CurrentEntities[slot + 1] is { } controller
-                && controller.ClassName == "CCSPlayerController"
-                && controller.TryGet<int>("m_iCoachingTeam") is int team and not 0)
+                && controller.ClassName == "CCSPlayerController")
             {
-                coaches[slot] = team;
+                controllers[slot] = controller.TryGet<int>("m_iCoachingTeam") ?? 0;
             }
         }
 
-        return coaches;
+        return controllers;
     }
 }

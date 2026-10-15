@@ -194,18 +194,25 @@ public class ProviderMetadataTests
         await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
     }
 
-    /// <summary>Coaching team: an int two-hop read through the pawn's controller handle to <c>m_iCoachingTeam</c>.</summary>
+    /// <summary>Coaching team: a direct int read of <c>m_iCoachingTeam</c> on the slot's controller, no pawn hop.</summary>
     [Test]
     public async Task ControllerCoachingTeamProvider_ExposesExpectedMetadata()
     {
-        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.ControllerCoachingTeam);
+        ControllerFieldProvider provider = new(BuiltinProviderSpecs.ControllerCoachingTeam);
         await Assert.That(provider.Name).IsEqualTo("entity.controller.coaching_team");
-        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
-        await Assert.That(provider.FieldName).IsEqualTo("m_hController");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerController");
+        await Assert.That(provider.FieldName).IsEqualTo("m_iCoachingTeam");
         await Assert.That(provider.ValueType).IsEqualTo(typeof(int));
-        await Assert.That(provider.Spec.ViaHandleToField!.TargetField).IsEqualTo("m_iCoachingTeam");
-        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
-        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+        await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+        await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
+    }
+
+    /// <summary>A controller read refuses a spec on any other class, or one with a hop.</summary>
+    [Test]
+    public void ControllerFieldProvider_RefusesAPawnSpec()
+    {
+        Assert.Throws<ArgumentException>(() => _ = new ControllerFieldProvider(BuiltinProviderSpecs.ControllerMoney));
+        Assert.Throws<ArgumentException>(() => _ = new ControllerFieldProvider(BuiltinProviderSpecs.PawnHealth));
     }
 
     /// <summary>

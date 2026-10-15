@@ -206,16 +206,17 @@ public static class BuiltinProviderSpecs
                                                                 + SchemaNames.CCSPlayerControllerInGameMoneyServices.Account));
 
     /// <summary>
-    ///     entity.controller.coaching_team: <c>m_iCoachingTeam</c> on the controller, reached through
-    ///     the pawn's <c>m_hController</c> like <see cref="ControllerMoney" />. 0 for a player who is
-    ///     not a coach, else the side coached (2 or 3). Only a slot with a controller-bound pawn reads.
+    ///     entity.controller.coaching_team: <c>m_iCoachingTeam</c> on the slot's controller, read by
+    ///     <see cref="ControllerFieldProvider" />. 0 for a player who is not a coach, else the side
+    ///     coached (2 or 3).
+    ///     <para>
+    ///         Not a pawn hop like <see cref="ControllerMoney" />: a coach fields no
+    ///         <c>CCSPlayerPawn</c>, and the pawn sweep visits nothing else.
+    ///     </para>
     /// </summary>
     public static ProviderSpec ControllerCoachingTeam { get; } = new(
-        "entity.controller.coaching_team", "CCSPlayerPawn",
-        "", typeof(int),
-        ViaHandleToField: new HandleFieldHop(
-            SchemaNames.CBasePlayerPawn.Controller,
-            SchemaNames.CCSPlayerController.CoachingTeam));
+        "entity.controller.coaching_team", ControllerFieldProvider.ControllerClass,
+        SchemaNames.CCSPlayerController.CoachingTeam, typeof(int));
 
     /// <summary>
     ///     entity.pawn.is_walking: the shift-to-walk toggle, <c>m_bIsWalking</c>. Changes only on a
@@ -387,7 +388,7 @@ public static class BuiltinProviderSpecs
         PawnFlagBitProvider.Ducking(),
         new GenericPerPlayerFieldProvider(WeaponThrowStrength),
         // Same position in CreateDefault, before the position trio.
-        new GenericPerPlayerFieldProvider(ControllerCoachingTeam),
+        new ControllerFieldProvider(ControllerCoachingTeam),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
         // parity gate rather than a hand-written-vs-spec comparison. The gate's population is
