@@ -805,10 +805,12 @@ matchmaking benchmark demos, in every frame that carries one but the first full 
 frame N reads frame N's folded cells: `round_decided`, the `round_freeze_end` synthesized for a
 round decided in freeze time, cadence steps and the observer. Through 0.13.0 a `player.*` read on
 `round_decided` or on that synthesized freeze end saw frame N-1, and so did the freeze-end economy
-sample (`round.team.equipment`, `round.team.money`) on it; those can move. No shipped ruleset reads
-`player.*` on either. The synthesized entity events (`projectile_created`, `projectile_removed`,
-`molotov_thrown`, `enemy_spotted`) still dispatch before the fold, and `player.cmd.*` keeps reading
-the frame's commands at a wire event; `RULES_AUTHORING.md` lists both as exceptions.
+sample (the `round.team` and `round.enemies` `equipment` and `money` reads) on it; those can
+move. No shipped ruleset reads `player.*` on either, but `round_facts` captures its freeze-end
+`equipment`, `money` and `enemy_equipment` columns there. The synthesized entity events
+(`projectile_created`, `projectile_removed`, `molotov_thrown`, `enemy_spotted`) still dispatch
+before the fold, and `player.cmd.*` keeps reading the frame's commands at a wire event;
+`RULES_AUTHORING.md` lists both as exceptions.
 
 The decode-compromise latch sets at the same digest. A caller that polls `AdvanceAndPollAt` without
 calling `CompleteFrame` gets the fold at the next poll, as before. `GetPreFrameValue` documents both

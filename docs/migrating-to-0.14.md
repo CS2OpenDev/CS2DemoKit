@@ -76,12 +76,15 @@ frame N+1; it now folds it during frame N, from the new `CompleteFrame`, which t
 right after the frame's wire messages. A game event or net message from the demo reads what it read
 before: the state from before its own frame's entity update, which is the wire's order. Everything
 after the fold reads frame N's state: `round_decided`, the freeze end synthesized beside it, cadence
-steps and the frame observer. Through 0.13.0 a `player.*` read on `round_decided` saw the previous
-frame's state. No shipped ruleset reads one there, so no shipped number moves. The synthesized
-entity events (`projectile_created`, `projectile_removed`, `molotov_thrown`, `enemy_spotted`) still
-dispatch before the fold. The decode-compromise latch sets at the same digest, and a caller that
-walks the scanner through `AdvanceAndPollAt` without calling `CompleteFrame` still gets the fold at
-its next poll.
+steps and the frame observer. Through 0.13.0 a `player.*` read on `round_decided` or on that
+synthesized freeze end saw the previous frame's state, and so did the freeze-end economy sample
+(the `round.team` and `round.enemies` `equipment` and `money` reads) on it. No shipped ruleset
+reads `player.*` there, but `round_facts` captures its `equipment`, `money` and `enemy_equipment`
+columns on `raw.round_freeze_end`, so on a round decided in freeze time (a surrender vote) those
+can move. The synthesized entity events (`projectile_created`, `projectile_removed`,
+`molotov_thrown`, `enemy_spotted`) still dispatch before the fold. The decode-compromise latch sets
+at the same digest, and a caller that walks the scanner through `AdvanceAndPollAt` without calling
+`CompleteFrame` still gets the fold at its next poll.
 
 **A new per-player `entity.pawn.is_walking` column moves `pos_x`, `pos_y` and `pos_z` by one in the
 per-pawn digest**, the same shape the 0.13.0 `entity.controller.money` column caused for every
