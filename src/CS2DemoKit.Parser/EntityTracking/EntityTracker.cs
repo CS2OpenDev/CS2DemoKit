@@ -646,6 +646,7 @@ public sealed class EntityTracker
         _ibUserDataSizeBits = template._ibUserDataSizeBits;
         _ibUsingVarintBitcounts = template._ibUsingVarintBitcounts;
         _ibFlags = template._ibFlags;
+        _lastInstanceBaselineFullPacket = null;
 
         // Position-dependent, so copied rather than shared: a later full packet moves them.
         _classIdToName.Clear();
@@ -675,7 +676,16 @@ public sealed class EntityTracker
     ///     created, then seed state from a <c>DEM_FullPacket</c> snapshot via
     ///     <see cref="ProcessFullPacketCheckpoint" />.
     /// </summary>
-    public void ResetEntitiesKeepSchema() => CurrentEntities.Clear();
+    public void ResetEntitiesKeepSchema()
+    {
+        CurrentEntities.Clear();
+
+        // A re-primed tracker must not resync from a full packet a previous prime walked past.
+        _lastInstanceBaselineFullPacket = null;
+    }
+
+    /// <summary>The full packet a resync would reload instance baselines from.</summary>
+    internal DemoFrame? InstanceBaselineFullPacketForTest => _lastInstanceBaselineFullPacket;
 
     /// <summary>
     ///     Seeds entity state from a <c>DEM_FullPacket</c>'s bundled snapshot — its
@@ -757,6 +767,11 @@ public sealed class EntityTracker
                     }
                 }
             }
+        }
+
+        if (loaded)
+        {
+            _lastInstanceBaselineFullPacket = fullPacketFrame;
         }
 
         return loaded;
@@ -2063,6 +2078,7 @@ public sealed class EntityTracker
             survivors[index] = (entity.ClassName, entity.Serial);
         }
 
+        // Not ResetEntitiesKeepSchema: that drops the baseline source this resync reloads.
         CurrentEntities.Clear();
         if (_lastInstanceBaselineFullPacket is { } baselines)
         {
