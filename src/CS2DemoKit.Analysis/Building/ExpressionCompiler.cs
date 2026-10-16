@@ -1395,6 +1395,14 @@ public static class ExpressionCompiler
                             return Expression.Call(idxConst, method, slotConst);
                         }
 
+                        // A value selector or node expression has no index bound; the template's
+                        // PlayerTeamNode reads the same index.
+                        if (b.EnrichmentNodes?.TryGetValue("player.team", out object? teamNode) == true
+                            && teamNode.GetType().GetProperty("Value", BindingFlags.Public | BindingFlags.Instance) is { } teamValue)
+                        {
+                            return Expression.Property(Expression.Constant(teamNode), teamValue);
+                        }
+
                         if (b.PlayerTeam.HasValue)
                         {
                             return Expression.Constant(b.PlayerTeam.Value);

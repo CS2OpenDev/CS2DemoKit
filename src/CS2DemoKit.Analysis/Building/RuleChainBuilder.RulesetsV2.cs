@@ -1399,6 +1399,7 @@ public sealed partial class RuleChainBuilder
             // pass below because it needs a written node + the entity digest.
             InjectB6AliveAggregates(slot, playerName, localLookup, nodes, scope);
             InjectB6EconomyAggregates(slot, playerName, localLookup, nodes, scope);
+            InjectPlayerTeam(slot, playerName, localLookup, nodes, scope);
             provenance?.Stamp(nodes, 0, RuleGraphNodeOrigin.Context);
 
             // Gap G1 (event-gated per-player aggregate reads): expose THIS slot's per-player context
@@ -2960,6 +2961,7 @@ public sealed partial class RuleChainBuilder
             Expose(member.RuleId);
         }
 
+        Expose(PlayerTeamPath);
         Expose(B6RuleIds.TeamEquipment);
         Expose(B6RuleIds.EnemiesEquipment);
         Expose(B6RuleIds.TeamMoney);
@@ -3006,6 +3008,25 @@ public sealed partial class RuleChainBuilder
             new RoundClutchFacetNode(B6RuleIds.AliveInClutch, index, slot, playerName));
         Add(B6RuleIds.ClutchSize,
             new RoundClutchSizeNode(B6RuleIds.ClutchSize, index, slot, playerName));
+    }
+
+    // The localLookup key of the subject's PlayerTeamNode: the v2 path itself, so ResolveWhenRef, the
+    // compute remap and the declared-read resolution find it without a context-table entry.
+    private const string PlayerTeamPath = "player.team";
+
+    private void InjectPlayerTeam(int slot, string? playerName,
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
+    {
+        if (_playerContextIndex is not { } index)
+        {
+            return;
+        }
+
+        PlayerTeamNode node = new("player_team", index, slot, playerName);
+        localLookup[PlayerTeamPath] = node;
+        nodes.Add(node);
+        wiring.AddEdge(new PlayerTeamNodeEdge(localLookup["root"], node, false), GraphEdgeKind.PlayerState);
+        wiring.AddEdge(new PlayerTeamNodeEdge(localLookup["root"], node, true), GraphEdgeKind.PlayerState);
     }
 
     /// <summary>

@@ -118,6 +118,13 @@ when the demo has none for the slot. JSON rows gain a key; a CSV reader that ind
 position shifts every column after `player_name` by one. Join players by `steam_id` rather than slot.
 The built-in tables (`player_game_stats`, `player_round_stats` and the rest) are unchanged.
 
+**`player.team` reads at every site.** Through 0.13.0 it lowered only in a `where:` or trigger
+condition. As a `capture:`, `sum:` or bucket `value:` it excluded its ruleset with
+`Unknown player member: team`, and in a `while:`, a `flag: when:` or a `compute:` with "does not
+reference a sibling stat/context". Each now reads the player's live team: the last `player_team`
+event for the slot, seeded from the controller's `m_iTeamNum` before the first one. A ruleset that
+was excluded for this builds now, and its tables gain rows.
+
 **Sequential decode resyncs after a dropped snapshot.** Some GOTV recordings drop one tick's
 `svc_PacketEntities` (the seven tournament demos in the corpus each drop the `cs_intermission`
 tick's). Through 0.13.0 `EntityTracker` kept applying later deltas to the state from before the

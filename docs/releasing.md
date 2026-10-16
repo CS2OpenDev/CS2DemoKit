@@ -1029,6 +1029,27 @@ unverified. The rules-output goldens
 do not move. `eval_ms`, same build lane off against on: median +1.3% over 5 demos, inside the
 step-0 noise floor (max 4.2%). Within noise (`docs/perf/baseline.md` "R7 part 2a and R8 coach").
 
+### `player.team` lowers at every site (0.14.0)
+
+`player.team` resolved only in an event condition, through `PlayerContextIndex.GetCurrentTeam`. A
+value selector (`capture:` in every `keep:` mode, `sum:`, a bucket `value:`) had no team binding and
+threw `Unknown player member: team`; `while:`, `flag: when:` and `compute:` resolve against graph
+nodes and found none. Every `for: each_player` template now carries an internal `PlayerTeamNode`
+per player that reads the same index, and two edges that mark it written on `player_team` and on the
+synthesized `player_team_observed`, so a `when:` over it recomputes on the change. It is excluded
+from snapshots and from the match-restart restore. A player template gains those two edges
+(`ShippedGotv_DescriptorCounts`: 174 to 176). The rules-output goldens and `StatParityTests` do not
+move.
+
+The index needs no per-frame read. A throwaway probe over the 5 matchmaking and 7 tournament demos
+on hand and the 15 under `demos/` compared the event-fed team with the controller's `m_iTeamNum` on
+every frame: every 2 to 3 and 3 to 2 change of a controller came with a `player_team` for that slot
+in the same frame, and no slot on 2 or 3 differed on any frame. That is the halftime swap on all 27
+and the overtime swap on the three of the 15 that reach overtime (20 changes each). Disconnects (up to
+10 per demo) change no team. A player's first team has no event on matchmaking demos; the existing
+`player_team_observed` seed covers it. A coach, a spectator or CSTV (controller team 0 or 1) never
+gets a `player_team` to 2 or 3 and is not on a side either way.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
