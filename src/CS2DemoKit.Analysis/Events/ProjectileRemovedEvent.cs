@@ -31,6 +31,11 @@ namespace CS2DemoKit.Analysis.Events;
 /// <param name="Y">World Y, as <paramref name="X" />.</param>
 /// <param name="Z">World Z, as <paramref name="X" />.</param>
 /// <param name="Bounces"><c>m_nBounces</c> as last seen, or 0 when it was never networked.</param>
+/// <param name="FirstSeenTick">
+///     The frame-clock tick the projectile first appeared on, carried here too so a projectile
+///     whose thrower never resolved, and so never fired <see cref="ProjectileCreatedEvent" />, still
+///     reports its spawn and flight time.
+/// </param>
 public sealed record ProjectileRemovedEvent(
     int FrameNumber,
     int ServerTick,
@@ -42,7 +47,8 @@ public sealed record ProjectileRemovedEvent(
     float X,
     float Y,
     float Z,
-    int Bounces)
+    int Bounces,
+    int FirstSeenTick)
     : GameEvent("projectile_removed", -1, FrameNumber, ServerTick, GameTick)
 {
     /// <summary>
@@ -56,6 +62,6 @@ public sealed record ProjectileRemovedEvent(
     [
         F("PlayerSlot", PlayerSlot), F("EntityIndex", EntityIndex), F("Serial", Serial),
         F("ClassName", ClassName), F("Grenade", Grenade), F("X", X), F("Y", Y), F("Z", Z),
-        F("Bounces", Bounces)
+        F("Bounces", Bounces), F("FirstSeenTick", FirstSeenTick)
     ];
 }

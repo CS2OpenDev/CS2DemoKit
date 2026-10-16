@@ -67,7 +67,11 @@ public sealed class CatalogScopeAdapter
     ///     held from its first resolution, <c>pos_*</c> the live position, <c>initial_*</c> where it
     ///     left the hand and <c>velocity_*</c> the release velocity. A position component reads NaN
     ///     while the position is unreadable; <c>is_incendiary</c> reads false off any class but a molotov;
-    ///     <c>explode_effect_tick</c> reads 0 until the grenade detonates, and when unseen.
+    ///     <c>explode_effect_tick</c> reads 0 until the grenade detonates, and when unseen;
+    ///     <c>first_seen_tick</c> is the frame-clock tick the projectile appeared on, which is the
+    ///     created tick unless <c>projectile_created</c> waited for the thrower;
+    ///     <c>smoke_detonation_*</c> is a smoke's <c>m_vSmokeDetonationPos</c>, NaN until it pops and
+    ///     on every other class.
     /// </summary>
     public static IReadOnlyList<(string Member, RulesType Type)> ProjectileMembers { get; } =
     [
@@ -87,7 +91,11 @@ public sealed class CatalogScopeAdapter
         ("velocity_y", RulesType.Float),
         ("velocity_z", RulesType.Float),
         ("bounces", RulesType.Int),
+        ("first_seen_tick", RulesType.Int),
         ("smoke_effect_tick", RulesType.Int),
+        ("smoke_detonation_x", RulesType.Float),
+        ("smoke_detonation_y", RulesType.Float),
+        ("smoke_detonation_z", RulesType.Float),
         ("is_incendiary", RulesType.Bool),
         ("explode_effect_tick", RulesType.Int)
     ];

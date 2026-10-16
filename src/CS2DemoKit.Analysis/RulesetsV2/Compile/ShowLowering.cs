@@ -59,13 +59,14 @@ public static class ShowLowering
 
     /// <summary>
     ///     One row per grenade projectile: its entity index and serial, the thrower (slot, name,
-    ///     <c>steam_id</c>, the projectile's team), the round it was removed in, and both lifetime
-    ///     ticks on the frame clock.
+    ///     <c>steam_id</c>, the projectile's team), the round it was removed in, the three lifetime
+    ///     ticks on the frame clock (first seen, created, removed) and whether it was removed before
+    ///     the run ended.
     /// </summary>
     public static IReadOnlyList<string> PerProjectileDimensions { get; } =
     [
-        "match_id", "map", "round_number", "created_tick", "removed_tick", "entity_index", "serial",
-        "player_slot", "player_name", "steam_id", "team"
+        "match_id", "map", "round_number", "first_seen_tick", "created_tick", "removed_tick", "removed",
+        "entity_index", "serial", "player_slot", "player_name", "steam_id", "team"
     ];
 
     /// <summary>One row per (player, firing): <c>tick</c> is on the frame clock.</summary>

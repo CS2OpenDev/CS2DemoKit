@@ -983,8 +983,9 @@ nodes into a `ProjectileRecord` and releases its edges; an instance still live a
 is recorded then. Instance nodes never join the snapshot node list, so a snapshot row does not widen
 per grenade, and both paths project the `per: projectile` table from the same records, with
 `created_tick` and `removed_tick` in `ColumnClocks`. Row dimensions: `match_id`, `map`,
-`round_number`, `created_tick`, `removed_tick`, `entity_index`, `serial`, `player_slot`,
-`player_name`, `steam_id`, `team`.
+`round_number`, `first_seen_tick`, `created_tick`, `removed_tick`, `removed`, `entity_index`,
+`serial`, `player_slot`, `player_name`, `steam_id`, `team` (the spawn and removed columns are
+below).
 
 `ExpressionCompiler.CompileEventValueSelector` now reads a bool-typed expression captured into a
 numeric node as 1 or 0; before, the build threw on the missing coercion. No shipped ruleset uses the
@@ -1122,6 +1123,25 @@ to the end with no entity created twice; `InstanceBaselineSourceTests` pins the 
 re-primed chunk worker resyncs from; and
 `DemoParserTests.EntityTracker_FuriaMirage_NoPhantomGameRulesProxyCreations` now asserts exactly
 one `CCSGameRulesProxy` creation, demofile-net's count.
+
+### Projectile rows carry the spawn, the smoke cloud and whether they were removed (0.14.0)
+
+`ProjectileCreatedEvent` and `ProjectileRemovedEvent` gain a trailing positional `FirstSeenTick`:
+the frame-clock tick the projectile first appeared on, which is the created tick unless the event
+waited for the thrower, and which the removed event carries for a projectile that never fired
+created. The catalog gains the field on both events. `ProjectileRecord` gains `FirstSeenTick`
+between `Team` and `CreatedTick`, and `ProjectileNodeTemplate`'s factory and `Materialize` take the
+tick after the row; each is a positional change, so a caller constructing one stops compiling.
+`CatalogScopeAdapter.ProjectileMembers` gains `first_seen_tick` (int) and `smoke_detonation_x`,
+`_y`, `_z` (float, `m_vSmokeDetonationPos`, NaN until a smoke pops and on every other class).
+`ShowLowering.PerProjectileDimensions` gains `first_seen_tick` (frame clock, in `ColumnClocks`) and
+`removed` (bool); a consumer that read the dimension list positionally moves. A capture of
+`projectile.first_seen_tick` is classified on the frame clock and one of `explode_effect_tick` or
+`smoke_effect_tick` on the server clock, where before no projectile member carried a clock.
+
+No shipped ruleset uses the scope, so no hash, digest or fixture moves. `ProjectileScopeTests`
+pins `first_seen_tick` against `ProjectileSampler`'s first sample, the `removed` flag against the
+removed event, and a detonation position on the sample's popped smokes.
 
 ## Credentials
 

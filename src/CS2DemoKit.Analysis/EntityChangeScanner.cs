@@ -115,6 +115,9 @@ public sealed class EntityChangeScanner
     private readonly bool _emitProjectileEvents;
     private readonly Dictionary<(int Index, int Serial), ProjectileRow> _pendingProjectiles = [];
 
+    // The frame-clock tick each live projectile first appeared on, for the events' FirstSeenTick.
+    private readonly Dictionary<(int Index, int Serial), int> _projectileFirstSeen = [];
+
     // The singleton providers in _tracked order — the digest's Singletons[] aligns with these. Held
     // separately so the shared EntityDigestExtractor (used by the pipelined producer too) reads the
     // same providers in the same order.
@@ -475,6 +478,7 @@ public sealed class EntityChangeScanner
         _seenMolotovs.Clear();
         Projectiles.Reset();
         _pendingProjectiles.Clear();
+        _projectileFirstSeen.Clear();
         _postFrame.Clear();
         _lastWinStatus = -1;
         _preFrameSnapshotFrozen = false;
@@ -1448,15 +1452,19 @@ public sealed class EntityChangeScanner
     {
         foreach (ProjectileRow row in Projectiles.Removed)
         {
-            _pendingProjectiles.Remove((row.EntityIndex, row.Serial));
+            (int EntityIndex, int Serial) key = (row.EntityIndex, row.Serial);
+            _pendingProjectiles.Remove(key);
+            _projectileFirstSeen.Remove(key, out int firstSeen);
             (float x, float y, float z) = Coordinates(row);
             _scratch.Add(GameEventMessage.ForSynthesizedEvent(new ProjectileRemovedEvent(
-                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z, row.Bounces)));
+                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z, row.Bounces,
+                firstSeen)));
         }
 
         foreach (ProjectileRow row in Projectiles.Created)
         {
             _pendingProjectiles.Add((row.EntityIndex, row.Serial), row);
+            _projectileFirstSeen[(row.EntityIndex, row.Serial)] = tick;
         }
 
         if (_pendingProjectiles.Count == 0)
@@ -1473,7 +1481,8 @@ public sealed class EntityChangeScanner
 
             (float x, float y, float z) = Coordinates(first);
             _scratch.Add(GameEventMessage.ForSynthesizedEvent(new ProjectileCreatedEvent(
-                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z)));
+                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z,
+                _projectileFirstSeen[(row.EntityIndex, row.Serial)])));
         }
     }
 

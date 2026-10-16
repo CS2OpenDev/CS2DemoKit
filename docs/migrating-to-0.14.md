@@ -267,9 +267,11 @@ stats:
 A ruleset can be `for: each_projectile`: one instance per grenade, from `projectile_created` to
 `projectile_removed`, with `projectile.*` reading the grenade's row, `thrower.*` the thrower's
 per-player values, and a `per: projectile` table giving one row per throw, recorded as the grenade
-is removed, on either path, with `created_tick` and `removed_tick` on the frame clock and the
+is removed, on either path, with `first_seen_tick` (the spawn), `created_tick` and `removed_tick`
+on the frame clock, `removed` (false for a grenade still live at the end of the demo) and the
 thrower's `steam_id`. A host that walked `ProjectileSampler` beside a run to build a throw log can
-declare the row instead. `AnalysisRun.Projectiles` carries the same rows as `ProjectileRecord`s for
+declare the row instead, anchoring its windows on `first_seen_tick` as the sampler's first frame.
+`projectile.smoke_detonation_x` / `_y` / `_z` is where a smoke popped. `AnalysisRun.Projectiles` carries the same rows as `ProjectileRecord`s for
 a host that reads them without a table. See
 [`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-grenade-stats-for-each_projectile).
 

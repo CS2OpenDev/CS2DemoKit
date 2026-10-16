@@ -136,7 +136,8 @@ for all five grenades, bound to the thrower. Their facets are `class` (`smoke`, 
 `flash` or `decoy`; an incendiary is a `molotov`), `x`, `y` and `z`, and `projectile_landed` adds
 `bounces`. Both are synthesized from entity state, so `event.tick` is the frame clock. A throw fires
 on the first frame its thrower resolves, which for a molotov is the frame `molotov` fires, and its
-position is where the projectile was first seen. A projectile lands on the first frame it is gone:
+position is where the projectile was first seen; `event.FirstSeenTick` under either view is the
+frame-clock tick it was first seen on, the spawn. A projectile lands on the first frame it is gone:
 right after the burst for an HE, a flash or a molotov, but only when the cloud or the sound ends for
 a smoke or a decoy. A projectile whose thrower never resolves never fires `projectile_thrown`, and
 its `projectile_landed` binds to nobody. `x`, `y` and `z` read NaN when the position was not
@@ -812,8 +813,12 @@ and the instance is released. A grenade still in the air when the demo ends gets
   class), `thrower` (the slot, held from its first resolution), `team`, `entity_index`, `serial`,
   `pos_x` / `pos_y` / `pos_z` (the live position, `NaN` while unreadable), `initial_x` / `_y` /
   `_z` (where it left the hand), `velocity_x` / `_y` / `_z` (the release velocity), `bounces`,
-  `smoke_effect_tick`, `is_incendiary` and `explode_effect_tick` (the server tick the explosion
-  effect began, 0 until it detonates).
+  `first_seen_tick` (the frame-clock tick the grenade appeared on, the spawn: the created tick
+  unless `projectile_created` waited for the thrower), `smoke_effect_tick` and
+  `smoke_detonation_x` / `_y` / `_z` (a smoke's cloud: the server tick it began, 0 while the
+  grenade flies, and where it popped, `NaN` until then and on every other class), `is_incendiary`
+  and `explode_effect_tick` (the server tick the explosion effect began, 0 until it detonates). A
+  capture of one of the tick members is labelled with its clock in `ColumnClocks`.
 - A capture with no `on:` takes a bare `projectile.*` read: `keep: first` samples it on the frame
   the instance materializes, `keep: last` reads it live, so the table sees the value at removal.
   Anything else with no `on:` is `resolve.trigger.unsupported-for-kind`.
@@ -832,8 +837,10 @@ and the instance is released. A grenade still in the air when the demo ends gets
   instance's whole life is its window. `player.*` is not in scope.
 - It may `use:` a `for: match` ruleset, read in `compute:` only; nothing reads a projectile ruleset.
 - The `projectile` table row carries `round_number` (the round the grenade was removed in),
-  `created_tick` and `removed_tick` (frame clock, listed in `ColumnClocks`), `entity_index`,
-  `serial`, the thrower's `player_slot`, `player_name` and `steam_id`, and `team` (the grenade's).
+  `first_seen_tick`, `created_tick` and `removed_tick` (frame clock, listed in `ColumnClocks`),
+  `removed` (false for a grenade still in the air when the run ended, whose `removed_tick` is then
+  the run's last tick), `entity_index`, `serial`, the thrower's `player_slot`, `player_name` and
+  `steam_id`, and `team` (the grenade's).
 
 ```yaml
 ruleset: grenade_rows

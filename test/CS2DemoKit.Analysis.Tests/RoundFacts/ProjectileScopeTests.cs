@@ -37,6 +37,8 @@ public class ProjectileScopeTests
           landed_x:     { capture: event.X,                 on: projectile_landed }
           lands:        { count: projectile_landed }
           births:       { count: raw.projectile_created }
+          first_seen:   { capture: projectile.first_seen_tick,    keep: first }
+          smoke_det_x:  { capture: projectile.smoke_detonation_x, keep: last }
         show:
           tables:
             grenades:
@@ -53,6 +55,8 @@ public class ProjectileScopeTests
                 - { stat: landed_x, label: landed_x }
                 - { stat: lands, label: lands }
                 - { stat: births, label: births }
+                - { stat: first_seen, label: first_seen }
+                - { stat: smoke_det_x, label: smoke_det_x }
         """;
 
     [Test]
@@ -85,8 +89,11 @@ public class ProjectileScopeTests
             await Assert.That(table.Rows.Count).IsEqualTo(created.Count).Because(label);
             await Assert.That(table.ColumnClocks.GetValueOrDefault("created_tick")).IsEqualTo(MetricTable.FrameClock).Because(label);
             await Assert.That(table.ColumnClocks.GetValueOrDefault("removed_tick")).IsEqualTo(MetricTable.FrameClock).Because(label);
+            await Assert.That(table.ColumnClocks.GetValueOrDefault("first_seen_tick")).IsEqualTo(MetricTable.FrameClock).Because(label);
+            await Assert.That(table.ColumnClocks.GetValueOrDefault("first_seen")).IsEqualTo(MetricTable.FrameClock).Because(label);
 
             HashSet<(int, int)> seen = [];
+            int waited = 0, smokesPopped = 0;
             foreach (MetricRow row in table.Rows)
             {
                 int index = RoundFactsTestSupport.Dim(row, "entity_index");
@@ -101,6 +108,33 @@ public class ProjectileScopeTests
                 await Assert.That(RoundFactsTestSupport.Int(row, "thrower")).IsEqualTo(birth.PlayerSlot).Because(because);
                 await Assert.That(RoundFactsTestSupport.Int(row, "births")).IsEqualTo(1).Because(because);
                 await Assert.That(RoundFactsTestSupport.Int(row, "thrower_walk")).IsNotNull().Because(because);
+
+                // The spawn is the sampler's first frame for the projectile, at or before the frame
+                // the thrower resolved on; the member reads the same tick the row carries.
+                int firstSeen = RoundFactsTestSupport.Dim(row, "first_seen_tick");
+                ProjectileSample firstSample = samples.First(s => s.EntityIndex == index && s.Serial == serial);
+                await Assert.That(firstSeen).IsEqualTo(firstSample.Tick).Because(because);
+                await Assert.That(firstSeen).IsLessThanOrEqualTo(birth.GameTick).Because(because);
+                await Assert.That(birth.FirstSeenTick).IsEqualTo(firstSeen).Because(because);
+                await Assert.That(RoundFactsTestSupport.Int(row, "first_seen")).IsEqualTo(firstSeen).Because(because);
+                waited += firstSeen < birth.GameTick ? 1 : 0;
+
+                bool wasRemoved = removed.ContainsKey((index, serial));
+                await Assert.That(row.Dimensions["removed"]).IsEqualTo(wasRemoved).Because(because);
+                if (wasRemoved)
+                {
+                    await Assert.That(removed[(index, serial)].FirstSeenTick).IsEqualTo(firstSeen).Because(because);
+                }
+
+                // Only a smoke that popped carries a detonation position.
+                object? smokeDetonation = row.Values.GetValueOrDefault("smoke_det_x");
+                bool hasDetonation = smokeDetonation is double d && !double.IsNaN(d);
+                if (birth.Grenade != "smoke")
+                {
+                    await Assert.That(hasDetonation).IsFalse().Because(because);
+                }
+
+                smokesPopped += hasDetonation ? 1 : 0;
 
                 // The first-kept position is the row on the frame the instance materialized, which
                 // the sampler also saw.
@@ -123,6 +157,9 @@ public class ProjectileScopeTests
                 }
             }
 
+            Console.WriteLine($"{label}: {table.Rows.Count} rows, {waited} created after the spawn, {smokesPopped} smokes with a detonation position");
+            await Assert.That(smokesPopped).IsGreaterThan(0).Because(label);
+
             string rendered = Render(table);
             if (previous is not null)
             {
@@ -131,6 +168,35 @@ public class ProjectileScopeTests
 
             previous = rendered;
         }
+    }
+
+    /// <summary>
+    ///     <c>projectile_created</c> waits for the thrower, so a created tick can trail the spawn;
+    ///     <c>first_seen_tick</c> keeps the spawn and never trails the created tick. On the reference
+    ///     demo every thrower resolves on the spawn frame, so the count is reported, not required.
+    /// </summary>
+    [Test]
+    public async Task FirstSeenTick_NeverTrailsTheCreatedTick()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.ReferenceDemoFileName);
+        AnalysisRun run = DemoAnalysis.Run(path, RoundFactsTestSupport.Load(GrenadeRows),
+            new AnalysisOptions { CaptureSnapshots = false });
+        await Assert.That(run.Build.ExcludedRulesets).IsEmpty();
+
+        int waited = 0, molotovsWaited = 0;
+        foreach (ProjectileRecord record in run.Projectiles)
+        {
+            await Assert.That(record.FirstSeenTick).IsLessThanOrEqualTo(record.CreatedTick)
+                .Because($"projectile {record.EntityIndex}:{record.Serial}");
+            if (record.FirstSeenTick < record.CreatedTick)
+            {
+                waited++;
+                molotovsWaited += record.ClassName == GrenadeProjectileClasses.Molotov ? 1 : 0;
+            }
+        }
+
+        Console.WriteLine($"{run.Projectiles.Count} projectiles, {waited} created after the spawn, {molotovsWaited} of them molotovs");
+        await Assert.That(run.Projectiles.Count).IsGreaterThan(100);
     }
 
     private static void AssertFloat(MetricRow row, string column, float? expected, string because)

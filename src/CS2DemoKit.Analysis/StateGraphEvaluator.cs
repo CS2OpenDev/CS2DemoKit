@@ -1705,7 +1705,7 @@ public sealed class StateGraphEvaluator
         HashSet<Type> touched = [];
         foreach (ProjectileNodeTemplate template in _projectileTemplates)
         {
-            ProjectileNodeTemplate.MaterializedProjectile instance = template.Materialize(row);
+            ProjectileNodeTemplate.MaterializedProjectile instance = template.Materialize(row, created.FirstSeenTick);
             foreach (StateEdge edge in instance.Edges)
             {
                 RegisterEdge(edge);
@@ -1738,7 +1738,7 @@ public sealed class StateGraphEvaluator
         }
 
         TopologicalSortEdges(sub);
-        _liveProjectiles[key] = new LiveProjectile(tick, row.Team, instances);
+        _liveProjectiles[key] = new LiveProjectile(created.FirstSeenTick, tick, row.Team, instances);
     }
 
     private void FinalizeProjectile((int Index, int Serial) key, int tick, bool removed)
@@ -1772,7 +1772,7 @@ public sealed class StateGraphEvaluator
 
         _projectileRecords.Add(new ProjectileRecord(
             first.EntityIndex, first.Serial, first.ClassName, first.ThrowerSlot, ResolvePlayerName(first.ThrowerSlot),
-            live.Team, live.CreatedTick, tick, CurrentRoundNumber(), removed, values));
+            live.Team, live.FirstSeenTick, live.CreatedTick, tick, CurrentRoundNumber(), removed, values));
     }
 
     private void FinalizeLiveProjectiles(int tick)
@@ -1821,8 +1821,10 @@ public sealed class StateGraphEvaluator
     private int CurrentRoundNumber() =>
         RoundNumberNode is { IsActive: true } node && node.GetNumericValue() is { } round ? (int)round : 0;
 
-    private sealed class LiveProjectile(int createdTick, int team, List<ProjectileNodeTemplate.MaterializedProjectile> instances)
+    private sealed class LiveProjectile(int firstSeenTick, int createdTick, int team, List<ProjectileNodeTemplate.MaterializedProjectile> instances)
     {
+        public int FirstSeenTick { get; } = firstSeenTick;
+
         public int CreatedTick { get; } = createdTick;
 
         public int Team { get; } = team;

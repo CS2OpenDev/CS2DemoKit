@@ -15,9 +15,12 @@ namespace CS2DemoKit.Analysis.Nodes;
 ///     the projectile flies, its last-seen row on the frame it is removed, and after that the row
 ///     last read. Shared by every pull node the instance materialized.
 /// </summary>
-internal sealed class ProjectileInstanceState(EntityChangeScanner? scanner, ProjectileRow created)
+internal sealed class ProjectileInstanceState(EntityChangeScanner? scanner, ProjectileRow created, int firstSeenTick)
 {
     private ProjectileRow _last = created;
+
+    /// <summary>The frame-clock tick the projectile first appeared on.</summary>
+    public int FirstSeenTick { get; } = firstSeenTick;
 
     /// <summary>The instance's entity index.</summary>
     public int EntityIndex => _last.EntityIndex;
@@ -139,7 +142,11 @@ internal static class ProjectileMemberNodes
             "velocity_y" => Number(name, subtitle, state, r => r.InitialVelocity?.Y ?? double.NaN),
             "velocity_z" => Number(name, subtitle, state, r => r.InitialVelocity?.Z ?? double.NaN),
             "bounces" => Number(name, subtitle, state, r => r.Bounces),
+            "first_seen_tick" => Number(name, subtitle, state, _ => state.FirstSeenTick),
             "smoke_effect_tick" => Number(name, subtitle, state, r => r.SmokeEffectTickBegin),
+            "smoke_detonation_x" => Number(name, subtitle, state, r => r.SmokeDetonationPosition?.X ?? double.NaN),
+            "smoke_detonation_y" => Number(name, subtitle, state, r => r.SmokeDetonationPosition?.Y ?? double.NaN),
+            "smoke_detonation_z" => Number(name, subtitle, state, r => r.SmokeDetonationPosition?.Z ?? double.NaN),
             "is_incendiary" => new ProjectileValuePullNode<bool>(name, subtitle, state, r => r.IsIncendiary ?? false),
             "explode_effect_tick" => Number(name, subtitle, state, r => r.ExplodeEffectTickBegin ?? 0),
             _ => throw new InvalidOperationException($"'projectile.{member}' is not a projectile member")

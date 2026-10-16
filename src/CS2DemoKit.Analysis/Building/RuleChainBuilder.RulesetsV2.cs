@@ -620,7 +620,7 @@ public sealed partial class RuleChainBuilder
         }
 
         List<CheckedRuleset> active = [.. rulesets];
-        Func<ProjectileRow, ProjectileNodeTemplate.MaterializedProjectile> factory =
+        Func<ProjectileRow, int, ProjectileNodeTemplate.MaterializedProjectile> factory =
             CreateV2ProjectileFactory(active, options, views, contextV2ToV1, wiring.Externals, nodeLookup, gameNodesByRuleId);
 
         // Without the scanner a thrower read throws on any shape; that build keeps the late failure.
@@ -631,7 +631,7 @@ public sealed partial class RuleChainBuilder
         {
             try
             {
-                _ = factory(probe);
+                _ = factory(probe, 0);
                 break;
             }
             catch (InvalidOperationException ex)
@@ -677,7 +677,7 @@ public sealed partial class RuleChainBuilder
     ///     edges, lowered like a team side's with the projectile as the subject and the thrower's slot
     ///     as the player slot a <c>thrower.*</c> read binds to.
     /// </summary>
-    private Func<ProjectileRow, ProjectileNodeTemplate.MaterializedProjectile> CreateV2ProjectileFactory(
+    private Func<ProjectileRow, int, ProjectileNodeTemplate.MaterializedProjectile> CreateV2ProjectileFactory(
         IReadOnlyList<CheckedRuleset> rulesets,
         RulesetCompilerOptions options,
         Dictionary<string, CatalogView> views,
@@ -698,7 +698,7 @@ public sealed partial class RuleChainBuilder
         }
 
         ProjectileLoweringCache cache = new();
-        return row =>
+        return (row, firstSeenTick) =>
         {
             // Hundreds of instances a demo, each edge firing a few times: interpretation beats a
             // JIT compile per instance.
@@ -707,7 +707,7 @@ public sealed partial class RuleChainBuilder
             _projectileCache = cache;
             try
             {
-                return LowerV2Projectile(row, rulesets, options, views, contextV2ToV1, externals, baseLookup);
+                return LowerV2Projectile(row, firstSeenTick, rulesets, options, views, contextV2ToV1, externals, baseLookup);
             }
             finally
             {
@@ -719,6 +719,7 @@ public sealed partial class RuleChainBuilder
 
     private ProjectileNodeTemplate.MaterializedProjectile LowerV2Projectile(
         ProjectileRow row,
+        int firstSeenTick,
         IReadOnlyList<CheckedRuleset> rulesets,
         RulesetCompilerOptions options,
         Dictionary<string, CatalogView> views,
@@ -726,7 +727,7 @@ public sealed partial class RuleChainBuilder
         GraphExternals externals,
         Dictionary<string, StateNode> baseLookup)
     {
-        ProjectileInstanceState state = new(_entityScanner, row);
+        ProjectileInstanceState state = new(_entityScanner, row, firstSeenTick);
         string subtitle = $"{ProjectileGrenadeName.Of(row.ClassName)} {row.EntityIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
                           + $":{row.Serial.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 

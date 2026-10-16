@@ -265,8 +265,10 @@ public class RulesetV2ProjectileScopeTests
         await Assert.That(output.Dimensions).Contains("entity_index");
         await Assert.That(output.Dimensions).Contains("serial");
         await Assert.That(output.Dimensions).Contains("steam_id");
+        await Assert.That(output.Dimensions).Contains("first_seen_tick");
         await Assert.That(output.Dimensions).Contains("created_tick");
         await Assert.That(output.Dimensions).Contains("removed_tick");
+        await Assert.That(output.Dimensions).Contains("removed");
         await Assert.That(output.Metrics.Select(m => m.RuleRef)).Contains("grenade_rows.bounces");
     }
 

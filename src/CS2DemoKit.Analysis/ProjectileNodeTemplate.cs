@@ -14,11 +14,12 @@ namespace CS2DemoKit.Analysis;
 ///     the instance while its projectile lives, and on <c>projectile_removed</c> samples its nodes
 ///     into a <see cref="ProjectileRecord" /> and releases its edges.
 /// </summary>
-public sealed class ProjectileNodeTemplate(Func<ProjectileRow, ProjectileNodeTemplate.MaterializedProjectile> factory)
+public sealed class ProjectileNodeTemplate(Func<ProjectileRow, int, ProjectileNodeTemplate.MaterializedProjectile> factory)
 {
     /// <summary>Produces one instance's nodes and edges for the projectile <paramref name="row" /> describes.</summary>
     /// <param name="row">The projectile's row on the frame its <c>projectile_created</c> fires, thrower resolved.</param>
-    public MaterializedProjectile Materialize(ProjectileRow row) => factory(row);
+    /// <param name="firstSeenTick">The frame-clock tick the projectile first appeared on, which <c>projectile.first_seen_tick</c> reads.</param>
+    public MaterializedProjectile Materialize(ProjectileRow row, int firstSeenTick) => factory(row, firstSeenTick);
 
     /// <summary>The materialization output for one projectile.</summary>
     /// <param name="EntityIndex">The projectile's entity index.</param>
@@ -53,6 +54,7 @@ public sealed class ProjectileNodeTemplate(Func<ProjectileRow, ProjectileNodeTem
 /// <param name="ThrowerSlot">The thrower's player slot, 0-63.</param>
 /// <param name="ThrowerName">The thrower's name as the run knew it.</param>
 /// <param name="Team">The projectile's <c>m_iTeamNum</c> when it was created (2 = T, 3 = CT), or -1 when unseen.</param>
+/// <param name="FirstSeenTick">The frame-clock tick the projectile first appeared on, at or before <paramref name="CreatedTick" />.</param>
 /// <param name="CreatedTick">The frame-clock tick <c>projectile_created</c> fired on.</param>
 /// <param name="RemovedTick">The frame-clock tick <c>projectile_removed</c> fired on, or the run's last tick.</param>
 /// <param name="RoundNumber">The live round number when the row was recorded, or 0 when none was live.</param>
@@ -69,6 +71,7 @@ public sealed record ProjectileRecord(
     int ThrowerSlot,
     string ThrowerName,
     int Team,
+    int FirstSeenTick,
     int CreatedTick,
     int RemovedTick,
     int RoundNumber,

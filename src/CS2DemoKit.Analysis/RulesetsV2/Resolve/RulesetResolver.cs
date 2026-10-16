@@ -639,6 +639,17 @@ public static class RulesetResolver
                 return TickClock.Frame;
             }
 
+            // The projectile's own ticks: first seen is the frame clock, the effect ticks are the
+            // server's (m_nExplodeEffectTickBegin, m_nSmokeEffectTickBegin).
+            switch (reference.Path)
+            {
+                case CatalogScopeAdapter.ProjectileRoot + ".first_seen_tick":
+                    return TickClock.Frame;
+                case CatalogScopeAdapter.ProjectileRoot + ".explode_effect_tick":
+                case CatalogScopeAdapter.ProjectileRoot + ".smoke_effect_tick":
+                    return TickClock.Server;
+            }
+
             if (!string.Equals(reference.Path, "event.tick", StringComparison.Ordinal))
             {
                 return TickClock.None;

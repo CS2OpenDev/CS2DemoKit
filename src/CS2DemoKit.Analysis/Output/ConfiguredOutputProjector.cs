@@ -51,8 +51,10 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     private const string DimSide = "side";
     private const string DimSlots = "slots";
     private const string DimSteamId = "steam_id";
+    private const string DimFirstSeenTick = "first_seen_tick";
     private const string DimCreatedTick = "created_tick";
     private const string DimRemovedTick = "removed_tick";
+    private const string DimRemoved = "removed";
     private const string DimEntityIndex = "entity_index";
     private const string DimSerial = "serial";
 
@@ -159,6 +161,7 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
         }
         else if (output.Scope == OutputScope.PerProjectile)
         {
+            clocks[DimFirstSeenTick] = MetricTable.FrameClock;
             clocks[DimCreatedTick] = MetricTable.FrameClock;
             clocks[DimRemovedTick] = MetricTable.FrameClock;
         }
@@ -457,11 +460,17 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                     case DimRoundNumber:
                         dimensions[DimRoundNumber] = record.RoundNumber;
                         break;
+                    case DimFirstSeenTick:
+                        dimensions[DimFirstSeenTick] = record.FirstSeenTick;
+                        break;
                     case DimCreatedTick:
                         dimensions[DimCreatedTick] = record.CreatedTick;
                         break;
                     case DimRemovedTick:
                         dimensions[DimRemovedTick] = record.RemovedTick;
+                        break;
+                    case DimRemoved:
+                        dimensions[DimRemoved] = record.Removed;
                         break;
                     case DimEntityIndex:
                         dimensions[DimEntityIndex] = record.EntityIndex;

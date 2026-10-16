@@ -1626,6 +1626,12 @@
           "v2Type": "Int"
         },
         {
+          "name": "FirstSeenTick",
+          "type": "int",
+          "v2Name": "event.FirstSeenTick",
+          "v2Type": "Int"
+        },
+        {
           "name": "Grenade",
           "type": "string",
           "v2Name": "event.Grenade",
@@ -1685,6 +1691,12 @@
           "name": "EntityIndex",
           "type": "int",
           "v2Name": "event.EntityIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FirstSeenTick",
+          "type": "int",
+          "v2Name": "event.FirstSeenTick",
           "v2Type": "Int"
         },
         {
