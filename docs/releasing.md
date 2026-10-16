@@ -1021,9 +1021,11 @@ is not measured. It sits after `throw_strength`, before the position trio; the p
 fold fixtures moved by 10 cells for the column, then by 2 rows and 2 cells for slots 10 and 11 of
 the sample, which have a controller and no player pawn. Both are CSTV, so whether a pawnless slot
 that is not CSTV becomes an `each_player` subject is not measured either. The sample has no coach, so
-`TeamBindingViewTests` pins a present 0 on every controller there, those two included; the non-zero
-path is pinned only by the arm on `furia-vs-vitality-m1-mirage.dem`, which compares the column with
-the controller at slot + 1 on the last frame and skips without that demo. The rules-output goldens
+`TeamBindingViewTests` pins a present 0 on every controller there, those two included. The arm on
+`furia-vs-vitality-m1-mirage.dem` compares the column with the controller at slot + 1 on the last
+frame, but that demo and the six other tournament demos on hand hold `m_iCoachingTeam` 0 on every
+controller on every frame, so it checks that no coach is read and skips: the non-zero path is
+unverified. The rules-output goldens
 do not move. `eval_ms`, same build lane off against on: median +1.3% over 5 demos, inside the
 step-0 noise floor (max 4.2%). Within noise (`docs/perf/baseline.md` "R7 part 2a and R8 coach").
 

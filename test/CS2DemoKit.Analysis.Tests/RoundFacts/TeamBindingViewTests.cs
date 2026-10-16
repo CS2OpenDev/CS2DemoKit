@@ -9,6 +9,7 @@ using CS2DemoKit.Parser.GameEvents;
 using CS2DemoKit.TestSupport;
 
 using CS2OpenSchema.Protos;
+using TUnit.Core.Exceptions;
 
 #endregion
 
@@ -337,9 +338,10 @@ public class TeamBindingViewTests
     }
 
     /// <summary>
-    ///     On a tournament demo with coaches, the slots reading a non-zero <c>player.coaching_team</c>
-    ///     at the last <c>round_ended</c> are exactly the slots whose controller (entity index slot + 1) holds a
-    ///     non-zero <c>m_iCoachingTeam</c> on the last frame, with the same side. Skips without the demo.
+    ///     On a tournament demo, the slots reading a non-zero <c>player.coaching_team</c> at the last
+    ///     <c>round_ended</c> are exactly the slots whose controller (entity index slot + 1) holds a non-zero
+    ///     <c>m_iCoachingTeam</c> on the last frame, with the same side. Skips without the demo, and after the
+    ///     comparison when the demo carries no coach.
     /// </summary>
     [Test]
     public async Task EachPlayer_CoachingTeam_MatchesTheControllersOnATournamentDemo()
@@ -354,8 +356,13 @@ public class TeamBindingViewTests
 
         Console.WriteLine($"[coach] controllers={string.Join(",", expected.Select(kv => $"{kv.Key}:{kv.Value}"))} "
                           + $"rows={string.Join(",", actual.Select(kv => $"{kv.Key}:{kv.Value}"))}");
-        await Assert.That(expected).IsNotEmpty();
         await Assert.That(actual).IsEquivalentTo(expected);
+        if (expected.Count == 0)
+        {
+            // furia m1 and the six other tournament demos on hand hold m_iCoachingTeam 0 on every
+            // controller on every frame, so the non-zero path has no demo to pin it.
+            throw new SkipTestException("no controller on this demo carries a coaching team");
+        }
     }
 
     // Slot to coached side, off the controllers at the last frame, the way the host's library read takes it.
