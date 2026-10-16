@@ -1,5 +1,6 @@
 #region
 
+using System.Numerics;
 using System.Runtime.InteropServices;
 using CS2DemoKit.Analysis.Observation;
 
@@ -30,6 +31,21 @@ internal sealed class ProjectileLifecycle
     private readonly List<ProjectileRow> _removed = [];
     private List<ProjectileRow> _next = [];
 
+    // Aligned with _live, _removed and _next when TrackMovement is set, else empty.
+    private List<int> _liveMoved = [];
+    private readonly List<int> _removedMoved = [];
+    private List<int> _nextMoved = [];
+
+    /// <summary>A position change below this, in units, is rest: the cell leaves jitter by less.</summary>
+    public const float MovedUnits = 0.1f;
+
+    /// <summary>
+    ///     Keep, per live projectile, the frame-clock tick its position last changed by more than
+    ///     <see cref="MovedUnits" /> between two consecutive rows. Off, <see cref="LiveLastMoved" />
+    ///     and <see cref="RemovedLastMoved" /> are empty and <see cref="Step" /> compares nothing.
+    /// </summary>
+    public bool TrackMovement { get; set; }
+
     /// <summary>Every live projectile after the last <see cref="Step" />, ascending entity index, throwers held.</summary>
     public ReadOnlySpan<ProjectileRow> Live => CollectionsMarshal.AsSpan(_live);
 
@@ -39,23 +55,39 @@ internal sealed class ProjectileLifecycle
     /// <summary>Projectiles live before the last <see cref="Step" /> and gone after it, each as last seen.</summary>
     public ReadOnlySpan<ProjectileRow> Removed => CollectionsMarshal.AsSpan(_removed);
 
+    /// <summary>
+    ///     For each row of <see cref="Live" />, the frame-clock tick it last moved on: the tick it was
+    ///     created on until its position first changes. Empty unless <see cref="TrackMovement" /> is set.
+    /// </summary>
+    public ReadOnlySpan<int> LiveLastMoved => CollectionsMarshal.AsSpan(_liveMoved);
+
+    /// <summary>The same for each row of <see cref="Removed" />, as of its last row.</summary>
+    public ReadOnlySpan<int> RemovedLastMoved => CollectionsMarshal.AsSpan(_removedMoved);
+
     /// <summary>Forgets every projectile, for the start of a run.</summary>
     public void Reset()
     {
         _live.Clear();
         _created.Clear();
         _removed.Clear();
+        _liveMoved.Clear();
+        _removedMoved.Clear();
     }
 
     /// <summary>
     ///     Consumes one frame's rows, which must be ascending by entity index with no index twice,
     ///     as <see cref="EntityFrameDigest.Projectiles" /> is.
     /// </summary>
-    public void Step(ReadOnlySpan<ProjectileRow> rows)
+    /// <param name="rows">The frame's projectile rows.</param>
+    /// <param name="tick">The frame-clock tick, recorded by <see cref="TrackMovement" /> only.</param>
+    public void Step(ReadOnlySpan<ProjectileRow> rows, int tick = 0)
     {
         _created.Clear();
         _removed.Clear();
         _next.Clear();
+        _removedMoved.Clear();
+        _nextMoved.Clear();
+        bool track = TrackMovement;
 
         int l = 0;
         for (int r = 0; r < rows.Length; r++)
@@ -65,32 +97,55 @@ internal sealed class ProjectileLifecycle
             // Everything live below this row's index is gone from the digest.
             while (l < _live.Count && _live[l].EntityIndex < row.EntityIndex)
             {
-                _removed.Add(_live[l++]);
+                Remove(l++, track);
             }
 
             if (l < _live.Count && _live[l].EntityIndex == row.EntityIndex)
             {
-                ProjectileRow last = _live[l++];
+                ProjectileRow last = _live[l];
                 if (last.Serial == row.Serial && string.Equals(last.ClassName, row.ClassName, StringComparison.Ordinal))
                 {
                     // First resolution wins, as the sampler's does: the chain breaks when the
                     // thrower dies mid-flight and must not re-resolve through a reused handle.
                     _next.Add(last.ThrowerSlot >= 0 ? row with { ThrowerSlot = last.ThrowerSlot } : row);
+                    if (track)
+                    {
+                        _nextMoved.Add(Moved(last.Position, row.Position) ? tick : _liveMoved[l]);
+                    }
+
+                    l++;
                     continue;
                 }
 
-                _removed.Add(last);
+                Remove(l++, track);
             }
 
             _created.Add(row);
             _next.Add(row);
+            if (track)
+            {
+                _nextMoved.Add(tick);
+            }
         }
 
         while (l < _live.Count)
         {
-            _removed.Add(_live[l++]);
+            Remove(l++, track);
         }
 
         (_live, _next) = (_next, _live);
+        (_liveMoved, _nextMoved) = (_nextMoved, _liveMoved);
     }
+
+    private void Remove(int liveIndex, bool track)
+    {
+        _removed.Add(_live[liveIndex]);
+        if (track)
+        {
+            _removedMoved.Add(_liveMoved[liveIndex]);
+        }
+    }
+
+    private static bool Moved(Vector3? from, Vector3? to) =>
+        from is { } a && to is { } b && Vector3.DistanceSquared(a, b) > MovedUnits * MovedUnits;
 }

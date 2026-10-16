@@ -1156,6 +1156,18 @@ schema is regenerated for the two view names. No shipped ruleset reads either, s
 or fixture moves. `GrenadeBurstViewTests` pins both views' `match_event` rows against the wire on
 the reference demo and joins each decoy to a live decoy projectile row by entity index.
 
+### A projectile row knows when it last moved (0.14.0)
+
+`CatalogScopeAdapter.ProjectileMembers` gains `last_moved_tick` (int): the frame-clock tick the
+projectile's position last changed by more than `ProjectileLifecycle.MovedUnits` (0.1 units)
+between two consecutive rows, the spawn tick until it first does. The lifecycle keeps the tick per
+live row (`TrackMovement`, `LiveLastMoved`, `RemovedLastMoved`, and `Step` takes the frame tick)
+only for a build whose rulesets declare a read of the member, so a run that reads nothing compares
+nothing. A capture of it is classified on the frame clock. No shipped ruleset reads it, so no hash,
+digest or fixture moves. `ProjectileLifecycleTests` pins the threshold, the unreadable-position
+case and the removed row's carry on hand-built rows; `ProjectileLastMovedTests` pins the member
+kept last against `ProjectileSampler`'s consecutive samples on the sample demo, on both paths.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

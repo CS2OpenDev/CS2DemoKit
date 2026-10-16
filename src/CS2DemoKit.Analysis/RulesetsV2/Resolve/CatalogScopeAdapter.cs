@@ -71,7 +71,8 @@ public sealed class CatalogScopeAdapter
     ///     <c>first_seen_tick</c> is the frame-clock tick the projectile appeared on, which is the
     ///     created tick unless <c>projectile_created</c> waited for the thrower;
     ///     <c>smoke_detonation_*</c> is a smoke's <c>m_vSmokeDetonationPos</c>, NaN until it pops and
-    ///     on every other class.
+    ///     on every other class; <c>last_moved_tick</c> is the frame-clock tick the position last
+    ///     changed by more than 0.1 units between two frames, the spawn until it first does.
     /// </summary>
     public static IReadOnlyList<(string Member, RulesType Type)> ProjectileMembers { get; } =
     [
@@ -92,6 +93,7 @@ public sealed class CatalogScopeAdapter
         ("velocity_z", RulesType.Float),
         ("bounces", RulesType.Int),
         ("first_seen_tick", RulesType.Int),
+        ("last_moved_tick", RulesType.Int),
         ("smoke_effect_tick", RulesType.Int),
         ("smoke_detonation_x", RulesType.Float),
         ("smoke_detonation_y", RulesType.Float),

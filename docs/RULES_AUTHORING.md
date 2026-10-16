@@ -825,7 +825,9 @@ and the instance is released. A grenade still in the air when the demo ends gets
   `pos_x` / `pos_y` / `pos_z` (the live position, `NaN` while unreadable), `initial_x` / `_y` /
   `_z` (where it left the hand), `velocity_x` / `_y` / `_z` (the release velocity), `bounces`,
   `first_seen_tick` (the frame-clock tick the grenade appeared on, the spawn: the created tick
-  unless `projectile_created` waited for the thrower), `smoke_effect_tick` and
+  unless `projectile_created` waited for the thrower), `last_moved_tick` (the frame-clock tick its
+  position last changed by more than 0.1 units from the frame before, the spawn until it first
+  does: kept last, it is when the grenade came to rest), `smoke_effect_tick` and
   `smoke_detonation_x` / `_y` / `_z` (a smoke's cloud: the server tick it began, 0 while the
   grenade flies, and where it popped, `NaN` until then and on every other class), `is_incendiary`
   and `explode_effect_tick` (the server tick the explosion effect began, 0 until it detonates). A

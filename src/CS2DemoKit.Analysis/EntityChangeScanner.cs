@@ -954,7 +954,7 @@ public sealed class EntityChangeScanner
 
         if (_projectileClasses is not null)
         {
-            Projectiles.Step(digest.Projectiles);
+            Projectiles.Step(digest.Projectiles, tick);
             if (_emitProjectileEvents)
             {
                 ConsumeProjectiles(tick);

@@ -271,7 +271,10 @@ is removed, on either path, with `first_seen_tick` (the spawn), `created_tick` a
 on the frame clock, `removed` (false for a grenade still live at the end of the demo) and the
 thrower's `steam_id`. A host that walked `ProjectileSampler` beside a run to build a throw log can
 declare the row instead, anchoring its windows on `first_seen_tick` as the sampler's first frame.
-`projectile.smoke_detonation_x` / `_y` / `_z` is where a smoke popped. `AnalysisRun.Projectiles` carries the same rows as `ProjectileRecord`s for
+`projectile.smoke_detonation_x` / `_y` / `_z` is where a smoke popped, and `projectile.last_moved_tick`
+kept last is the frame-clock tick it came to rest on (its position last changed by more than 0.1
+units between two frames), so a host that walked the trajectory only to find the landing tick can
+read it off the row. `AnalysisRun.Projectiles` carries the same rows as `ProjectileRecord`s for
 a host that reads them without a table. See
 [`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-grenade-stats-for-each_projectile).
 

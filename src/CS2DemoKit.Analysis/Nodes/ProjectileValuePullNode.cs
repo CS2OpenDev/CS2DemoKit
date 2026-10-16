@@ -18,9 +18,16 @@ namespace CS2DemoKit.Analysis.Nodes;
 internal sealed class ProjectileInstanceState(EntityChangeScanner? scanner, ProjectileRow created, int firstSeenTick)
 {
     private ProjectileRow _last = created;
+    private int _lastMoved = firstSeenTick;
 
     /// <summary>The frame-clock tick the projectile first appeared on.</summary>
     public int FirstSeenTick { get; } = firstSeenTick;
+
+    /// <summary>
+    ///     The frame-clock tick the projectile last moved on, as of the last <see cref="Current" />
+    ///     read: the spawn until the lifecycle tracks movement and sees a change.
+    /// </summary>
+    public int LastMovedTick => _lastMoved;
 
     /// <summary>The instance's entity index.</summary>
     public int EntityIndex => _last.EntityIndex;
@@ -40,26 +47,33 @@ internal sealed class ProjectileInstanceState(EntityChangeScanner? scanner, Proj
 
             // Both spans are short (the live grenades of one frame) and a read is rare: an edge
             // fire or the instance's finalization, never per frame.
-            foreach (ProjectileRow row in scanner.Projectiles.Live)
+            if (!Find(scanner.Projectiles.Live, scanner.Projectiles.LiveLastMoved))
             {
-                if (row.EntityIndex == _last.EntityIndex && row.Serial == _last.Serial)
-                {
-                    _last = row;
-                    return row;
-                }
-            }
-
-            foreach (ProjectileRow row in scanner.Projectiles.Removed)
-            {
-                if (row.EntityIndex == _last.EntityIndex && row.Serial == _last.Serial)
-                {
-                    _last = row;
-                    return row;
-                }
+                Find(scanner.Projectiles.Removed, scanner.Projectiles.RemovedLastMoved);
             }
 
             return _last;
         }
+    }
+
+    // The moved span is aligned with the rows when the lifecycle tracks movement, else empty.
+    private bool Find(ReadOnlySpan<ProjectileRow> rows, ReadOnlySpan<int> moved)
+    {
+        for (int i = 0; i < rows.Length; i++)
+        {
+            if (rows[i].EntityIndex == _last.EntityIndex && rows[i].Serial == _last.Serial)
+            {
+                _last = rows[i];
+                if (moved.Length == rows.Length)
+                {
+                    _lastMoved = moved[i];
+                }
+
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -143,6 +157,7 @@ internal static class ProjectileMemberNodes
             "velocity_z" => Number(name, subtitle, state, r => r.InitialVelocity?.Z ?? double.NaN),
             "bounces" => Number(name, subtitle, state, r => r.Bounces),
             "first_seen_tick" => Number(name, subtitle, state, _ => state.FirstSeenTick),
+            "last_moved_tick" => Number(name, subtitle, state, _ => state.LastMovedTick),
             "smoke_effect_tick" => Number(name, subtitle, state, r => r.SmokeEffectTickBegin),
             "smoke_detonation_x" => Number(name, subtitle, state, r => r.SmokeDetonationPosition?.X ?? double.NaN),
             "smoke_detonation_y" => Number(name, subtitle, state, r => r.SmokeDetonationPosition?.Y ?? double.NaN),

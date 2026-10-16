@@ -654,6 +654,13 @@ public sealed partial class RuleChainBuilder
 
         graph.AddProjectileTemplate(new ProjectileNodeTemplate(factory));
 
+        // The scanner compares consecutive rows only for a build that reads the member.
+        if (_entityScanner is not null && active.Any(rs => rs.Stats.Any(s =>
+                s.DeclaredReads.Contains(CatalogScopeAdapter.ProjectileRoot + ".last_moved_tick", StringComparer.Ordinal))))
+        {
+            _entityScanner.Projectiles.TrackMovement = true;
+        }
+
         // The lifecycle events materialize and release the instances whatever the stats trigger on.
         relevantTypes.Add(typeof(ProjectileCreatedEvent));
         relevantTypes.Add(typeof(ProjectileRemovedEvent));

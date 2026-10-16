@@ -1,5 +1,6 @@
 #region
 
+using System.Numerics;
 using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Parser.EntityTracking;
 
@@ -100,5 +101,50 @@ public class ProjectileLifecycleTests
         life.Step([Row(70, 3, 5)]);
         await Assert.That(life.Created.Length).IsEqualTo(1).Because("after a reset the same projectile is created again");
         await Assert.That(life.Removed.Length).IsEqualTo(0);
+    }
+
+    private static ProjectileRow At(int index, int serial, float x, float y = 0, float z = 0) =>
+        Row(index, serial, 5) with { Position = new Vector3(x, y, z) };
+
+    [Test]
+    public async Task LastMoved_IsTheSpawnUntilThePositionChangesByMoreThanATenth()
+    {
+        ProjectileLifecycle life = new() { TrackMovement = true };
+
+        life.Step([At(70, 3, 100f)], 10);
+        await Assert.That(life.LiveLastMoved.ToArray()).IsEquivalentTo([10]);
+
+        // Jitter under 0.1 units is rest; a step of exactly 0.1 is rest too.
+        life.Step([At(70, 3, 100.05f)], 11);
+        life.Step([At(70, 3, 100.1f)], 12);
+        await Assert.That(life.LiveLastMoved.ToArray()).IsEquivalentTo([10]);
+
+        life.Step([At(70, 3, 100.5f), At(72, 1, 0f)], 13);
+        await Assert.That(life.LiveLastMoved.ToArray()).IsEquivalentTo([13, 13]);
+
+        // An unreadable position on either side is not a move.
+        life.Step([Row(70, 3, 5), At(72, 1, 0f)], 14);
+        life.Step([At(70, 3, 200f), At(72, 1, 0f)], 15);
+        await Assert.That(life.LiveLastMoved.ToArray()).IsEquivalentTo([13, 13]);
+
+        life.Step([At(70, 3, 201f), At(72, 1, 0f)], 16);
+        await Assert.That(life.LiveLastMoved.ToArray()).IsEquivalentTo([16, 13]);
+
+        // A removed row carries the tick it last moved on, aligned with Removed.
+        life.Step([At(72, 1, 0f)], 17);
+        await Assert.That(life.RemovedLastMoved.ToArray()).IsEquivalentTo([16]);
+        await Assert.That(life.LiveLastMoved.ToArray()).IsEquivalentTo([13]);
+    }
+
+    [Test]
+    public async Task LastMoved_IsNotKept_WhenMovementIsNotTracked()
+    {
+        ProjectileLifecycle life = new();
+        life.Step([At(70, 3, 100f)], 10);
+        life.Step([At(70, 3, 200f)], 11);
+        await Assert.That(life.LiveLastMoved.Length).IsEqualTo(0);
+        life.Step([], 12);
+        await Assert.That(life.RemovedLastMoved.Length).IsEqualTo(0);
+        await Assert.That(life.Removed.Length).IsEqualTo(1);
     }
 }
