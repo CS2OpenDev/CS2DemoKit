@@ -82,7 +82,10 @@ synthesized freeze end saw the previous frame's state, and so did the freeze-end
 reads `player.*` there, but `round_facts` captures its `equipment`, `money` and `enemy_equipment`
 columns on `raw.round_freeze_end`, so on a round decided in freeze time (a surrender vote) those
 can move. The synthesized entity events (`projectile_created`, `projectile_removed`,
-`molotov_thrown`, `enemy_spotted`) still dispatch before the fold. The decode-compromise latch sets
+`molotov_thrown`, `enemy_spotted`) dispatch after the fold as well, between the wire messages and
+`round_decided`, so a `player.*` or `thrower.*` read on one sees the frame the event describes, the
+same frame its payload and `projectile.*` read, and a wire event on a projectile's removal frame
+reaches the instance before `projectile_removed`. The decode-compromise latch sets
 at the same digest, and a caller that walks the scanner through `AdvanceAndPollAt` without calling
 `CompleteFrame` still gets the fold at its next poll.
 

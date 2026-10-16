@@ -807,10 +807,19 @@ round decided in freeze time, cadence steps and the observer. Through 0.13.0 a `
 `round_decided` or on that synthesized freeze end saw frame N-1, and so did the freeze-end economy
 sample (the `round.team` and `round.enemies` `equipment` and `money` reads) on it; those can
 move. No shipped ruleset reads `player.*` on either, but `round_facts` captures its freeze-end
-`equipment`, `money` and `enemy_equipment` columns there. The synthesized entity events
-(`projectile_created`, `projectile_removed`, `molotov_thrown`, `enemy_spotted`) still dispatch
-before the fold, and `player.cmd.*` keeps reading the frame's commands at a wire event;
-`RULES_AUTHORING.md` lists both as exceptions.
+`equipment`, `money` and `enemy_equipment` columns there. `player.cmd.*` keeps reading the frame's
+commands at a wire event; `RULES_AUTHORING.md` lists it as the exception.
+
+The synthesized entity events (`projectile_created`, `projectile_removed`, `molotov_thrown`,
+`enemy_spotted`, `player_team_observed` and the singleton change markers) dispatch after the fold
+too, between the frame's wire messages and `round_decided`, where they used to run before the wire
+messages. They are raised from the frame's own digest, so a `player.*` or `thrower.*` read on one
+now sees the frame the payload describes: `thrower.pos_x` and `projectile.pos_x` on
+`projectile_created` are the same frame, and a `thrower.pos_x@-N` look-back counts back from it. A
+wire event on the removal frame (a detonate) now reaches a projectile instance before
+`projectile_removed` finalizes it. Through the previous 0.14 prereleases these reads saw frame N-1.
+The 15 rules-output goldens and `StatParityTests` do not move; `InFrameReadPointTests` pins a
+`thrower.pos_x` capture on `projectile_created` against the observer's read of the created frame.
 
 The decode-compromise latch sets at the same digest. A caller that polls `AdvanceAndPollAt` without
 calling `CompleteFrame` gets the fold at the next poll, as before. `GetPreFrameValue` documents both

@@ -652,54 +652,10 @@ public sealed class StateGraphEvaluator
             // Before the poll, so every read in this frame sees the frame's own commands.
             commands?.AdvanceOneFrame(frame);
 
-            // ── Synthesize entity-state change events (lazy: scanner is null when no rule
-            //    references an entity context). Each synthesized message participates in the
-            //    snapshot/dirty bookkeeping exactly like a real frame message. ──
-            if (_entityScanner is not null)
-            {
-                IReadOnlyList<NetMessage> synthesized = _entityScanner.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
-                for (int s = 0; s < synthesized.Count; s++)
-                {
-                    NetMessage syntheticMsg = synthesized[s];
-                    Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
-
-                    // Synthesized game events (molotov_thrown) must materialize
-                    // their player exactly like real-message events below — a player whose first
-                    // qualifying activity is entity-derived was otherwise silently dropped. The
-                    // TrackNewlyMaterializedNodes call is mandatory in snapshot mode (a past
-                    // bug class — undeclared writes: untracked mid-run nodes break row padding).
-                    if (syntheticMsg is GameEventMessage sgem)
-                    {
-                        MaterializeNewPlayers(sgem.DecodedEvent);
-                        snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
-                        if (sgem.DecodedEvent is PlayerTeamObservedEvent observedTeam)
-                        {
-                            SeedObservedTeam(observedTeam);
-                        }
-                        else if (sgem.DecodedEvent is ProjectileCreatedEvent createdProjectile)
-                        {
-                            MaterializeProjectile(createdProjectile, frameTick);
-                        }
-                    }
-
-                    Type sKey = GetDispatchKey(syntheticMsg);
-                    int sEvaluated = 0, sFired = 0, sLogic = 0;
-                    EvaluateEdgesInstrumented(new EvaluationContext(syntheticMsg, frame), sKey,
-                        trace, ref sEvaluated, ref sFired,
-                        snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
-                    CheckLogicNodesInstrumented(events, sKey, frameIdx, frame.ServerTick,
-                        trace, ref sLogic, snap);
-
-                    FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
-                    Observer?.AfterMessage(frame.ServerTick);
-
-                    // After the message settles, so a capture on projectile_removed is in the row.
-                    if (syntheticMsg is GameEventMessage { DecodedEvent: ProjectileRemovedEvent removedProjectile })
-                    {
-                        FinalizeProjectile((removedProjectile.EntityIndex, removedProjectile.Serial), frameTick, true);
-                    }
-                }
-            }
+            // The poll consumes the frame's digest (lazy: scanner is null when no rule references an
+            // entity context). The entity events it synthesizes are held and dispatched after the
+            // fold below: they are raised from this frame's state, so they read it.
+            IReadOnlyList<NetMessage>? synthesized = _entityScanner?.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
 
             // DecodedMessages, not InnerMessages: the stored svc_UserCmds entries are synthesized on
             // access and their dispatch key is the storage wrapper's type, which matches no rule.
@@ -761,9 +717,56 @@ public sealed class StateGraphEvaluator
             }
 
             // The frame's fold sits between its wire messages and everything the engine raises from
-            // it: wire triggers read the state before their own PacketEntities, round_decided, the
-            // cadence steps and the observer read the folded frame.
+            // it: wire triggers read the state before their own PacketEntities; the synthesized
+            // entity events, round_decided, the cadence steps and the observer read the folded frame.
             _entityScanner?.CompleteFrame();
+
+            // ── Synthesized entity-state events (projectile_created, molotov_thrown, team and
+            //    singleton changes). Each participates in the snapshot/dirty bookkeeping exactly like
+            //    a wire message. ──
+            if (synthesized is not null)
+            {
+                for (int s = 0; s < synthesized.Count; s++)
+                {
+                    NetMessage syntheticMsg = synthesized[s];
+                    Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
+
+                    // Synthesized game events (molotov_thrown) must materialize their player exactly
+                    // like wire events: a player whose first qualifying activity is entity-derived
+                    // was otherwise silently dropped. TrackNewlyMaterializedNodes is mandatory in
+                    // snapshot mode (untracked mid-run nodes break row padding).
+                    if (syntheticMsg is GameEventMessage sgem)
+                    {
+                        MaterializeNewPlayers(sgem.DecodedEvent);
+                        snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                        if (sgem.DecodedEvent is PlayerTeamObservedEvent observedTeam)
+                        {
+                            SeedObservedTeam(observedTeam);
+                        }
+                        else if (sgem.DecodedEvent is ProjectileCreatedEvent createdProjectile)
+                        {
+                            MaterializeProjectile(createdProjectile, frameTick);
+                        }
+                    }
+
+                    Type sKey = GetDispatchKey(syntheticMsg);
+                    int sEvaluated = 0, sFired = 0, sLogic = 0;
+                    EvaluateEdgesInstrumented(new EvaluationContext(syntheticMsg, frame), sKey,
+                        trace, ref sEvaluated, ref sFired,
+                        snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
+                    CheckLogicNodesInstrumented(events, sKey, frameIdx, frame.ServerTick,
+                        trace, ref sLogic, snap);
+
+                    FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
+                    Observer?.AfterMessage(frame.ServerTick);
+
+                    // After the message settles, so a capture on projectile_removed is in the row.
+                    if (syntheticMsg is GameEventMessage { DecodedEvent: ProjectileRemovedEvent removedProjectile })
+                    {
+                        FinalizeProjectile((removedProjectile.EntityIndex, removedProjectile.Serial), frameTick, true);
+                    }
+                }
+            }
 
             // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
             //    messages because the kill that decided the round often arrives in this same frame,

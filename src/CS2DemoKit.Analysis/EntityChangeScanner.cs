@@ -968,8 +968,9 @@ public sealed class EntityChangeScanner
     /// <summary>
     ///     Ends the frame last polled: folds its per-pawn values into the pre-frame snapshot, so
     ///     what reads after it sees the state at the end of frame N, the same cells the next frame's
-    ///     first edge reads. The evaluator calls it after the frame's wire messages and before its
-    ///     post-frame messages, cadence steps and frame observer; a caller that polls without it
+    ///     first edge reads. The evaluator calls it after the frame's wire messages and before the
+    ///     messages the poll synthesized, its post-frame messages, cadence steps and frame observer;
+    ///     a caller that polls without it
     ///     gets the same fold at the next poll. The decode-compromise latch keeps its order either
     ///     way, since the fold is the same fold.
     /// </summary>
@@ -1500,7 +1501,8 @@ public sealed class EntityChangeScanner
     ///     <see cref="CompleteFrame" /> has run. Returns <c>null</c> if no snapshot exists
     ///     (provider not registered, slot never populated, or first frame). Under the evaluator a
     ///     wire message reads the first (the state before its own frame's PacketEntities), and
-    ///     <c>round_decided</c>, a cadence step and the frame observer read the second.
+    ///     the events this scanner synthesizes, <c>round_decided</c>, a cadence step and the frame
+    ///     observer read the second.
     /// </summary>
     public object? GetPreFrameValue(IPerPlayerEntityValueProvider provider, int playerSlot)
     {

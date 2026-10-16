@@ -157,6 +157,63 @@ public class InFrameReadPointTests
         await Assert.That(movedThisFrame).IsGreaterThan(0);
     }
 
+    private const string ThrowRules = """
+        ruleset: throw_read
+        for: each_projectile
+        stats:
+          thrower_x: { capture: thrower.pos_x, on: raw.projectile_created }
+          grenade_x: { capture: projectile.pos_x, on: raw.projectile_created }
+        show:
+          tables:
+            throws:
+              per: projectile
+              columns:
+                - { stat: thrower_x, label: thrower_x }
+                - { stat: grenade_x, label: grenade_x }
+        """;
+
+    /// <summary>
+    ///     A synthesized entity event is raised from the frame's own digest, so a <c>thrower.*</c>
+    ///     read on <c>projectile_created</c> sees the frame the grenade appeared in, folded: the
+    ///     same cells the observer reads, and the same frame <c>projectile.*</c> reads.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(Demos))]
+    public async Task ProjectileCreatedCapture_EqualsTheObserversReadOfTheSameFrame(string demoFile)
+    {
+        string path = DemoTestHelper.RequireDemo(demoFile);
+        FirstFrameOfTick observer = new();
+        AnalysisRun run = DemoAnalysis.Run(path, RoundFactsTestSupport.Load(ThrowRules), new AnalysisOptions
+        {
+            CaptureSnapshots = false,
+            ObservedProviders = [PosX, Health],
+            FrameObserver = observer
+        });
+        await Assert.That(run.Build.ExcludedRulesets).IsEmpty();
+
+        MetricTable table = run.ProjectConfiguredOutputs().Single(t => t.Name == "throws");
+        int compared = 0, movedThisFrame = 0;
+        foreach (MetricRow row in table.Rows)
+        {
+            int tick = RoundFactsTestSupport.Dim(row, "created_tick");
+            int slot = RoundFactsTestSupport.Dim(row, "player_slot");
+            (Cells at, Cells before) = observer.ByTick[tick];
+            if (at.PosX[slot] is not { } x)
+            {
+                continue;
+            }
+
+            float got = (float)Convert.ToDouble(row.Values["thrower_x"], CultureInfo.InvariantCulture);
+            await Assert.That(got).IsEqualTo(x).Because($"{demoFile} throw at tick {tick} by slot {slot}");
+            compared++;
+            movedThisFrame += before.PosX[slot] is { } bx && bx != x ? 1 : 0;
+        }
+
+        Console.WriteLine($"{demoFile}: {table.Rows.Count} throws, {compared} compared, {movedThisFrame} moved on the created frame");
+        await Assert.That(compared).IsGreaterThan(0);
+        await Assert.That(movedThisFrame).IsGreaterThan(0);
+    }
+
     [Test]
     [MethodDataSource(nameof(Demos))]
     public async Task PlayerHurt_ReadsTheVictimsHealthBeforeTheHit(string demoFile)

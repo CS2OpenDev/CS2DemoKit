@@ -576,12 +576,14 @@ what raised the trigger:
   entity update on the wire, so this is the state the event arrived in: the victim's HP before the
   hit, the clip before the shot.
 - A trigger the engine raises from the frame itself (a cadence step, `round_decided`, the freeze
-  end synthesized for a round decided in freeze time) reads the frame's state after its entity
-  update, as a frame observer and a capture with no `on:` do.
-- The exceptions: `player.*` and `thrower.*` on the synthesized entity events (`projectile_created`,
-  `projectile_removed`, `molotov_thrown`, `enemy_spotted`) read the state from before the
-  frame's update, although their own payloads (the projectile's position, the spot) are the
-  frame's. `player.cmd.*` is below.
+  end synthesized for a round decided in freeze time, and the entity events synthesized from the
+  frame's state: `projectile_created`, `projectile_removed`, `molotov_thrown`, `enemy_spotted`)
+  reads the frame's state after its entity update, as a frame observer and a capture with no
+  `on:` do. So `thrower.pos_x` and `projectile.pos_x` on `projectile_created` are one frame, and
+  `thrower.pos_x@-8` counts back from it. These events dispatch after the frame's wire events, so
+  a `hegrenade_detonate` that arrives on the frame the projectile is removed reaches the instance
+  before `projectile_removed` does.
+- The one exception is `player.cmd.*`, below.
 
 In a node-logic site (`compute:`, `flag: when:`), it's the value at *round end / evaluation time*.
 Both are useful; pick the site that matches the question. (Under an event view you can also read a
