@@ -208,6 +208,13 @@ public sealed record CatalogBinding(
 ///     for a synthesized view), surfaced in the schema hover for the view's <c>match:</c> block.
 ///     Null for the ordinary case.
 /// </param>
+/// <param name="FrequencyClass">
+///     The view's own measured occurrence class, on the <see cref="CatalogEvent.FrequencyClass" />
+///     scale, for a view whose <c>views.yaml</c> entry is <c>rate: measured</c>: the generator's
+///     <c>--measure</c> folds the corpus through <see cref="Baked" />, so a view that keeps a small
+///     part of a frequent event is classed by what it keeps. The event-table gate reads it before
+///     the event's class. Null for a view that is classed by its event.
+/// </param>
 public sealed record CatalogView(
     string Name,
     string Event,
@@ -219,7 +226,8 @@ public sealed record CatalogView(
     IReadOnlyList<CatalogFacet> Facets,
     string Availability,
     IReadOnlyList<CatalogViewProfile> Profiles,
-    string? Note = null);
+    string? Note = null,
+    string? FrequencyClass = null);
 
 /// <summary>A view role bound to an event slot-field.</summary>
 /// <param name="Role">Role name (<c>killer</c>, <c>victim</c>, <c>planter</c>, …).</param>

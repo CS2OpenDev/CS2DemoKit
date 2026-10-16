@@ -20,17 +20,20 @@ string outputPath = Path.Combine(rulesDir, "catalog.json");
 string v2SchemaPath = Path.Combine(rulesDir, "cs2demokit-rules.schema.json");
 bool checkOnly = args.Contains("--check");
 
-// --measure: explicit frequency re-baseline — parses every demos/benchmarks/*.dem
-// and rewrites the committed frequency-baseline.json before the normal regen. Ordinary runs
-// (and --check) merge the committed baseline, keeping output deterministic without demos.
+// --measure: explicit frequency re-baseline. It parses every demos/benchmarks/*.dem (or the
+// benchmarks folder under CS2DEMOKIT_CORPUS_DIR when the repo holds none) and rewrites the
+// committed frequency-baseline.json before the normal regen, the measured views folded through
+// their baked filters. Ordinary runs (and --check) merge the committed baseline, keeping output
+// deterministic without demos.
 if (args.Contains("--measure"))
 {
-    string benchDir = Path.Combine(repoRoot, "demos", "benchmarks");
+    string benchDir = BenchmarkDirectory(repoRoot);
     Console.WriteLine($"Measuring trigger frequencies from {benchDir}…");
-    FrequencyBaseline measured = FrequencyBaseline.Measure(benchDir);
+    FrequencyBaseline measured = FrequencyBaseline.Measure(benchDir, ViewsFile.MeasuredViews());
     string baselineOut = Path.Combine(repoRoot, FrequencyBaseline.RelativePath);
     File.WriteAllText(baselineOut, measured.Serialize());
-    Console.WriteLine($"Wrote {baselineOut} ({measured.MaxPerDemo.Count} names from {measured.MeasuredFrom.Count} demos).");
+    Console.WriteLine($"Wrote {baselineOut} ({measured.MaxPerDemo.Count} names and {measured.ViewMaxPerDemo.Count} views "
+                      + $"from {measured.MeasuredFrom.Count} demos).");
 }
 
 CatalogRoot catalog = CatalogBuilder.Build(FrequencyBaseline.Load(repoRoot));
@@ -61,6 +64,25 @@ File.WriteAllText(v2SchemaPath, v2Schema);
 Console.WriteLine(
     $"Wrote {outputPath} ({json.Length} bytes) + v2 schema ({v2Schema.Length} bytes).");
 return 0;
+
+static string BenchmarkDirectory(string repoRoot)
+{
+    string inRepo = Path.Combine(repoRoot, "demos", "benchmarks");
+    if (Directory.Exists(inRepo))
+    {
+        return inRepo;
+    }
+
+    string? corpus = Environment.GetEnvironmentVariable("CS2DEMOKIT_CORPUS_DIR");
+    if (!string.IsNullOrWhiteSpace(corpus) && Directory.Exists(corpus))
+    {
+        string benchmarks = Path.Combine(corpus, "benchmarks");
+        return Directory.Exists(benchmarks) ? benchmarks : corpus;
+    }
+
+    throw new InvalidOperationException(
+        $"--measure needs {inRepo}, or CS2DEMOKIT_CORPUS_DIR naming a folder with the benchmark demos (or a benchmarks/ subfolder)");
+}
 
 static string FindRepoRoot()
 {

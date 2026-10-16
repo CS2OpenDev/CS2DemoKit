@@ -74,5 +74,8 @@
     "weapon_fire": 3954,
     "weapon_reload": 94,
     "weapon_zoom": 325
+  },
+  "viewMaxPerDemo": {
+    "grenade_released": 353
   }
 }

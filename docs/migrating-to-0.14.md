@@ -114,6 +114,12 @@ game-rules ones: `entity.team.score@2`, `@3`, `entity.team.clan_name@2`, `@3`. A
 or indexes the registry's list moves with it; the catalog lists the two specs once each with
 `scope: "perTeam"`.
 
+**`CatalogView` gains a trailing `FrequencyClass`** (string, null unless the view's `views.yaml`
+entry is `rate: measured`), serialized as `frequencyClass` on such a view only, and `in [a, b]` in
+a `where:` or a baked filter now lowers to the v1 grammar as a disjunction of equalities, where
+before it failed to lower. A consumer constructing `CatalogView` positionally gains an optional
+argument.
+
 **The catalog lists eight `perPlayerCommand` providers** (`usercmd.buttons` and the rest, read as
 `player.cmd.*`, and as `thrower.cmd.*` in a projectile ruleset). A consumer that switches on
 `CatalogProvider.Scope` needs the fourth arm. They are not role-handle members and have no digest
@@ -298,6 +304,23 @@ show:
     grenades:
       per: projectile
       columns: [ { stat: class }, { stat: spawn_x }, { stat: end_x }, { stat: bounces } ]
+```
+
+The release has a view too: `grenade_released` is `weapon_fire` baked to the six grenade weapons,
+bound to the thrower, with a `weapon` facet, and it carries its own measured rate
+(`CatalogView.FrequencyClass`, `perRound` on the corpus), so a `per: player_event` table on it
+passes the event-table gate that refuses the bare `weapon_fire`. One row per release, keyed by the
+thrower's slot and the frame tick, 6 to 15 ticks before the projectile row's `first_seen_tick`: a
+host that indexed grenade `weapon_fire` events beside its own walk declares the table instead.
+
+```yaml
+ruleset: releases
+for: each_player
+stats:
+  weapon: { capture: event.Weapon, on: grenade_released, per: match }
+show:
+  tables:
+    releases: { per: player_event, on: grenade_released, columns: [ { stat: weapon } ] }
 ```
 
 The bursts have views for all five grenades: `he_grenade`, `flash_grenade` and `smoke_grenade`

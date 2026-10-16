@@ -257,7 +257,7 @@ public static class ShowReferenceValidator
                     ResolveDiagnosticCodes.ShowEventTableFrequency,
                     $"show: table '{table.Name}' in ruleset '{ruleset.Id.Id}' triggers on '{table.On}', which fires "
                     + $"'{frequent.Name}' ({frequent.Why}); an event table keeps a row per firing, so its trigger "
-                    + "must be a cadence, a synthesized event, or a wire event measured at most per round.",
+                    + "must be a cadence, a synthesized event, or a wire event or view measured at most per round.",
                     table.OnPosition));
             }
 
@@ -277,13 +277,26 @@ public static class ShowReferenceValidator
         return diagnostics;
     }
 
-    // Reads the concrete events off the resolved sequence stat: a view can expand to several.
+    // Reads the concrete events off the resolved sequence stat: a view can expand to several. A
+    // view measured through its baked filters answers for itself, before its events.
     private static (string Name, string Why)? TooFrequent(CheckedRuleset ruleset, TableDef table, CatalogRoot catalog)
     {
         string id = EventTableSequence.StatId(table.Name);
         if (ruleset.Stats.FirstOrDefault(s => s.StatId == id) is not { } sequence)
         {
             return null;
+        }
+
+        if (sequence.ResolvedView is { } viewName
+            && catalog.Views.FirstOrDefault(v => string.Equals(v.Name, viewName, StringComparison.Ordinal))
+                is { FrequencyClass: { } viewClass } view)
+        {
+            return viewClass switch
+            {
+                "perTick" or "frequent" => (view.Name, $"frequencyClass {viewClass}, measured through its baked filters"),
+                "unmeasured" => (view.Name, "a view whose rate was never measured"),
+                _ => null
+            };
         }
 
         foreach (string name in sequence.ConcreteEvents)

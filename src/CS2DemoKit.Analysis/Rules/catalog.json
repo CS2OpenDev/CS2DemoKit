@@ -6315,6 +6315,64 @@
       ]
     },
     {
+      "name": "grenade_released",
+      "event": "weapon_fire",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "UserId"
+        }
+      ],
+      "baked": [
+        "event.Weapon in [\u0022weapon_hegrenade\u0022, \u0022weapon_flashbang\u0022, \u0022weapon_smokegrenade\u0022, \u0022weapon_molotov\u0022, \u0022weapon_incgrenade\u0022, \u0022weapon_decoy\u0022]"
+      ],
+      "facets": [
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        }
+      ],
+      "note": "Fires on the release, 6 to 15 ticks before the projectile row appears (projectile_created, or first_seen_tick on a per: projectile row). Its rate is measured through its weapon filter, so an event table may trigger on it where the bare weapon_fire may not.",
+      "frequencyClass": "perRound"
+    },
+    {
       "name": "he_grenade",
       "event": "hegrenade_detonate",
       "binding": "actor_slot",

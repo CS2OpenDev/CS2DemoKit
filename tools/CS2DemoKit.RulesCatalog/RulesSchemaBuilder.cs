@@ -450,6 +450,7 @@ public static class RulesSchemaBuilder
             ["markdownDescription"] =
                 $"match: facets for view `{view.Name}` (event `{view.Event}`, binding `{view.Binding}`). "
                 + $"Available on: {(availableOn.Count > 0 ? string.Join(", ", availableOn) : "no profiles")}."
+                + (view.FrequencyClass is null ? "" : $" Measured rate through its baked filters: {view.FrequencyClass}.")
                 + (view.Note is null ? "" : " " + view.Note),
             ["properties"] = properties
         };

@@ -89,6 +89,31 @@ public static class V1ExpressionWriter
                 Write(unary.Operand, sb, contextV2ToV1);
                 sb.Append(')');
                 break;
+            case BinaryNode { Operator: BinaryOperator.In, Right: ListLiteralNode members } inList:
+                // The v1 grammar has no membership test: a list is a disjunction of equalities.
+                if (members.Items.Length == 0)
+                {
+                    sb.Append("false");
+                    break;
+                }
+
+                sb.Append('(');
+                for (int i = 0; i < members.Items.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(" || ");
+                    }
+
+                    sb.Append('(');
+                    Write(inList.Left, sb, contextV2ToV1);
+                    sb.Append(" == ");
+                    Write(members.Items[i], sb, contextV2ToV1);
+                    sb.Append(')');
+                }
+
+                sb.Append(')');
+                break;
             case BinaryNode binary:
                 sb.Append('(');
                 Write(binary.Left, sb, contextV2ToV1);

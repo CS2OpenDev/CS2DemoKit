@@ -215,10 +215,55 @@ public class ShowReferenceValidationTests
     [Arguments("cadence.second")]
     [Arguments("kill")]
     [Arguments("raw.molotov_thrown")]
+    [Arguments("grenade_released")]
     public async Task EventTable_OnACadenceOrARareOrSynthesizedEvent_IsAccepted(string on)
     {
         List<RulesetDiagnostic> diagnostics = await EventTableDiagnostics("player_event", on);
         await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>
+    ///     A view's own measured class answers before its events': <c>grenade_released</c> passes over
+    ///     the frequent <c>weapon_fire</c>, and the same view classed <c>perTick</c> or never measured
+    ///     is refused under its own name, while a view with no class of its own is judged by its events.
+    /// </summary>
+    [Test]
+    [Arguments("perTick", true)]
+    [Arguments("unmeasured", true)]
+    [Arguments("perRound", false)]
+    public async Task EventTable_OnAMeasuredView_IsGatedByTheViewsClass(string viewClass, bool refused)
+    {
+        CatalogRoot catalog = CatalogResource.Load();
+        CatalogView released = catalog.Views.Single(v => v.Name == "grenade_released");
+        await Assert.That(released.FrequencyClass).IsEqualTo("perRound").Because("measured through the weapon filter");
+        await Assert.That(catalog.Events.Single(e => e.Name == "weapon_fire").FrequencyClass).IsEqualTo("frequent");
+
+        CatalogRoot variant = catalog with
+        {
+            Views = catalog.Views.Select(v => v.Name == "grenade_released" ? v with { FrequencyClass = viewClass } : v).ToList()
+        };
+        RulesetComposition.Result result = RulesetComposition.Compose(
+            [Load(EventTable("player_event", "grenade_released"))], CatalogScopeAdapter.From(variant), 64.0, "Cs2GotvProfile");
+        List<RulesetDiagnostic> diagnostics = ShowDiagnostics(result);
+        if (refused)
+        {
+            RulesetDiagnostic diagnostic = diagnostics.Single();
+            await Assert.That(diagnostic.Code).IsEqualTo(ResolveDiagnosticCodes.ShowEventTableFrequency);
+            await Assert.That(diagnostic.Message).Contains("'grenade_released'");
+        }
+        else
+        {
+            await Assert.That(diagnostics).IsEmpty();
+        }
+
+        // Without a class of its own the view is judged by weapon_fire, which is frequent.
+        CatalogRoot unclassed = catalog with
+        {
+            Views = catalog.Views.Select(v => v.Name == "grenade_released" ? v with { FrequencyClass = null } : v).ToList()
+        };
+        RulesetComposition.Result byEvent = RulesetComposition.Compose(
+            [Load(EventTable("player_event", "grenade_released"))], CatalogScopeAdapter.From(unclassed), 64.0, "Cs2GotvProfile");
+        await Assert.That(ShowDiagnostics(byEvent).Single().Message).Contains("'weapon_fire'");
     }
 
     /// <summary>The build resolves per-profile concrete events, and the gate reads those too.</summary>

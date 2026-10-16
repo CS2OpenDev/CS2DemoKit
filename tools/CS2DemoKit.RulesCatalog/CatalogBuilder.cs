@@ -230,7 +230,7 @@ public static class CatalogBuilder
             BuildContexts(),
             BuildProviders(),
             profiles,
-            BuildViews(events, enrichments, profiles));
+            BuildViews(events, enrichments, profiles, frequencies));
     }
 
     private static List<CatalogEvent> BuildEvents(EventRegistry registry, FrequencyBaseline frequencies) =>
@@ -502,7 +502,8 @@ public static class CatalogBuilder
     private static List<CatalogView> BuildViews(
         IReadOnlyList<CatalogEvent> events,
         IReadOnlyList<CatalogEnrichment> enrichments,
-        IReadOnlyList<CatalogProfile> profiles)
+        IReadOnlyList<CatalogProfile> profiles,
+        FrequencyBaseline frequencies)
     {
         ViewsFile.ViewsDoc doc = ViewsFile.Load();
 
@@ -655,10 +656,31 @@ public static class CatalogBuilder
                 throw ViewError(name, $"logical event '{logical}' is not bound on any profile");
             }
 
+            // A measured rate is the view's own class, folded through its filters: without filters
+            // the view fires exactly as its event does, and the event's class already says so.
+            string? frequencyClass = null;
+            if (dto.Rate is not null)
+            {
+                if (!string.Equals(dto.Rate, ViewsFile.RateMeasured, StringComparison.Ordinal))
+                {
+                    throw ViewError(name, $"rate '{dto.Rate}' is not '{ViewsFile.RateMeasured}', the one value the generator measures");
+                }
+
+                if (dto.Baked.Count == 0)
+                {
+                    throw ViewError(name, "rate: measured needs a baked: filter; without one the event's class is the view's");
+                }
+
+                // Compiled here so a filter the fold cannot evaluate fails every regen, not only --measure.
+                _ = BakedFilter.Compile(dto.Baked);
+                frequencyClass = frequencies.ClassifyView(name);
+            }
+
             views.Add(new CatalogView(
                 name, eventKey, binding, dto.Actor, dto.Result,
                 roles, dto.Baked, facets, dto.Availability ?? "all", perProfile,
-                string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim()));
+                string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim(),
+                frequencyClass));
         }
 
         return views.OrderBy(v => v.Name, StringComparer.Ordinal).ToList();

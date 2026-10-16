@@ -1204,6 +1204,34 @@ jump-throw decision on the reference demo and a tournament demo, on both paths. 
 machine carries delta-encoded commands as a whole match, so the delta path is covered by the fixture
 window only.
 
+### A grenade release has a view with a measured rate of its own (0.14.0)
+
+`views.yaml` gains `grenade_released`: `weapon_fire` with `binding: actor_slot` on the thrower
+(`UserId`), a `weapon` facet, the baked filter `event.Weapon in [...]` over the six grenade weapons,
+and the new key `rate: measured`. That key gives a view its own frequency class: the generator's
+`--measure` folds the corpus through the view's baked filters (`BakedFilter`, new in the generator,
+a small evaluator over event fields, literals, comparisons, `in`, `and`, `or` and `not` that rejects
+any other form at every regen) and records the max firings per demo under `viewMaxPerDemo` in
+`frequency-baseline.json`; `FrequencyBaseline.Measure` takes the measured views and
+`ClassifyView` classes them on the event thresholds. The committed baseline moves by that one entry
+(353 on the corpus, `perRound`); every event count is as before. `--measure` reads
+`demos/benchmarks` under the repo, else the `benchmarks` folder under `CS2DEMOKIT_CORPUS_DIR`.
+`CatalogView` gains a trailing `FrequencyClass` (null for every other view, so their JSON does not
+move), and `ShowReferenceValidator` reads it before the sequence stat's concrete events: a measured
+view classed `perMatch` or `perRound` passes, one classed `perTick`, `frequent` or `unmeasured` is
+refused under its own name, and a view with no class of its own is judged by its events as before.
+The schema hover for the view's `match:` block names the measured rate. The catalog and schema are
+regenerated.
+
+`V1ExpressionWriter` lowers `x in [a, b]` to `((x == a) || (x == b))` and `x in []` to `false`,
+since the v1 grammar has no membership test; before this a `where:` or baked filter with a list
+failed to lower. No shipped ruleset uses one, and the v2 hash is over the v2 form, so no hash,
+digest or fixture moves. `InListLoweringTests` pins the text and compiles it; `BakedFilterTests`
+pins the fold, its refusal of a form it does not cover, and that every shipped baked filter folds;
+`ShowReferenceValidationTests` pins the view-first gate on a catalog variant; `GrenadeReleasedViewTests`
+pins a `per: player_event` table on the view against the grenade `weapon_fire` events a walker
+indexes, by frame tick and slot, on the sample on both paths and on the reference demo.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

@@ -105,7 +105,7 @@ Validate it, and you have a working stat.
 You don't reference raw wire events; you trigger on **views** — author-friendly verbs that already
 know the CS2 conventions. Common views:
 
-`kill` · `death` · `assist` · `damage_dealt` · `shot` · `blinded_enemy` ·
+`kill` · `death` · `assist` · `damage_dealt` · `shot` · `grenade_released` · `blinded_enemy` ·
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
 `decoy_started` · `inferno_started` · `projectile_thrown` · `projectile_landed` · `round_won` ·
 `round_lost` · `round_decided` · `round_ended`
@@ -145,6 +145,13 @@ its `projectile_landed` binds to nobody. `x`, `y` and `z` read NaN when the posi
 readable. The events behind them are `projectile_created` and `projectile_removed`; under a view,
 `event.*` also reads `EntityIndex`, `Serial` and `ClassName`. A `raw.projectile_created` trigger
 reads only the tick, because raw triggers expose no fields, so filter through the views.
+
+**The release.** `grenade_released` is the `weapon_fire` of one of the six grenade weapons, bound to
+the thrower, with a `weapon` facet (`weapon_smokegrenade`, `weapon_incgrenade`, ...). It fires 6 to
+15 ticks before the projectile row appears, so a throw log joins it to `projectile_created` or to
+a `per: projectile` row's `first_seen_tick` through the thrower's slot. It has its own measured rate
+(a few hundred a match), so an event table may trigger on it where the bare `weapon_fire`, which
+fires on every bullet, is refused.
 
 **The bursts.** `he_grenade`, `flash_grenade` and `smoke_grenade` are the detonations, bound to the
 thrower; under each, `event.EntityId` is the projectile's entity index and `event.X`, `Y`, `Z` where
@@ -678,7 +685,9 @@ ruleset has no subject and cannot read any of them.
   firing), side rows `side`. A
   cadence is the usual trigger. The checker refuses a trigger that fires too often to keep a row
   per firing (`resolve.show.event-table-frequency`): a `perTick` or `frequent` catalog event, or a
-  wire event whose frequency was never measured. Synthesized events pass. A missing `on:`, or an
+  wire event whose frequency was never measured. Synthesized events pass, and so does a view with
+  a measured rate of its own (`grenade_released`), which answers for itself before its event. A
+  missing `on:`, or an
   `on:` on any other grain, is `resolve.show.event-table-trigger`. Event tables project with or
   without snapshots.
 

@@ -42,6 +42,12 @@
 # Facet lowering forms (closed set, §5): `field:` (event field read), `enrichment:` (an
 # enrich.* node — existing machinery), `expr:` (a v2 expression over event.* + roles). `type:`
 # is the author-facing type; the generator verifies it against the real field/enrichment type.
+#
+# `rate:` (OPTIONAL, the one value `measured`) gives the view its own frequency class. The
+#   generator's --measure folds the corpus through the view's `baked:` filters and records the max
+#   firings per demo in frequency-baseline.json; the event-table gate reads the view's class before
+#   its event's, so a view that keeps a small slice of a frequent event can trigger a per-firing
+#   table. Needs a `baked:` filter: without one the view fires as its event does.
 
 views:
 
@@ -144,6 +150,27 @@ views:
       amount: { type: int,    field: DmgHealth }
       hitgroup: { type: int,    field: HitGroup }
       weapon: { type: string, field: Weapon }
+    availability: all
+
+  # Every grenade release: weapon_fire baked to the six grenade weapons, the thrower bound. It
+  # has its own measured rate, since weapon_fire itself is `frequent`, so a per-firing table on it
+  # passes the event-table gate; a throw log joins it to the projectile row through the thrower's
+  # slot and the spawn tick.
+  grenade_released:
+    event: weapon_fire
+    note: >-
+      Fires on the release, 6 to 15 ticks before the projectile row appears (projectile_created, or
+      first_seen_tick on a per: projectile row). Its rate is measured through its weapon filter, so an
+      event table may trigger on it where the bare weapon_fire may not.
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: UserId
+    baked:
+      - 'event.Weapon in ["weapon_hegrenade", "weapon_flashbang", "weapon_smokegrenade", "weapon_molotov", "weapon_incgrenade", "weapon_decoy"]'
+    facets:
+      weapon: { type: string, field: Weapon }
+    rate: measured
     availability: all
 
   # ── weapon_fire (actor_slot) ─────────────────────────────────────────────────
