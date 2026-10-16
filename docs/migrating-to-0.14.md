@@ -118,6 +118,17 @@ when the demo has none for the slot. JSON rows gain a key; a CSV reader that ind
 position shifts every column after `player_name` by one. Join players by `steam_id` rather than slot.
 The built-in tables (`player_game_stats`, `player_round_stats` and the rest) are unchanged.
 
+**Sequential decode resyncs after a dropped snapshot.** Some GOTV recordings drop one tick's
+`svc_PacketEntities` (the seven tournament demos in the corpus each drop the `cs_intermission`
+tick's). Through 0.13.0 `EntityTracker` kept applying later deltas to the state from before the
+gap, so any field the dropped snapshot changed stayed stale to the end, `CCSTeam.m_iScore`
+included, and deltas for entities the gap created were skipped. The parallel decode recovered only
+when a chunk happened to start at a later `DEM_FullPacket`, so a value could depend on the core
+count. The tracker now notices a delta whose `delta_from` is not the last applied tick and replaces
+its entity state from the next full packet, exactly as a checkpoint prime would. Values after that
+full packet move on those demos, every decode path agrees, and `EntityTracker.SnapshotResyncCount`
+reports how often it happened. A demo with no break decodes as before.
+
 ## 5. New things worth adopting
 
 `BuildDiagnosticCodes.LoweringFailed` (`build.lowering-failed`) and the three new

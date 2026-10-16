@@ -98,6 +98,12 @@ public sealed class EntityTracker
     // these at defaults, so no explicit reset hook is needed.
     private readonly List<KeyValuePair<string, byte[]>> _ibEntries = new();
 
+    private readonly SnapshotChain _snapshotChain = new();
+
+    // The latest full packet carrying instancebaseline, for a resync. Producers never release a
+    // full packet's payload, so the reference stays readable.
+    private DemoFrame? _lastInstanceBaselineFullPacket;
+
     // ── Instance baselines ────────────────────────────────────────────────────
 
     // classId → byte[] baseline snapshot
@@ -238,6 +244,12 @@ public sealed class EntityTracker
 
     /// <summary>DIAGNOSTIC: count of delta-on-unknown-entity events across the whole replay.</summary>
     public int DeltaUnknownCount { get; private set; }
+
+    /// <summary>
+    ///     How many times sequential playback replaced its entity state from a <c>DEM_FullPacket</c>
+    ///     because a <c>svc_PacketEntities</c> delta named a base snapshot it never received.
+    /// </summary>
+    public int SnapshotResyncCount { get; private set; }
 
     /// <summary>Most-recent entity decode error (null if none). Exposed for diagnostics.</summary>
     public string? LastEntityError { get; private set; }
@@ -670,7 +682,8 @@ public sealed class EntityTracker
     ///     <c>PacketEntities</c>: sequential playback skips a full packet's entities as redundant because
     ///     the delta stream already built the state, but a checkpoint worker has no prior deltas and
     ///     needs the snapshot to reconstruct it. Process this against a schema-loaded, entities-empty
-    ///     tracker (see <see cref="ResetEntitiesKeepSchema" />). Used by the parallel decode.
+    ///     tracker (see <see cref="ResetEntitiesKeepSchema" />). Used by the parallel decode, and by
+    ///     sequential playback to resync after a delta named a snapshot the recording dropped.
     /// </summary>
     public void ProcessFullPacketCheckpoint(DemoFrame fullPacketFrame)
     {
@@ -678,6 +691,11 @@ public sealed class EntityTracker
         CurrentFrameIndex = fullPacketFrame.FrameNumber;
         foreach (NetMessage msg in fullPacketFrame.MessageList)
         {
+            if (msg.Payload is CSVCMsg_PacketEntities packetEntities)
+            {
+                _snapshotChain.Seed(packetEntities);
+            }
+
             ProcessNetMessage(msg);
         }
     }
@@ -697,9 +715,10 @@ public sealed class EntityTracker
     ///         given table appears only when it changed since the previous full packet, and when it appears
     ///         it is the COMPLETE current table. So a caller that lands on a full packet whose snapshot
     ///         omits <c>instancebaseline</c> must walk back to the most recent one that carried it (the
-    ///         table was unchanged in between). Checkpoint-only; never runs on the sequential
-    ///         <c>ProcessFrame</c> path, so sequential decode stays byte-identical. Merges (upsert) rather
-    ///         than replaces, so any prefix-loaded baseline a sparser snapshot omits is retained.
+    ///         table was unchanged in between). Sequential <c>ProcessFrame</c> calls it only when it
+    ///         resyncs after a broken delta chain, so an unbroken decode stays byte-identical. Merges
+    ///         (upsert) rather than replaces, so any prefix-loaded baseline a sparser snapshot omits is
+    ///         retained.
     ///     </para>
     /// </summary>
     public bool LoadInstanceBaselineSnapshot(DemoFrame fullPacketFrame)
@@ -2002,16 +2021,47 @@ public sealed class EntityTracker
         // ENTERPVS events and entity-baseline confusion that cascades into bit-misalignment
         // ~5 packets later).
         bool isFullPacketCheckpoint = frame.CommandKind == EDemoCommands.DemFullPacket;
+        if (isFullPacketCheckpoint && DemoEnrichmentCursor.CarriesInstanceBaseline(frame))
+        {
+            _lastInstanceBaselineFullPacket = frame;
+        }
+
+        // After a dropped snapshot the delta stream is applied against a state the server never
+        // had. The first full packet after the break replaces it, exactly as a checkpoint prime does.
+        if (isFullPacketCheckpoint && _snapshotChain.Broken)
+        {
+            ResyncFromFullPacket(frame);
+            return;
+        }
 
         foreach (NetMessage msg in frame.MessageList)
         {
-            if (isFullPacketCheckpoint && msg.Payload is CSVCMsg_PacketEntities)
+            if (msg.Payload is CSVCMsg_PacketEntities packetEntities)
             {
-                continue;
+                if (isFullPacketCheckpoint)
+                {
+                    continue;
+                }
+
+                _snapshotChain.Observe(packetEntities);
             }
 
             ProcessNetMessage(msg);
         }
+    }
+
+    // What PrimeFromCheckpoint does to a schema-loaded tracker: drop every entity, upsert the
+    // latest instancebaseline snapshot, then apply the full packet's own snapshot.
+    private void ResyncFromFullPacket(DemoFrame fullPacketFrame)
+    {
+        CurrentEntities.Clear();
+        if (_lastInstanceBaselineFullPacket is { } baselines)
+        {
+            LoadInstanceBaselineSnapshot(baselines);
+        }
+
+        SnapshotResyncCount++;
+        ProcessFullPacketCheckpoint(fullPacketFrame);
     }
 
     // ── instancebaseline string table ─────────────────────────────────────────
