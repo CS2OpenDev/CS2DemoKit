@@ -167,6 +167,57 @@ public class RulesetV2ProjectileScopeTests
     }
 
     [Test]
+    public async Task Resolver_ServesTheThrowersCommands_AsTheLaneProviders()
+    {
+        CheckedRuleset ruleset = RoundFactsTestSupport.Checked("""
+            ruleset: jumps
+            for: each_projectile
+            stats:
+              last_jump: { capture: thrower.cmd.last_jump_tick, on: raw.projectile_created }
+              coverage:  { capture: thrower.cmd.coverage,       on: raw.projectile_created }
+              jumped:
+                count: raw.projectile_created
+                where: thrower.cmd.coverage > 0 and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+            """);
+
+        CheckedStat lastJump = ruleset.Stats.Single(s => s.StatId == "last_jump");
+        EntityProviderReference read = lastJump.EntityReads.Single();
+        await Assert.That(read.Path).IsEqualTo("thrower.cmd.last_jump_tick");
+        await Assert.That(read.ProviderName).IsEqualTo("usercmd.last_jump_tick");
+        await Assert.That(read.Subject).IsEqualTo(EntityProviderReference.PlayerSubject);
+        await Assert.That(lastJump.ValueType.Kind).IsEqualTo(RulesTypeKind.Int);
+        await Assert.That(lastJump.Clock).IsEqualTo(TickClock.Frame);
+
+        CheckedStat coverage = ruleset.Stats.Single(s => s.StatId == "coverage");
+        await Assert.That(coverage.EntityReads.Single().ProviderName).IsEqualTo("usercmd.coverage");
+        await Assert.That(coverage.ValueType.Kind).IsEqualTo(RulesTypeKind.Float);
+
+        CheckedStat jumped = ruleset.Stats.Single(s => s.StatId == "jumped");
+        await Assert.That(jumped.EntityReads.Select(r => r.ProviderName).Order(StringComparer.Ordinal).ToArray())
+            .IsEquivalentTo(["usercmd.coverage", "usercmd.last_jump_tick"]);
+        await Assert.That(jumped.DeclaredReads).Contains("projectile.first_seen_tick");
+
+        // The lane keeps no history per column, so a command read cannot look back.
+        RulesetResolveResult lookBack = RoundFactsTestSupport.Resolve("""
+            ruleset: bad
+            for: each_projectile
+            stats:
+              back: { capture: thrower.cmd.buttons@-8, on: raw.projectile_created }
+            """);
+        await Assert.That(lookBack.Success).IsFalse();
+        await Assert.That(lookBack.Diagnostics.Any(d => d.Code == ResolveDiagnosticCodes.LookBackUnsupported)).IsTrue();
+
+        // A role handle on a view has no commands: the slot is read per fire, not fixed.
+        RulesetResolveResult role = RoundFactsTestSupport.Resolve("""
+            ruleset: bad
+            for: each_player
+            stats:
+              victim_jump: { capture: victim.cmd.last_jump_tick, on: kill, per: match }
+            """);
+        await Assert.That(role.Success).IsFalse();
+    }
+
+    [Test]
     public async Task Resolver_KeepsProjectileAndThrowerOutOfOtherScopes()
     {
         RulesetResolveResult player = RoundFactsTestSupport.Resolve("""

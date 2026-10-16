@@ -1,3 +1,9 @@
+#region
+
+using CS2DemoKit.Parser.EntityTracking;
+
+#endregion
+
 namespace CS2DemoKit.Analysis.Plugins;
 
 /// <summary>
@@ -9,6 +15,11 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///         A read sees the slot's latest command as of the current frame, its own commands included.
 ///         That is one frame later than an entity read, which sees the frame before.
 ///     </para>
+///     <para>
+///         A provider that <see cref="ReadsInputHistory" /> takes its value off the lane's per-slot
+///         history (<see cref="UserCmdReconstructor.TrackInputs" />) rather than the latest command:
+///         the builder sets the lane to keep it when a rule reads one.
+///     </para>
 /// </summary>
 public interface IPerPlayerCommandProvider
 {
@@ -18,8 +29,24 @@ public interface IPerPlayerCommandProvider
     /// <summary>Runtime type of the value.</summary>
     Type ValueType { get; }
 
+    /// <summary>
+    ///     True when the value spans commands (a last rise, a count over recent ticks) and is read
+    ///     through <see cref="Read(UserCmdReconstructor, int)" /> off a lane that tracks inputs.
+    /// </summary>
+    bool ReadsInputHistory => false;
+
     /// <summary>The value off <paramref name="command" />, boxed in <see cref="ValueType" />, or null when the command lacks it.</summary>
     object? Read(CSGOUserCmdPB command);
+
+    /// <summary>
+    ///     The value for <paramref name="playerSlot" /> off <paramref name="commands" />: by default
+    ///     <see cref="Read(CSGOUserCmdPB)" /> on the slot's latest command, or null before its first.
+    /// </summary>
+    object? Read(UserCmdReconstructor commands, int playerSlot)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        return commands.Current(playerSlot) is { } command ? Read(command) : null;
+    }
 }
 
 /// <summary>The built-in <see cref="IPerPlayerCommandProvider" /> set.</summary>
@@ -52,9 +79,23 @@ public static class UserCommandProviders
     public static IPerPlayerCommandProvider Tick { get; } = new Provider("usercmd.tick", typeof(int),
         c => c.Base is { } b ? b.ClientTick : null);
 
+    /// <summary>
+    ///     <c>player.cmd.last_jump_tick</c>: the frame-clock tick <c>IN_JUMP</c> last rose on in the
+    ///     player's commands, a sub-tick press included; -1 before the first.
+    /// </summary>
+    public static IPerPlayerCommandProvider LastJumpTick { get; } = new HistoryProvider("usercmd.last_jump_tick",
+        typeof(int), (commands, slot) => commands.LastJumpTick(slot));
+
+    /// <summary>
+    ///     <c>player.cmd.coverage</c>: the player's commands over the last 64 frame ticks divided by
+    ///     64, capped at 1; 0 when the demo carries none for the player lately.
+    /// </summary>
+    public static IPerPlayerCommandProvider Coverage { get; } = new HistoryProvider("usercmd.coverage",
+        typeof(float), (commands, slot) => commands.Coverage(slot));
+
     /// <summary>Every built-in command provider, in catalog order.</summary>
     public static IReadOnlyList<IPerPlayerCommandProvider> All { get; } =
-        [Buttons, Forward, Left, ViewPitch, ViewYaw, Tick];
+        [Buttons, Forward, Left, ViewPitch, ViewYaw, Tick, LastJumpTick, Coverage];
 
     /// <summary>The provider named <paramref name="name" />, or null.</summary>
     public static IPerPlayerCommandProvider? Get(string name)
@@ -81,6 +122,25 @@ public static class UserCommandProviders
         {
             ArgumentNullException.ThrowIfNull(command);
             return read(command);
+        }
+    }
+
+    private sealed class HistoryProvider(string name, Type valueType, Func<UserCmdReconstructor, int, object?> read)
+        : IPerPlayerCommandProvider
+    {
+        public string Name => name;
+
+        public Type ValueType => valueType;
+
+        public bool ReadsInputHistory => true;
+
+        /// <summary>Null: the value is not a field of any one command.</summary>
+        public object? Read(CSGOUserCmdPB command) => null;
+
+        public object? Read(UserCmdReconstructor commands, int playerSlot)
+        {
+            ArgumentNullException.ThrowIfNull(commands);
+            return read(commands, playerSlot);
         }
     }
 }

@@ -252,15 +252,21 @@ public static class DemoTestHelper
             }
         }
 
-        // 2b. The opt-in corpus folder outside the repo. Named lookup only: a demo named outright
-        // cannot redirect a test that asked for whatever is present, so this never feeds the
-        // first-sorted fallback in FindDemoPath().
+        // 2b. The opt-in corpus folder outside the repo, its subfolders included so one variable
+        // can name a tree holding several sets. Named lookup only: a demo named outright cannot
+        // redirect a test that asked for whatever is present, so this never feeds the first-sorted
+        // fallback in FindDemoPath().
         if (CorpusDirectory() is { } corpus)
         {
             string direct = Path.Combine(corpus, filename);
             if (File.Exists(direct))
             {
                 return direct;
+            }
+
+            if (Directory.EnumerateFiles(corpus, filename, SearchOption.AllDirectories).FirstOrDefault() is { } nested)
+            {
+                return nested;
             }
         }
 

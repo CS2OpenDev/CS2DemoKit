@@ -107,6 +107,7 @@ public sealed class CatalogScopeAdapter
     private readonly Dictionary<string, IScopeSymbol> _eventNamespaces;
     private readonly Dictionary<string, IScopeSymbol> _netMessageNamespaces;
     private readonly IReadOnlyList<IScopeSymbol> _roleMembers;
+    private readonly IReadOnlyList<IScopeSymbol> _commandMembers;
 
     private CatalogScopeAdapter(
         CatalogRoot catalog,
@@ -119,6 +120,7 @@ public sealed class CatalogScopeAdapter
         Dictionary<string, IScopeSymbol> eventNamespaces,
         Dictionary<string, IScopeSymbol> netMessageNamespaces,
         IReadOnlyList<IScopeSymbol> roleMembers,
+        IReadOnlyList<IScopeSymbol> commandMembers,
         Dictionary<string, CatalogEnrichment> enrichmentsByName)
     {
         Catalog = catalog;
@@ -131,6 +133,7 @@ public sealed class CatalogScopeAdapter
         _eventNamespaces = eventNamespaces;
         _netMessageNamespaces = netMessageNamespaces;
         _roleMembers = roleMembers;
+        _commandMembers = commandMembers;
         _enrichmentsByName = enrichmentsByName;
     }
 
@@ -178,6 +181,9 @@ public sealed class CatalogScopeAdapter
         // Per-player providers double as role-handle members (spec §4: "the member set after the
         // role is exactly the per-player provider set").
         List<IScopeSymbol> roleMembers = [];
+        // The command providers are the thrower's too (player.cmd.* as thrower.cmd.*), since the
+        // thrower's slot is fixed per instance like the ruleset player's; a role read per fire is not.
+        List<IScopeSymbol> commandMembers = [];
         foreach (CatalogProvider provider in catalog.Providers)
         {
             RulesType type = FriendlyTypeMap.Map(provider.ClrType);
@@ -188,6 +194,10 @@ public sealed class CatalogScopeAdapter
             if (string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal))
             {
                 roleMembers.Add(ScopeSymbol.Value(LastSegment(path), type));
+            }
+            else if (string.Equals(provider.Scope, "perPlayerCommand", StringComparison.Ordinal))
+            {
+                commandMembers.Add(ScopeSymbol.Value(LastSegment(path), type));
             }
         }
 
@@ -247,7 +257,7 @@ public sealed class CatalogScopeAdapter
         }
 
         return new CatalogScopeAdapter(catalog, player, round, match, enrich, team, projectile, eventNamespaces,
-            netMessageNamespaces, roleMembers, enrichmentsByName);
+            netMessageNamespaces, roleMembers, commandMembers, enrichmentsByName);
     }
 
     /// <summary>
@@ -290,6 +300,17 @@ public sealed class CatalogScopeAdapter
         ArgumentNullException.ThrowIfNull(role);
         return ScopeSymbol.Namespace(role, [.. _roleMembers]);
     }
+
+    /// <summary>
+    ///     The <c>thrower</c> namespace of a <c>for: each_projectile</c> ruleset: the per-player
+    ///     provider set, plus <c>cmd.*</c> for the command providers, both at the instance's slot.
+    /// </summary>
+    /// <returns>The namespace symbol.</returns>
+    public IScopeSymbol ThrowerNamespace() =>
+        ScopeSymbol.Namespace(ThrowerRole, [.. _roleMembers, ScopeSymbol.Namespace(CommandMember, [.. _commandMembers])]);
+
+    /// <summary>The segment under <c>player</c> and <c>thrower</c> that holds the command providers.</summary>
+    public const string CommandMember = "cmd";
 
     /// <summary>
     ///     Lowers a view facet to the underlying read expression it desugars to (spec §5 row 5):

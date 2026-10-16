@@ -159,6 +159,82 @@ public class UserCmdFixtureTests
         await Assert.That(atTheEnd.Stats.Delta).IsGreaterThan(0L);
     }
 
+    /// <summary>
+    ///     The input history (<see cref="UserCmdReconstructor.TrackInputs" />) over real deltas: the
+    ///     lane's last jump tick and coverage per slot equal the same facts read off an eager rebuild's
+    ///     emitted commands, at sampled points and at the end, and some rises come from deltas.
+    /// </summary>
+    [Test]
+    [MethodDataSource(nameof(Fixtures))]
+    public async Task PinnedWindow_InputHistory_MatchesTheEagerRebuild(string fixture)
+    {
+        const ulong jump = 1ul << 1;
+        List<(byte Kind, byte[] Payload)> records = Read(Path.Combine(FixtureDir(), fixture));
+
+        UserCmdsWriter store = new();
+        UserCmdReconstructor eager = new(), lane = new() { OnDemand = true, TrackInputs = true };
+        Dictionary<int, ulong> lastButtons = [];
+        Dictionary<int, int> lastRise = [];
+        Dictionary<int, List<int>> arrivals = [];
+        long rises = 0, compared = 0;
+        for (int i = 0; i < records.Count; i++)
+        {
+            store.BeginFrame();
+            store.Append(records[i].Payload, 0);
+            (byte[]? block, int offset, int count) = store.EndFrame();
+            DemoFrame frame = new()
+            {
+                CommandKind = records[i].Kind == FullPacketKind ? EDemoCommands.DemFullPacket : EDemoCommands.DemPacket,
+                FrameNumber = i,
+                HeaderLength = 0,
+                IsCompressed = false,
+                RawLength = 0,
+                RawStart = 0,
+                ServerTick = i,
+                MessageList = [],
+                UserCmdsBlock = block,
+                UserCmdsOffset = offset,
+                UserCmdsCount = count
+            };
+
+            foreach (ReconstructedUserCmd cmd in eager.AdvanceOneFrame(frame))
+            {
+                CBaseUserCmdPB? b = cmd.Command.Base;
+                ulong buttons = b?.ButtonsPb?.Buttonstate1 ?? 0;
+                bool rose = (buttons & jump) != 0 && (lastButtons.GetValueOrDefault(cmd.PlayerSlot) & jump) == 0
+                            || b is not null && b.SubtickMoves.Any(step => step.Button == jump && step.Pressed);
+                lastButtons[cmd.PlayerSlot] = buttons;
+                if (rose)
+                {
+                    lastRise[cmd.PlayerSlot] = i;
+                    rises++;
+                }
+
+                (arrivals.TryGetValue(cmd.PlayerSlot, out List<int>? list) ? list : arrivals[cmd.PlayerSlot] = []).Add(i);
+            }
+
+            await Assert.That(lane.AdvanceOneFrame(frame).Count).IsEqualTo(0);
+            if (i % 97 != 0 && i != records.Count - 1)
+            {
+                continue;
+            }
+
+            for (int slot = 0; slot < 64; slot++)
+            {
+                await Assert.That(lane.LastJumpTick(slot)).IsEqualTo(lastRise.GetValueOrDefault(slot, -1)).Because($"slot {slot} at frame {i}");
+                int recent = arrivals.GetValueOrDefault(slot)?.Count(t => t > i - UserCmdReconstructor.CoverageTicks) ?? 0;
+                await Assert.That(lane.Coverage(slot)).IsEqualTo(Math.Min(1f, recent / (float)UserCmdReconstructor.CoverageTicks))
+                    .Because($"slot {slot} at frame {i}");
+                compared++;
+            }
+        }
+
+        Console.WriteLine($"{fixture}: {rises} rises, {compared} slot reads compared, {lane.Stats.Delta} deltas on the lane");
+        await Assert.That(rises).IsGreaterThan(0L).Because("the window has players jumping");
+        await Assert.That(lane.Stats.Delta).IsGreaterThan(lane.Stats.Full * 20).Because("the lane rebuilt the deltas itself");
+        await Assert.That(lane.Current(0)).IsEqualTo(eager.Current(0));
+    }
+
     /// <summary>Asserts every slot's latest command agrees, field for field and byte for byte; returns how many slots held one.</summary>
     private static async Task<long> SameCommands(UserCmdReconstructor a, UserCmdReconstructor b)
     {

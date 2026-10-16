@@ -1168,6 +1168,42 @@ digest or fixture moves. `ProjectileLifecycleTests` pins the threshold, the unre
 case and the removed row's carry on hand-built rows; `ProjectileLastMovedTests` pins the member
 kept last against `ProjectileSampler`'s consecutive samples on the sample demo, on both paths.
 
+### The command lane keeps a jump and a coverage history (0.14.0)
+
+`UserCmdReconstructor` gains `TrackInputs` (init property), `LastJumpTick(slot)` (the frame-clock
+tick `IN_JUMP` last rose on, against the slot's previous command or in a sub-tick move step, -1
+before the first), `Coverage(slot)` (the slot's commands over the last `CoverageTicks` = 64 frame
+ticks, over 64, capped at 1) and the constant. Both throw without `TrackInputs`. With it and
+`OnDemand` set, nothing is queued: each frame's commands are applied to their slots in place as the
+frame arrives, which is what a reader polling every slot each frame already cost; the eager mode is
+unchanged. Snapshots in a `DEM_FullPacket` prime the button baseline and count for neither fact.
+
+`IPerPlayerCommandProvider` gains two default-implemented members: `ReadsInputHistory` (false) and
+`Read(UserCmdReconstructor, int)`, which reads the slot's latest command through `Read(CSGOUserCmdPB)`.
+`UserCommandProviders` gains `LastJumpTick` (`usercmd.last_jump_tick`, int) and `Coverage`
+(`usercmd.coverage`, float), both answering true to the first and reading the lane through the
+second; `All` lists eight. `EntityChangeScanner.GetCommandValue` reads through the new overload, and
+the builder sets `TrackInputs` on the lane when a ruleset reads a provider that needs it, so a run
+reading only the six field providers tracks nothing. In a `for: each_projectile` ruleset
+`thrower.cmd.<member>` resolves to the same providers at the instance's slot:
+`CatalogScopeAdapter.ThrowerNamespace()` (new) carries a `cmd` namespace beside the per-player
+members, `CatalogScopeAdapter.CommandMember` names the segment, and the resolver lowers the read as
+`player.cmd.*` is lowered. A look-back on a command read stays refused. A capture of
+`player.cmd.last_jump_tick` or `thrower.cmd.last_jump_tick` is classified on the frame clock. The
+catalog gains the two providers with notes; the editor schema is regenerated for them.
+
+`DemoTestHelper.FindDemoPath(name)` now searches the corpus folder's subfolders too, so
+`CS2DEMOKIT_CORPUS_DIR` can name a tree holding several sets.
+
+No shipped ruleset reads a command, so no hash, digest or fixture moves. `UserCmdInputHistoryTests`
+pins the rise rule, the sub-tick press, the snapshot baseline, the coverage window and the throw
+without `TrackInputs` on synthetic frames; `UserCmdFixtureTests` replays the committed delta window
+through the lane against an eager rebuild; `RulesetV2ProjectileScopeTests` pins the `thrower.cmd.*`
+resolution; `ThrowerCommandLaneTests` pins both reads on `projectile_created` against a walker's
+jump-throw decision on the reference demo and a tournament demo, on both paths. No demo on the
+machine carries delta-encoded commands as a whole match, so the delta path is covered by the fixture
+window only.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

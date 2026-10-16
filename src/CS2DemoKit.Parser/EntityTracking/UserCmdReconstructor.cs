@@ -155,6 +155,12 @@ public readonly record struct UserCmdReconstructionStats
 ///         evaluator, does not need every command rebuilt: set <see cref="OnDemand" /> and a slot
 ///         is rebuilt when <see cref="Current" /> reads it.
 ///     </para>
+///     <para>
+///         <b>Input history.</b> Two facts span commands rather than sit in one: the frame tick
+///         <c>IN_JUMP</c> last rose on and how many commands the slot sent lately. Set
+///         <see cref="TrackInputs" /> and every command is applied as it arrives, in place, so
+///         <see cref="LastJumpTick" /> and <see cref="Coverage" /> see all of them.
+///     </para>
 ///     <para>Not thread-safe. One instance follows one demo.</para>
 /// </summary>
 public sealed class UserCmdReconstructor
@@ -164,11 +170,17 @@ public sealed class UserCmdReconstructor
     // Player slots are 0..63; the dictionary is for anything else the wire may say.
     private const int DirectSlots = 64;
 
+    /// <summary>The window <see cref="Coverage" /> counts commands over, in frame ticks.</summary>
+    public const int CoverageTicks = 64;
+
+    private const ulong InJump = 1ul << 1;
+
     private readonly List<ReconstructedUserCmd> _emitted = [];
     private readonly SlotState?[] _direct = new SlotState?[DirectSlots];
     private readonly Dictionary<int, SlotState> _slots = [];
     private readonly List<QueuedFrame> _queue = [];
     private int _firstSeq;
+    private int _frameTick;
     private Counters _c;
 
     /// <summary>
@@ -191,6 +203,18 @@ public sealed class UserCmdReconstructor
     ///     </para>
     /// </summary>
     public bool OnDemand { get; init; }
+
+    /// <summary>
+    ///     Keep, per slot, the frame tick <c>IN_JUMP</c> last rose on and the frame ticks of the last
+    ///     <see cref="CoverageTicks" /> commands, for <see cref="LastJumpTick" /> and
+    ///     <see cref="Coverage" />. A rising edge is the button set in <c>buttonstate1</c> where the
+    ///     slot's previous command had it clear, or a sub-tick move step pressing it. With
+    ///     <see cref="OnDemand" /> set as well, nothing is queued: each frame's commands are applied
+    ///     to their slots as the frame arrives, in place, so a read costs what the eager mode's
+    ///     walk does without its copies. Commands inside a <c>DEM_FullPacket</c> are snapshots and
+    ///     count for neither.
+    /// </summary>
+    public bool TrackInputs { get; init; }
 
     /// <summary>The default <see cref="OnDemandFrameBound" />.</summary>
     public const int DefaultOnDemandFrameBound = 4096;
@@ -233,11 +257,16 @@ public sealed class UserCmdReconstructor
     {
         ArgumentNullException.ThrowIfNull(frame);
         _emitted.Clear();
+        _frameTick = frame.GameTick ?? frame.ServerTick;
         bool fromFullPacket = frame.CommandKind == EDemoCommands.DemFullPacket;
+        bool queue = OnDemand && !TrackInputs;
+        // An emitted command is the caller's to keep, so it is built on a copy; one nobody is
+        // handed is built in place.
+        bool emit = !OnDemand;
 
         if (frame.UserCmdsBlock is { } block)
         {
-            if (OnDemand)
+            if (queue)
             {
                 if (frame.UserCmdsCount > 0)
                 {
@@ -262,7 +291,7 @@ public sealed class UserCmdReconstructor
                     continue;
                 }
 
-                ApplyAll(parsed, fromFullPacket);
+                ApplyAll(parsed, fromFullPacket, emit);
             }
 
             // Parse-time frames carry no typed payloads: their stored payloads are not in this list.
@@ -285,13 +314,13 @@ public sealed class UserCmdReconstructor
                 continue;
             }
 
-            if (OnDemand)
+            if (queue)
             {
                 (typed ??= []).Add(direct);
             }
             else
             {
-                ApplyAll(direct, fromFullPacket);
+                ApplyAll(direct, fromFullPacket, emit);
             }
         }
 
@@ -303,12 +332,21 @@ public sealed class UserCmdReconstructor
         return _emitted;
     }
 
-    private void ApplyAll(CSVCMsg_UserCommands payload, bool fromFullPacket)
+    private void ApplyAll(CSVCMsg_UserCommands payload, bool fromFullPacket, bool emit)
     {
         foreach (CMsgServerUserCmd cmd in payload.Commands)
         {
-            UserCmdApplyStatus status = Apply(cmd, fromFullPacket, out CSGOUserCmdPB? command);
-            if (command is not null)
+            ReadOnlySpan<byte> data = cmd.HasData ? cmd.Data.Span : default;
+            ReadOnlySpan<byte> delta = cmd.HasDeltaData ? cmd.DeltaData.Span : default;
+            if ((data.IsEmpty && delta.IsEmpty) || cmd.PlayerSlot < 0)
+            {
+                _c.Empty++;
+                continue;
+            }
+
+            UserCmdApplyStatus status = ApplyCore(GetSlot(cmd.PlayerSlot), cmd.CmdNumber, cmd.HasClientTick,
+                cmd.ClientTick, fromFullPacket, data, delta, !emit, out CSGOUserCmdPB? command);
+            if (emit && command is not null)
             {
                 _emitted.Add(new ReconstructedUserCmd(cmd.PlayerSlot, cmd.CmdNumber, cmd.ServerTickExecuted,
                     cmd.ClientTick, status == UserCmdApplyStatus.Delta, command));
@@ -409,8 +447,47 @@ public sealed class UserCmdReconstructor
             _c.ClientTickMismatches++;
         }
 
+        if (TrackInputs)
+        {
+            Observe(slot, built);
+        }
+
         command = built;
         return status;
+    }
+
+    // The rising edge is against the slot's previous command, so a jump held across a keyframe
+    // does not rise again; a sub-tick press is a rise of its own.
+    private void Observe(SlotState slot, CSGOUserCmdPB command)
+    {
+        CBaseUserCmdPB? b = command.Base;
+        ulong buttons = b?.ButtonsPb?.Buttonstate1 ?? 0;
+        bool rose = (buttons & InJump) != 0 && (slot.LastButtons & InJump) == 0;
+        if (!rose && b is not null)
+        {
+            foreach (CSubtickMoveStep step in b.SubtickMoves)
+            {
+                if (step.Button == InJump && step.Pressed)
+                {
+                    rose = true;
+                    break;
+                }
+            }
+        }
+
+        slot.LastButtons = buttons;
+        if (rose)
+        {
+            slot.LastJumpTick = _frameTick;
+        }
+
+        slot.Recent ??= new int[CoverageTicks];
+        slot.Recent[slot.RecentNext] = _frameTick;
+        slot.RecentNext = (slot.RecentNext + 1) % CoverageTicks;
+        if (slot.RecentCount < CoverageTicks)
+        {
+            slot.RecentCount++;
+        }
     }
 
     private UserCmdApplyStatus ApplyCheckpoint(SlotState slot, int cmdNumber, ReadOnlySpan<byte> data,
@@ -460,6 +537,7 @@ public sealed class UserCmdReconstructor
                 // The server's next delta is relative to its own command, so the snapshot wins.
                 _c.CheckpointMismatches++;
                 slot.Command = snapshot;
+                slot.LastButtons = snapshot.Base?.ButtonsPb?.Buttonstate1 ?? 0;
             }
 
             return UserCmdApplyStatus.CheckpointDuplicate;
@@ -467,6 +545,7 @@ public sealed class UserCmdReconstructor
 
         slot.Command = snapshot;
         slot.CmdNumber = cmdNumber;
+        slot.LastButtons = snapshot.Base?.ButtonsPb?.Buttonstate1 ?? 0;
         _c.CheckpointPrimed++;
         return UserCmdApplyStatus.CheckpointPrimed;
     }
@@ -779,6 +858,52 @@ public sealed class UserCmdReconstructor
         return FindSlot(playerSlot)?.Command;
     }
 
+    /// <summary>
+    ///     The frame tick <c>IN_JUMP</c> last rose on in <paramref name="playerSlot" />'s commands, or
+    ///     -1 before the first rise.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><see cref="TrackInputs" /> is not set.</exception>
+    public int LastJumpTick(int playerSlot)
+    {
+        RequireInputs();
+        return FindSlot(playerSlot)?.LastJumpTick ?? -1;
+    }
+
+    /// <summary>
+    ///     How many of <paramref name="playerSlot" />'s commands arrived in the last
+    ///     <see cref="CoverageTicks" /> frame ticks, ending at the frame last advanced, over that
+    ///     many ticks: 0 for none, 1 for a command every tick, capped at 1 when frames carried more.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><see cref="TrackInputs" /> is not set.</exception>
+    public float Coverage(int playerSlot)
+    {
+        RequireInputs();
+        if (FindSlot(playerSlot) is not { Recent: { } recent } slot)
+        {
+            return 0f;
+        }
+
+        int since = _frameTick - CoverageTicks;
+        int count = 0;
+        for (int i = 0; i < slot.RecentCount; i++)
+        {
+            if (recent[i] > since)
+            {
+                count++;
+            }
+        }
+
+        return Math.Min(1f, count / (float)CoverageTicks);
+    }
+
+    private void RequireInputs()
+    {
+        if (!TrackInputs)
+        {
+            throw new InvalidOperationException("this reconstructor keeps no input history; set TrackInputs");
+        }
+    }
+
     /// <summary>Forgets every slot and zeroes <see cref="Stats" />, before a seek.</summary>
     public void Reset()
     {
@@ -787,6 +912,7 @@ public sealed class UserCmdReconstructor
         _emitted.Clear();
         _queue.Clear();
         _firstSeq = 0;
+        _frameTick = 0;
         _c = default;
     }
 
@@ -976,6 +1102,17 @@ public sealed class UserCmdReconstructor
 
         /// <summary>Scratch for a rebuild of every slot: the slot has commands in the range.</summary>
         public bool SeenInRange;
+
+        /// <summary>Input history (<see cref="TrackInputs" />): the last command's buttons, the last rise, and the arrival ticks of recent commands.</summary>
+        public ulong LastButtons;
+
+        public int LastJumpTick = -1;
+
+        public int[]? Recent;
+
+        public int RecentCount;
+
+        public int RecentNext;
     }
 
     private struct Counters

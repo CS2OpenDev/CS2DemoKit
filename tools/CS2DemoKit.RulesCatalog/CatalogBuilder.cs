@@ -104,6 +104,15 @@ public static class CatalogBuilder
             ["entity.game.total_rounds_played"] = (null,
                 "Rounds decided so far this match: 0 before round 1, and it increments on the "
                 + "frame a round is decided, not when the next one starts."),
+            ["usercmd.last_jump_tick"] = (null,
+                "The frame-clock tick IN_JUMP last rose on in this player's commands: set in "
+                + "buttonstate1 where the previous command had it clear, or pressed in a sub-tick move "
+                + "step. -1 before the first. A jump-throw read on `projectile_created` is "
+                + "`thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27`."),
+            ["usercmd.coverage"] = ("fraction",
+                "The player's commands over the last 64 frame ticks divided by 64, capped at 1: 0 "
+                + "when the demo carries none for the player lately. Gate a jump read on it: while "
+                + "this is 0, `last_jump_tick` says nothing about the player."),
             ["entity.team.clan_name"] = (null,
                 "The side's clan name as the server set it (m_szClanTeamname on the side's CCSTeam). "
                 + "Keyed by side, not by team: after halftime the team that started T is the CT row."),

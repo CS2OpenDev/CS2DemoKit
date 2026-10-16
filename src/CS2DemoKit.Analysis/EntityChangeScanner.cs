@@ -1547,7 +1547,7 @@ public sealed class EntityChangeScanner
     public object? GetCommandValue(IPerPlayerCommandProvider provider, int playerSlot)
     {
         ArgumentNullException.ThrowIfNull(provider);
-        return Commands?.Current(playerSlot) is { } command ? provider.Read(command) : null;
+        return Commands is { } commands ? provider.Read(commands, playerSlot) : null;
     }
 
     private static EntityChangeMessage BuildSynthesizedMessage(IEntityValueProvider provider, int tick, object? oldValue, object? newValue)

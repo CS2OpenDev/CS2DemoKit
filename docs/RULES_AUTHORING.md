@@ -610,11 +610,25 @@ role's entity state, using the role name in place of `player`: `victim.health` i
 - `player.cmd.forward` / `player.cmd.left`: the movement inputs, `forwardmove` and `leftmove`.
 - `player.cmd.view_pitch` / `player.cmd.view_yaw`: the view angles the client sent, in degrees.
 - `player.cmd.tick`: the client tick the command was built on.
+- `player.cmd.last_jump_tick`: the frame-clock tick `IN_JUMP` last rose on, set where the previous
+  command had it clear or pressed in a sub-tick move step; `-1` before the first.
+- `player.cmd.coverage`: the player's commands over the last 64 ticks divided by 64, capped at 1,
+  so `0` says the demo carries no input for the player lately and a jump read means nothing.
 
 A command read includes the commands of the frame the event fires on, at a game event too, where
 the entity reads above are the state from before the frame's update. Commands are served at event sites only (`where:`, a `sum:` /
 `capture:` value); a `compute:` or `flag: when:` that reads one fails to lower. Reading any of them
-makes the run decode user commands, which costs a run that reads none nothing.
+makes the run decode user commands, which costs a run that reads none nothing; the last two make it
+keep the history they need, which a run reading only the others does not. In a `for:
+each_projectile` ruleset the thrower's commands are `thrower.cmd.*`, so a jump-throw is a press in
+the window before the spawn:
+
+```yaml
+stats:
+  jump_throw:
+    capture: thrower.cmd.coverage > 0 and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+    on: raw.projectile_created
+```
 
 **Looking back.** `player.pos_x@-8` reads what `player.pos_x` read 8 ticks earlier on the frame
 clock. N is a whole number from 1 to 64. It works on the subject's per-player entity reads: the
@@ -832,6 +846,9 @@ and the instance is released. A grenade still in the air when the demo ends gets
   grenade flies, and where it popped, `NaN` until then and on every other class), `is_incendiary`
   and `explode_effect_tick` (the server tick the explosion effect began, 0 until it detonates). A
   capture of one of the tick members is labelled with its clock in `ColumnClocks`.
+- `thrower.*` reads the thrower's per-player values at the instance's slot, the same names as
+  `player.*` in a `for: each_player` ruleset, look-back included, and `thrower.cmd.*` the thrower's
+  commands (section 7).
 - A capture with no `on:` takes a bare `projectile.*` read: `keep: first` samples it on the frame
   the instance materializes, `keep: last` reads it live, so the table sees the value at removal.
   Anything else with no `on:` is `resolve.trigger.unsupported-for-kind`.

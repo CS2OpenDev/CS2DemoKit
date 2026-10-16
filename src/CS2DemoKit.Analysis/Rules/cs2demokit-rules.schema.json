@@ -158,8 +158,16 @@
           "markdownDescription": "\u0060player.cmd.buttons\u0060 (type \u0060long\u0060) - an entity read, from \u0060usercmd.buttons\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
         },
         {
+          "const": "player.cmd.coverage",
+          "markdownDescription": "\u0060player.cmd.coverage\u0060 (type \u0060float\u0060, in fraction) - an entity read, from \u0060usercmd.coverage\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included. The player\u0027s commands over the last 64 frame ticks divided by 64, capped at 1: 0 when the demo carries none for the player lately. Gate a jump read on it: while this is 0, \u0060last_jump_tick\u0060 says nothing about the player."
+        },
+        {
           "const": "player.cmd.forward",
           "markdownDescription": "\u0060player.cmd.forward\u0060 (type \u0060float\u0060) - an entity read, from \u0060usercmd.forward\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included."
+        },
+        {
+          "const": "player.cmd.last_jump_tick",
+          "markdownDescription": "\u0060player.cmd.last_jump_tick\u0060 (type \u0060int\u0060) - an entity read, from \u0060usercmd.last_jump_tick\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included. The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27\u0060."
         },
         {
           "const": "player.cmd.left",

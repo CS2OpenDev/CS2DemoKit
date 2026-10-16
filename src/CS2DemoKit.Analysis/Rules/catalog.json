@@ -3346,11 +3346,28 @@
       "v2Type": "Int"
     },
     {
+      "name": "usercmd.coverage",
+      "scope": "perPlayerCommand",
+      "clrType": "float",
+      "v2Name": "player.cmd.coverage",
+      "v2Type": "Float",
+      "unit": "fraction",
+      "note": "The player\u0027s commands over the last 64 frame ticks divided by 64, capped at 1: 0 when the demo carries none for the player lately. Gate a jump read on it: while this is 0, \u0060last_jump_tick\u0060 says nothing about the player."
+    },
+    {
       "name": "usercmd.forward",
       "scope": "perPlayerCommand",
       "clrType": "float",
       "v2Name": "player.cmd.forward",
       "v2Type": "Float"
+    },
+    {
+      "name": "usercmd.last_jump_tick",
+      "scope": "perPlayerCommand",
+      "clrType": "int",
+      "v2Name": "player.cmd.last_jump_tick",
+      "v2Type": "Int",
+      "note": "The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27\u0060."
     },
     {
       "name": "usercmd.left",

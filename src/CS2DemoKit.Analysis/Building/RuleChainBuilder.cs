@@ -504,9 +504,9 @@ public sealed partial class RuleChainBuilder
                 silent,
                 projectileClasses,
                 emitProjectiles);
-            if (ReadsUserCommands(rulesets))
+            if (ReadsUserCommands(rulesets, out bool history))
             {
-                entityScanner.Commands = new UserCmdReconstructor { OnDemand = true };
+                entityScanner.Commands = new UserCmdReconstructor { OnDemand = true, TrackInputs = history };
             }
 
             foreach ((string providerName, int ticks) in _lookBackTicks)
@@ -693,22 +693,30 @@ public sealed partial class RuleChainBuilder
         };
     }
 
-    private static bool ReadsUserCommands(IReadOnlyList<CheckedRuleset> rulesets)
+    /// <summary>
+    ///     Whether any ruleset reads a command provider, and whether one of those reads is a provider
+    ///     that <see cref="IPerPlayerCommandProvider.ReadsInputHistory" />, which the lane must track.
+    /// </summary>
+    private static bool ReadsUserCommands(IReadOnlyList<CheckedRuleset> rulesets, out bool history)
     {
-        static bool Any(IReadOnlyList<EntityProviderReference> reads)
+        bool any = false;
+        history = false;
+        foreach (CheckedRuleset rs in rulesets)
         {
-            foreach (EntityProviderReference read in reads)
+            foreach (EntityProviderReference read in rs.Stats.SelectMany(s => s.EntityReads)
+                         .Concat(rs.Highlights.SelectMany(h => h.EntityReads)))
             {
-                if (read.ProviderName.StartsWith(UserCommandProviders.Prefix, StringComparison.Ordinal))
+                if (!read.ProviderName.StartsWith(UserCommandProviders.Prefix, StringComparison.Ordinal))
                 {
-                    return true;
+                    continue;
                 }
-            }
 
-            return false;
+                any = true;
+                history |= UserCommandProviders.Get(read.ProviderName)?.ReadsInputHistory == true;
+            }
         }
 
-        return rulesets.Any(rs => rs.Stats.Any(s => Any(s.EntityReads)) || rs.Highlights.Any(h => Any(h.EntityReads)));
+        return any;
     }
 
     /// <summary>

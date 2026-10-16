@@ -377,7 +377,8 @@ This is local-only for now. CI still runs on the committed sample alone, so a co
 opening a PR is worth the minute it costs.
 
 Demos that live elsewhere, such as the Steam replays folder, can be used without copying them in:
-set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, and the corpus
+set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, in a subfolder
+too, so one variable can name a tree holding several sets, and the corpus
 tests (`RulesOutputGoldenTests`, the forward-path parity sweep) take the demos in it that have a
 fixture under `tests/fixtures/rules-output/`, so a folder of hundreds of matches re-runs the pinned
 set rather than all of them. The folder is only read; nothing in it is written, moved or deleted.

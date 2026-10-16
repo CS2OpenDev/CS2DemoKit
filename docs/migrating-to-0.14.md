@@ -114,9 +114,10 @@ game-rules ones: `entity.team.score@2`, `@3`, `entity.team.clan_name@2`, `@3`. A
 or indexes the registry's list moves with it; the catalog lists the two specs once each with
 `scope: "perTeam"`.
 
-**The catalog lists six `perPlayerCommand` providers** (`usercmd.buttons` and the rest, read as
-`player.cmd.*`). A consumer that switches on `CatalogProvider.Scope` needs the fourth arm. They are
-not role-handle members and have no digest column.
+**The catalog lists eight `perPlayerCommand` providers** (`usercmd.buttons` and the rest, read as
+`player.cmd.*`, and as `thrower.cmd.*` in a projectile ruleset). A consumer that switches on
+`CatalogProvider.Scope` needs the fourth arm. They are not role-handle members and have no digest
+column.
 
 **`CheckedExpression.References` lists a look-back as its own entry.** `player.pos_x` and
 `player.pos_x@-8` in one expression are two references with the same `Path`; read
@@ -251,7 +252,13 @@ show:
 ```
 
 A ruleset can read the player's input: `player.cmd.buttons`, `forward`, `left`, `view_pitch`,
-`view_yaw` and `tick`, off the latest user command. A host that rebuilt commands itself for a frame
+`view_yaw` and `tick`, off the latest user command, and two facts the lane keeps across commands:
+`player.cmd.last_jump_tick` (the frame-clock tick `IN_JUMP` last rose on, a sub-tick press
+included, -1 before the first) and `player.cmd.coverage` (the player's commands over the last 64
+ticks divided by 64, 0 when the demo carries none). A projectile ruleset reads them as
+`thrower.cmd.*`, so a host that kept its own ring of the thrower's commands to decide a jump-throw
+reads `thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27` on `projectile_created`
+instead, gated on `thrower.cmd.coverage > 0`. A host that rebuilt commands itself for a frame
 observer can set `AnalysisOptions.DecodeUserCommands` and read `FrameView.Command(slot)` instead, and
 `PlanDecode` asks the reader for the commands either way. The command a read returns is the slot's
 live instance, rebuilt in place as later commands arrive, so copy what you keep. A read looks back with `@-N`, up to 64

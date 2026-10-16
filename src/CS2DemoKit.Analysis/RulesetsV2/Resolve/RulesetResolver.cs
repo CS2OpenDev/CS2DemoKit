@@ -93,6 +93,7 @@ public static class RulesetResolver
         private readonly Dictionary<string, ExpressionNode> _paramLiterals = new(StringComparer.Ordinal);
         private readonly IScopeSymbol? _paramsNamespace;
         private readonly Dictionary<string, CatalogProvider> _perPlayerProviderByMember;
+        private readonly Dictionary<string, CatalogProvider> _commandProviderByMember;
         private readonly Dictionary<string, CatalogProvider> _providerByV2Name;
         private readonly RulesetId _rulesetId;
         private readonly List<IScopeSymbol> _siblingSymbols = [];
@@ -133,6 +134,9 @@ public static class RulesetResolver
                 .ToDictionary(p => p.V2Name!, StringComparer.Ordinal);
             _perPlayerProviderByMember = adapter.Catalog.Providers
                 .Where(p => string.Equals(p.Scope, "perPlayer", StringComparison.Ordinal) && p.V2Name is not null)
+                .ToDictionary(p => LastSegment(p.V2Name!), StringComparer.Ordinal);
+            _commandProviderByMember = adapter.Catalog.Providers
+                .Where(p => string.Equals(p.Scope, "perPlayerCommand", StringComparison.Ordinal) && p.V2Name is not null)
                 .ToDictionary(p => LastSegment(p.V2Name!), StringComparer.Ordinal);
 
             foreach (ParamDef param in doc.Params)
@@ -640,11 +644,14 @@ public static class RulesetResolver
             }
 
             // The projectile's own ticks: first seen and last moved are the frame clock, the effect
-            // ticks are the server's (m_nExplodeEffectTickBegin, m_nSmokeEffectTickBegin).
+            // ticks are the server's (m_nExplodeEffectTickBegin, m_nSmokeEffectTickBegin). The last
+            // jump is the frame the command arrived on.
             switch (reference.Path)
             {
                 case CatalogScopeAdapter.ProjectileRoot + ".first_seen_tick":
                 case CatalogScopeAdapter.ProjectileRoot + ".last_moved_tick":
+                case "player." + CatalogScopeAdapter.CommandMember + ".last_jump_tick":
+                case CatalogScopeAdapter.ThrowerRole + "." + CatalogScopeAdapter.CommandMember + ".last_jump_tick":
                     return TickClock.Frame;
                 case CatalogScopeAdapter.ProjectileRoot + ".explode_effect_tick":
                 case CatalogScopeAdapter.ProjectileRoot + ".smoke_effect_tick":
@@ -2198,7 +2205,7 @@ public static class RulesetResolver
             if (_forEachProjectile)
             {
                 AddRoot(roots, _adapter.Projectile);
-                AddRoot(roots, _adapter.RoleNamespace(CatalogScopeAdapter.ThrowerRole));
+                AddRoot(roots, _adapter.ThrowerNamespace());
             }
 
             AddRoot(roots, _adapter.Round);
@@ -2405,6 +2412,17 @@ public static class RulesetResolver
                                    && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider))
             {
                 entity = new EntityProviderReference(reference.Path, throwerProvider.Name,
+                    EntityProviderReference.PlayerSubject);
+                return true;
+            }
+
+            // The thrower's commands: the lane is keyed by slot, so the read lowers like player.cmd.*.
+            if (_forEachProjectile && segments.Length == 3
+                                   && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
+                                   && string.Equals(segments[1], CatalogScopeAdapter.CommandMember, StringComparison.Ordinal)
+                                   && _commandProviderByMember.TryGetValue(segments[2], out CatalogProvider? commandProvider))
+            {
+                entity = new EntityProviderReference(reference.Path, commandProvider.Name,
                     EntityProviderReference.PlayerSubject);
                 return true;
             }
