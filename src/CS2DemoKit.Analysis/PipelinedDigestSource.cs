@@ -1,6 +1,5 @@
 #region
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
@@ -67,7 +66,9 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     private readonly int _minChunkFrames;
     private readonly CancellationTokenSource _cts;
     private readonly CancellationToken _token;
-    private readonly ConcurrentBag<Worker> _pool = [];
+    // Not a ConcurrentBag: its per-thread queues sit in a ThreadLocal that the pool threads keep
+    // reachable until its finalizer runs, so every worker's tracker and row storage outlived the run.
+    private readonly List<Worker> _pool = [];
     private readonly List<DemoFrame> _signonPrefix = [];
     private EntityStateLayer? _template;
     private readonly IReadOnlyDictionary<int, PlayerInfo> _initialPlayers;
@@ -295,6 +296,11 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
             }
 
             _ahead.Clear();
+        }
+
+        lock (_pool)
+        {
+            _pool.Clear();
         }
 
         _current = null;
@@ -609,7 +615,10 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
                 Interlocked.Add(ref _foldAllocBytes, GC.GetAllocatedBytesForCurrentThread() - allocStart);
             }
 
-            _pool.Add(worker);
+            lock (_pool)
+            {
+                _pool.Add(worker);
+            }
         }
     }
 
@@ -619,25 +628,18 @@ internal sealed class PipelinedDigestSource : IDemoFrameSource
     // slot, and the reader takes one only after a slot is free. Called on the reader thread only.
     private Worker TakeWorker(bool fresh)
     {
-        List<Worker> passed = [];
-        Worker? taken = null;
-        while (_pool.TryTake(out Worker? candidate))
+        lock (_pool)
         {
-            if (!fresh || !candidate.SchemaLoaded)
+            int i = _pool.FindIndex(w => !fresh || !w.SchemaLoaded);
+            if (i < 0)
             {
-                taken = candidate;
-                break;
+                throw new InvalidOperationException("no free fold worker: the pool is bounded by the fold count");
             }
 
-            passed.Add(candidate);
+            Worker taken = _pool[i];
+            _pool.RemoveAt(i);
+            return taken;
         }
-
-        foreach (Worker w in passed)
-        {
-            _pool.Add(w);
-        }
-
-        return taken ?? throw new InvalidOperationException("no free fold worker: the pool is bounded by the fold count");
     }
 
     // The tick-gated seek a list-backed layer runs, over the chunk's own frames: every frame

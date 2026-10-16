@@ -323,6 +323,30 @@ public class PipelinedDigestWorkerTests
     }
 
     /// <summary>
+    ///     A closed pipeline's fold trackers are garbage on the first collection, with no finalizer run
+    ///     between, so a process that runs demos back to back does not carry one run's workers into the next.
+    /// </summary>
+    [Test]
+    public async Task Pipeline_ReleasesItsTrackers_OnTheFirstCollectionAfterClose()
+    {
+        WeakReference tracker = FoldAndKeepATrackerWeakly();
+
+        GC.Collect(2, GCCollectionMode.Forced, true, true);
+
+        await Assert.That(tracker.IsAlive).IsFalse();
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference FoldAndKeepATrackerWeakly()
+    {
+        WeakReference? tracker = null;
+        PipelinedDigests.Produce(
+            new FrameListSource(SyntheticFrames(100), null), () => [], () => [], false,
+            minChunkFrames: 300, schemaCheck: t => tracker ??= new WeakReference(t));
+        return tracker ?? throw new InvalidOperationException("chunk 0 never ran the schema check");
+    }
+
+    /// <summary>
     ///     Ending an evaluation joins the folds. A run cancelled after its first poll leaves the chunks
     ///     ahead of it folding on the pool; <c>EndEvaluation</c> returns only once every one of them has
     ///     ended, so no worker primes a tracker or judges the schema against the scanner after it, and
