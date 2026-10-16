@@ -70,14 +70,18 @@ rounded to `AngleDecimals` (9) and is exactly 0 for identical views. A value mov
 and macOS. `flick_error_deg` moves with `travel_from_spot_deg`, but its chest-angle term is not
 rounded and can still differ between them.
 
-**The per-pawn fold runs at the end of the frame.** `EntityChangeScanner` folded frame N's per-pawn
-digest into the pre-frame snapshot at the start of frame N+1; it now folds it at the end of frame
-N, from the new `CompleteFrame`, which the evaluator calls after each frame's post-frame messages.
-Edges read the same values on the same frames, the decode-compromise latch sets at the same digest,
-and a caller that walks the scanner through `AdvanceAndPollAt` without calling `CompleteFrame`
-still gets the fold at its next poll. The one visible difference: `GetPreFrameValue` read between a
-frame's last message and the next poll returns that frame's end state instead of the previous
-frame's. The frame observer below reads at exactly that point.
+**The per-pawn fold runs inside the frame, and engine-raised triggers read the frame's state.**
+`EntityChangeScanner` folded frame N's per-pawn digest into the pre-frame snapshot at the start of
+frame N+1; it now folds it during frame N, from the new `CompleteFrame`, which the evaluator calls
+right after the frame's wire messages. A game event or net message from the demo reads what it read
+before: the state from before its own frame's entity update, which is the wire's order. Everything
+after the fold reads frame N's state: `round_decided`, the freeze end synthesized beside it, cadence
+steps and the frame observer. Through 0.13.0 a `player.*` read on `round_decided` saw the previous
+frame's state. No shipped ruleset reads one there, so no shipped number moves. The synthesized
+entity events (`projectile_created`, `projectile_removed`, `molotov_thrown`, `enemy_spotted`) still
+dispatch before the fold. The decode-compromise latch sets at the same digest, and a caller that
+walks the scanner through `AdvanceAndPollAt` without calling `CompleteFrame` still gets the fold at
+its next poll.
 
 **A new per-player `entity.pawn.is_walking` column moves `pos_x`, `pos_y` and `pos_z` by one in the
 per-pawn digest**, the same shape the 0.13.0 `entity.controller.money` column caused for every
@@ -214,8 +218,9 @@ read narrowed to the entity whose `m_iTeamNum` is the side. See
 
 A ruleset can sample state once per period instead of on every frame: declare `cadences:` and
 trigger on `cadence.<id>`. A host that ran a tick-rate `net.CNETMsg_Tick` stat, or sampled positions
-on its own walk at fixed intervals, can use a cadence instead. See
-[`RULES_AUTHORING.md`](RULES_AUTHORING.md#cadences).
+on its own walk at fixed intervals, can use a cadence instead. A step reads the frame's own state,
+after its entity update, so a `player.pos_x` capture on a step equals a frame observer's read of the
+frame the step fired on. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#cadences).
 
 ```yaml
 cadences:

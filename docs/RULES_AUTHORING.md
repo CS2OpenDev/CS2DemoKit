@@ -208,7 +208,9 @@ synthesizes for a round decided in freeze time, and `round_ended` is any concret
 `$round_end`. A custom profile binds `cadence_tick` through `DemoSourceProfile.CadenceTick`. A match restart stops every cadence. Each
 step fires on the first frame at or after its due tick, after everything else that frame
 dispatches, so a frame gap longer than a period fires the missed steps together on that frame, and
-a step due on the stop's own frame does not fire. The ticks are the frame clock: `event.tick` reads
+a step due on the stop's own frame does not fire. A step reads the frame's own state: `player.pos_x`
+on a step is the position at the end of the frame it fired on, the value a frame observer reads
+there. The ticks are the frame clock: `event.tick` reads
 the frame the step fired on, and `event.Step` counts from 0 at the anchor. A cadence binds to
 nobody, so an each_player stat fires for every player on every step. Trigger on `cadence.<id>`
 only: a bare `cadence_tick` reference would fire on every cadence in the build and is rejected.
@@ -566,11 +568,25 @@ degrees as unreal and **rejects every value this column produces**, which is why
 two is measuring the decode, not the player.
 
 **A timing note on entity reads.** In an event-gated site (`where:`, a `sum:`/`capture:` value,
-`while:`), an entity read is the value *at the moment of the event* (e.g. the victim's HP at the
-kill). In a node-logic site (`compute:`, `flag: when:`), it's the value at *round end / evaluation
-time*. Both are useful — pick the site that matches the question. (Under an event view you can also
-read a role's entity state, using the role name in place of `player`: `victim.health` in a
-`kill`-view `where:`.)
+`while:`), an entity read is the value *at the moment of the event*. Which state that is depends on
+what raised the trigger:
+
+- A game event from the demo (`player_hurt`, `kill`, `weapon_fire`, `round_freeze_end`, ...) reads
+  the state from before its own frame's entity update. A frame's game events come before its
+  entity update on the wire, so this is the state the event arrived in: the victim's HP before the
+  hit, the clip before the shot.
+- A trigger the engine raises from the frame itself (a cadence step, `round_decided`, the freeze
+  end synthesized for a round decided in freeze time) reads the frame's state after its entity
+  update, as a frame observer and a capture with no `on:` do.
+- The exceptions: `player.*` and `thrower.*` on the synthesized entity events (`projectile_created`,
+  `projectile_removed`, `molotov_thrown`, `enemy_spotted`) read the state from before the
+  frame's update, although their own payloads (the projectile's position, the spot) are the
+  frame's. `player.cmd.*` is below.
+
+In a node-logic site (`compute:`, `flag: when:`), it's the value at *round end / evaluation time*.
+Both are useful; pick the site that matches the question. (Under an event view you can also read a
+role's entity state, using the role name in place of `player`: `victim.health` in a `kill`-view
+`where:`.)
 
 **Player input.** `player.cmd.*` reads the player's latest user command, rebuilt from the demo's
 `svc_UserCmds` (matchmaking demos carry them; a demo without them reads `0`):
@@ -581,8 +597,8 @@ read a role's entity state, using the role name in place of `player`: `victim.he
 - `player.cmd.view_pitch` / `player.cmd.view_yaw`: the view angles the client sent, in degrees.
 - `player.cmd.tick`: the client tick the command was built on.
 
-Unlike the entity reads above, a command read is not one frame behind: it includes the commands of
-the frame the event fires on. Commands are served at event sites only (`where:`, a `sum:` /
+A command read includes the commands of the frame the event fires on, at a game event too, where
+the entity reads above are the state from before the frame's update. Commands are served at event sites only (`where:`, a `sum:` /
 `capture:` value); a `compute:` or `flag: when:` that reads one fails to lower. Reading any of them
 makes the run decode user commands, which costs a run that reads none nothing.
 
@@ -590,7 +606,9 @@ makes the run decode user commands, which costs a run that reads none nothing.
 clock. N is a whole number from 1 to 64. It works on the ruleset player's per-player entity reads
 (the `player.*` names above, not `player.cmd.*`, a role handle, `match.*` or an event field), in a
 `where:` or the value of an event-triggered stat; anywhere else is
-`resolve.look-back.unsupported`. Before the player has a value that far back it reads `0`.
+`resolve.look-back.unsupported`. Before the player has a value that far back it reads `0`. The
+ticks count back from the state the site reads, so on a cadence step `@-8` is 8 ticks before the
+step's own frame.
 
 ```yaml
 cadences:

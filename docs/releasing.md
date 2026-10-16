@@ -778,12 +778,12 @@ against `ProjectileSampler.Walk`, `PipelinedDigestEquivalenceTests` the event st
 sequential and default caps, and `ProjectileEventRulesTests` the activation on both run paths.
 `molotov_thrown` is unchanged.
 
-### The per-pawn fold moved to the end of the frame, and a frame observer reads it (0.14.0)
+### The per-pawn fold moved into the frame, and a frame observer reads it (0.14.0)
 
 `AnalysisOptions` gains `FrameObserver`, `ObservedProviders` and `ObservedProjectileClasses`.
 `IFrameObserver.OnFrame(FrameView)` (new, `CS2DemoKit.Analysis.Observation`) is called once per
-frame on the evaluation thread after the frame's post-frame messages, and `Finish` after the last
-frame; a throwing observer aborts the run. `FrameView` is one instance per run, readable only inside
+frame on the evaluation thread after the frame's post-frame messages and cadence steps, and
+`Finish` after the last frame; a throwing observer aborts the run. `FrameView` is one instance per run, readable only inside
 `OnFrame` (every read but `Generation` throws outside it): `Frame`, `FrameIndex`, `Tick` (the frame
 clock), `Projectiles`, `Created` and `Removed` as `ReadOnlySpan<ProjectileRow>`, `Team(slot)`, and
 the declared providers by name or through an `ObservedProvider` handle from `FrameView.Provider`
@@ -797,14 +797,27 @@ subscription still widens the rows to all five. `RuleChainBuilder`'s constructor
 lists as optional trailing parameters.
 
 The per-pawn fold that fed the pre-frame snapshot ran at the start of frame N+1's consume; it now
-runs at the end of frame N, from the new public `EntityChangeScanner.CompleteFrame`, which the
-evaluator calls after the post-frame block. Nothing an edge reads changed: the snapshot frame N+1's
-edges see is the same, and the decode-compromise latch sets at the same digest. A caller that polls
-`AdvanceAndPollAt` without calling `CompleteFrame` gets the fold at the next poll, as before.
-`GetPreFrameValue` now documents both points. With nothing declared the digest, the goldens and
-the rules output are byte-identical, which `ForwardPathParityTests`, `BareScanParityTests`,
-`RulesOutputGoldenTests` and `StatParityTests` pin; `FrameViewPawnReadTests` pins the fold
-move, `ProjectileDigestParityTests` the observer's stream against `ProjectileSampler.Walk`, and
+runs inside frame N, from the new public `EntityChangeScanner.CompleteFrame`, which the evaluator
+calls right after the frame's wire messages and before its post-frame block. The rule it sets: a
+trigger that is a wire message reads the state from before its own frame's PacketEntities, as
+before, because a frame's game events precede its PacketEntities on the wire (on matchmaking
+demos, in every frame that carries one but the first full packet). A trigger the engine raises from
+frame N reads frame N's folded cells: `round_decided`, the `round_freeze_end` synthesized for a
+round decided in freeze time, cadence steps and the observer. Through 0.13.0 a `player.*` read on
+`round_decided` or on that synthesized freeze end saw frame N-1, and so did the freeze-end economy
+sample (`round.team.equipment`, `round.team.money`) on it; those can move. No shipped ruleset reads
+`player.*` on either. The synthesized entity events (`projectile_created`, `projectile_removed`,
+`molotov_thrown`, `enemy_spotted`) still dispatch before the fold, and `player.cmd.*` keeps reading
+the frame's commands at a wire event; `RULES_AUTHORING.md` lists both as exceptions.
+
+The decode-compromise latch sets at the same digest. A caller that polls `AdvanceAndPollAt` without
+calling `CompleteFrame` gets the fold at the next poll, as before. `GetPreFrameValue` documents both
+points. The digest, the goldens and the rules output do not move: `ForwardPathParityTests`,
+`BareScanParityTests`, `RulesOutputGoldenTests` and `StatParityTests` pin them.
+`FrameViewPawnReadTests` pins the observer's read against the next frame's first edge;
+`InFrameReadPointTests` pins a cadence capture against the observer's read of the step's frame
+(sample and one benchmark demo) and `player_hurt` reading the victim's health before the hit;
+`ProjectileDigestParityTests` pins the observer's stream against `ProjectileSampler.Walk`, and
 `PipelinedDigestEquivalenceTests` the observer at the sequential and default caps.
 
 ### A new per-player provider shifts the digest again (0.14.0)
@@ -862,7 +875,8 @@ A ruleset with no cadence hashes as before, which `RulesV2HasherTests` and
 frame drains, so a step whose first frame at or after its due tick is the stop's frame never fires,
 whether it was due exactly on the close or carried there by a frame gap. On a gapless frame stream a
 round's step count is `floor((close - freeze_end) / period) + 1`, less one when the close lands
-exactly on a due tick. `FrameTickTests.CadenceTick_FiresOncePerPeriod_OnFrameClock` pins the ticks and
+exactly on a due tick. A step dispatches after the frame's per-pawn fold, so `player.*` on a step
+reads the state at the end of the frame it fired on, the frame observer's read of that frame. `FrameTickTests.CadenceTick_FiresOncePerPeriod_OnFrameClock` pins the ticks and
 steps on both run paths against the sample's frames.
 
 ### Event tables project without snapshots, and per-player rows carry steam_id (0.14.0)
