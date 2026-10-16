@@ -1082,6 +1082,36 @@ player spent on the side they did not finish on: the first half of a regulation 
 13 to 27 of the three overtime matches. With the team masked, every table row of all 15 renderings
 is unchanged. `StatParityTests` do not move.
 
+### Sequential decode resyncs after a dropped snapshot (0.14.0)
+
+`EntityTracker` gains `SnapshotResyncCount` (`int`, read-only): how many times sequential playback
+replaced its entity state from a `DEM_FullPacket` because a `svc_PacketEntities` delta named a base
+tick it never applied. `ProcessFrame` skips each full packet's `PacketEntities` as redundant, which
+holds only while the delta chain is whole. The seven tournament demos on hand each drop the
+`cs_intermission` tick's snapshot; through 0.13.0 the tracker kept applying later deltas to the
+pre-gap state, so a field the dropped snapshot changed (`CCSTeam.m_iScore` included) stayed stale to
+the end, and deltas for entities the gap created were skipped. The parallel decode recovered only
+when a chunk started at a later full packet, so a value could depend on the core count.
+
+The tracker now follows `delta_from` against the last applied tick, latches on a mismatch, and at the
+next full packet clears the entities, reloads the latest instance baseline and applies the full
+packet, the steps a checkpoint prime takes. An entity the full packet re-enters with the class and
+serial it already had raises `EntityUpdated`, not a second `EntityCreated`, but its slot holds a new
+`EntityState`: a consumer that kept an instance across frames reads entities by index instead.
+Values after that full packet move on demos with a break, and every decode path agrees on them; a
+demo with no break decodes as before.
+
+The `furia-vs-vitality-m1-mirage` entity-field golden moved for this in its own commit: its last
+row (tick 350000) now holds the full packet's state, `TotalRoundsPlayed` 23 to 24, `GamePhase` 3 to
+5, and every controller's `Account` and `PendingTeamNum`. The rules-output goldens and
+`StatParityTests` do not move. `SnapshotChainTests` pins the chain check;
+`SnapshotResyncCorpusTests` pins, on the tournament demos under `CS2DEMOKIT_CORPUS_DIR`, that the
+sequential tracker at the resync frame equals one primed from the same full packet and stays equal
+to the end with no entity created twice; `InstanceBaselineSourceTests` pins the baseline source a
+re-primed chunk worker resyncs from; and
+`DemoParserTests.EntityTracker_FuriaMirage_NoPhantomGameRulesProxyCreations` now asserts exactly
+one `CCSGameRulesProxy` creation, demofile-net's count.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
