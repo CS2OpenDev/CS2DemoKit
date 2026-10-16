@@ -1399,7 +1399,7 @@ public sealed partial class RuleChainBuilder
             // pass below because it needs a written node + the entity digest.
             InjectB6AliveAggregates(slot, playerName, localLookup, nodes, scope);
             InjectB6EconomyAggregates(slot, playerName, localLookup, nodes, scope);
-            InjectPlayerTeam(slot, playerName, localLookup, nodes, scope);
+            (PlayerTeamNode Live, StateNode Round)? teamNodes = InjectPlayerTeam(slot, playerName, localLookup, nodes, scope);
             provenance?.Stamp(nodes, 0, RuleGraphNodeOrigin.Context);
 
             // Gap G1 (event-gated per-player aggregate reads): expose THIS slot's per-player context
@@ -1527,7 +1527,9 @@ public sealed partial class RuleChainBuilder
                 LiveComputes: scope.LiveComputes.Count > 0 ? scope.LiveComputes : null,
                 ContextRisingEdgeActions: scope.ContextRisingEdgeActions.Count > 0 ? scope.ContextRisingEdgeActions : null)
             {
-                Provenance = sharedProvenance ??= provenance!.Aligned(nodes)
+                Provenance = sharedProvenance ??= provenance!.Aligned(nodes),
+                TeamNode = teamNodes?.Live,
+                RoundTeamNode = teamNodes?.Round
             };
         };
     }
@@ -3014,12 +3016,14 @@ public sealed partial class RuleChainBuilder
     // compute remap and the declared-read resolution find it without a context-table entry.
     private const string PlayerTeamPath = "player.team";
 
-    private void InjectPlayerTeam(int slot, string? playerName,
+    // The live team and the team latched at the round's freeze end, which the player_event and
+    // player_round rows report. Both null when no index exists.
+    private (PlayerTeamNode Live, StateNode Round)? InjectPlayerTeam(int slot, string? playerName,
         Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
     {
         if (_playerContextIndex is not { } index)
         {
-            return;
+            return null;
         }
 
         PlayerTeamNode node = new("player_team", index, slot, playerName);
@@ -3027,6 +3031,13 @@ public sealed partial class RuleChainBuilder
         nodes.Add(node);
         wiring.AddEdge(new PlayerTeamNodeEdge(localLookup["root"], node, false), GraphEdgeKind.PlayerState);
         wiring.AddEdge(new PlayerTeamNodeEdge(localLookup["root"], node, true), GraphEdgeKind.PlayerState);
+
+        // -1 until the first freeze end the player is present for.
+        GenericRoundScopedValueNode<int> roundTeam = new("player_round_team", -1, playerName);
+        nodes.Add(roundTeam);
+        wiring.AddEdge(new PlayerRoundTeamEdge(localLookup["root"], index, slot, roundTeam),
+            GraphEdgeKind.FreezeEndRoster);
+        return (node, roundTeam);
     }
 
     /// <summary>

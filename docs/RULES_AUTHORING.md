@@ -621,12 +621,15 @@ ruleset has no subject and cannot read any of them.
   `projectile` in `for: each_projectile` and `match` (a single match-level row) in `for: match`.
   Player rows carry `player_slot`,
   `player_name`, `steam_id` (the SteamID64 as a string, null when the demo has none) and `team`;
-  join players by `steam_id` rather than by slot.
+  join players by `steam_id` rather than by slot. A `player_round` row's `team` is the player's
+  team at that round's freeze end, so the halftime and overtime swaps show; a `player_match` row's
+  is the team they finished on.
 - **Event tables: one row per firing.** `per: player_event`, `team_event` or `match_event` (one
   per `for:`, in the same order) takes an `on:` trigger, written as a stat's `on:` is, and emits a
   row each time it fires for an instance, with the columns read right after that message. Rows
   carry `round_number` and `tick` (the frame clock, listed in `ColumnClocks`); player rows also
-  carry `player_slot`, `player_name`, `steam_id` (a string) and `team`, side rows `side`. A
+  carry `player_slot`, `player_name`, `steam_id` (a string) and `team` (the player's team at the
+  firing), side rows `side`. A
   cadence is the usual trigger. The checker refuses a trigger that fires too often to keep a row
   per firing (`resolve.show.event-table-frequency`): a `perTick` or `frequent` catalog event, or a
   wire event whose frequency was never measured. Synthesized events pass. A missing `on:`, or an
@@ -742,8 +745,8 @@ row per side: `per: team_round` gives one row per round per side, `per: team_mat
   cut off at the buzzer the last round's point can be missing.
 - A `team_round` table carries two dimensions besides the round: `side`, and `slots`, the
   comma-joined slots of the side's connected players at that round's freeze end. `slots` is the join
-  key to a per-player table: it says which side a player was on *in that round*, where a
-  `player_round` table's `team` is the side the player finished the match on.
+  key to a per-player table: it says which side a player was on *in that round*, as a
+  `player_round` table's `team` does.
 - No `highlights:` and no `scoreboard:` (both are attributed to players). It may `use:` a
   `for: match` or another `for: each_team` ruleset, but not a per-player one, and it reads the used
   ruleset's stats in `compute:` only: a read in `where:`, `while:`, `capture:`, `sum:`, `tally:` or

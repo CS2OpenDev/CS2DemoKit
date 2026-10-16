@@ -169,6 +169,11 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
             }
         }
 
+        if (player.RoundTeamNode is { } roundTeam)
+        {
+            Track(roundTeam);
+        }
+
         if (player.NodesByRuleId is { } byRuleId)
         {
             foreach (string metricRef in _metricRefs)
@@ -184,7 +189,7 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
                 if (output.Scope == OutputScope.PerPlayerPerEvent
                     && byRuleId.GetValueOrDefault(output.SequenceRef!) is { } sequence)
                 {
-                    AddEventInstance(sequence, output, byRuleId);
+                    AddEventInstance(sequence, output, byRuleId, player.TeamNode);
                 }
             }
         }
@@ -237,9 +242,14 @@ internal sealed class ConfiguredOutputRecorder : IEvaluationObserver
     }
 
     private void AddEventInstance(StateNode sequence, OutputDef output,
-        IReadOnlyDictionary<string, StateNode>? instanceNodes)
+        IReadOnlyDictionary<string, StateNode>? instanceNodes, StateNode? team = null)
     {
         List<StateNode> columns = [];
+        if (team is not null)
+        {
+            columns.Add(team);
+        }
+
         foreach (MetricRef metric in output.Metrics)
         {
             StateNode? node = instanceNodes?.GetValueOrDefault(metric.RuleRef) ?? _gameNodes?.GetValueOrDefault(metric.RuleRef);

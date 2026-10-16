@@ -54,6 +54,7 @@ internal sealed class GraphWiring
         [typeof(ClutchResolutionEnrichmentEdge)] = ExternalAccess.ReadsPlayerContext,
         [typeof(RoundEndEnrichmentEdge)] = ExternalAccess.ReadsPlayerContext,
         [typeof(SideRosterFreezeEndEdge)] = ExternalAccess.ReadsPlayerContext,
+        [typeof(PlayerRoundTeamEdge)] = ExternalAccess.ReadsPlayerContext,
         [typeof(PlayerEconomyFreezeEndEdge)] = ExternalAccess.ReadsPlayerContext | ExternalAccess.ReadsEntityState
     };
 

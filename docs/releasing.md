@@ -1050,6 +1050,24 @@ and the overtime swap on the three of the 15 that reach overtime (20 changes eac
 `player_team_observed` seed covers it. A coach, a spectator or CSTV (controller team 0 or 1) never
 gets a `player_team` to 2 or 3 and is not on a side either way.
 
+### Table rows report the team of their moment (0.14.0)
+
+`ConfiguredOutputProjector` filled every per-player row's `team` from `DemoDescriptor.Players`,
+whose team is the slot's last `player_team`. A `player_round` row now reads a per-player round-scoped
+node latched at each `round_freeze_end` (`PlayerRoundTeamEdge`), and a `player_event` row reads the
+player's `PlayerTeamNode` at the firing, on the snapshot and the bare path alike. The round sample
+is the state just before the next freeze end, so reading the live team there would put the last
+round of each half on the next half's side. `player_match` rows keep the roster team, as does a row
+whose player had not been seen at a freeze end yet. `PlayerTeamNode` is now tracked in snapshots,
+and each player gains the round node, so a snapshot row is two cells wider per player. The shipped
+player template gains one edge (176 to 177).
+
+The rules-output goldens move for this, in their own commit: the `[nodes]` section gains the two
+nodes per player, and `post_plant_double`'s `player_round` rows change `team` on every round the
+player spent on the side they did not finish on: the first half of a regulation match, and rounds
+13 to 27 of the three overtime matches. With the team masked, every table row of all 15 renderings
+is unchanged. `StatParityTests` do not move.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

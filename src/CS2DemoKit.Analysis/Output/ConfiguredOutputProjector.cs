@@ -408,8 +408,8 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                         dimensions[DimSteamId] = SteamId(demo, owner.Player);
                         break;
                     case DimTeam:
-                        dimensions[DimTeam] = owner.Player is { } p && demo.Players.TryGetValue(p.PlayerSlot, out PlayerInfo? pi)
-                            ? pi.Team
+                        dimensions[DimTeam] = owner.Player is { } p
+                            ? TeamAt(p.TeamNode, ev.Read, demo, p.PlayerSlot)
                             : 0;
                         break;
                 }
@@ -496,6 +496,17 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
         return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
     }
+
+    // A row's team as its state held it, or the roster's final team when the node is absent or had not
+    // latched a team yet (-1), which keeps a hand-built template on the old answer.
+    private static int TeamAt(StateNode? node, Func<StateNode, object?> read, DemoDescriptor demo, int slot) =>
+        node is not null && read(node) is { } value
+                         && Convert.ToInt32(value, CultureInfo.InvariantCulture) is var team and >= 0
+            ? team
+            : RosterTeam(demo, slot);
+
+    private static int RosterTeam(DemoDescriptor demo, int slot) =>
+        demo.Players.TryGetValue(slot, out PlayerInfo? pi) ? pi.Team : 0;
 
     // A string: a SteamID64 does not survive a double, which is what a JSON reader may parse it into.
     private static string? SteamId(DemoDescriptor demo, PerPlayerNodeTemplate.MaterializedPlayer? player) =>
@@ -682,7 +693,10 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                     dimensions[DimSteamId] = SteamId(demo, mp);
                     break;
                 case DimTeam:
-                    dimensions[DimTeam] = demo.Players.TryGetValue(mp.PlayerSlot, out PlayerInfo? pi) ? pi.Team : 0;
+                    dimensions[DimTeam] = roundNumber is null
+                        ? RosterTeam(demo, mp.PlayerSlot)
+                        : TeamAt(group.Select(m => m.RoundTeamNode).FirstOrDefault(n => n is not null), read, demo,
+                            mp.PlayerSlot);
                     break;
             }
         }

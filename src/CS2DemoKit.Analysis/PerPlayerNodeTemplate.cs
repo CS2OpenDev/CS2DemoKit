@@ -76,6 +76,15 @@ public sealed class PerPlayerNodeTemplate(Func<int, int, string, PerPlayerNodeTe
         ///     hand-built template. Read by <see cref="RuleGraph" />.
         /// </summary>
         internal IReadOnlyList<NodeProvenance>? Provenance { get; init; }
+
+        /// <summary>The player's live team, which an event-table row's <c>team</c> reads; null for a hand-built template.</summary>
+        internal StateNode? TeamNode { get; init; }
+
+        /// <summary>
+        ///     The player's team at the round's freeze end, -1 before the first, which a
+        ///     <c>player_round</c> row's <c>team</c> reads; null for a hand-built template.
+        /// </summary>
+        internal StateNode? RoundTeamNode { get; init; }
     }
 }
 

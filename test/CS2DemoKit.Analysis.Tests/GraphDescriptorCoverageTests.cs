@@ -66,6 +66,7 @@ public class GraphDescriptorCoverageTests
         [typeof(ThresholdTallyEdge)] = GraphEdgeKind.Tally,
         [typeof(PlayerEconomyFreezeEndEdge)] = GraphEdgeKind.FreezeEndEconomy,
         [typeof(SideRosterFreezeEndEdge)] = GraphEdgeKind.FreezeEndRoster,
+        [typeof(PlayerRoundTeamEdge)] = GraphEdgeKind.FreezeEndRoster,
         [typeof(EntityPullNodeSettleEdge)] = GraphEdgeKind.EntitySettle
     };
 
@@ -379,7 +380,7 @@ public class GraphDescriptorCoverageTests
     /// <summary>
     ///     The descriptor counts for the shipped rulesets on GOTV, game scope and one player. Before this
     ///     work they were 43 and 107; the 67 game edges and 174 player edges they now all describe did
-    ///     not move. The player's two <c>player.team</c> node edges brought it to 176.
+    ///     not move. The player's two <c>player.team</c> node edges and its freeze-end team latch brought it to 177.
     /// </summary>
     [Test]
     public async Task ShippedGotv_DescriptorCounts()
@@ -388,14 +389,14 @@ public class GraphDescriptorCoverageTests
         PerPlayerNodeTemplate.MaterializedPlayer p = build.Graph.PerPlayerTemplates[0].Materialize(0, 0, "p0");
 
         await Assert.That(build.Graph.Edges.Count).IsEqualTo(67);
-        await Assert.That(p.Edges.Count).IsEqualTo(176);
+        await Assert.That(p.Edges.Count).IsEqualTo(177);
         await Assert.That(build.Edges.Count).IsEqualTo(ShippedGameRows);
         await Assert.That(p.EdgeDescriptors.Count).IsEqualTo(ShippedPlayerRows);
         await Assert.That(build.EdgeBacking!.Count).IsEqualTo(build.Edges.Count(d => d.Edge is not null));
     }
 
     private const int ShippedGameRows = 134;
-    private const int ShippedPlayerRows = 213;
+    private const int ShippedPlayerRows = 214;
 
     /// <summary>A tally fires from the root at round end and reads its stat: drawn that way, not from the stat.</summary>
     [Test]

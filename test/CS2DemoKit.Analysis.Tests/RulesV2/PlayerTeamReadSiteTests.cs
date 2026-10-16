@@ -123,6 +123,77 @@ public class PlayerTeamReadSiteTests
         await Assert.That(before["last_team"]).IsEqualTo("2");
     }
 
+    private const string Tables = """
+        ruleset: pt_rows
+        for: each_player
+        stats:
+          kills:
+            count: kill
+            per: round
+          kill_seq:
+            count: kill
+            per: match
+        show:
+          tables:
+            by_round:
+              per: player_round
+              columns:
+                - { stat: kills, label: kills }
+            by_kill:
+              per: player_event
+              on: kill
+              columns:
+                - { stat: kill_seq, label: kill_seq }
+        """;
+
+    /// <summary>
+    ///     A table row's <c>team</c> is the team the row's moment had, not the roster's final team: the
+    ///     round row from the round's freeze end, the event row from the firing. Two rounds with the
+    ///     swap between them, after round 1 closed, where a halftime swap lands; the snapshot and the
+    ///     bare path agree.
+    /// </summary>
+    /// <param name="snapshots">Whether the run captures snapshots.</param>
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task TableRows_CarryTheTeamOfTheirMoment(bool snapshots)
+    {
+        ParsedDemo sample = RoundFactsTestSupport.Sample();
+        Dictionary<int, PlayerInfo> players = new()
+        {
+            // The roster holds the final team, which is what every row used to carry.
+            [0] = new PlayerInfo(0, "A", 0UL, 0, 3, false),
+            [1] = new PlayerInfo(1, "B", 0UL, 1, 2, false)
+        };
+
+        DemoFrame[] frames =
+        [
+            Frame(1, new GameEvent("begin_new_match", -1, 1, 1, 1, new BeginNewMatchEvent()),
+                TestGameEvents.PlayerTeam(0, 2), TestGameEvents.PlayerTeam(1, 3)),
+            Frame(2, TestGameEvents.RoundFreezeEnd(2, 2, 2)),
+            Frame(3, TestGameEvents.PlayerDeath(userId: 1, attacker: 0, weapon: "ak47", frameNumber: 3, serverTick: 3,
+                gameTick: 3)),
+            Frame(4, TestGameEvents.RoundOfficiallyEnded(4, 4, 4)),
+            Frame(5, TestGameEvents.PlayerTeam(0, 3, 2), TestGameEvents.PlayerTeam(1, 2, 3)),
+            Frame(6, TestGameEvents.RoundFreezeEnd(6, 6, 6)),
+            Frame(7, TestGameEvents.PlayerDeath(userId: 1, attacker: 0, weapon: "ak47", frameNumber: 7, serverTick: 7,
+                gameTick: 7)),
+            Frame(8, TestGameEvents.RoundOfficiallyEnded(8, 8, 8))
+        ];
+
+        ParsedDemo demo = new(frames, [], players, null, "de_anytown", frames.Length, 1f / 64f, "test", "test",
+            "csgo", sample.BuildNumber, 0, 0, "valve_demo_2", "", "", sample.Profile);
+        AnalysisRun run = RoundFactsTestSupport.Run(demo, new AnalysisOptions { CaptureSnapshots = snapshots }, Tables);
+
+        string Teams(string table) => string.Join(",", RoundFactsTestSupport.Table(run, table, demo).Rows
+            .Where(r => RoundFactsTestSupport.Dim(r, "player_slot") == 0)
+            .OrderBy(r => RoundFactsTestSupport.Dim(r, table == "by_round" ? "round_number" : "tick"))
+            .Select(r => RoundFactsTestSupport.Dim(r, "team")));
+
+        await Assert.That(Teams("by_round")).IsEqualTo("2,3");
+        await Assert.That(Teams("by_kill")).IsEqualTo("2,3");
+    }
+
     private static Dictionary<string, string?> RunSlotZero(string rules, bool stopBeforeSwitch = false)
     {
         ParsedDemo sample = RoundFactsTestSupport.Sample();

@@ -125,6 +125,15 @@ reference a sibling stat/context". Each now reads the player's live team: the la
 event for the slot, seeded from the controller's `m_iTeamNum` before the first one. A ruleset that
 was excluded for this builds now, and its tables gain rows.
 
+**A `player_round` or `player_event` row's `team` is the team of that row.** Both read the roster's
+final team, the last `player_team` event, so every first-half row of a regulation match carried the
+second-half side, and on an overtime match rounds 13 to 27 carried the other side. A `player_round`
+row now reports the player's team at that round's freeze end (not at the sample, which falls after
+the halftime swap), a `player_event` row the team at the firing. `player_match` rows keep the final
+team. A host that grouped round rows by `team` to get a side per round can drop the join to a
+`team_round` table's `slots`; one that wanted the final side on every round reads the
+`player_match` row.
+
 **Sequential decode resyncs after a dropped snapshot.** Some GOTV recordings drop one tick's
 `svc_PacketEntities` (the seven tournament demos in the corpus each drop the `cs_intermission`
 tick's). Through 0.13.0 `EntityTracker` kept applying later deltas to the state from before the

@@ -12,10 +12,11 @@ namespace CS2DemoKit.Analysis.Nodes;
 ///     A player's live team (2 = T, 3 = CT, 0 or 1 otherwise), read from
 ///     <see cref="PlayerContextIndex" /> on every read: the node <c>player.team</c> resolves to where a
 ///     rule reads it through a node rather than an event condition (<c>while:</c>, <c>when:</c>,
-///     <c>compute:</c>, a captured value). The index stays the one store; this node only exposes it.
+///     <c>compute:</c>, a captured value), and the team an event-table row reports. The index stays the
+///     one store; this node only exposes it.
 /// </summary>
 internal sealed class PlayerTeamNode(string name, PlayerContextIndex index, int slot, string? subtitle = null)
-    : StateNode, ISnapshotExcludedNode
+    : StateNode
 {
     /// <inheritdoc />
     public override bool IsActive => true;
