@@ -1020,9 +1020,9 @@ active weapon class at both caps.
 HE and the `keep: last` read. No shipped ruleset reads any of these, so the rules-output goldens
 do not move. `eval_ms`, pawn half (`flags` and `throw_strength`) isolated from the explode tick:
 median +8.3% over 5 demos, same build lane off against on, inside the +10% budget. The explode
-tick reads under `each_projectile`, whose scope cost is R6's own owner-accepted row; it was not
+tick reads under `for: each_projectile`, whose scope cost is not in that row; it was not
 isolated on its own. All three reads together, derived as the joint reading minus coach's, come
-to about +9.1% (`docs/perf/baseline.md` "R7 part 2a and R8 coach").
+to about +9.1% (`docs/perf/baseline.md` "Pawn flags, throw strength, the explode tick and the coaching team").
 
 ### Coaching team (0.14.0)
 
@@ -1041,7 +1041,7 @@ frame, but that demo and the six other tournament demos on hand hold `m_iCoachin
 controller on every frame, so it checks that no coach is read and skips: the non-zero path is
 unverified. The rules-output goldens
 do not move. `eval_ms`, same build lane off against on: median +1.3% over 5 demos, inside the
-step-0 noise floor (max 4.2%). Within noise (`docs/perf/baseline.md` "R7 part 2a and R8 coach").
+base-against-base noise floor at `a728ae3` (max 4.2%). Within noise (`docs/perf/baseline.md` "Pawn flags, throw strength, the explode tick and the coaching team").
 
 ### `player.team` lowers at every site (0.14.0)
 

@@ -585,9 +585,11 @@ above, the reader's loop now decodes every frame that reaches a `ParsedDemo`.
     load      2.45 to 5.36 throughout
 
 DemoViewer's `demos/benchmarks` set (172 to 279 MB), not the 40 to 524 MB corpus "One producer"
-and "Two decode loops" above read; this is the 5-demo set step 0 also measured. Base is
-`a728ae3`, the version-bump commit before any single-walk code; it has no observer arms, so the
-two perf questions split across two tools.
+and "Two decode loops" above read. Base is `a728ae3`, the version-bump commit before any
+single-walk code; it has no observer arms, so the two perf questions split across two tools.
+"Step 0" below is the baseline run taken on this 5-demo set before any of that code: `compare`
+base against base for the noise floor (`compare-5.csv`), and `paths` on `scoreboard-stream` at the
+default parallelism, arm (a), and at `CS2DEMOKIT_PATHS_DOP=1` with no read-ahead window, arm (c).
 
 **Nothing declared.** `compare`, cooldown dropped from the default 12 s to 5 s on both arms
 (order still flips per round, so the shorter cooldown lands on both sides alike): `eval_ms`
@@ -601,8 +603,8 @@ medians per demo, base against this commit:
 | ...1231606001_0126308730.dem | 278.8 MB | 689.4 ms | 685.0 ms | -0.6% |
 | ...3634708_1168926414.dem | 248.7 MB | 643.6 ms | 663.3 ms | +3.1% |
 
-Median +3.1%, cumulative since `a728ae3` (every item from R1 through this hook, not this item
-alone). `frames` and `inner_messages` are equal to the base build on every demo in every round,
+Median +3.1%, cumulative since `a728ae3` (every 0.14.0 change up to this hook, from the lowering
+diagnostics on, not this item alone). `frames` and `inner_messages` are equal to the base build on every demo in every round,
 so nothing structural moved. The one demo at +21% is the smallest file, and both builds' three
 rounds span it: base 541 to 974 ms, this commit 548 to 1177 ms, the same bimodal collector
 "GC configuration" above describes, not a figure that separates from its own round-to-round
@@ -719,19 +721,22 @@ pooling removed the allocation the trace named and did not move wall clock. Run 
 and +20 MB: wall over on every six-round aggregation, working set inside. Both readings are from
 a machine at load 2 to 5; neither gate is cleared, and the hook's perf gate is open.
 
-### R7 part 2a and R8 coach
+### Pawn flags, throw strength, the explode tick and the coaching team
 
-`compare`, two bench commits. At 675f11a, `CS2DEMOKIT_BENCH_R7_2A` loaded all three R7 part 2a
-reads: `flags`, `throw_strength` and, on its own `each_projectile` ruleset so it never touches
-R6's own `grenades` table, `projectile.explode_effect_tick`. `CS2DEMOKIT_BENCH_COACH` loaded
-`coaching_team`. At cb1364c, `R7_2A` was split: it now loads only the pawn pair, and the explode
-ruleset moved to its own `CS2DEMOKIT_BENCH_R7_2A_EXPLODE`, left off for every run below. `eval_ms`
-had no row for any of the three reads until this session.
+The four lens-bound reads of 0.14.0: the pawn pair `player.flags` and `player.throw_strength`, the
+projectile read `projectile.explode_effect_tick`, and `player.coaching_team`. The bench names the
+first three `R7_2A` and the last `COACH` in its environment switches. `compare`, two bench commits.
+At 675f11a, `CS2DEMOKIT_BENCH_R7_2A` loaded all three reads: `flags`, `throw_strength` and, on its
+own `each_projectile` ruleset so it never touches the bench's `for: each_projectile` `grenades`
+table, `projectile.explode_effect_tick`. `CS2DEMOKIT_BENCH_COACH` loaded `coaching_team`. At
+cb1364c, `R7_2A` was split: it now loads only the pawn pair, and the explode ruleset moved to its
+own `CS2DEMOKIT_BENCH_R7_2A_EXPLODE`, left off for every run below. `eval_ms` had no row for any of
+the four reads until this session.
 
 **Cumulative against `a728ae3`, `R7_2A` and `COACH` on (675f11a: all three reads plus coach),
 5 rounds, demos/benchmarks:**
 
-| demo | base median | M8 median | delta |
+| demo | base median | 675f11a median | delta |
 |---|---|---|---|
 | ...5266002_0544286934.dem | 601.0 ms | 673.3 ms | +12.0% |
 | ...7406845372_0003771537.dem | 652.3 ms | 733.3 ms | +12.4% |
@@ -740,11 +745,10 @@ had no row for any of the three reads until this session.
 | ...3634708_1168926414.dem | 650.3 ms | 746.2 ms | +14.8% |
 
 Median +12.4%, load1 1.79 to 4.63, zero failures and zero rejected rows over 50. This is every
-item from R1 through the lens pin, not all three reads and coach alone, the same caveat the frame
+0.14.0 change up to the lens pin, not the four reads alone, the same caveat the frame
 observer table above carries.
 
-**Isolated, same build, lane off against on (`/tmp/arm-M8`, still 675f11a: all three reads plus
-coach together), 5 rounds:**
+**Isolated, same build, lane off against on (still 675f11a: all four reads together), 5 rounds:**
 
 | demo | off median | on median | delta |
 |---|---|---|---|
@@ -755,14 +759,15 @@ coach together), 5 rounds:**
 | ...3634708_1168926414.dem | 696.0 ms | 788.0 ms | +13.2% |
 
 Median +10.4% (the smallest file's own round-to-round spread is wider than its delta here; the
-frame observer section above reads the same file the same way). This number is all three R7 part
-2a reads and coach together and does not split them.
+frame observer section above reads the same file the same way). This number is all four reads
+together and does not split them.
 
-**Isolated, split by item, cb1364c's `/tmp/arm-M8-split`, 3 rounds, cooldown 5s.**
+**Isolated, split by item, cb1364c, 3 rounds, cooldown 5s.**
 `CS2DEMOKIT_BENCH_R7_2A_EXPLODE` stayed off on both arms below, so the explode tick's own
-`each_projectile` cost is not in either table; that scope's cost is R6's own, owner-accepted row.
+`each_projectile` cost is not in either table, and the cost of the `for: each_projectile` scope it
+reads under is not measured in this file.
 
-R7 part 2a's pawn half, `flags` and `throw_strength`:
+The pawn pair, `flags` and `throw_strength`:
 
 | demo | off median | on median | delta |
 |---|---|---|---|
@@ -778,7 +783,7 @@ Median +8.3%, load1 3.17 to 7.73. Inside the +10% budget, but on a machine that 
 +27.7%, the same bimodal file the frame observer and cumulative tables above both flag; the other
 four sit -0.3% to +10.3%. Pass, with the margin noted rather than hidden.
 
-R8 coach, `coaching_team`:
+The coaching team, `coaching_team`:
 
 | demo | off median | on median | delta |
 |---|---|---|---|
@@ -790,12 +795,13 @@ R8 coach, `coaching_team`:
 
 Median +1.3%, load1 3.64 to 5.32, every reading inside the step-0 noise floor (`compare-5.csv`,
 max 4.2%). Within noise. One controller-class scan per frame, the same shape as the other
-singleton providers (`team.score`, `team.clan_name`) that read within noise at R8 part 1.
+singleton providers (`team.score`, `team.clan_name`) that read within noise when they landed.
 
-**All three R7 part 2a reads, derived.** The joint 675f11a run above (all three reads plus coach,
-median +10.4%) minus the coach-only median (+1.3%) puts all three reads at about +9.1%, the shape
-`sequence.md` M8 and `cs2demokit-plan.md:877` ask for ("inside R3 run 3's +10% with all three
-declared"). It was not measured directly as one isolated run; it is two medians subtracted across
+**The three reads without the coaching team, derived.** The joint 675f11a run above (all four
+reads, median +10.4%) minus the coaching-team median (+1.3%) puts the other three at about +9.1%,
+against a budget of +10%, the same budget as the observer-pawns-stream arm in "The frame observer"
+above (the five projectile classes plus seven per-pawn columns, every slot, every frame). It was
+not measured directly as one isolated run; it is two medians subtracted across
 sessions, not a paired difference, and the explode tick's own increment inside it was not
 isolated from the `each_projectile` scope cost. Still inside +10%.
 
