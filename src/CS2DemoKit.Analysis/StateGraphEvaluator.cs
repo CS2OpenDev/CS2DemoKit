@@ -760,6 +760,11 @@ public sealed class StateGraphEvaluator
                 Observer?.AfterMessage(frame.ServerTick);
             }
 
+            // The frame's fold sits between its wire messages and everything the engine raises from
+            // it: wire triggers read the state before their own PacketEntities, round_decided, the
+            // cadence steps and the observer read the folded frame.
+            _entityScanner?.CompleteFrame();
+
             // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
             //    messages because the kill that decided the round often arrives in this same frame,
             //    and "decided" must follow it. Same materialize / track / finish path as the
@@ -833,9 +838,6 @@ public sealed class StateGraphEvaluator
                 Observer?.AfterMessage(frame.ServerTick);
             }
 
-            // The frame's own fold, so the observer and the next frame's first edge read the same
-            // cells. Nothing between here and the next poll reads the snapshot.
-            _entityScanner?.CompleteFrame();
             if (view is not null)
             {
                 view.Publish(frame, frameIdx);

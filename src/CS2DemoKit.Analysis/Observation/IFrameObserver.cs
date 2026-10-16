@@ -6,7 +6,9 @@ namespace CS2DemoKit.Analysis.Observation;
 ///     thread, after the frame's messages and synthesized events have dispatched and after the
 ///     per-pawn fold for that frame, with a <see cref="FrameView" /> over the folded state. It runs
 ///     at the engine's default parallelism: the digest workers decode ahead, the view reads what
-///     they folded, and nothing here touches a tracker.
+///     they folded, and nothing here touches a tracker. A cadence step or <c>round_decided</c> on
+///     the same frame reads the same folded cells, so a <c>player.*</c> capture on a step equals the
+///     view's read of that frame. A wire message in the frame reads the previous frame's.
 ///     <para>
 ///         What the view carries is what the run declares: <see cref="AnalysisOptions.ObservedProviders" />
 ///         for the per-player columns and <see cref="AnalysisOptions.ObservedProjectileClasses" />

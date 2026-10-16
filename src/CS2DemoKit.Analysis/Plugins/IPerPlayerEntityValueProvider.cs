@@ -27,9 +27,11 @@ namespace CS2DemoKit.Analysis.Plugins;
 ///     <para>
 ///         The scanner maintains a <b>pre-frame snapshot</b> of each registered provider's value
 ///         per active player slot. Consumers read the snapshot via
-///         <c>EntityChangeScanner.GetPreFrameValue</c>; the snapshot reflects the PREVIOUS frame's
-///         state, which is the right value for "pre-event" reads — entity-state at the event's own
-///         tick has already been updated by the wire-co-located PacketEntities.
+///         <c>EntityChangeScanner.GetPreFrameValue</c>. At a wire event the snapshot holds the
+///         PREVIOUS frame's state: a frame's game events precede its PacketEntities on the wire, so
+///         that is the state as the event arrived, before the change the event reports (pre-hit
+///         health, a live victim). The frame's own PacketEntities is folded after its wire messages,
+///         so <c>round_decided</c>, a cadence step and the frame observer read the frame's state.
 ///     </para>
 /// </summary>
 public interface IPerPlayerEntityValueProvider

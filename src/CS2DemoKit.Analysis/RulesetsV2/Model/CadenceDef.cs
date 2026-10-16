@@ -4,6 +4,8 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Model;
 ///     One <c>cadences:</c> entry: a period on the frame clock, anchored on a round boundary, that a
 ///     stat triggers on as <c>cadence.&lt;id&gt;</c>. It fires once on the first frame at or after
 ///     each due tick, so a per-player sample costs one dispatch per period, not one per frame.
+///     A step dispatches after that frame's per-pawn fold, so its <c>player.*</c> reads are the
+///     frame's own state, as a frame observer reads it, not the previous frame's.
 /// </summary>
 /// <param name="Id">The cadence id (the map key), referenced as <c>cadence.&lt;id&gt;</c>.</param>
 /// <param name="Ticks">
