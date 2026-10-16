@@ -177,7 +177,9 @@ public class RulesetV2ProjectileScopeTests
               coverage:  { capture: thrower.cmd.coverage,       on: raw.projectile_created }
               jumped:
                 count: raw.projectile_created
-                where: thrower.cmd.coverage > 0 and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+                where: >-
+                  thrower.cmd.coverage > 0 and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+                  and thrower.cmd.last_jump_tick <= projectile.first_seen_tick
             """);
 
         CheckedStat lastJump = ruleset.Stats.Single(s => s.StatId == "last_jump");

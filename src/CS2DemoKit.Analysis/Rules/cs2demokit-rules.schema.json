@@ -167,7 +167,7 @@
         },
         {
           "const": "player.cmd.last_jump_tick",
-          "markdownDescription": "\u0060player.cmd.last_jump_tick\u0060 (type \u0060int\u0060) - an entity read, from \u0060usercmd.last_jump_tick\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included. The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27\u0060."
+          "markdownDescription": "\u0060player.cmd.last_jump_tick\u0060 (type \u0060int\u0060) - an entity read, from \u0060usercmd.last_jump_tick\u0060. Read at a rule site from the player\u0027s latest user command, the triggering frame\u0027s own commands included. The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27 and thrower.cmd.last_jump_tick \u003C= projectile.first_seen_tick\u0060: the created frame can come after the spawn, and a press in between is not a jump-throw."
         },
         {
           "const": "player.cmd.left",

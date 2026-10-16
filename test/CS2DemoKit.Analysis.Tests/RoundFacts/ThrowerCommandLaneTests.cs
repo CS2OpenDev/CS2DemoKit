@@ -33,6 +33,12 @@ public class ThrowerCommandLaneTests
           first_seen: { capture: projectile.first_seen_tick,  keep: first }
           last_jump:  { capture: thrower.cmd.last_jump_tick, on: raw.projectile_created }
           coverage:   { capture: thrower.cmd.coverage,       on: raw.projectile_created }
+          jump_throw:
+            capture: >-
+              thrower.cmd.coverage > 0
+              and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+              and thrower.cmd.last_jump_tick <= projectile.first_seen_tick
+            on: raw.projectile_created
         show:
           tables:
             throws:
@@ -41,6 +47,7 @@ public class ThrowerCommandLaneTests
                 - { stat: first_seen, label: first_seen }
                 - { stat: last_jump, label: last_jump }
                 - { stat: coverage, label: coverage }
+                - { stat: jump_throw, label: jump_throw }
         """;
 
     [Test]
@@ -66,7 +73,7 @@ public class ThrowerCommandLaneTests
                 .Because($"{label}: {string.Join("; ", run.Build.ExcludedRulesets.SelectMany(e => e.Diagnostics))}");
             await Assert.That(run.Build.DecodesUserCommands).IsTrue().Because(label);
 
-            int compared = 0, jumpThrows = 0, risesAfterTheSpawn = 0, covered = 0;
+            int compared = 0, jumpThrows = 0, risesAfterTheSpawn = 0, covered = 0, lowerBoundOnly = 0, delayed = 0;
             foreach (MetricRow row in RoundFactsTestSupport.Table(run, "throws", demo).Rows)
             {
                 int slot = RoundFactsTestSupport.Dim(row, "player_slot");
@@ -88,6 +95,12 @@ public class ThrowerCommandLaneTests
                 bool walkerJump = walkerCovered && press is not null;
                 bool engineJump = lastJump >= spawn - JumpWindowTicks && lastJump <= spawn;
 
+                // The recipe RULES_AUTHORING.md and the catalog note publish, evaluated by the engine.
+                bool published = RoundFactsTestSupport.Int(row, "jump_throw") == 1;
+                await Assert.That(published).IsEqualTo(coverage > 0 && engineJump).Because(because);
+                lowerBoundOnly += lastJump > spawn && !walkerJump ? 1 : 0;
+                delayed += created > spawn ? 1 : 0;
+
                 if (engineJump != walkerJump)
                 {
                     // The lane keeps one tick per slot: a rise between the spawn and the created frame
@@ -103,8 +116,9 @@ public class ThrowerCommandLaneTests
                 covered += walkerCovered ? 1 : 0;
             }
 
-            Console.WriteLine($"{label}: {compared} throws, {covered} with a command in the window, {jumpThrows} jump-throws, "
-                              + $"{risesAfterTheSpawn} with a rise between the spawn and the created frame");
+            Console.WriteLine($"{label}: {compared} throws ({delayed} created after the spawn), {covered} with a command in the window, {jumpThrows} jump-throws, "
+                              + $"{risesAfterTheSpawn} with a rise between the spawn and the created frame, "
+                              + $"{lowerBoundOnly} a lower bound alone would call a jump-throw");
             await Assert.That(compared).IsGreaterThan(50).Because(label);
             await Assert.That(jumpThrows).IsGreaterThan(0).Because(label);
             await Assert.That(jumpThrows).IsLessThan(compared).Because(label);

@@ -108,7 +108,9 @@ public static class CatalogBuilder
                 "The frame-clock tick IN_JUMP last rose on in this player's commands: set in "
                 + "buttonstate1 where the previous command had it clear, or pressed in a sub-tick move "
                 + "step. -1 before the first. A jump-throw read on `projectile_created` is "
-                + "`thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27`."),
+                + "`thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27 and "
+                + "thrower.cmd.last_jump_tick <= projectile.first_seen_tick`: the created frame can "
+                + "come after the spawn, and a press in between is not a jump-throw."),
             ["usercmd.coverage"] = ("fraction",
                 "The player's commands over the last 64 frame ticks divided by 64, capped at 1: 0 "
                 + "when the demo carries none for the player lately. Gate a jump read on it: while "

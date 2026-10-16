@@ -3367,7 +3367,7 @@
       "clrType": "int",
       "v2Name": "player.cmd.last_jump_tick",
       "v2Type": "Int",
-      "note": "The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27\u0060."
+      "note": "The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27 and thrower.cmd.last_jump_tick \u003C= projectile.first_seen_tick\u0060: the created frame can come after the spawn, and a press in between is not a jump-throw."
     },
     {
       "name": "usercmd.left",

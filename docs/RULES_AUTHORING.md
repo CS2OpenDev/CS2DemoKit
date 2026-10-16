@@ -628,12 +628,16 @@ the entity reads above are the state from before the frame's update. Commands ar
 makes the run decode user commands, which costs a run that reads none nothing; the last two make it
 keep the history they need, which a run reading only the others does not. In a `for:
 each_projectile` ruleset the thrower's commands are `thrower.cmd.*`, so a jump-throw is a press in
-the window before the spawn:
+the window up to the spawn. Bound it on both sides: `projectile_created` can fire a few frames
+after the spawn, and a press in between is a jump after the release, not a jump-throw:
 
 ```yaml
 stats:
   jump_throw:
-    capture: thrower.cmd.coverage > 0 and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+    capture: >-
+      thrower.cmd.coverage > 0
+      and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+      and thrower.cmd.last_jump_tick <= projectile.first_seen_tick
     on: raw.projectile_created
 ```
 
