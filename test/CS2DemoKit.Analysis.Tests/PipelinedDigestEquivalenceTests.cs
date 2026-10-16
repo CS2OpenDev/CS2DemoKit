@@ -48,7 +48,7 @@ public class PipelinedDigestEquivalenceTests
     // Per-worker provider factories. Order is fixed (the digest's per-pawn value arrays and Singletons[]
     // are positionally indexed), and each call returns FRESH instances so a worker never shares a
     // provider with another (FreezePeriodProvider caches a mutable entity index).
-    private static IReadOnlyList<IPerPlayerEntityValueProvider> NewPerPlayer() =>
+    internal static IReadOnlyList<IPerPlayerEntityValueProvider> NewPerPlayer() =>
     [
         new PawnHealthProvider(),
         new PawnArmorProvider(),
@@ -640,7 +640,7 @@ public class PipelinedDigestEquivalenceTests
     ///     <c>EntityChangeScanner.MergePreFrameSnapshot</c> does, including skipping nulls, which is what
     ///     makes an unchanged cell in a delta row a no-op rather than an erasure.
     /// </summary>
-    private static void Fold(Dictionary<(int Provider, int Slot), object?> snapshot, EntityFrameDigest d)
+    internal static void Fold(Dictionary<(int Provider, int Slot), object?> snapshot, EntityFrameDigest d)
     {
         PerPawnColumns rows = d.PerPawn;
         for (int r = 0; r < rows.Count; r++)
@@ -657,7 +657,7 @@ public class PipelinedDigestEquivalenceTests
     }
 
     /// <summary>Returns null when the two folded snapshots hold identical values, else a description.</summary>
-    private static string? DiffSnapshots(
+    internal static string? DiffSnapshots(
         Dictionary<(int Provider, int Slot), object?> a,
         Dictionary<(int Provider, int Slot), object?> b)
     {
@@ -686,7 +686,7 @@ public class PipelinedDigestEquivalenceTests
     ///     Returns null when the singleton portions of the two digests are identical, else a short
     ///     description. Singletons are consumed every frame with no dedup, so they still match exactly.
     /// </summary>
-    private static string? DiffSingletons(EntityFrameDigest a, EntityFrameDigest b)
+    internal static string? DiffSingletons(EntityFrameDigest a, EntityFrameDigest b)
     {
         if (a.Singletons.Length != b.Singletons.Length)
         {
