@@ -14,7 +14,8 @@ namespace CS2DemoKit.Parser.Tests.EntityTracking;
 ///     holds, the way a parallel chunk starting there is primed, and the two must stay equal to the
 ///     end with no delta landing on an unknown entity. Inferno and the fut mirage drop their snapshot
 ///     after the last full packet, so nothing can resync them and the test checks only that no
-///     resync is invented. Skips when the demo is not under <c>CS2DEMOKIT_CORPUS_DIR</c>.
+///     resync is invented. An entity alive on both sides of a resync is updated, not created again.
+///     Skips when the demo is not under <c>CS2DEMOKIT_CORPUS_DIR</c>.
 /// </summary>
 [NotInParallel]
 [Category("Corpus")]
@@ -40,6 +41,8 @@ public class SnapshotResyncCorpusTests
         bool prefixDone = false;
         int resyncedAt = -1;
         int unknownAtResync = 0;
+        List<(int Index, string ClassName, int Serial)> created = [];
+        sequential.EntityCreated += (index, state) => created.Add((index, state.ClassName, state.Serial));
         while (reader.TryReadNext(out DemoFrame? frame))
         {
             prefixDone |= frame.CommandKind == EDemoCommands.DemPacket;
@@ -49,6 +52,12 @@ public class SnapshotResyncCorpusTests
             }
 
             int resyncsBefore = sequential.SnapshotResyncCount;
+
+            // Only a full packet can resync, so only then is the live set worth copying.
+            Dictionary<int, (string, int)>? before = frame.CommandKind == EDemoCommands.DemFullPacket
+                ? sequential.CurrentEntities.AllIndexed().ToDictionary(e => e.Index, e => (e.Entity.ClassName, e.Entity.Serial))
+                : null;
+            created.Clear();
             sequential.AdvanceOneFrame(frame);
             primed?.AdvanceOneFrame(frame);
             if (sequential.SnapshotResyncCount == resyncsBefore)
@@ -58,6 +67,11 @@ public class SnapshotResyncCorpusTests
 
             await Assert.That(resyncedAt).IsEqualTo(-1).Because("these demos drop one snapshot each");
             resyncedAt = frame.FrameNumber;
+            List<(int, string, int)> reCreated = created
+                .Where(c => before!.TryGetValue(c.Index, out (string, int) was) && was == (c.ClassName, c.Serial))
+                .ToList();
+            await Assert.That(reCreated.Count).IsEqualTo(0)
+                .Because($"a resync re-creates {reCreated.Count} entities that were alive across it, first {(reCreated.Count > 0 ? reCreated[0] : default)}");
             unknownAtResync = sequential.DeltaUnknownCount;
 
             primed = new EntityTracker();

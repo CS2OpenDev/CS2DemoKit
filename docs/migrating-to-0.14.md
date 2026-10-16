@@ -127,7 +127,10 @@ when a chunk happened to start at a later `DEM_FullPacket`, so a value could dep
 count. The tracker now notices a delta whose `delta_from` is not the last applied tick and replaces
 its entity state from the next full packet, exactly as a checkpoint prime would. Values after that
 full packet move on those demos, every decode path agrees, and `EntityTracker.SnapshotResyncCount`
-reports how often it happened. A demo with no break decodes as before.
+reports how often it happened. An entity the full packet re-sends with the class and serial it
+already had raises `EntityUpdated`, not a second `EntityCreated`, but its slot now holds a new
+`EntityState`, so read entities by index rather than keeping the instance across frames. A demo
+with no break decodes as before.
 
 ## 5. New things worth adopting
 

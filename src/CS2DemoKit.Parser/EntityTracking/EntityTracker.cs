@@ -104,6 +104,9 @@ public sealed class EntityTracker
     // full packet's payload, so the reference stays readable.
     private DemoFrame? _lastInstanceBaselineFullPacket;
 
+    // Slots alive when a resync cleared the set, so its full packet re-enters them as updates.
+    private Dictionary<int, (string ClassName, int Serial)>? _resyncSurvivors;
+
     // ── Instance baselines ────────────────────────────────────────────────────
 
     // classId → byte[] baseline snapshot
@@ -2054,6 +2057,12 @@ public sealed class EntityTracker
     // latest instancebaseline snapshot, then apply the full packet's own snapshot.
     private void ResyncFromFullPacket(DemoFrame fullPacketFrame)
     {
+        Dictionary<int, (string, int)> survivors = new();
+        foreach ((int index, EntityState entity) in CurrentEntities.AllIndexed())
+        {
+            survivors[index] = (entity.ClassName, entity.Serial);
+        }
+
         CurrentEntities.Clear();
         if (_lastInstanceBaselineFullPacket is { } baselines)
         {
@@ -2061,7 +2070,15 @@ public sealed class EntityTracker
         }
 
         SnapshotResyncCount++;
-        ProcessFullPacketCheckpoint(fullPacketFrame);
+        _resyncSurvivors = survivors;
+        try
+        {
+            ProcessFullPacketCheckpoint(fullPacketFrame);
+        }
+        finally
+        {
+            _resyncSurvivors = null;
+        }
     }
 
     // ── instancebaseline string table ─────────────────────────────────────────
@@ -2490,8 +2507,11 @@ public sealed class EntityTracker
                 // it re-sends — inflating phantom CCSGameRulesProxy creations from 1 to 1000+.
                 EntityState? prev = CurrentEntities[entityIndex];
                 bool isGenuinelyNew = prev is null
-                                      || prev.ClassName != className
-                                      || prev.Serial != (int)serialNum;
+                    ? _resyncSurvivors is null
+                      || !_resyncSurvivors.TryGetValue(entityIndex, out (string ClassName, int Serial) survivor)
+                      || survivor.ClassName != className
+                      || survivor.Serial != (int)serialNum
+                    : prev.ClassName != className || prev.Serial != (int)serialNum;
                 EntityState state = CurrentEntities.GetOrCreate(entityIndex, className, (int)serialNum);
                 state.IsInPvs = true;
                 if (isGenuinelyNew)
