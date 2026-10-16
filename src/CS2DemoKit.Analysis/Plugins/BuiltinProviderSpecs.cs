@@ -50,7 +50,7 @@ public static class BuiltinProviderSpecs
     ///     empty magazine; -1 is a weapon with no magazine (knives, grenades, the C4), which the
     ///     engine's <c>minusone</c> serializer sends as 0 on the wire. Both are real observations
     ///     and emit as-is. NOTE:
-    ///     rule-site reads are PRE-FRAME (the scanner snapshots the previous frame), so at a
+    ///     a read at a game event is PRE-FRAME (the scanner snapshots the previous frame), so at a
     ///     kill event this is the clip BEFORE the killing shot — "last bullet" is <c>== 1</c>,
     ///     not <c>== 0</c>.
     /// </summary>

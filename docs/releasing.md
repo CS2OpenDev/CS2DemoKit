@@ -800,8 +800,8 @@ The per-pawn fold that fed the pre-frame snapshot ran at the start of frame N+1'
 runs inside frame N, from the new public `EntityChangeScanner.CompleteFrame`, which the evaluator
 calls right after the frame's wire messages and before its post-frame block. The rule it sets: a
 trigger that is a wire message reads the state from before its own frame's PacketEntities, as
-before, because a frame's game events precede its PacketEntities on the wire (on matchmaking
-demos, in every frame that carries one but the first full packet). A trigger the engine raises from
+before, because a frame's game events precede its PacketEntities on the wire (on the five
+matchmaking benchmark demos, in every frame that carries one but the first full packet). A trigger the engine raises from
 frame N reads frame N's folded cells: `round_decided`, the `round_freeze_end` synthesized for a
 round decided in freeze time, cadence steps and the observer. Through 0.13.0 a `player.*` read on
 `round_decided` or on that synthesized freeze end saw frame N-1, and so did the freeze-end economy
@@ -1041,7 +1041,7 @@ frame, but that demo and the six other tournament demos on hand hold `m_iCoachin
 controller on every frame, so it checks that no coach is read and skips: the non-zero path is
 unverified. The rules-output goldens
 do not move. `eval_ms`, same build lane off against on: median +1.3% over 5 demos, inside the
-base-against-base noise floor at `a728ae3` (max 4.2%). Within noise (`docs/perf/baseline.md` "Pawn flags, throw strength, the explode tick and the coaching team").
+base-against-base noise floor in `docs/perf/baseline.md` (max 4.2%). Within noise (`docs/perf/baseline.md` "Pawn flags, throw strength, the explode tick and the coaching team").
 
 ### `player.team` lowers at every site (0.14.0)
 

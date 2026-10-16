@@ -51,12 +51,9 @@ public sealed class EntityChangeScanner
         new(ReferenceEqualityComparer.Instance);
 
     // ── Per-player pre-frame snapshot ─────────────────────────────────────────
-    // For each registered per-player provider, the most-recently-captured value PER PLAYER
-    // SLOT. Captured at the START of each AdvanceAndPollAt call, BEFORE the layer advances,
-    // so when consumers read inside that frame's inner-message processing they see the
-    // PREVIOUS frame's value. This is the right input for "compute pre-event state from
-    // entity ground truth" because the current frame's PacketEntities update arrives
-    // concurrently with the event we're handling.
+    // For each registered per-player provider, the last folded value PER PLAYER SLOT. A frame's
+    // wire messages read it before CompleteFrame folds that frame in: the previous frame's value,
+    // which is the state an event arrived in, since its PacketEntities follows it on the wire.
     private readonly List<IPerPlayerEntityValueProvider> _perPlayerProviders;
 
     // The column plan of every digest this scanner consumes, and the typed snapshot indexed by

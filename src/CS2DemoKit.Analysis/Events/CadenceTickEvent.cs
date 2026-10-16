@@ -8,7 +8,8 @@ namespace CS2DemoKit.Analysis.Events;
 
 /// <summary>
 ///     Synthesized by the evaluator for a ruleset's <c>cadences:</c> entry: one fire per period, on the
-///     first frame at or after each due tick, after the frame's own messages and post-frame events.
+///     first frame at or after each due tick, after the frame's own messages and post-frame events
+///     and after its per-pawn fold, so a <c>player.*</c> read on it is the frame's own state.
 ///     A stat reaches it as <c>cadence.&lt;id&gt;</c>, which the resolver lowers to the
 ///     <c>cadence_tick</c> view filtered on <see cref="Cadence" />. It binds to nobody, so an
 ///     each_player stat fires for every materialized player.

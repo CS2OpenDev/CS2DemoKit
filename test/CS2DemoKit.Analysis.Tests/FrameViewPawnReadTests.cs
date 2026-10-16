@@ -14,9 +14,8 @@ namespace CS2DemoKit.Analysis.Tests;
 /// <summary>
 ///     Pins what <see cref="FrameView" /> reads: a declared provider's value inside
 ///     <see cref="IFrameObserver.OnFrame" /> for frame N is the pre-frame value the first edge of
-///     frame N+1 reads through <see cref="EntityChangeScanner.GetPreFrameValue" />. That is the
-///     statement the fold move rests on: the per-pawn fold now runs at the end of frame N instead
-///     of at the start of N+1, and nothing an edge sees may change.
+///     frame N+1 reads through <see cref="EntityChangeScanner.GetPreFrameValue" />. The fold runs
+///     inside frame N, after its wire messages, so a wire event in frame N+1 still reads frame N.
 /// </summary>
 [Category("Integration")]
 [NotInParallel]
