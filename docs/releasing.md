@@ -1190,7 +1190,10 @@ reading only the six field providers tracks nothing. In a `for: each_projectile`
 members, `CatalogScopeAdapter.CommandMember` names the segment, and the resolver lowers the read as
 `player.cmd.*` is lowered. A look-back on a command read stays refused. A capture of
 `player.cmd.last_jump_tick` or `thrower.cmd.last_jump_tick` is classified on the frame clock. The
-catalog gains the two providers with notes; the editor schema is regenerated for them.
+catalog gains the two providers with notes; the editor schema is regenerated for them. The
+jump-throw recipe the `last_jump_tick` note and the authoring docs give is bounded on both
+sides, `first_seen_tick - 27` to `first_seen_tick`: `projectile_created` can fire after the spawn,
+and a press in between is a jump after the release.
 
 `DemoTestHelper.FindDemoPath(name)` now searches the corpus folder's subfolders too, so
 `CS2DEMOKIT_CORPUS_DIR` can name a tree holding several sets.
