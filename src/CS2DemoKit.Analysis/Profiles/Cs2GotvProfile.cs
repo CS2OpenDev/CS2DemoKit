@@ -70,6 +70,10 @@ public class Cs2GotvProfile : DemoSourceProfile
         LogicalEventBinding.Of("decoy_detonate");
 
     /// <inheritdoc />
+    public override LogicalEventBinding? DecoyStarted =>
+        LogicalEventBinding.Of("decoy_started");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? DefuserDropped =>
         LogicalEventBinding.Of("defuser_dropped");
 

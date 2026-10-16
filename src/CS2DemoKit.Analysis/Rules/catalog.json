@@ -628,6 +628,44 @@
       ]
     },
     {
+      "name": "decoy_started",
+      "clrType": "DecoyStartedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "uint",
+          "v2Name": "event.UserId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
       "name": "defuser_dropped",
       "clrType": "DefuserDroppedEvent",
       "synthesized": false,
@@ -3447,6 +3485,13 @@
           ]
         },
         {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
           "logicalName": "$defuser_dropped",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3867,6 +3912,13 @@
           ]
         },
         {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
           "logicalName": "$defuser_dropped",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4277,6 +4329,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -4700,6 +4759,13 @@
           ]
         },
         {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
           "logicalName": "$defuser_dropped",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5082,6 +5148,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -6028,6 +6101,79 @@
       ]
     },
     {
+      "name": "decoy_started",
+      "event": "decoy_started",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "entity_id",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "EntityId"
+        },
+        {
+          "name": "pawn",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "UserId"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        }
+      ],
+      "note": "Binds to nobody: the wire names the thrower\u0027s pawn handle (pawn), not a slot. Join a decoy to its projectile row by entity_id (the projectile\u0027s entity_index) or by position and tick."
+    },
+    {
       "name": "enemy_spotted",
       "event": "enemy_spotted",
       "binding": "actor_slot",
@@ -6197,6 +6343,73 @@
           ]
         }
       ]
+    },
+    {
+      "name": "inferno_started",
+      "event": "inferno_startburn",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "entity_id",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "EntityId"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        }
+      ],
+      "note": "Binds to nobody: the event names the inferno entity, not the projectile or a player. Join it to a molotov\u0027s projectile row by position (the fire starts where the projectile burst) and tick."
     },
     {
       "name": "kill",

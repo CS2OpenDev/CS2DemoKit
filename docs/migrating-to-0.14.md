@@ -289,3 +289,21 @@ show:
       per: projectile
       columns: [ { stat: class }, { stat: spawn_x }, { stat: end_x }, { stat: bounces } ]
 ```
+
+The bursts have views for all five grenades: `he_grenade`, `flash_grenade` and `smoke_grenade`
+bound to the thrower, and `decoy_started` and `inferno_started` bound to nobody, each with
+`event.EntityId` and `event.X`, `Y`, `Z` (the facets `entity_id`, `x`, `y`, `z` on the two new
+ones). A host that matched `hegrenade_detonate` or `inferno_startburn` events to its own grenade
+walk can record them as `match_event` rows and join them to the `per: projectile` rows by entity
+index (a detonate's `EntityId` is the projectile's `entity_index`) or by position and tick (an
+inferno names its own entity).
+
+```yaml
+ruleset: bursts
+for: match
+stats:
+  fire_x: { capture: event.X, on: inferno_started, per: match }
+show:
+  tables:
+    fires: { per: match_event, on: inferno_started, columns: [ { stat: fire_x } ] }
+```

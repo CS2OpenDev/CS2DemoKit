@@ -1143,6 +1143,19 @@ No shipped ruleset uses the scope, so no hash, digest or fixture moves. `Project
 pins `first_seen_tick` against `ProjectileSampler`'s first sample, the `removed` flag against the
 removed event, and a detonation position on the sample's popped smokes.
 
+### A decoy's start and an inferno's lighting have views (0.14.0)
+
+`EventRegistry` gains `decoy_started` (`DecoyStartedEvent`, from the SDK's game events), and
+`DemoSourceProfile` a public virtual `DecoyStarted`, which `Cs2GotvProfile` binds to the wire event;
+a custom profile that does not derive from it leaves the view unavailable. The catalog gains the
+event (`perMatch`, 15 at most on the measured corpus) and two views, `decoy_started` and
+`inferno_started` (over `inferno_startburn`, logical `inferno_start`), each `binding: none` with
+facets `entity_id`, `x`, `y`, `z`, and `pawn` on the decoy, because `decoy_started`'s `userid` is a
+`player_pawn` field whose only wire key is the pawn handle, never a controller slot. The editor
+schema is regenerated for the two view names. No shipped ruleset reads either, so no hash, digest
+or fixture moves. `GrenadeBurstViewTests` pins both views' `match_event` rows against the wire on
+the reference demo and joins each decoy to a live decoy projectile row by entity index.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

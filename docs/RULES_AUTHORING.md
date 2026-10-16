@@ -107,7 +107,8 @@ know the CS2 conventions. Common views:
 
 `kill` · `death` · `assist` · `damage_dealt` · `shot` · `blinded_enemy` ·
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
-`projectile_thrown` · `projectile_landed` · `round_won` · `round_lost` · `round_decided` · `round_ended`
+`decoy_started` · `inferno_started` · `projectile_thrown` · `projectile_landed` · `round_won` ·
+`round_lost` · `round_decided` · `round_ended`
 
 A round ends twice. **`round_decided`** fires on the frame the server decides the round, read off
 the game rules' round-win status: its facets are `winner_side` (2 = T, 3 = CT), `reason` (the
@@ -144,6 +145,16 @@ its `projectile_landed` binds to nobody. `x`, `y` and `z` read NaN when the posi
 readable. The events behind them are `projectile_created` and `projectile_removed`; under a view,
 `event.*` also reads `EntityIndex`, `Serial` and `ClassName`. A `raw.projectile_created` trigger
 reads only the tick, because raw triggers expose no fields, so filter through the views.
+
+**The bursts.** `he_grenade`, `flash_grenade` and `smoke_grenade` are the detonations, bound to the
+thrower; under each, `event.EntityId` is the projectile's entity index and `event.X`, `Y`, `Z` where
+it burst. **`decoy_started`** is a decoy's sound beginning (`decoy_detonate` is each fake shot after
+it) and **`inferno_started`** a molotov's or incendiary's fire lighting. Both bind to nobody: the
+wire names the thrower's pawn handle on the one (its `pawn` facet) and no player on the other, so
+read them from a `for: match` ruleset and join through their facets: `entity_id` is the decoy
+projectile's entity index, or the inferno entity's, and `x`, `y`, `z` the burst. A burst arriving on
+the frame the projectile is removed is dispatched before `projectile_removed`, so a `for:
+each_projectile` stat on `he_grenade` still sees it.
 
 ```yaml
 stats:

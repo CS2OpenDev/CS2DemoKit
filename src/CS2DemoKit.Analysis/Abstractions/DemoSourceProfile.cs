@@ -74,6 +74,9 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "decoy detonate" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? DecoyDetonate => null;
 
+    /// <summary>Logical binding for the "decoy started" game event, the decoy's sound beginning. See class summary for binding semantics.</summary>
+    public virtual LogicalEventBinding? DecoyStarted => null;
+
     /// <summary>Logical binding for the "defuser dropped" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? DefuserDropped => null;
 
