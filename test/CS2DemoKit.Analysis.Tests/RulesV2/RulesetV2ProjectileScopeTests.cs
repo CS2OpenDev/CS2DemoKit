@@ -119,6 +119,54 @@ public class RulesetV2ProjectileScopeTests
     }
 
     [Test]
+    public async Task Resolver_ServesAThrowerLookBack_AtTheFireTimeSlots()
+    {
+        CheckedRuleset ruleset = RoundFactsTestSupport.Checked("""
+            ruleset: lb
+            for: each_projectile
+            stats:
+              back_x: { capture: thrower.pos_x@-8, on: raw.projectile_created }
+              grounded:
+                count: raw.projectile_created
+                where: thrower.on_ground@-16 and not thrower.on_ground
+            """);
+
+        CheckedStat backX = ruleset.Stats.Single(s => s.StatId == "back_x");
+        EntityProviderReference read = backX.EntityReads.Single();
+        await Assert.That(read.Path).IsEqualTo("thrower.pos_x");
+        await Assert.That(read.ProviderName).IsEqualTo("entity.pawn.pos_x");
+        await Assert.That(read.Subject).IsEqualTo(EntityProviderReference.PlayerSubject);
+        await Assert.That(read.LookBackTicks).IsEqualTo(8);
+
+        // The plain read and the look-back are two entries, as player.* keeps them.
+        CheckedStat grounded = ruleset.Stats.Single(s => s.StatId == "grounded");
+        string[] reads = grounded.EntityReads.Select(r => $"{r.Path}|{r.LookBackTicks}")
+            .OrderBy(r => r, StringComparer.Ordinal).ToArray();
+        await Assert.That(string.Join(",", reads)).IsEqualTo("thrower.on_ground|0,thrower.on_ground|16");
+
+        // Outside a fire-time slot the look-back is refused, as a player.* one is.
+        RulesetResolveResult compute = RoundFactsTestSupport.Resolve("""
+            ruleset: bad
+            for: each_projectile
+            stats:
+              lands: { count: projectile_landed }
+              back:  { compute: "lands + thrower.pos_x@-8" }
+            """);
+        await Assert.That(compute.Success).IsFalse();
+        await Assert.That(compute.Diagnostics.Any(d => d.Code == ResolveDiagnosticCodes.LookBackUnsupported)).IsTrue();
+
+        // A projectile.* read keeps no history.
+        RulesetResolveResult projectile = RoundFactsTestSupport.Resolve("""
+            ruleset: bad
+            for: each_projectile
+            stats:
+              back: { capture: projectile.pos_x@-8, on: projectile_landed }
+            """);
+        await Assert.That(projectile.Success).IsFalse();
+        await Assert.That(projectile.Diagnostics.Any(d => d.Code == ResolveDiagnosticCodes.LookBackUnsupported)).IsTrue();
+    }
+
+    [Test]
     public async Task Resolver_KeepsProjectileAndThrowerOutOfOtherScopes()
     {
         RulesetResolveResult player = RoundFactsTestSupport.Resolve("""

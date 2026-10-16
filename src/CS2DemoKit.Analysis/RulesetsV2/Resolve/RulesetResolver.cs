@@ -2414,16 +2414,35 @@ public static class RulesetResolver
             return false;
         }
 
-        /// <summary>Only the ruleset player's per-player entity reads carry a history the scanner can keep.</summary>
-        private bool CanLookBack(EntityProviderReference entity) =>
-            entity is { Subject: EntityProviderReference.PlayerSubject, IsSingleton: false }
-            && _providerByV2Name.TryGetValue(entity.Path, out CatalogProvider? provider)
-            && string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal);
+        /// <summary>
+        ///     Only a per-player entity read at the subject's own slot carries a history the scanner
+        ///     keeps: <c>player.*</c>, and <c>thrower.*</c> in a projectile ruleset, whose slot is the
+        ///     instance's. A role handle reads a slot the event names per fire, so it has none.
+        /// </summary>
+        private bool CanLookBack(EntityProviderReference entity)
+        {
+            if (entity is not { Subject: EntityProviderReference.PlayerSubject, IsSingleton: false })
+            {
+                return false;
+            }
+
+            if (_providerByV2Name.TryGetValue(entity.Path, out CatalogProvider? provider))
+            {
+                return string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal);
+            }
+
+            string[] segments = entity.Path.Split('.');
+            return _forEachProjectile && segments.Length == 2
+                   && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
+                   && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider)
+                   && string.Equals(throwerProvider.Name, entity.ProviderName, StringComparison.Ordinal);
+        }
 
         private void ReportLookBack(ResolvedReference reference, bool lookBackSite, SourcePosition position) =>
             Report(ResolveDiagnosticCodes.LookBackUnsupported,
                 lookBackSite
-                    ? $"'{reference.Path}' cannot look back: only a player.* entity read keeps a history"
+                    ? $"'{reference.Path}' cannot look back: only a player.* entity read, or thrower.* in a "
+                      + "for: each_projectile ruleset, keeps a history"
                     : $"'{reference.Path}@-{reference.LookBackTicks.ToString(CultureInfo.InvariantCulture)}' looks back "
                       + "outside a where: or an event-triggered value, the only places a look-back is served",
                 position);

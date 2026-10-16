@@ -603,10 +603,10 @@ the entity reads above are the state from before the frame's update. Commands ar
 makes the run decode user commands, which costs a run that reads none nothing.
 
 **Looking back.** `player.pos_x@-8` reads what `player.pos_x` read 8 ticks earlier on the frame
-clock. N is a whole number from 1 to 64. It works on the ruleset player's per-player entity reads
-(the `player.*` names above, not `player.cmd.*`, a role handle, `match.*` or an event field), in a
-`where:` or the value of an event-triggered stat; anywhere else is
-`resolve.look-back.unsupported`. Before the player has a value that far back it reads `0`. The
+clock. N is a whole number from 1 to 64. It works on the subject's per-player entity reads: the
+`player.*` names above, and `thrower.*` in a `for: each_projectile` ruleset (not `player.cmd.*`, a
+role handle, `projectile.*`, `match.*` or an event field), in a `where:` or the value of an
+event-triggered stat; anywhere else is `resolve.look-back.unsupported`. Before the player has a value that far back it reads `0`. The
 ticks count back from the state the site reads, so on a cadence step `@-8` is 8 ticks before the
 step's own frame.
 
@@ -817,7 +817,9 @@ and the instance is released. A grenade still in the air when the demo ends gets
   Anything else with no `on:` is `resolve.trigger.unsupported-for-kind`.
 - `thrower.*` is the thrower's per-player read set (`thrower.is_walking`, `thrower.pos_x`, ...),
   read at the thrower's slot on the frame of the event that triggers the stat. It is in scope on
-  every trigger, not only the `projectile_thrown` view that names the role.
+  every trigger, not only the `projectile_thrown` view that names the role, and it looks back like
+  `player.*` does: `thrower.pos_x@-8` on `raw.projectile_created` is where the thrower stood 8 ticks
+  before the grenade appeared, and `thrower.on_ground@-40` reaches the release of a long throw.
 - `projectile_thrown` / `projectile_landed`, and the raw `projectile_created` /
   `projectile_removed`, bind to the instance: a stat on them fires for this grenade only. Any other
   event fires for every live instance, as it does in `for: match`.
