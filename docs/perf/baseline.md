@@ -720,6 +720,8 @@ reads paired +4.4%, per-demo +9.3% on the same arm, so this is not a change `cf6
 pooling removed the allocation the trace named and did not move wall clock. Run 2, budget +5%
 and +20 MB: wall over on every six-round aggregation, working set inside. Both readings are from
 a machine at load 2 to 5; neither gate is cleared, and the hook's perf gate is open.
+Re-measured at `022b964` in "Gate G: the 0.14.0 release review" below, still over, and
+accepted for 0.14.0 by the owner.
 
 ### Pawn flags, throw strength, the explode tick and the coaching team
 
@@ -765,7 +767,7 @@ together and does not split them.
 **Isolated, split by item, cb1364c, 3 rounds, cooldown 5s.**
 `CS2DEMOKIT_BENCH_R7_2A_EXPLODE` stayed off on both arms below, so the explode tick's own
 `each_projectile` cost is not in either table, and the cost of the `for: each_projectile` scope it
-reads under is not measured in this file.
+reads under is not measured here; "Gate G: the 0.14.0 release review" below measures the scope.
 
 The pawn pair, `flags` and `throw_strength`:
 
@@ -804,6 +806,206 @@ above (the five projectile classes plus seven per-pawn columns, every slot, ever
 not measured directly as one isolated run; it is two medians subtracted across
 sessions, not a paired difference, and the explode tick's own increment inside it was not
 isolated from the `each_projectile` scope cost. Still inside +10%.
+
+### Gate G: the 0.14.0 release review
+
+    commit    022b964, measured through a48680c (022b964 plus a local-feed SDK restore that
+              touches Directory.Packages.props and nuget.config only)
+    runs      90 (paths: 2 sessions x 3 rounds x 5 demos x 3 arms), 50 (sweep: 5 rounds x 5
+              demos x 2 lanes), 70 (compare, base against base, 50 pooled), zero failures, zero
+              digest mismatches
+    load      2.64 to 7.27 throughout, Rider open
+
+The release review of the three engine rows "The frame observer" and "Pawn flags, throw strength,
+the explode tick and the coaching team" above left open or never measured. Same five demos, same
+protocols, one published bench used for every leg. Rider was open throughout, as it was for every
+accepted session above, and the owner waived the "load1 above 2, the round does not count" rule
+for this run: load1 was recorded per chunk and no round was dropped. These are not quiet-machine
+numbers. A row is inside its budget only if every aggregation is, the convention the `cf67326`
+gate above uses.
+
+**Every miss below was accepted for 0.14.0 by the owner, 2026-10-17.** The likely causes and
+candidate improvements after the tables are the starting point for a later release, not work
+0.14.0 waits on.
+
+**Base against base, for context.** `compare`, the same binary under both labels, five
+`--rounds 1` calls. Each call ran as the tool's round 1, and `Compare.Run` flips the order on the
+round number (`round % 2 == 1` runs A first), so the A label went first on all 50 pairs. That
+matters on one binary: read by position across 35 demo-pairs, `parse_ms` reads higher on whichever
+run went first on 28 of 35 (second over first, median 0.935) and `total_ms` on 24 of 35 (median
+0.974). Rounds 2 and 4 were rerun with the labels swapped, for the 3:2 split one continuous
+5-round call produces. That pool, rounds 1, 3 and 5 and the two reruns, 10 samples per label per
+demo:
+
+| | median | range over the five demos |
+|---|---|---|
+| `eval_ms` | +1.40% | -1.48% to +2.02% |
+| `total_ms` | +0.27% | -2.94% to +3.09% |
+
+load1 3.32 to 5.51, median 4.13. The 5:0 pool read `total_ms` -3.74%, inflated by the position
+effect; do not reuse it. A 3:2 split reduces the effect and does not remove it: `build_ms` on the
+smallest file still reads 32.56 against 29.55 ms between the labels. This is the retained `sweep`
+pipeline, not the `paths` wall clock R3 reads, so it sizes the machine's noise today and does not
+bound the R3 rows. A `compare` run split into single-round calls has to alternate `--label-a`
+between calls.
+
+**R3, per-player** (`observer-pawns-stream` against `scoreboard-stream`). Budget +10% wall. Two
+sessions of three rounds, arm order rotated as above, 30 paired samples:
+
+| aggregation | `f6dccfc` | `cf67326` | Gate G |
+|---|---|---|---|
+| pooled | +10.6% | +35.4% | +9.3% |
+| paired median | +13.0% | +29.9% | +14.1% |
+| paired mean | +15.3% | +29.0% | +13.6% |
+| per-demo | +27.9% | +27.0% | +12.3% |
+
+Over on 3 of 4; the pooled figure is the one that clears. Lower than `cf67326` on all four, lower
+than `f6dccfc` on three and higher on the paired median. Per-demo: 0544286934 +18.6%, 0003771537
++27.7%, 1066991563 +12.3%, 0126308730 -3.4%, 1168926414 +7.1%. Session 1 alone reads paired median
++10.3%, session 2 +18.1%; the two ran about 12 minutes apart, so that split is drift inside one
+sitting, not two days. load1 3.62 to 7.08, median 4.93. `scoreboard-stream`'s own per-demo spread
+over three rounds was 12.9 to 116.5% in session 1 and 9.9 to 109.5% in session 2, the same range as
+`cf67326` session 1.
+
+Collector counters, paired median (range) unless marked, in the shape of the `cf67326` table:
+
+| | `cf67326`, session 1 | `cf67326`, session 2 | Gate G |
+|---|---|---|---|
+| `alloc_mb` | +35.3 | +32.5 | +30.4 (17.6 to 40.6) |
+| `gen0` | +4 | +4 | +2 (0 to 5) |
+| `pause_ms` | +118.2 | +113.8 | +90.8 (43.9 to 165.7) |
+| working set, pooled median | +48.0 MB | +39.0 MB | +28.0 MB (paired +30.3, +1.9 to +62.6) |
+| peak heap, pooled median | +73.1 MB | +71.8 MB | +40.8 MB |
+
+**R3, projectiles-only** (`observer-stream` against `scoreboard-stream`). Budget +5% wall and
++20 MB working set. Same build, same 30 pairs:
+
+| aggregation | `f6dccfc` | `cf67326` | Gate G |
+|---|---|---|---|
+| pooled | -0.1% | +24.0% | -1.7% |
+| paired median | -3.0% | +5.8% | -0.6% |
+| paired mean | +5.1% | +14.4% | +9.4% |
+| per-demo | +5.0% | +8.6% | +3.3% (-0.8% by median of the per-round ratios) |
+| working set | +5.4 MB | +17.4 MB | +4.5 MB pooled, +6.3 MB paired |
+
+Over on the paired mean only; working set inside. The two per-demo methods disagree on sign and
+both are given. Four pairs carry the mean, at +75.6 to +87.0% (session 2 rotation 1 1168926414,
+session 2 rotation 3 0003771537 and 0544286934, session 1 rotation 3 0544286934); without the top
+three it reads +0.9%. The low end has two pairs at -42.7%. Collector, paired median: `alloc_mb`
++9.1, `gen0` 0, `pause_ms` +3.6; peak heap pooled +2.2 MB.
+
+**R6, `for: each_projectile` `eval_ms`.** Budget +5%. Not `compare`: `Compare.Measure` sets one
+variable, `DOTNET_gcServer`, on each child's `ProcessStartInfo`, which starts from a copy of the
+parent's environment, so `CS2DEMOKIT_BENCH_PROJECTILE` set in the shell reaches both arms, and on
+one build that has the scope that is on against on. Instead `sweep` on the one build, run twice
+per round with the variable unset and then `=1`, the "isolated, same build, lane off against on"
+pattern above. 5 rounds, `--cooldown 5`, off first on rounds 1, 3 and 5 and on first on 2 and 4.
+`rulesets` reads 5 on every off row and 6 on every on row.
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 618.5 ms | 965.5 ms | +56.1% (smallest file) |
+| ...7406845372_0003771537.dem | 732.7 ms | 781.1 ms | +6.6% |
+| ...0180689112_1066991563.dem | 753.4 ms | 763.4 ms | +1.3% |
+| ...1231606001_0126308730.dem | 762.3 ms | 852.7 ms | +11.9% |
+| ...3634708_1168926414.dem | 726.0 ms | 765.2 ms | +5.4% |
+
+Per-demo median +6.6%, paired median (n=25) +6.6%, paired mean +14.8%, pooled +7.0%. Over on 4 of
+4. The figure the owner accepted for development on 2026-10-14 was +5.9%, with no raw table
+located for it. The smallest file's off column alone spans 586 to 1065 ms over the five rounds,
+wider than its own delta; three of its pairs, +43.7, +98.7 and +56.1% on rounds 1, 2 and 5, pull
+the mean, and the other 20 pairs sit at -4.9 to +21.0%. `eval_alloc_mb` is higher on every on row
+than its off row, by 7.5 to 16.6 MB. load1 2.64 to 7.27, median 5.16.
+
+| round | first | paired median | load1 |
+|---|---|---|---|
+| 1 | off | +18.0% | 2.64 to 5.47 |
+| 2 | on | +4.4% | 4.66 to 6.54 |
+| 3 | off | +5.5% | 5.01 to 7.27 |
+| 4 | on | +6.6% | 4.46 to 6.38 |
+| 5 | off | +4.4% | 3.46 to 4.09 |
+
+Round 1 is the outlier, and neither load nor order explains it: it has the lowest load1 range of
+the five, and rounds 3 and 5, also off first, read +4.9% together. Round 1's off arm reads the
+lowest `eval_ms` of the five rounds on 4 of 5 demos; no cause is known. Rounds 2 to 5 alone read
+per-demo +4.81% and paired median +4.97%, just inside. That is a sensitivity check, not the result:
+the waiver gives no ground to drop a round.
+
+**Per-player: likely cause.** Measured: the paired wall delta's median is +352 ms, and the GC pause
+delta, +90.8 ms, is about a quarter of it. The rest is not attributed. From the code, two costs
+grow with the declaration, and the run does not split them. First, the digest: `RuleChainBuilder`
+gates `AnalysisOptions.ObservedProviders` into the per-pawn column layout by name, and none of the
+seven `ObservedPawnProviders` is read by the four shipped rulesets the `paths` arms load, so every
+one is a new column. `EntityDigestExtractor.ReadPawn` reads them for every pawn on every frame on
+the digest workers, and position and eye angles likely change on most frames of a live pawn,
+so `AppendRow` writes a `PerPawnColumns` row for nearly every live pawn on nearly every frame, and
+`PreFrameSnapshot.Fold` folds each one on the evaluation thread. That fits the allocation and heap
+deltas. Second, the bench's own reader: `CountingObserver.OnFrame` reads 7 columns for all 64 slots
+on every frame, 448 handle reads, each through `FrameView.Open()`, the owner check, a kind check
+and `PreFrameSnapshot.TryRow`, on the evaluation thread, whether or not the slot has a pawn.
+
+**Per-player: candidate improvements.**
+
+Measure the split first. `CS2DEMOKIT_PATHS_OBSERVER_READ=0` declares the columns and skips the
+reads, which isolates the digest cost from the read cost. Neither this file nor the Gate G record
+has a run with it set.
+
+Add a span read to `FrameView`, one call per column per frame that fills the slots and returns
+the present mask from `TypedSlotRow.Recorded`. The open, owner and kind checks then run once per
+column instead of once per cell.
+
+Read only bound slots. `ReadPawn` already keeps `PawnSlotsRead` per frame; exposing it on
+`FrameView` lets an adapter skip the slots with no pawn, which on a ten-player demo is most of the
+64.
+
+A per-column change threshold in `PerPawnDeltaState.RecordFloat` for observer-only columns, if a
+consumer can accept quantized positions. A round index reading position at frame rate may not need
+sub-unit motion. This changes what the view reads, so it is an API decision, not a tuning.
+
+**Projectiles-only: likely cause.** No engine cost shows in the data. The collector deltas are
+near zero, the paired median wall delta is -22 ms, and the one aggregation over budget is a mean
+carried by four pairs inside a no-observer control whose own per-demo spread reaches 116%. The
+declaration adds the projectile visit in `EntityDigestExtractor` over the five classes and the
+`FrameView` spans, which is all this arm pays for. Likely noise.
+
+**Projectiles-only: candidate improvements.** None in the engine until a run shows a cost. The
+measurement needs more rounds on a quiet machine, or a reading that does not take the mean of a
+bimodal pipeline, before this row can say anything either way.
+
+**R6: likely cause.** The lane changes more than the template. From the code, the overlay switches
+on three things the off arm does not have. `RuleChainBuilder` sets `emitProjectiles` for any
+`for: each_projectile` ruleset, so the digest carries rows for all five classes and dispatches
+`projectile_created` and `projectile_removed`. The overlay's `thrower_walk` reads
+`thrower.is_walking`, which `RulesetResolver` records as an entity read of `entity.pawn.is_walking`
+and `UnionV2EntityReads` gates into the per-pawn layout, so the on arm reads one more pawn column on
+every frame; no shipped ruleset reads it. And `StateGraphEvaluator.MaterializeProjectile` builds an
+instance per grenade on the evaluation thread: `LowerV2Projectile` lowers the instance under
+`ExpressionCompiler.Interpret`, every edge is registered, and `TopologicalSortEdges` re-sorts the
+whole edge list of every message type the instance touched, allocating its adjacency lists each
+time. `ReleaseInstance` removes each edge with `List.Remove`, linear in the list. The measured
+`eval_alloc_mb` increase fits the per-grenade allocation; how the delta splits between the three is
+not measured. The R3 projectiles-only arm above suggests the digest rows alone are cheap on the
+forward path, but that is a different tool and pipeline. The smallest file's +56.1% is likely the
+bimodal collector "GC configuration" describes, the file the tables above already flag.
+
+**R6: candidate improvements.**
+
+Split the lane before tuning it: a variant of the overlay without `thrower_walk`, and one that
+subscribes to `projectile_created` with no `for: each_projectile` ruleset, separate the pawn column
+and the lifecycle rows from the template.
+
+Sort once per template, not per grenade. Every instance of a template has the same edge shape, so
+the order an instance's edges take relative to the graph's could be computed at the probe in
+`BuildV2ProjectileTemplate` and spliced in at `MaterializeProjectile`, instead of
+`TopologicalSortEdges` over the full per-type list for each grenade.
+
+Remove by position. `ReleaseInstance` could record each edge's index at registration, or mark it
+dead and compact once per frame, instead of `List.Remove` per edge.
+
+Reuse instances. A released instance's nodes and edges could return to a per-template pool, the way
+`DigestStoragePool` recycles digest storage, and be rebound to the next grenade's
+`ProjectileInstanceState`, so `LowerV2Projectile` runs once per concurrent grenade rather than
+once per grenade.
 
 ## Reading these numbers later
 

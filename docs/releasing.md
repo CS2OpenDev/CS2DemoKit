@@ -1235,6 +1235,12 @@ pins the fold, its refusal of a form it does not cover, and that every shipped b
 pins a `per: player_event` table on the view against the grenade `weapon_fire` events a walker
 indexes, by frame tick and slot, on the sample on both paths and on the reference demo.
 
+### Known performance (0.14.0)
+
+Three engine rows miss their budgets and ship as accepted by the owner: the frame observer's
+per-player and projectiles-only arms and the `for: each_projectile` scope's `eval_ms`. Numbers,
+likely causes and candidate improvements are in `docs/perf/baseline.md` "Gate G: the 0.14.0 release review".
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
