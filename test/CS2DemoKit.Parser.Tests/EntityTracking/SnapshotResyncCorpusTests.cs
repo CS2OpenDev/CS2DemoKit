@@ -110,6 +110,39 @@ public class SnapshotResyncCorpusTests
         }
     }
 
+    /// <summary>
+    ///     A demo that drops no snapshot must resync nothing. The chain is followed by the deltas
+    ///     alone, since a full packet's own <c>PacketEntities</c> is skipped before
+    ///     <c>SnapshotChain.Observe</c> sees it, so every delta's base has to be a tick the deltas
+    ///     themselves established. One invented break latches, and then every later full packet
+    ///     rebuilds the state from scratch.
+    /// </summary>
+    /// <param name="file">The benchmark demo.</param>
+    [Test]
+    [Arguments("003816248937665266002_0544286934.dem")]
+    [Arguments("003816779297406845372_0003771537.dem")]
+    [Arguments("003816798820180689112_1066991563.dem")]
+    [Arguments("003816804281231606001_0126308730.dem")]
+    [Arguments("003816809596253634708_1168926414.dem")]
+    public async Task ACleanDemo_NeverResyncs(string file)
+    {
+        string path = DemoTestHelper.RequireDemo(file);
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        using DemoReader reader = DemoReader.Open(bytes.AsMemory(), new ParseOptions { Plan = DecodePlan.EntityReplay });
+
+        EntityTracker sequential = new();
+        while (reader.TryReadNext(out DemoFrame? frame))
+        {
+            sequential.AdvanceOneFrame(frame);
+        }
+
+        Console.WriteLine($"{file}: resyncs {sequential.SnapshotResyncCount}, "
+                          + $"unknown-entity deltas {sequential.DeltaUnknownCount}");
+        await Assert.That(sequential.SnapshotResyncCount).IsEqualTo(0)
+            .Because("this demo drops no snapshot, so every delta names a base the tracker applied");
+        await Assert.That(sequential.DeltaUnknownCount).IsEqualTo(0);
+    }
+
     private static (int T, int Ct) Scores(EntityTracker tracker)
     {
         int t = -1, ct = -1;
