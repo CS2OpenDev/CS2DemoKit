@@ -732,9 +732,9 @@ public sealed class StateGraphEvaluator
                     Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
 
                     // Synthesized game events (molotov_thrown) must materialize their player exactly
-                    // like wire events: a player whose first qualifying activity is entity-derived
-                    // was otherwise silently dropped. TrackNewlyMaterializedNodes is mandatory in
-                    // snapshot mode (untracked mid-run nodes break row padding).
+                    // like wire events: a player's first qualifying activity can be entity-derived.
+                    // TrackNewlyMaterializedNodes is mandatory in snapshot mode (untracked mid-run
+                    // nodes break row padding).
                     if (syntheticMsg is GameEventMessage sgem)
                     {
                         MaterializeNewPlayers(sgem.DecodedEvent);

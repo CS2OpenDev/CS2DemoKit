@@ -14,9 +14,9 @@ namespace CS2DemoKit.Analysis;
 ///     frames' worth of storage per run instead of one per frame.
 ///     <para>
 ///         Projectile rows are not recycled. Over a retained demo the chunks run tens of
-///         thousands of frames ahead of the consumer, so a per-frame list rented here almost
-///         never found a returned one and every rent was an allocation taken under the lock; a
-///         block holds hundreds of frames' rows and is garbage once its digests are.
+///         thousands of frames ahead of the consumer, so a returned per-frame list is almost
+///         never back in time for the next rent; a block holds hundreds of frames' rows and is
+///         garbage once its digests are.
 ///     </para>
 ///     <para>
 ///         One instance per producing stream (a pipelined worker, or the sequential scanner),
