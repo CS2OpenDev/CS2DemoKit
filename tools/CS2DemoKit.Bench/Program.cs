@@ -134,7 +134,7 @@ static int Help()
         only the newer arm runs the lane.
 
         CS2DEMOKIT_BENCH_PROJECTILE=1 loads a for: each_projectile overlay (grenade_rows), so
-        eval_ms carries R6's per-projectile template cost. measure, sweep, compare and paths all
+        eval_ms carries the per-projectile template cost. measure, sweep, compare and paths all
         read it; an arm published before the scope existed ignores it and measures with no
         projectile ruleset built regardless, so in a compare only the newer arm materializes
         instances. The warm-up pass (measure, sweep, compare) fails loud if the overlay builds
@@ -142,18 +142,18 @@ static int Help()
         projectiles in AnalysisRun.Projectiles, since a forward run has no show table to check.
 
         CS2DEMOKIT_BENCH_R7_2A=1 loads an each_player overlay reading player.flags and
-        player.weapon_throw_strength, R7 part 2a's pawn half. measure, sweep and compare read it;
+        player.weapon_throw_strength, the lens-bound pawn pair. measure, sweep and compare read it;
         paths does not.
 
         CS2DEMOKIT_BENCH_R7_2A_EXPLODE=1 loads an each_projectile overlay (its own ruleset, so it
         never touches CS2DEMOKIT_BENCH_PROJECTILE's grenades table) reading
-        projectile.explode_effect_tick, R7 part 2a's third read. This scope switches on R6's
+        projectile.explode_effect_tick, the third lens-bound read. This scope switches on the
         per-projectile template, so a row with it set carries that cost too, not the field alone.
         measure, sweep and compare read it; paths does not. The warm-up pass fails loud if the
         overlay builds but projects zero rows.
 
         CS2DEMOKIT_BENCH_COACH=1 loads an each_player overlay reading player.coaching_team, so
-        eval_ms carries R8 coach's one read. measure, sweep and compare read it; paths does not.
+        eval_ms carries the coaching-team read. measure, sweep and compare read it; paths does not.
 
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the

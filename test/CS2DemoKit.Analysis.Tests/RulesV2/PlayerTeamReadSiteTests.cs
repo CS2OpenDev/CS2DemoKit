@@ -13,9 +13,8 @@ using CS2OpenSchema.Protos;
 namespace CS2DemoKit.Analysis.Tests.RulesV2;
 
 /// <summary>
-///     <c>player.team</c> read at every site a per-player stat exposes, across a team change. Only
-///     <c>where:</c> used to lower: a value selector had no team binding and a node site had no node,
-///     so every other site excluded its ruleset with <c>Unknown player member: team</c>.
+///     <c>player.team</c> resolves at every site a per-player stat exposes, across a team change:
+///     a value selector, a node site, and <c>where:</c> alike.
 /// </summary>
 [Category("Unit")]
 [NotInParallel]
@@ -161,7 +160,8 @@ public class PlayerTeamReadSiteTests
         ParsedDemo sample = RoundFactsTestSupport.Sample();
         Dictionary<int, PlayerInfo> players = new()
         {
-            // The roster holds the final team, which is what every row used to carry.
+            // Seeded with the final teams, the opposite of each row's own, so a row that reads
+            // the roster fails both asserts below.
             [0] = new PlayerInfo(0, "A", 0UL, 0, 3, false),
             [1] = new PlayerInfo(1, "B", 0UL, 1, 2, false)
         };

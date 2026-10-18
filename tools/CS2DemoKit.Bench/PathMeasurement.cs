@@ -473,7 +473,7 @@ internal static class PathMeasurement
 
     private static int? Dop => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null;
 
-    /// <summary>Set to make a run materialize for: each_projectile, so the WS arm carries R6's template cost.</summary>
+    /// <summary>Set to make a run materialize for: each_projectile, so the WS arm carries its template cost.</summary>
     private static bool ProjectileLane => Environment.GetEnvironmentVariable(Measurement.ProjectileLaneVariable) == "1";
 
     private static RuleConfigLoadResult LoadRules()

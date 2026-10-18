@@ -96,10 +96,10 @@ internal static class Measurement
             per: match
         """;
 
-    /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries R6's template cost.</summary>
+    /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries its template cost.</summary>
     public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
 
-    /// <summary>Set to make a build read player.flags and player.weapon_throw_strength, R7 part 2a's pawn half.</summary>
+    /// <summary>Set to make a build read player.flags and player.weapon_throw_strength, the lens-bound pawn pair.</summary>
     public const string R7Part2aLaneVariable = "CS2DEMOKIT_BENCH_R7_2A";
 
     private const string R7Part2aOverlayLabel = "bench-r7-2a.rules.yaml";
@@ -114,16 +114,16 @@ internal static class Measurement
         """;
 
     /// <summary>
-    ///     Set to make a build read projectile.explode_effect_tick, R7 part 2a's third read. Its own
-    ///     variable: this one scope switches on R6's each_projectile template, so a row with it set
+    ///     Set to make a build read projectile.explode_effect_tick, the third lens-bound read. Its own
+    ///     variable: this one scope switches on the each_projectile template, so a row with it set
     ///     carries that cost too, not just the one field, and the row must say so rather than let it
-    ///     hide inside R7_2A.
+    ///     hide inside the pawn-pair row.
     /// </summary>
     public const string R7Part2aExplodeLaneVariable = "CS2DEMOKIT_BENCH_R7_2A_EXPLODE";
 
     private const string R7Part2aProjectileOverlayLabel = "bench-r7-2a-projectile.rules.yaml";
 
-    // Its own scope family, separate from ProjectileOverlayYaml, so this row never touches R6's
+    // Its own scope family, separate from ProjectileOverlayYaml, so this row never touches the
     // already-measured grenades table.
     private const string R7Part2aProjectileOverlayYaml =
         """
@@ -139,7 +139,7 @@ internal static class Measurement
                 - { stat: explode, label: explode }
         """;
 
-    /// <summary>Set to make a build read player.coaching_team, the one R8 coach read.</summary>
+    /// <summary>Set to make a build read player.coaching_team, the one coaching-team read.</summary>
     public const string CoachLaneVariable = "CS2DEMOKIT_BENCH_COACH";
 
     private const string CoachOverlayLabel = "bench-coach.rules.yaml";

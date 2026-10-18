@@ -80,7 +80,7 @@ data you want; they are intentionally distinct because their scopes differ.
 For an in-proc report **dumped on exit** with no external tooling, use
 `CS2DemoKit.Analysis.Diagnostics.ProfilingSession`. It attaches the Meter + ActivitySource listeners
 for the whole session and, on `Dispose`, writes a combined report (phase timeline + evaluator
-counters) to a `TextWriter` — `Console.Out` by default. It subscribes by meter name to
+counters) to a `TextWriter`, `Console.Out` by default. It subscribes by meter name to
 `CS2DemoKit.Analysis.Evaluator` only, so its report now also prints `analysis.entity_scan.started`
 but never `parser.entity_decode.started`; read that counter from `dotnet-counters` or your own
 listener on `CS2DemoKit.Parser.Entities` instead.
