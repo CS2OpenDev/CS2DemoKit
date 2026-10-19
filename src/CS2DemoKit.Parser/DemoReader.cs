@@ -52,7 +52,9 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
     private readonly View _view;
     private readonly int _readAhead;
     private readonly ParallelOptions _windowOptions;
-    private readonly ConcurrentBag<Partition> _partitions = [];
+    // Not a ConcurrentBag: its per-thread queues sit in a ThreadLocal that the pool threads keep
+    // reachable until its finalizer runs, so every partition's buffers outlived the reader.
+    private readonly ConcurrentStack<Partition> _partitions = new();
     private readonly DemoFrame?[] _window;
     private DemoParser.FrameDescriptor[] _descriptors;
     private int _windowPos;
@@ -550,7 +552,7 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
         try
         {
             Parallel.For(0, count, _windowOptions,
-                () => _partitions.TryTake(out Partition? p) ? p : new Partition(countDrops),
+                () => _partitions.TryPop(out Partition? p) ? p : new Partition(countDrops),
                 (i, _, p) =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -566,7 +568,7 @@ public sealed class DemoReader : IDemoFrameSource, IDisposable
 
                     return p;
                 },
-                p => _partitions.Add(p));
+                p => _partitions.Push(p));
         }
         catch (AggregateException e)
         {

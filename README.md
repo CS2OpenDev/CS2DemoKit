@@ -281,11 +281,71 @@ when there was nothing to measure. The geometry-backed views (`enemy_spotted` an
 need the engine wired in first; see the quick start above.
 
 A ruleset is `for: each_player` (one instance per player), `for: each_team` (one per side, for
-per-round, per-side facts such as a side's buy or whether it won) or `for: match`. Its `show: tables`
+per-round, per-side facts such as a side's buy or whether it won), `for: each_projectile` (one per
+grenade, from `projectile_created` to `projectile_removed`, for a row per throw) or `for: match`. Its `show: tables`
 project through `run.ProjectConfiguredOutputs()` on either path: a snapshot run projects from its
 rows, and a forward run without snapshots from the state it sampled at each round boundary, which is
-the same state, so the two agree row for row. Only a per-event output (a timeline log) still needs
-snapshots.
+the same state, so the two agree row for row. Event tables (`per: player_event`, `team_event`,
+`match_event`, one row per firing of a trigger) and `per: projectile` tables (one row per grenade,
+recorded as it is removed) are recorded as the run goes, on either path. Only a
+v1 per-event timeline log still needs snapshots. The built-in scoreboard works the same way:
+`new PlayerGameStatsProjector().Project(run, run.Demo)` reads a bare run's final node values and
+matches a snapshot run's table.
+
+## Reading state frame by frame
+
+A host that wants per-frame entity state without a second decode declares what it reads and sets
+a frame observer on the run. The observer is called once per frame on the evaluation thread,
+after that frame's messages and synthesized events have dispatched, with a view over the state as
+of the end of the frame: the declared per-player columns, the declared grenade projectiles, and
+each slot's team. It runs at the engine's default parallelism; the digest workers extract the
+declared columns beside what the rules read.
+
+```csharp
+sealed class PositionLog : IFrameObserver
+{
+    private ObservedProvider _x, _y, _z;
+    public readonly List<(int Tick, int Slot, float X, float Y, float Z)> Rows = [];
+
+    public void OnFrame(FrameView frame)
+    {
+        if (frame.FrameIndex == 0)
+        {
+            (_x, _y, _z) = (frame.Provider("entity.pawn.pos_x"), frame.Provider("entity.pawn.pos_y"), frame.Provider("entity.pawn.pos_z"));
+        }
+
+        for (int slot = 0; slot < 64; slot++)
+        {
+            if (frame.Team(slot) >= 2 && frame.TryReadFloat(_x, slot, out float x)
+                && frame.TryReadFloat(_y, slot, out float y) && frame.TryReadFloat(_z, slot, out float z))
+            {
+                Rows.Add((frame.Tick, slot, x, y, z));
+            }
+        }
+
+        foreach (ProjectileRow smoke in frame.Removed)
+        {
+            // last-seen row of a projectile that left this frame: where it landed
+        }
+    }
+
+    public void Finish() { }
+}
+
+PositionLog log = new();
+AnalysisRun run = DemoAnalysis.Run(path, rulesets, new AnalysisOptions
+{
+    ObservedProviders = ["entity.pawn.pos_x", "entity.pawn.pos_y", "entity.pawn.pos_z"],
+    ObservedProjectileClasses = [GrenadeProjectileClasses.Smoke],
+    FrameObserver = log
+});
+```
+
+The view is one object per run and readable only inside `OnFrame`; copy what you keep. A declared
+name resolves once through `FrameView.Provider`, and the typed reads through the handle allocate
+nothing. Reading a name the run did not declare, or declaring one no provider carries, throws.
+With nothing declared the digest, the goldens and the rules output are exactly those of a run
+without an observer.
 
 ## Building
 
@@ -317,7 +377,8 @@ This is local-only for now. CI still runs on the committed sample alone, so a co
 opening a PR is worth the minute it costs.
 
 Demos that live elsewhere, such as the Steam replays folder, can be used without copying them in:
-set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, and the corpus
+set `CS2DEMOKIT_CORPUS_DIR` to the folder. Tests that name a demo find it there, in a subfolder
+too, so one variable can name a tree holding several sets, and the corpus
 tests (`RulesOutputGoldenTests`, the forward-path parity sweep) take the demos in it that have a
 fixture under `tests/fixtures/rules-output/`, so a folder of hundreds of matches re-runs the pinned
 set rather than all of them. The folder is only read; nothing in it is written, moved or deleted.

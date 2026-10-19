@@ -39,7 +39,21 @@ public sealed record OutputDef(
     IReadOnlyList<MetricRef> Metrics,
     IReadOnlyList<string> Dimensions,
     IReadOnlyList<string>? Chains = null,
-    bool Enabled = true);
+    bool Enabled = true)
+{
+    /// <summary>
+    ///     The table's <c>on:</c> trigger as written, for the event scopes
+    ///     (<see cref="OutputScope.PerPlayerPerEvent" />, <see cref="OutputScope.PerTeamPerEvent" />,
+    ///     <see cref="OutputScope.PerMatchPerEvent" />); null on every other scope.
+    /// </summary>
+    public string? Trigger { get; init; }
+
+    /// <summary>
+    ///     The node-map key of the table's sequence node: a hidden count of the trigger's firings,
+    ///     one per instance, whose every increase is one row. Null on non-event scopes.
+    /// </summary>
+    internal string? SequenceRef { get; init; }
+}
 
 /// <summary>One value column of a configured output: a rule reference plus its display label.</summary>
 /// <param name="RuleRef">
@@ -95,5 +109,25 @@ public enum OutputScope
     PerTeamPerRound,
 
     /// <summary>One row per side, sampled at the end — a <c>for: each_team</c> ruleset's <c>per: team_match</c> table.</summary>
-    PerTeamPerGame
+    PerTeamPerGame,
+
+    /// <summary>
+    ///     One row per (player, firing of the table's trigger): a <c>for: each_player</c> ruleset's
+    ///     <c>per: player_event</c> table. Columns are read right after the firing message settles.
+    ///     Projects with or without snapshots.
+    /// </summary>
+    PerPlayerPerEvent,
+
+    /// <summary>One row per (side, firing of the table's trigger): a <c>for: each_team</c> ruleset's <c>per: team_event</c> table.</summary>
+    PerTeamPerEvent,
+
+    /// <summary>One row per firing of the table's trigger: a <c>for: match</c> ruleset's <c>per: match_event</c> table.</summary>
+    PerMatchPerEvent,
+
+    /// <summary>
+    ///     One row per grenade projectile: a <c>for: each_projectile</c> ruleset's <c>per: projectile</c>
+    ///     table, sampled when the projectile is removed (or at the end of the run for one still live).
+    ///     Projects with or without snapshots; the evaluator records the rows as the instances finish.
+    /// </summary>
+    PerProjectile
 }

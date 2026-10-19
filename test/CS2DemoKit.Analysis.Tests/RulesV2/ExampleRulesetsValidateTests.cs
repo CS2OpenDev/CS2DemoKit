@@ -83,6 +83,12 @@ public class ExampleRulesetsValidateTests
         }
 
         await Assert.That(first.Single(r => RoundFactsTestSupport.Dim(r, "side") == 2).Values["Won"]).IsEqualTo(1);
+
+        // The sample ends 1-1, FUT on T and Vitality on CT.
+        MetricTable final = RoundFactsTestSupport.Table(run, "team_final", demo);
+        await Assert.That(string.Join(";", final.Rows.Select(r =>
+                $"{RoundFactsTestSupport.Dim(r, "side")}:{RoundFactsTestSupport.Int(r, "Score")}:{r.Values["ClanName"]}")))
+            .IsEqualTo("2:1:FUT;3:1:Vitality");
         foreach (string tick in (string[])["DecidedTick", "EndedTick", "PlantTick", "DefuseTick", "ExplodeTick", "KillTicks"])
         {
             await Assert.That(table.ColumnClocks.GetValueOrDefault(tick)).IsEqualTo(MetricTable.FrameClock).Because(tick);

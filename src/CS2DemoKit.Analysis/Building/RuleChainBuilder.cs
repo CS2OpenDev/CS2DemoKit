@@ -14,7 +14,11 @@ using CS2DemoKit.Analysis.RulesetsV2.Compile;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
+using CadenceAnchor = CS2DemoKit.Analysis.RulesetsV2.Model.CadenceAnchor;
+using CadenceDef = CS2DemoKit.Analysis.RulesetsV2.Model.CadenceDef;
+using CadenceStop = CS2DemoKit.Analysis.RulesetsV2.Model.CadenceStop;
 
 #endregion
 
@@ -84,6 +88,12 @@ public sealed partial class RuleChainBuilder
     // the same shape as a profile that does not bind an event.
     private readonly VisibilityEngine? _visibilityEngine;
 
+    // What a frame observer declared it reads: per-player providers by name and projectile classes.
+    // Each activates its column or rows the way a rule reference would; an unknown name is the
+    // caller's error and throws at Build.
+    private readonly IReadOnlyList<string> _observedProviders;
+    private readonly HashSet<string> _observedProjectileClasses;
+
     // Per-slot condition-node overlay for the v2 per-player template (gap G1, event-gated per-player
     // aggregate reads). While a v2 slot's stats/highlights are being built, this holds a SUPERSET of
     // _enrichmentNodes that also exposes the subject slot's per-player context / B6 aggregate nodes
@@ -93,6 +103,9 @@ public sealed partial class RuleChainBuilder
     // _enrichmentNodes unchanged. Set/cleared per slot in BuildV2PerPlayerTemplate; the sequential
     // materialize contract (same as _currentPlayerTeam) means no two slots race on it.
     private Dictionary<string, object>? _v2ConditionNodeOverlay;
+
+    // Per-player provider name to the longest look-back any v2 read takes on it.
+    private readonly Dictionary<string, int> _lookBackTicks = new(StringComparer.Ordinal);
 
     /// <param name="registry">Event / net-message registry used to resolve trigger names to CLR types.</param>
     /// <param name="target">The tick rate and resolved profile the graph is built for; the defaults are 64 and the fallback profile.</param>
@@ -106,17 +119,32 @@ public sealed partial class RuleChainBuilder
     ///     bakes live (see <c>CollisionAssetLocator</c>): the caller loads and injects, exactly as
     ///     <c>VisibilityAnalyzer.Analyze</c> requires.
     /// </param>
+    /// <param name="observedProviders">
+    ///     Per-player providers a frame observer reads, by catalog name
+    ///     (<see cref="AnalysisOptions.ObservedProviders" />). Each is activated as a rule reference
+    ///     would activate it; a name no registered provider carries throws at <see cref="Build" />.
+    /// </param>
+    /// <param name="observedProjectileClasses">
+    ///     Grenade projectile classes a frame observer reads
+    ///     (<see cref="AnalysisOptions.ObservedProjectileClasses" />). A non-empty list builds the
+    ///     scanner and carries those classes' rows in every digest; a name outside
+    ///     <see cref="GrenadeProjectileClasses.All" /> throws at <see cref="Build" />.
+    /// </param>
     public RuleChainBuilder(
         EventRegistry registry,
         AnalysisTarget? target = null,
         EntityValueProviderRegistry? entityProviders = null,
         PerPlayerEntityValueProviderRegistry? perPlayerEntityProviders = null,
-        VisibilityEngine? visibilityEngine = null)
+        VisibilityEngine? visibilityEngine = null,
+        IReadOnlyList<string>? observedProviders = null,
+        IReadOnlyList<string>? observedProjectileClasses = null)
     {
         _registry = registry;
         _entityProviders = entityProviders;
         _perPlayerEntityProviders = perPlayerEntityProviders;
         _visibilityEngine = visibilityEngine;
+        _observedProviders = observedProviders ?? [];
+        _observedProjectileClasses = new HashSet<string>(observedProjectileClasses ?? [], StringComparer.Ordinal);
         _tickRate = target?.TickRate ?? 64;
         _logicalResolver = new LogicalEventResolver(target?.Profile ?? DemoSourceProfileRegistry.DefaultFallback);
     }
@@ -144,6 +172,9 @@ public sealed partial class RuleChainBuilder
     {
         rulesets ??= [];
         options ??= RulesetCompilerOptions.Default;
+        _loweringExclusions.Clear();
+        _loweringExcludedIds.Clear();
+        _loweringRulesetId = null;
         List<RulesetCoverageDiagnostic> v2Coverage = [];
         foreach (CheckedRuleset ruleset in rulesets)
         {
@@ -273,6 +304,16 @@ public sealed partial class RuleChainBuilder
         List<IPerPlayerEntityValueProvider> perPlayerList = [];
         bool healthNeeded = false, weaponNeeded = false, b6EquipmentNeeded = false, b6MoneyNeeded = false;
 
+        // A frame observer's declared columns gate in by name, like a direct v2 read would. The
+        // declaration is the caller's, not a ruleset's, so a name nothing registered is thrown, not
+        // excluded.
+        HashSet<string> observed = new(_observedProviders, StringComparer.OrdinalIgnoreCase);
+        if (observed.Count > 0 && _perPlayerEntityProviders is not { All.Count: > 0 })
+        {
+            throw new ArgumentException(
+                $"observed providers [{string.Join(", ", _observedProviders)}] declared, but this build has no per-player entity providers");
+        }
+
         // The plant-site round facts read the planter's place: an indirect need like the hurt
         // enrichments', so a ruleset naming any of the three gates the place column in.
         bool roundFactsNeeded = RoundFactIds.Members.Any(m => IsReferencedByV2Reads(m.V2Name, rulesets));
@@ -316,10 +357,30 @@ public sealed partial class RuleChainBuilder
                     referenced = true;
                 }
 
+                if (observed.Remove(provider.Name))
+                {
+                    referenced = true;
+                }
+
                 if (referenced)
                 {
                     perPlayerList.Add(provider);
                 }
+            }
+
+            if (observed.Count > 0)
+            {
+                throw new ArgumentException(
+                    $"observed providers [{string.Join(", ", observed)}] are not registered per-player entity providers");
+            }
+        }
+
+        foreach (string className in _observedProjectileClasses)
+        {
+            if (!GrenadeProjectileClasses.Contains(className))
+            {
+                throw new ArgumentException(
+                    $"observed projectile class '{className}' is not one of GrenadeProjectileClasses.All");
             }
         }
 
@@ -337,6 +398,14 @@ public sealed partial class RuleChainBuilder
         // view resolves to it (exact ConcreteEvents match, e.g. the `molotov` grenade-usage view).
         bool emitMolotov = IsReferencedByBuiltins("molotov_thrown", builtinContexts)
                            || RulesetsSubscribeToEvent("molotov_thrown", rulesets);
+
+        // The projectile lifecycle events gate the same way. A subscription widens the digest to
+        // all five classes; nothing narrows it to the classes a match names yet.
+        bool emitProjectiles = IsReferencedByBuiltins("projectile_created", builtinContexts)
+                               || IsReferencedByBuiltins("projectile_removed", builtinContexts)
+                               || RulesetsSubscribeToEvent("projectile_created", rulesets)
+                               || RulesetsSubscribeToEvent("projectile_removed", rulesets)
+                               || rulesets.Any(rs => rs.For == RulesetsV2.Model.RulesetScope.EachProjectile);
 
         // Built only when something asks for them, so an ordinary run allocates none and the
         // per-frame consume short-circuits on the null check. The team callback is where liveness
@@ -380,7 +449,13 @@ public sealed partial class RuleChainBuilder
         // graph (for: match) needs the same live teams for its enrichments and the round-end
         // winner, so any ruleset forces it.
         bool trackPlayers = rulesets.Count > 0;
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || trackPlayers)
+
+        // A subscription to the projectile events widens the rows to every class; an observer's
+        // declaration alone carries just the classes it named.
+        IReadOnlySet<string>? projectileClasses = emitProjectiles
+            ? AllProjectileClasses
+            : _observedProjectileClasses.Count > 0 ? _observedProjectileClasses : null;
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || projectileClasses is not null || trackPlayers)
         {
             // The round's winner is the server's verdict: the scanner synthesizes round_decided
             // from these three game-rules singletons, and the round-end enrichment reports the
@@ -426,7 +501,21 @@ public sealed partial class RuleChainBuilder
                 emitMolotov,
                 vantageScanner,
                 transitionScanner,
-                silent);
+                silent,
+                projectileClasses,
+                emitProjectiles);
+            if (ReadsUserCommands(rulesets, out bool history))
+            {
+                entityScanner.Commands = new UserCmdReconstructor { OnDemand = true, TrackInputs = history };
+            }
+
+            foreach ((string providerName, int ticks) in _lookBackTicks)
+            {
+                if (perPlayerList.FirstOrDefault(p => p.Name == providerName) is { } provider)
+                {
+                    entityScanner.KeepHistory(provider, ticks);
+                }
+            }
         }
 
         // Expose the scanner to per-player compile sites so `player.entity.*` references resolve
@@ -555,6 +644,8 @@ public sealed partial class RuleChainBuilder
                 gameNodesByRuleId, relevantTypes, v2Outputs, perPlayerContextRules);
         }
 
+        List<CadencePlan> cadencePlans = CadencePlans(rulesets, relevantTypes);
+
         relevantTypes.Add(typeof(PlayerDeathEvent));
         relevantTypes.Add(typeof(PlayerConnectEvent));
         relevantTypes.Add(typeof(PlayerTeamEvent));
@@ -580,6 +671,7 @@ public sealed partial class RuleChainBuilder
         // recorder is dropped once the result has its copy of the entries.
         IReadOnlyDictionary<StateNode, NodeProvenance> gameProvenance = provenance.ToDictionary();
         _gameProvenance = new ProvenanceRecorder();
+        v2Coverage.RemoveAll(c => _loweringExcludedIds.Contains(c.Ruleset.Id));
         return new BuildResult(graph, allNodes, wiring.Descriptors,
             relevantTypes, playerContextIndex, entityScanner,
             edgeBacking.Count > 0 ? edgeBacking : null,
@@ -592,9 +684,92 @@ public sealed partial class RuleChainBuilder
             TeamNodesByRuleId = _teamNodesByRuleId.Count > 0 ? new Dictionary<int, IReadOnlyDictionary<string, StateNode>>(_teamNodesByRuleId) : null,
             TeamRosterNodes = _teamRosters.Count > 0 ? new Dictionary<int, StateNode>(_teamRosters) : null,
             RoundBoundaryTypes = RoundBoundaryTypes(),
+            Cadences = [.. cadencePlans.Select(p => p.Def)],
+            CadencePlans = cadencePlans,
             ExternalNodes = externals.All,
-            Provenance = gameProvenance
+            Provenance = gameProvenance,
+            ExcludedRulesets = [.. _loweringExclusions],
+            DecodesUserCommands = entityScanner?.Commands is not null
         };
+    }
+
+    /// <summary>
+    ///     Whether any ruleset reads a command provider, and whether one of those reads is a provider
+    ///     that <see cref="IPerPlayerCommandProvider.ReadsInputHistory" />, which the lane must track.
+    /// </summary>
+    private static bool ReadsUserCommands(IReadOnlyList<CheckedRuleset> rulesets, out bool history)
+    {
+        bool any = false;
+        history = false;
+        foreach (CheckedRuleset rs in rulesets)
+        {
+            foreach (EntityProviderReference read in rs.Stats.SelectMany(s => s.EntityReads)
+                         .Concat(rs.Highlights.SelectMany(h => h.EntityReads)))
+            {
+                if (!read.ProviderName.StartsWith(UserCommandProviders.Prefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                any = true;
+                history |= UserCommandProviders.Get(read.ProviderName)?.ReadsInputHistory == true;
+            }
+        }
+
+        return any;
+    }
+
+    /// <summary>
+    ///     One plan per distinct cadence key over the rulesets that lowered, with the anchor and stop
+    ///     resolved through the profile. The boundary types join the relevant set, so a decode plan keeps
+    ///     them even when no rule subscribes to them.
+    /// </summary>
+    private List<CadencePlan> CadencePlans(IReadOnlyList<CheckedRuleset> rulesets, HashSet<Type> relevantTypes)
+    {
+        List<CadencePlan> plans = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (CheckedRuleset ruleset in rulesets)
+        {
+            if (IsLoweringExcluded(ruleset))
+            {
+                continue;
+            }
+
+            foreach (CadenceDef cadence in ruleset.Cadences)
+            {
+                if (!seen.Add(cadence.Key))
+                {
+                    continue;
+                }
+
+                // The evaluator synthesizes a freeze end for a round decided in freeze time.
+                HashSet<Type> anchors = cadence.Anchor == CadenceAnchor.RoundFreezeEnd
+                    ? [typeof(RoundFreezeEndEvent), .. LogicalTypes("round_freeze_end")]
+                    : [];
+                HashSet<Type> stops = cadence.Until switch
+                {
+                    CadenceStop.RoundEnded => [.. LogicalTypes("round_end")],
+                    CadenceStop.NextFreezeEnd => [.. anchors],
+                    _ => []
+                };
+                relevantTypes.UnionWith(anchors);
+                relevantTypes.UnionWith(stops);
+                plans.Add(new CadencePlan(cadence, anchors, stops));
+            }
+        }
+
+        return plans;
+    }
+
+    private IEnumerable<Type> LogicalTypes(string logical)
+    {
+        foreach (string concrete in _logicalResolver.Resolve(logical)?.ConcreteEventNames ?? [])
+        {
+            if (_registry.TryResolve(concrete, out Type? type))
+            {
+                yield return type;
+            }
+        }
     }
 
     /// <summary>
@@ -735,7 +910,7 @@ public sealed partial class RuleChainBuilder
         ConstantExpression body = Expression.Constant(value, valueType);
         Type funcType = typeof(Func<,>).MakeGenericType(eventType, valueType);
         LambdaExpression lambda = Expression.Lambda(funcType, body, param);
-        return lambda.Compile();
+        return lambda.Compile(ExpressionCompiler.Interpret);
     }
 
     // Builds one per-player rule's node(s) + edges into the caller-supplied slot-local
@@ -1160,9 +1335,29 @@ public sealed partial class RuleChainBuilder
     {
         Type eventType = reg.EventType;
 
-        Delegate? condition = trigger.Condition is not null
-            ? ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent))
-            : null;
+        Delegate? condition = null;
+        if (trigger.Condition is not null)
+        {
+            // Inside a projectile factory an expression that reads neither the instance nor its
+            // node compiles to the same delegate for every grenade, so the first one serves all.
+            if (_projectileCache is { } cache && ProjectileLoweringCache.IsInstanceFree(trigger.Condition))
+            {
+                if (!cache.Compiled.TryGetValue((trigger.Condition, eventType, null, playerSlot), out condition))
+                {
+                    condition = ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+                    cache.Compiled[(trigger.Condition, eventType, null, playerSlot)] = condition;
+                }
+            }
+            else
+            {
+                condition = ExpressionCompiler.CompileEventCondition(trigger.Condition, eventType, reg.Fields, playerSlot, ConditionNodes, _currentPlayerTeam, _playerContextIndex, _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+            }
+        }
+
+        if (_projectileEdgeBinding is { } projectile)
+        {
+            condition = ProjectileEdgeBinding.Bind(projectile.Index, projectile.Serial, (Func<GameEvent, bool>?)condition);
+        }
 
         if (trigger.Action is TriggerAction.Activate or TriggerAction.Deactivate)
         {
@@ -1194,9 +1389,22 @@ public sealed partial class RuleChainBuilder
             string valueExpr = trigger.Value?.Replace("rule.value", "node.value", StringComparison.Ordinal)
                                ?? throw new InvalidOperationException(
                                    $"Trigger to '{dest.Name}' uses Set but has no value expression.");
-            selector = ExpressionCompiler.CompileEventValueSelector(
-                valueExpr, eventType, valueType, reg.Fields, playerSlot, dest, ConditionNodes,
-                _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+            if (_projectileCache is { } cache && ProjectileLoweringCache.IsInstanceFree(valueExpr))
+            {
+                if (!cache.Compiled.TryGetValue((valueExpr, eventType, valueType, playerSlot), out selector!))
+                {
+                    selector = ExpressionCompiler.CompileEventValueSelector(
+                        valueExpr, eventType, valueType, reg.Fields, playerSlot, dest, ConditionNodes,
+                        _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+                    cache.Compiled[(valueExpr, eventType, valueType, playerSlot)] = selector;
+                }
+            }
+            else
+            {
+                selector = ExpressionCompiler.CompileEventValueSelector(
+                    valueExpr, eventType, valueType, reg.Fields, playerSlot, dest, ConditionNodes,
+                    _entityScanner, _perPlayerEntityProviders, parameterType: typeof(GameEvent));
+            }
         }
 
         Type setValueEdgeType = typeof(OnGameEventSetValue<,>).MakeGenericType(eventType, valueType);
@@ -1452,6 +1660,9 @@ public sealed partial class RuleChainBuilder
 
         return true;
     }
+
+    private static readonly IReadOnlySet<string> AllProjectileClasses =
+        new HashSet<string>(GrenadeProjectileClasses.All, StringComparer.Ordinal);
 
     /// <summary>
     ///     Does any checked v2 stat trigger on <paramref name="eventName" />? A view-based stat's

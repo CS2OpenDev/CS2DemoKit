@@ -166,6 +166,10 @@ public sealed record NodeMixedCompileResult(
 /// </summary>
 public static class ExpressionCompiler
 {
+    // Set while Build trial-lowers a template: the trees are still built and checked, but
+    // interpreted delegates skip IL emission. The trial's delegates are never run.
+    [ThreadStatic] internal static bool Interpret;
+
     /// <summary><see cref="string.Contains(string,StringComparison)" /> — ordinal string containment.</summary>
     private static readonly MethodInfo _stringContainsMethod =
         typeof(string).GetMethod(nameof(string.Contains), new[]
@@ -197,13 +201,13 @@ public static class ExpressionCompiler
             if (valueType == typeof(bool))
             {
                 ParameterExpression p = Expression.Parameter(typeof(bool), "v");
-                return Expression.Lambda(typeof(Func<bool, bool>), p, p).Compile();
+                return Expression.Lambda(typeof(Func<bool, bool>), p, p).Compile(Interpret);
             }
 
             ParameterExpression pObj = Expression.Parameter(valueType, "v");
             ConstantExpression body = Expression.Constant(true);
             Type ft = typeof(Func<,>).MakeGenericType(valueType, typeof(bool));
-            return Expression.Lambda(ft, body, pObj).Compile();
+            return Expression.Lambda(ft, body, pObj).Compile(Interpret);
         }
 
         ParameterExpression param = Expression.Parameter(valueType, "value");
@@ -219,7 +223,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(valueType, typeof(bool));
-        return Expression.Lambda(funcType, parsed, param).Compile();
+        return Expression.Lambda(funcType, parsed, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -275,7 +279,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(param.Type, typeof(bool));
-        return Expression.Lambda(funcType, body, param).Compile();
+        return Expression.Lambda(funcType, body, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -322,7 +326,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,,>).MakeGenericType(eventParam.Type, typeof(IEntityValueAt), typeof(bool));
-        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile();
+        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile(Interpret);
 
         return new EdgeConditionCompileResult(
             predicate, usage.NeedsEntityCache, usage.ReferencesSelectedPlayer,
@@ -389,11 +393,17 @@ public static class ExpressionCompiler
         Expression body = Parse(expression, bindings);
         if (body.Type != valueType)
         {
+            // No coercion exists from bool, so a flag captured into a number reads 1 or 0.
+            if (body.Type == typeof(bool) && valueType.IsPrimitive && valueType != typeof(bool))
+            {
+                body = Expression.Condition(body, Expression.Constant(1.0), Expression.Constant(0.0));
+            }
+
             body = Expression.Convert(body, valueType);
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(param.Type, valueType);
-        return Expression.Lambda(funcType, body, param).Compile();
+        return Expression.Lambda(funcType, body, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -441,7 +451,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,>).MakeGenericType(param.Type, typeof(string));
-        return Expression.Lambda(funcType, body, param).Compile();
+        return Expression.Lambda(funcType, body, param).Compile(Interpret);
     }
 
     /// <summary>
@@ -463,7 +473,7 @@ public static class ExpressionCompiler
             body = Expression.Convert(body, typeof(double));
         }
 
-        return Expression.Lambda<Func<double>>(body).Compile();
+        return Expression.Lambda<Func<double>>(body).Compile(Interpret);
     }
 
     /// <summary>
@@ -494,7 +504,7 @@ public static class ExpressionCompiler
                 $"multi-source predicate '{expression}' must evaluate to a boolean, got {body.Type.Name}.");
         }
 
-        return Expression.Lambda<Func<bool>>(body).Compile();
+        return Expression.Lambda<Func<bool>>(body).Compile(Interpret);
     }
 
     /// <summary>
@@ -545,7 +555,7 @@ public static class ExpressionCompiler
         }
 
         Type funcType = typeof(Func<,,>).MakeGenericType(eventParam.Type, typeof(IEntityValueAt), typeof(double));
-        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile();
+        Delegate predicate = Expression.Lambda(funcType, body, eventParam, entityParam).Compile(Interpret);
         return new NodeMixedCompileResult(predicate, usage.ReferencesSelectedPlayer, usage.NeedsEntityCache);
     }
 
@@ -755,6 +765,17 @@ public static class ExpressionCompiler
             return (left, Expression.Convert(right, typeof(float)));
         }
 
+        // player.cmd.buttons is the only long a rule can read.
+        if (left.Type == typeof(long) && right.Type == typeof(int))
+        {
+            return (left, Expression.Convert(right, typeof(long)));
+        }
+
+        if (left.Type == typeof(int) && right.Type == typeof(long))
+        {
+            return (Expression.Convert(left, typeof(long)), right);
+        }
+
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
         // so a comparison such as `weapon_tier[event.Weapon] > 2` is a lifted (null-safe) comparison.
         if (left.Type == typeof(double?) && right.Type is var rt && (rt == typeof(int) || rt == typeof(double) || rt == typeof(float)))
@@ -801,7 +822,7 @@ public static class ExpressionCompiler
     ///     same previous-frame semantics <c>HurtTeamEnrichmentEdge</c> relies on). A null snapshot value
     ///     degrades to the provider's default; a missing scanner/registry/slot is a compile-time error.
     /// </summary>
-    private static UnaryExpression ResolvePlayerEntity(ExpressionBindings b, string providerName)
+    private static UnaryExpression ResolvePlayerEntity(ExpressionBindings b, string providerName, int ticksBack = 0)
     {
         if (b.EntityScanner is null || b.PerPlayerProviders is null || !b.PlayerSlot.HasValue)
         {
@@ -818,13 +839,18 @@ public static class ExpressionCompiler
                 $"Unknown per-player entity provider: '{providerName}' (from 'player.{providerName}').");
         }
 
-        MethodInfo getPreFrame =
-            typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetPreFrameValue))!;
-        Expression call = Expression.Call(
-            Expression.Constant(b.EntityScanner),
-            getPreFrame,
-            Expression.Constant(provider, typeof(IPerPlayerEntityValueProvider)),
-            Expression.Constant(b.PlayerSlot.Value)); // object? (boxed value or null)
+        Expression call = ticksBack > 0
+            ? Expression.Call(
+                Expression.Constant(b.EntityScanner),
+                typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetPreFrameValueAt))!,
+                Expression.Constant(provider, typeof(IPerPlayerEntityValueProvider)),
+                Expression.Constant(b.PlayerSlot.Value),
+                Expression.Constant(ticksBack))
+            : Expression.Call(
+                Expression.Constant(b.EntityScanner),
+                typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetPreFrameValue))!,
+                Expression.Constant(provider, typeof(IPerPlayerEntityValueProvider)),
+                Expression.Constant(b.PlayerSlot.Value)); // object? (boxed value or null)
 
         // null snapshot → provider default (0 for value types, "" for string), then unbox/cast to ValueType.
         object? boxedDefault = provider.ValueType.IsValueType
@@ -836,6 +862,37 @@ public static class ExpressionCompiler
             ? call
             : Expression.Coalesce(call, Expression.Constant(boxedDefault, typeof(object)));
         return Expression.Convert(coalesced, provider.ValueType);
+    }
+
+    /// <summary>
+    ///     Resolves <c>player.usercmd.&lt;member&gt;</c> to a fixed-slot read of the scanner's command
+    ///     lane, with the same null-to-default coalescing as <see cref="ResolvePlayerEntity" />.
+    /// </summary>
+    private static UnaryExpression ResolvePlayerCommand(ExpressionBindings b, string providerName)
+    {
+        if (b.EntityScanner is null || !b.PlayerSlot.HasValue)
+        {
+            throw new InvalidOperationException(
+                $"'player.{providerName}' requires the entity scanner and a player slot, but none are bound.");
+        }
+
+        IPerPlayerCommandProvider provider = UserCommandProviders.Get(providerName)
+                                             ?? throw new InvalidOperationException(
+                                                 $"Unknown user-command provider: '{providerName}'.");
+        if (b.EntityScanner.Commands is null)
+        {
+            throw new InvalidOperationException(
+                $"'player.{providerName}' reads a user command, but this build's scanner has no command lane.");
+        }
+
+        Expression call = Expression.Call(
+            Expression.Constant(b.EntityScanner),
+            typeof(EntityChangeScanner).GetMethod(nameof(EntityChangeScanner.GetCommandValue))!,
+            Expression.Constant(provider, typeof(IPerPlayerCommandProvider)),
+            Expression.Constant(b.PlayerSlot.Value));
+        return Expression.Convert(
+            Expression.Coalesce(call, Expression.Constant(Activator.CreateInstance(provider.ValueType), typeof(object))),
+            provider.ValueType);
     }
 
     /// <summary>
@@ -1281,6 +1338,19 @@ public static class ExpressionCompiler
 
                         string providerName = string.Join(".", entityPath);
 
+                        if (pos < tokens.Length && tokens[pos].Kind == TokenKind.LookBack)
+                        {
+                            int ticksBack = int.Parse(tokens[pos].Text, CultureInfo.InvariantCulture);
+                            pos++;
+                            if (b.EntityValueAtParam is not null && b.SelectedPlayerSlot.HasValue)
+                            {
+                                throw new InvalidOperationException(
+                                    $"'player.{providerName}@-{ticksBack}': a breakpoint condition cannot look back");
+                            }
+
+                            return ResolvePlayerEntity(b, providerName, ticksBack);
+                        }
+
                         // EDGE breakpoint substrate: read via the positioned accessor at the SELECTED
                         // slot (the host's EntityValueCache). Falls back to the per-player-chain scanner
                         // path (fixed compile-time slot) when no accessor is bound.
@@ -1295,6 +1365,15 @@ public static class ExpressionCompiler
                         }
 
                         return ResolvePlayerEntity(b, providerName);
+                    }
+
+                    // `player.usercmd.<member>`: the slot's latest user command.
+                    if (member == "usercmd" && pos + 1 < tokens.Length && tokens[pos].Kind == TokenKind.Dot
+                        && tokens[pos + 1].Kind == TokenKind.Identifier)
+                    {
+                        string commandName = UserCommandProviders.Prefix + tokens[pos + 1].Text;
+                        pos += 2;
+                        return ResolvePlayerCommand(b, commandName);
                     }
 
                     if (member == "slot" && b.PlayerSlot.HasValue)
@@ -1314,6 +1393,14 @@ public static class ExpressionCompiler
                             MethodInfo method = typeof(PlayerContextIndex)
                                 .GetMethod(nameof(PlayerContextIndex.GetCurrentTeam))!;
                             return Expression.Call(idxConst, method, slotConst);
+                        }
+
+                        // A value selector or node expression has no index bound; the template's
+                        // PlayerTeamNode reads the same index.
+                        if (b.EnrichmentNodes?.TryGetValue("player.team", out object? teamNode) == true
+                            && teamNode.GetType().GetProperty("Value", BindingFlags.Public | BindingFlags.Instance) is { } teamValue)
+                        {
+                            return Expression.Property(Expression.Constant(teamNode), teamValue);
                         }
 
                         if (b.PlayerTeam.HasValue)
@@ -1752,6 +1839,20 @@ public static class ExpressionCompiler
                 continue;
             }
 
+            // '@-N': a look-back, as V1ExpressionWriter emits it after an entity read.
+            if (c == '@' && i + 2 < input.Length && input[i + 1] == '-' && char.IsAsciiDigit(input[i + 2]))
+            {
+                int start = i + 2;
+                i = start;
+                while (i < input.Length && char.IsAsciiDigit(input[i]))
+                {
+                    i++;
+                }
+
+                tokens.Add(new Token(TokenKind.LookBack, input[start..i]));
+                continue;
+            }
+
             if (c == '[')
             {
                 tokens.Add(new Token(TokenKind.LBracket, "["));
@@ -1976,7 +2077,8 @@ public static class ExpressionCompiler
         OpMod,
         OpAnd,
         OpOr,
-        OpNot
+        OpNot,
+        LookBack
     }
 
     private readonly record struct Token(TokenKind Kind, string Text);

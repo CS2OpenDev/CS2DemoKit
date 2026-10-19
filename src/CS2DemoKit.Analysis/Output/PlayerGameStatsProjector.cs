@@ -48,10 +48,6 @@ public sealed class PlayerGameStatsProjector : IOutputProjector
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(demo);
 
-        List<string> valueColumns = StatValues.UnionValueColumns(result.MaterializedPlayers, IsGameLifetime);
-
-        string[] dimensionColumns = [DimMatchId, DimMap, DimPlayerSlot, DimPlayerName, DimTeam];
-
         Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
 
         // The final snapshot is the end-of-match state. A snapshot-less result (zero messages)
@@ -60,9 +56,52 @@ public sealed class PlayerGameStatsProjector : IOutputProjector
             ? result.MessageSnapshots.MaterializeRow(result.MessageSnapshots.Count - 1)
             : null;
 
-        IReadOnlyList<StatValues.MergedPlayer> mergedPlayers = StatValues.MergeBySlot(result.MaterializedPlayers);
+        return Project(result.MaterializedPlayers, demo,
+            finalSnapshot is null ? null : node => StatValues.ReadColumnValue(finalSnapshot, nodeIndex, node));
+    }
+
+    /// <summary>
+    ///     Projects the end-of-match scoreboard from a run's final node values, with or without
+    ///     snapshots. A snapshot run reads its final snapshot row; a run without snapshots reads
+    ///     <see cref="AnalysisRun.FinalNodes" />, which hold the same end-of-match state, so the two
+    ///     agree row for row.
+    /// </summary>
+    /// <param name="run">The analysis run, captured in either mode.</param>
+    /// <param name="demo">The demo facts to project against (dimension context: map, players).</param>
+    public IReadOnlyList<MetricTable> Project(AnalysisRun run, DemoDescriptor demo)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(demo);
+
+        if (run.Snapshots is { } result)
+        {
+            return Project(result, demo);
+        }
+
+        // Only the nodes a snapshot run would track are read; the rest read null there too.
+        HashSet<StateNode> tracked = new(run.FinalNodes, ReferenceEqualityComparer.Instance);
+        return Project(run.MaterializedPlayers, demo,
+            run.Provenance.MessagesConsumed > 0
+                ? node => tracked.Contains(node)
+                    ? StatValues.ReadSnapshotValue(
+                        new NodeSnapshot(node.IsActive, node.GetDisplayValue(), node.GetNumericValue()), node)
+                    : null
+                : null);
+    }
+
+    // A null reader means no message was evaluated: schema-only output.
+    private IReadOnlyList<MetricTable> Project(
+        IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> players,
+        DemoDescriptor demo,
+        Func<StateNode, object?>? read)
+    {
+        List<string> valueColumns = StatValues.UnionValueColumns(players, IsGameLifetime);
+
+        string[] dimensionColumns = [DimMatchId, DimMap, DimPlayerSlot, DimPlayerName, DimTeam];
+
+        IReadOnlyList<StatValues.MergedPlayer> mergedPlayers = StatValues.MergeBySlot(players);
         List<MetricRow> rows = new(mergedPlayers.Count);
-        if (finalSnapshot is not null)
+        if (read is not null)
         {
             foreach (StatValues.MergedPlayer mp in mergedPlayers)
             {
@@ -88,8 +127,7 @@ public sealed class PlayerGameStatsProjector : IOutputProjector
                         continue;
                     }
 
-                    values[col.ColumnName] = StatValues.ApplyColumnFormat(
-                        StatValues.ReadColumnValue(finalSnapshot, nodeIndex, col.Node), col.Format, demo.TickRate);
+                    values[col.ColumnName] = StatValues.ApplyColumnFormat(read(col.Node), col.Format, demo.TickRate);
                 }
 
                 rows.Add(new MetricRow(dimensions, values));

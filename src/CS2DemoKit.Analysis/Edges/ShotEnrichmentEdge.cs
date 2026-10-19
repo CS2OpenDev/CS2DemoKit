@@ -171,7 +171,7 @@ public sealed class ShotEnrichmentEdge(
     /// <summary>
     ///     3D angular distance in degrees between two view directions given as Source QAngle
     ///     pitch/yaw pairs (degrees). Both angles are converted to unit view vectors and the
-    ///     delta is <c>acos(dot)</c>, so yaw wraparound (−180/+180) and pitch are handled
+    ///     delta is the angle between them, so yaw wraparound (−180/+180) and pitch are handled
     ///     without special cases. Roll is irrelevant to a view direction and ignored.
     /// </summary>
     public static double AngleDeltaDegrees(float pitchA, float yawA, float pitchB, float yawB)
@@ -183,7 +183,15 @@ public sealed class ShotEnrichmentEdge(
         double xa = Math.Cos(pa) * Math.Cos(ya), ya2 = Math.Cos(pa) * Math.Sin(ya), za = -Math.Sin(pa);
         double xb = Math.Cos(pb) * Math.Cos(yb), yb2 = Math.Cos(pb) * Math.Sin(yb), zb = -Math.Sin(pb);
 
-        double dot = Math.Clamp(xa * xb + ya2 * yb2 + za * zb, -1.0, 1.0);
-        return Math.Acos(dot) / toRad;
+        // atan2 of |a x b| and a.b, not acos(a.b): acos is ill-conditioned near zero turn and
+        // turns a last-ulp libm difference into a visible one. Libm still differs per OS, so the
+        // result is snapped to a 1e-9 degree grid to keep goldens identical on Windows and macOS.
+        double cx = ya2 * zb - za * yb2, cy = za * xb - xa * zb, cz = xa * yb2 - ya2 * xb;
+        double cross = Math.Sqrt(cx * cx + cy * cy + cz * cz);
+        double dot = xa * xb + ya2 * yb2 + za * zb;
+        return Math.Round(Math.Atan2(cross, dot) / toRad, AngleDecimals);
     }
+
+    /// <summary>Decimal places <see cref="AngleDeltaDegrees" /> rounds to.</summary>
+    public const int AngleDecimals = 9;
 }

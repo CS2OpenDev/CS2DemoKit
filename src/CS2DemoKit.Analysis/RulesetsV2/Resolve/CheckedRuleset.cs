@@ -34,4 +34,11 @@ public sealed record CheckedRuleset(
     IReadOnlyList<CheckedStat> Stats,
     IReadOnlyList<CheckedHighlight> Highlights,
     IReadOnlyList<RulesetCoverageDiagnostic> Coverage,
-    ShowDef? Show);
+    ShowDef? Show)
+{
+    /// <summary>
+    ///     The cadences the ruleset's stats trigger on, in declaration order, each with its period
+    ///     resolved to <see cref="CadenceDef.Ticks" />. A declared cadence no stat uses is absent.
+    /// </summary>
+    public IReadOnlyList<CadenceDef> Cadences { get; init; } = [];
+}

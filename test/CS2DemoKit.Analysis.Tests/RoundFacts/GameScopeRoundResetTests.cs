@@ -146,4 +146,78 @@ public class GameScopeRoundResetTests
         await Assert.That(RoundFactsTestSupport.Int(match, "EK"))
             .IsEqualTo(players.Sum(r => RoundFactsTestSupport.Int(r, "EK") ?? 0));
     }
+
+    /// <summary>
+    ///     A <c>per: round</c> cadence count resets at each freeze end, in both scopes: every player
+    ///     holds the same count for a round, the per-round counts add up to the <c>per: match</c>
+    ///     count, and the match-scope round count at the end is the last round's.
+    /// </summary>
+    [Test]
+    public async Task PerRound_CadenceCounts_ResetEachRound()
+    {
+        const string Players = """
+            ruleset: cadence_pp
+            for: each_player
+            cadences:
+              second: { ticks: 64, anchor: round_freeze_end, until: round_ended }
+            stats:
+              round_samples:
+                count: cadence.second
+                per: round
+              samples:
+                count: cadence.second
+                per: match
+            show:
+              tables:
+                cpr:
+                  per: player_round
+                  columns:
+                    - { stat: round_samples, label: S }
+                cpm:
+                  per: player_match
+                  columns:
+                    - { stat: samples, label: S }
+            """;
+        const string Match = """
+            ruleset: cadence_m
+            for: match
+            cadences:
+              second: { ticks: 64, anchor: round_freeze_end, until: round_ended }
+            stats:
+              round_samples:
+                count: cadence.second
+                per: round
+              samples:
+                count: cadence.second
+                per: match
+            show:
+              tables:
+                cm:
+                  per: match
+                  columns:
+                    - { stat: round_samples, label: RoundS }
+                    - { stat: samples, label: S }
+            """;
+
+        ParsedDemo demo = RoundFactsTestSupport.Sample();
+        AnalysisRun run = RoundFactsTestSupport.Run(demo, Players, Match);
+
+        List<IGrouping<int, MetricRow>> rounds = RoundFactsTestSupport.Table(run, "cpr", demo).Rows
+            .GroupBy(r => RoundFactsTestSupport.Dim(r, "round_number")).OrderBy(g => g.Key).ToList();
+        int[] perRound = rounds.Select(g => RoundFactsTestSupport.Int(g.First(), "S") ?? 0).ToArray();
+        foreach (IGrouping<int, MetricRow> round in rounds)
+        {
+            await Assert.That(round.Select(r => RoundFactsTestSupport.Int(r, "S") ?? 0).Distinct().Count())
+                .IsEqualTo(1).Because($"round {round.Key}");
+        }
+
+        int matchSamples = RoundFactsTestSupport.Table(run, "cpm", demo).Rows
+            .Select(r => RoundFactsTestSupport.Int(r, "S") ?? 0).Max();
+        MetricRow match = RoundFactsTestSupport.Table(run, "cm", demo).Rows.Single();
+
+        await Assert.That(perRound.Count(n => n > 0)).IsGreaterThan(1);
+        await Assert.That(perRound.Sum()).IsEqualTo(matchSamples);
+        await Assert.That(RoundFactsTestSupport.Int(match, "S")).IsEqualTo(matchSamples);
+        await Assert.That(RoundFactsTestSupport.Int(match, "RoundS")).IsEqualTo(perRound[^1]);
+    }
 }

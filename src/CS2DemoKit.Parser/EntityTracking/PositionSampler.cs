@@ -21,7 +21,7 @@ namespace CS2DemoKit.Parser.EntityTracking;
 ///     <c>GameEvent.FrameNumber</c> with <c>FrameIndex</c> rather than ticks.
 /// </param>
 /// <param name="PlayerSlot">Controller-derived player slot, 0-63.</param>
-/// <param name="Position">World position, reconstructed by <see cref="PositionUtil.CellToWorld" />.</param>
+/// <param name="Position">World position, reconstructed by <see cref="PositionUtil.CellToWorld(EntityState)" />.</param>
 /// <param name="Place">
 ///     <c>m_szLastPlaceName</c>, e.g. <c>BombsiteA</c>. The empty string, not null, when the pawn
 ///     stands outside any named nav area and on maps with no named areas. Null only if the field

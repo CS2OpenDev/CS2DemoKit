@@ -2,7 +2,9 @@
 
 using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.TestSupport;
 using TUnit.Core.Exceptions;
 
@@ -107,6 +109,74 @@ public class ProjectileSlotIndexTests
             .Because("a demo with no smoke at all would make this parity pass while checking nothing");
         await Assert.That(index.SeedWalks).IsEqualTo(1)
             .Because("one layer, one tracker: the index should have walked the entity set exactly once");
+    }
+
+    /// <summary>
+    ///     Widened by the five grenade classes, the index must still read what the walk reads, now
+    ///     for the projectile rows too, in ascending order, from one seed walk. It must also visit
+    ///     more than the two-class index does, or the widening did nothing.
+    /// </summary>
+    [Test]
+    public async Task IndexWidenedToTheFiveClasses_MatchesTheFullWalk_OnEveryFrame()
+    {
+        ParsedDemo demo = RequireSample();
+        IReadOnlyList<DemoFrame> frames = demo.Frames;
+        EntityStateLayer layer = new(frames);
+        PerPawnDeltaState delta = EmptyDelta();
+        HashSet<string> classes = [.. GrenadeProjectileClasses.All];
+        ProjectileSlotIndex index = new(classes);
+
+        int mismatches = 0;
+        string? first = null;
+        int framesWithRows = 0, framesWithTwoClassEntries = 0;
+        for (int n = 0; n < frames.Count; n++)
+        {
+            layer.SeekToTick(frames[n].ServerTick);
+            EntityFrameDigest walk = EntityDigestExtractor.Build(layer, delta, [], true, true, projectileClasses: classes);
+            EntityFrameDigest indexed = EntityDigestExtractor.Build(layer, delta, [], true, true, index, projectileClasses: classes);
+
+            if (walk.Projectiles.Length > 0)
+            {
+                framesWithRows++;
+            }
+
+            if (walk.Molotovs.Length + walk.Smokes.Length > 0)
+            {
+                framesWithTwoClassEntries++;
+            }
+
+            string? diff = Diff(walk, indexed);
+            if (diff is null && !walk.Projectiles.SequenceEqual(indexed.Projectiles))
+            {
+                diff = $"projectiles walk={walk.Projectiles.Length} indexed={indexed.Projectiles.Length}";
+            }
+
+            if (diff is null)
+            {
+                ReadOnlySpan<int> slots = index.Slots;
+                for (int i = 1; i < slots.Length; i++)
+                {
+                    if (slots[i] <= slots[i - 1])
+                    {
+                        diff = $"slots not ascending: [{string.Join(",", slots.ToArray())}]";
+                        break;
+                    }
+                }
+            }
+
+            if (diff is not null)
+            {
+                mismatches++;
+                first ??= $"frame {n} (tick {frames[n].ServerTick}): {diff}";
+            }
+        }
+
+        Console.WriteLine($"{frames.Count:N0} frames, {framesWithRows:N0} with a projectile row, "
+                          + $"{framesWithTwoClassEntries:N0} with a molotov or active smoke, {index.SeedWalks} seed walk(s)");
+        await Assert.That(mismatches).IsEqualTo(0).Because(first ?? "");
+        await Assert.That(framesWithRows).IsGreaterThan(framesWithTwoClassEntries)
+            .Because("the five-class index visits the flashes and HE grenades the two-class one skips");
+        await Assert.That(index.SeedWalks).IsEqualTo(1);
     }
 
     /// <summary>

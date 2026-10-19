@@ -131,7 +131,23 @@ public static class ExpressionNormalizer
                 return new IntLiteralNode(FoldTicks(duration, options), duration.Span);
 
             case ReferenceNode reference:
-                return RewriteReference(reference, options, diagnostics, activeDefines);
+            {
+                ExpressionNode? rewritten = RewriteReference(reference, options, diagnostics, activeDefines);
+                if (reference.LookBackTicks == 0 || rewritten is null || ReferenceEquals(rewritten, reference))
+                {
+                    return rewritten;
+                }
+
+                if (rewritten is ReferenceNode { LookBackTicks: 0 } plain)
+                {
+                    return plain.WithLookBack(reference.LookBackTicks, reference.Span);
+                }
+
+                diagnostics.Add(new Diagnostic(DiagnosticCodes.LookBackTarget,
+                    $"define '{reference.Segments[0]}' does not expand to a plain reference, so it cannot look back",
+                    reference.Span, reference.Path));
+                return null;
+            }
 
             case UnaryNode unary:
             {

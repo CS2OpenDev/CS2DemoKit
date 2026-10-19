@@ -56,6 +56,9 @@ public sealed class ResolvedReference
 
     /// <summary>Segments after the stat portion (pseudo-members like <c>count</c>); empty for non-stat references.</summary>
     public ImmutableArray<string> TailSegments { get; }
+
+    /// <summary>The reference's look-back in ticks (<see cref="ReferenceNode.LookBackTicks" />), 0 for a plain read.</summary>
+    public int LookBackTicks => Node.LookBackTicks;
 }
 
 /// <summary>
@@ -84,8 +87,8 @@ public sealed class CheckedExpression
     public RulesType ResultType { get; }
 
     /// <summary>
-    ///     The expression's read set: every distinct reference path, in first-occurrence
-    ///     source order (spec §3.6 — statically enumerable by construction).
+    ///     The expression's read set: every distinct reference path, and each look-back of it
+    ///     as its own entry, in first-occurrence source order (spec §3.6: statically enumerable by construction).
     /// </summary>
     public IReadOnlyList<ResolvedReference> References { get; }
 

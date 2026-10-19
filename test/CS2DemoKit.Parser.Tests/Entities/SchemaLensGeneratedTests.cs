@@ -21,8 +21,8 @@ namespace CS2DemoKit.Parser.Entities.Tests;
 ///             emit fails here in CI.
 ///         </item>
 ///         <item>
-///             <b>Census pins</b> (measured, adapt on SDK pin bumps): 61 classes / 735 rules
-///             at Sdk.Entities 1.1.0 — the full SDK curation, prefix-flattened per concrete
+///             <b>Census pins</b> (measured, adapt on SDK pin bumps): 61 classes / 751 rules
+///             at Sdk.Entities 1.2.0, the full SDK curation, prefix-flattened per concrete
 ///             class, so formerly dict-only fields (weapon Clip1 etc.) now lane-bind.
 ///         </item>
 ///         <item>
@@ -35,9 +35,9 @@ namespace CS2DemoKit.Parser.Entities.Tests;
 [Category("Unit")]
 public class SchemaLensGeneratedTests
 {
-    // Measured at CS2OpenDev.Sdk.Entities 1.1.0 — adapt deliberately on pin bumps.
+    // Measured at CS2OpenDev.Sdk.Entities 1.2.0. Adapt deliberately on pin bumps.
     private const int ExpectedClasses = 61;
-    private const int ExpectedRules = 735;
+    private const int ExpectedRules = 751;
 
     [Test]
     [Category("Smoke")]

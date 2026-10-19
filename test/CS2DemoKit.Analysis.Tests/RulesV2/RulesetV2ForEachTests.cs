@@ -123,4 +123,39 @@ public class RulesetV2ForEachTests
         await Assert.That(ct.Title).IsEqualTo("{player.name} aced on CT");
         await Assert.That(ct.ForEach).IsNull();
     }
+
+    /// <summary>
+    ///     A <c>for_each</c> inside a <c>for: each_projectile</c> ruleset substitutes into the bare
+    ///     projectile read a capture carries, keeps the <c>keep</c> mode on every copy, and leaves
+    ///     the scope on the document.
+    /// </summary>
+    [Test]
+    public async Task ForEach_InAProjectileRuleset_SubstitutesIntoTheCapture()
+    {
+        const string Yaml = """
+                            ruleset: grenade_end
+                            for: each_projectile
+                            stats:
+                              "end_{axis}":
+                                capture: "projectile.pos_{axis}"
+                                keep: last
+                                for_each: { axis: [x, y, z] }
+                            """;
+
+        RulesetDoc doc = LoadDoc(Yaml);
+        await Assert.That(doc.For).IsEqualTo(RulesetScope.EachProjectile);
+        await Assert.That(doc.Stats.Count).IsEqualTo(3);
+
+        string[] axes = ["x", "y", "z"];
+        for (int i = 0; i < axes.Length; i++)
+        {
+            StatDef stat = doc.Stats[i];
+            await Assert.That(stat.Id).IsEqualTo($"end_{axes[i]}");
+            await Assert.That(stat.Kind).IsEqualTo(StatKind.Capture);
+            await Assert.That(stat.KindArg).IsEqualTo($"projectile.pos_{axes[i]}");
+            await Assert.That(stat.Keep).IsEqualTo(KeepMode.Last);
+            await Assert.That(stat.Trigger).IsNull();
+            await Assert.That(stat.ForEach).IsNull();
+        }
+    }
 }

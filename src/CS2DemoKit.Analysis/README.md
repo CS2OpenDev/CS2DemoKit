@@ -86,6 +86,8 @@ unknown-ruleset errors; the upload path is
 `ValidateRulesets(LoadShippedWithOverlay(userDocs).Rulesets)`. At analysis time,
 `BuildResult.RulesetDiagnostics` and `.ExcludedRulesets` surface what composition dropped —
 check them, or a ruleset that stopped compiling is indistinguishable from feats that never fired.
+`.ExcludedRulesets` also carries the rulesets the build could not lower
+(`build.lowering-failed`), which `RulesetDiagnostics` does not list.
 
 ## Drawing the rule graph
 

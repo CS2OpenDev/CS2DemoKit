@@ -403,6 +403,34 @@ public static class ExpressionParser
             ExpressionNode? node = ParsePrimary();
             while (node is not null)
             {
+                if (Current.Kind is TokenKind.Dot or TokenKind.LeftBracket or TokenKind.LookBack
+                    && node is ReferenceNode { LookBackTicks: > 0 })
+                {
+                    return Fail(DiagnosticCodes.LookBackTarget,
+                        "a look-back ends the reference: nothing may follow '@-N'", Current.Span, Current.Text);
+                }
+
+                if (Current.Kind == TokenKind.LookBack)
+                {
+                    Token lookBack = Current;
+                    if (node is not ReferenceNode target)
+                    {
+                        return Fail(DiagnosticCodes.LookBackTarget,
+                            "only a plain reference can look back, as in 'player.pos_x@-8'", lookBack.Span, lookBack.Text);
+                    }
+
+                    if (lookBack.IntegerValue is < 1 or > ReferenceNode.MaxLookBackTicks)
+                    {
+                        return Fail(DiagnosticCodes.LookBackRange,
+                            $"a look-back is 1 to {ReferenceNode.MaxLookBackTicks.ToString(CultureInfo.InvariantCulture)} ticks",
+                            lookBack.Span, lookBack.Text);
+                    }
+
+                    Advance();
+                    node = target.WithLookBack((int)lookBack.IntegerValue, SourceSpan.Cover(target.Span, lookBack.Span));
+                    continue;
+                }
+
                 if (Current.Kind == TokenKind.Dot)
                 {
                     Advance();

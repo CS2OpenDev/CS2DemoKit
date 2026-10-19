@@ -93,6 +93,12 @@ internal sealed class PerPawnDeltaState
     /// <summary>The per-pawn read context the extractor binds before dispatching to the layout's readers.</summary>
     public PawnReadContext Context { get; } = new();
 
+    /// <summary>
+    ///     Where this stream's digests draw their row storage from, and where the consumer returns
+    ///     it. Null (the default) allocates per frame, which is what a test that keeps digests wants.
+    /// </summary>
+    internal DigestStoragePool? Storage { get; init; }
+
     /// <summary>Per-row present mask the extractor fills while reading one pawn; one allocation per stream.</summary>
     internal ulong[] PresentScratch { get; }
 
@@ -102,6 +108,9 @@ internal sealed class PerPawnDeltaState
     ///     one that emits a row every few hundred frames never over-reserves by more than a frame.
     /// </summary>
     internal int LastRowCount { get; set; }
+
+    /// <summary>Bit per slot 0..63: the slot got a pawn row on the frame being built.</summary>
+    internal ulong PawnSlotsRead { get; set; }
 
     /// <summary>The slot's row, created on first use; slots beyond 63 grow the table.</summary>
     public TypedSlotRow RowFor(int slot)

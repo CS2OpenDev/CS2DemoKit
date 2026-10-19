@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime;
 using CS2DemoKit.Analysis;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
@@ -74,6 +75,112 @@ internal static class Measurement
           spots:
             count: enemy_spotted
             per: match
+        """;
+
+    /// <summary>Set to make a build decode user commands, so eval_ms carries the lane's cost.</summary>
+    public const string UserCmdLaneVariable = "CS2DEMOKIT_BENCH_USERCMD";
+
+    private const string UserCmdOverlayLabel = "bench-usercmd.rules.yaml";
+
+    // on: kill, not a cadence, so the read itself stays rare; the lane's cost is the
+    // reconstructor advancing every frame once a build references player.cmd.*, not this stat.
+    private const string UserCmdOverlayYaml =
+        """
+        ruleset: bench_usercmd
+        for: each_player
+        stats:
+          cmd_tick:
+            capture: player.cmd.tick
+            on: kill
+            keep: last
+            per: match
+        """;
+
+    /// <summary>Set to make a build materialize for: each_projectile, so eval_ms carries its template cost.</summary>
+    public const string ProjectileLaneVariable = "CS2DEMOKIT_BENCH_PROJECTILE";
+
+    /// <summary>Set to make a build read player.flags and player.weapon_throw_strength, the lens-bound pawn pair.</summary>
+    public const string R7Part2aLaneVariable = "CS2DEMOKIT_BENCH_R7_2A";
+
+    private const string R7Part2aOverlayLabel = "bench-r7-2a.rules.yaml";
+
+    private const string R7Part2aOverlayYaml =
+        """
+        ruleset: bench_r7_2a
+        for: each_player
+        stats:
+          flags:          { capture: player.flags,                 on: kill, keep: last, per: match }
+          throw_strength: { capture: player.weapon_throw_strength,  on: kill, keep: last, per: match }
+        """;
+
+    /// <summary>
+    ///     Set to make a build read projectile.explode_effect_tick, the third lens-bound read. Its own
+    ///     variable: this one scope switches on the each_projectile template, so a row with it set
+    ///     carries that cost too, not just the one field, and the row must say so rather than let it
+    ///     hide inside the pawn-pair row.
+    /// </summary>
+    public const string R7Part2aExplodeLaneVariable = "CS2DEMOKIT_BENCH_R7_2A_EXPLODE";
+
+    private const string R7Part2aProjectileOverlayLabel = "bench-r7-2a-projectile.rules.yaml";
+
+    // Its own scope family, separate from ProjectileOverlayYaml, so this row never touches the
+    // already-measured grenades table.
+    private const string R7Part2aProjectileOverlayYaml =
+        """
+        ruleset: bench_r7_2a_explode
+        for: each_projectile
+        stats:
+          explode: { capture: projectile.explode_effect_tick, keep: last }
+        show:
+          tables:
+            bench_r7_2a_explode:
+              per: projectile
+              columns:
+                - { stat: explode, label: explode }
+        """;
+
+    /// <summary>Set to make a build read player.coaching_team, the one coaching-team read.</summary>
+    public const string CoachLaneVariable = "CS2DEMOKIT_BENCH_COACH";
+
+    private const string CoachOverlayLabel = "bench-coach.rules.yaml";
+
+    private const string CoachOverlayYaml =
+        """
+        ruleset: bench_coach
+        for: each_player
+        stats:
+          coaching_team: { capture: player.coaching_team, on: kill, keep: last, per: match }
+        """;
+
+    /// <summary>Set to print the timed evaluation's allocation by type to stderr, after the row.</summary>
+    public const string AllocTickVariable = "CS2DEMOKIT_BENCH_ALLOCTICK";
+
+    /// <summary>Shared with <see cref="PathMeasurement" /> so the forward-path WS arm can load the same overlay.</summary>
+    internal const string ProjectileOverlayLabel = "bench-projectile.rules.yaml";
+
+    /// <summary>Shared with <see cref="PathMeasurement" /> so the forward-path WS arm can load the same overlay.</summary>
+    internal const string ProjectileOverlayYaml =
+        """
+        ruleset: bench_projectile
+        for: each_projectile
+        stats:
+          class:        { capture: projectile.class,   keep: first }
+          thrower:      { capture: projectile.thrower, keep: first }
+          spawn_x:      { capture: projectile.pos_x,   keep: first }
+          end_x:        { capture: projectile.pos_x,   keep: last }
+          bounces:      { capture: projectile.bounces, keep: last }
+          thrower_walk: { capture: thrower.is_walking,  on: raw.projectile_created }
+        show:
+          tables:
+            grenades:
+              per: projectile
+              columns:
+                - { stat: class, label: class }
+                - { stat: thrower, label: thrower }
+                - { stat: spawn_x, label: spawn_x }
+                - { stat: end_x, label: end_x }
+                - { stat: bounces, label: bounces }
+                - { stat: thrower_walk, label: thrower_walk }
         """;
 
     private static double Ms(long t) => (Stopwatch.GetTimestamp() - t) * 1000.0 / Stopwatch.Frequency;
@@ -151,8 +258,38 @@ internal static class Measurement
     public static string Run(string demoPath, string variant, string runIndex)
     {
         byte[] bytes = File.ReadAllBytes(demoPath);
-        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(
-            [(VisibilityOverlayLabel, VisibilityOverlayYaml)]);
+        bool userCmdLane = Environment.GetEnvironmentVariable(UserCmdLaneVariable) == "1";
+        bool projectileLane = Environment.GetEnvironmentVariable(ProjectileLaneVariable) == "1";
+        bool r72aLane = Environment.GetEnvironmentVariable(R7Part2aLaneVariable) == "1";
+        bool r72aExplodeLane = Environment.GetEnvironmentVariable(R7Part2aExplodeLaneVariable) == "1";
+        bool coachLane = Environment.GetEnvironmentVariable(CoachLaneVariable) == "1";
+        List<(string, string)> overlayList = [(VisibilityOverlayLabel, VisibilityOverlayYaml)];
+        if (userCmdLane)
+        {
+            overlayList.Add((UserCmdOverlayLabel, UserCmdOverlayYaml));
+        }
+
+        if (projectileLane)
+        {
+            overlayList.Add((ProjectileOverlayLabel, ProjectileOverlayYaml));
+        }
+
+        if (r72aLane)
+        {
+            overlayList.Add((R7Part2aOverlayLabel, R7Part2aOverlayYaml));
+        }
+
+        if (r72aExplodeLane)
+        {
+            overlayList.Add((R7Part2aProjectileOverlayLabel, R7Part2aProjectileOverlayYaml));
+        }
+
+        if (coachLane)
+        {
+            overlayList.Add((CoachOverlayLabel, CoachOverlayYaml));
+        }
+
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedWithOverlay(overlayList.ToArray());
         if (!rules.Success)
         {
             // The overlay tier is error-contained by design, so a broken overlay would otherwise
@@ -194,7 +331,47 @@ internal static class Measurement
             VisibilityCounters.Reset();
             VisibilityCounters.Enabled = engine is not null;
             BuildResult wb = DemoAnalysis.Build(w, rules.Rulesets, options);
-            _ = DemoAnalysis.Evaluate(w, wb, options);
+            if (wb.ExcludedRulesets.Count > 0)
+            {
+                // Could be a shipped ruleset, not just a bench overlay; either way the row
+                // would otherwise measure less than its label claims.
+                throw new InvalidOperationException(
+                    "a ruleset failed to compose and was excluded: "
+                    + string.Join("; ", wb.ExcludedRulesets.Select(r => r.ToString())));
+            }
+
+            if (userCmdLane && !wb.DecodesUserCommands)
+            {
+                // A silent miss here would label a lane-off row as lane-on.
+                throw new InvalidOperationException(
+                    $"{UserCmdLaneVariable} is set but the build does not decode user commands");
+            }
+
+            AnalysisRun wr = DemoAnalysis.Evaluate(w, wb, options);
+            if (projectileLane)
+            {
+                // A ruleset that builds clean but materializes no instance would otherwise
+                // measure the lane off under an "on" label.
+                MetricTable? grenades = wr.ProjectConfiguredOutputs(w)
+                    .SingleOrDefault(t => t.Name == "grenades");
+                if (grenades is null || grenades.Rows.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{ProjectileLaneVariable} is set but the grenades table is missing or empty");
+                }
+            }
+
+            if (r72aExplodeLane)
+            {
+                MetricTable? explode = wr.ProjectConfiguredOutputs(w)
+                    .SingleOrDefault(t => t.Name == "bench_r7_2a_explode");
+                if (explode is null || explode.Rows.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{R7Part2aExplodeLaneVariable} is set but the bench_r7_2a_explode table is missing or empty");
+                }
+            }
+
             VisibilityCounters.Enabled = false;
             VisibilityCountersSnapshot rays = VisibilityCounters.Snapshot();
             VisibilityCounters.Reset();
@@ -250,12 +427,25 @@ internal static class Measurement
         long allocEval = GC.GetTotalAllocatedBytes();
         TimeSpan pauseEval = GC.GetTotalPauseDuration();
         int e0 = GC.CollectionCount(0), e1 = GC.CollectionCount(1), e2 = GC.CollectionCount(2);
+        AllocationTicks? evalTicks = AllocationTicks.StartIfRequested(AllocTickVariable);
         long te = Stopwatch.GetTimestamp();
-        _ = DemoAnalysis.Evaluate(demo, build, options);
+        AnalysisRun run = DemoAnalysis.Evaluate(demo, build, options);
         double evalMs = Ms(te);
         double evalPause = (GC.GetTotalPauseDuration() - pauseEval).TotalMilliseconds;
         long evalAlloc = GC.GetTotalAllocatedBytes() - allocEval;
         int ev0 = GC.CollectionCount(0) - e0, ev1 = GC.CollectionCount(1) - e1, ev2 = GC.CollectionCount(2) - e2;
+        if (evalTicks is not null)
+        {
+            evalTicks.Dispose();
+            Console.Error.WriteLine($"eval allocation by type ({Path.GetFileName(demoPath)}, projectiles={run.Projectiles.Count}):");
+            evalTicks.Report(Console.Error);
+            if (build.EntityScanner?.GetProfilingSnapshot() is { Enabled: true } scan)
+            {
+                // Worker time summed over the fold workers, which the timed thread never sees.
+                Console.Error.WriteLine(
+                    $"fold: {scan.FoldTicks * 1000.0 / Stopwatch.Frequency:F0} ms worker time, {scan.FoldAlloc / (1024.0 * 1024):F1} MB");
+            }
+        }
 
         // Full enumeration of InnerMessages across every frame: what a consumer walking the message
         // list actually pays. Under a lazy view this is where synthesis lands, so it is the number that

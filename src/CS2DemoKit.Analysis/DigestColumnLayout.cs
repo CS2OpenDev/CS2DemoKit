@@ -29,6 +29,7 @@ internal sealed class DigestColumnLayout
         IntReaders = count > 0 ? new IPawnIntCellReader?[count] : [];
         FloatReaders = count > 0 ? new IPawnFloatCellReader?[count] : [];
         StringReaders = count > 0 ? new IPawnStringCellReader?[count] : [];
+        ControllerReaders = count > 0 ? new IControllerIntCellReader?[count] : [];
         Words = (count + 63) >> 6;
 
         HashSet<string> claimed = new(count, StringComparer.OrdinalIgnoreCase);
@@ -53,6 +54,12 @@ internal sealed class DigestColumnLayout
                 case PawnCellKind.Bool:
                     KindIndex[p] = IntCount++;
                     IntReaders[p] = provider as IPawnIntCellReader;
+                    if (kind == PawnCellKind.Int && provider is IControllerIntCellReader controller)
+                    {
+                        ControllerReaders[p] = controller;
+                        ControllerColumns++;
+                    }
+
                     break;
                 case PawnCellKind.Float:
                     KindIndex[p] = FloatCount++;
@@ -89,6 +96,15 @@ internal sealed class DigestColumnLayout
 
     /// <summary>Typed string reader per column, or null where the provider is read boxed.</summary>
     public IPawnStringCellReader?[] StringReaders { get; }
+
+    /// <summary>
+    ///     Controller reader per column, or null for a pawn-rooted column. Such a column is read off
+    ///     the slot's controller on a pawn row too, and alone on a row for a slot with no pawn.
+    /// </summary>
+    public IControllerIntCellReader?[] ControllerReaders { get; }
+
+    /// <summary>Number of controller-rooted columns.</summary>
+    public int ControllerColumns { get; }
 
     /// <summary>Number of int-storage cells per row (int and bool columns together).</summary>
     public int IntCount { get; }

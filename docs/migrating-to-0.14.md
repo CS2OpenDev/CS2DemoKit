@@ -1,0 +1,344 @@
+# Migrating to 0.14.0
+
+This page is the order in which a consumer meets the 0.14.0 changes. The per-break reference, one
+entry per surface that moved, is the 0.14.0 block under
+[Compatibility notes in `releasing.md`](releasing.md#compatibility-notes-worth-carrying-into-a-release).
+A consumer still on 0.12.0 goes through [`migrating-to-0.13.md`](migrating-to-0.13.md) first.
+
+## 1. Pin the family together
+
+```xml
+<PackageVersion Include="CS2DemoKit.Parser" Version="0.14.0"/>
+<PackageVersion Include="CS2DemoKit.Analysis" Version="0.14.0"/>
+<PackageVersion Include="CS2DemoKit.Analysis.Rules" Version="0.14.0"/>
+```
+
+Intra-family pins are exact, so a mixed set fails to restore rather than half-working.
+
+## 2. What stays put
+
+`DemoAnalysis.Run`, `Build`, `Evaluate` and `ValidateRulesets`, `BuildResult`'s constructor, the
+rules syntax and the built-in output projections keep their shape. The shipped rulesets build and
+count as before; their per-player `show:` tables gain one dimension (section 4).
+
+## 3. Compile errors, in the order they show up
+
+**`TriggerRefKind` gained `Cadence`.** A `switch` over it with no default arm stops compiling; add
+the arm, or a default.
+
+**`OutputScope` gained `PerPlayerPerEvent`, `PerTeamPerEvent` and `PerMatchPerEvent`.** The same
+fix: add the arms, or a default.
+
+**`TokenKind` gained `LookBack`, after `EndOfInput`.** A `switch` over it with no default arm stops
+compiling; existing values keep their numbers.
+
+**`RulesetScope` gained `EachProjectile`, `ScopeAxis` gained `Projectile` and `OutputScope` gained
+`PerProjectile`.** Each appended after the last value; a `switch` with no default arm stops
+compiling, and a consumer that maps `OutputScope` to a dimension list needs the projectile table's
+(`ShowLowering.PerProjectileDimensions`).
+
+## 4. Behaviour that moved without a compile error
+
+**A ruleset that cannot be lowered is excluded, not thrown.** Through 0.13.0 a ruleset that resolved
+but could not be lowered threw: a `for: each_player` one from the first player's materialization,
+which aborted `Evaluate`, and a `for: match` or `for: each_team` one from `Build`. It now lands on
+`BuildResult.ExcludedRulesets` with a `build.lowering-failed` diagnostic, and its siblings build and
+evaluate. A host that caught the exception to quarantine a ruleset reads the list instead:
+
+```csharp
+BuildResult build = DemoAnalysis.Build(demo, docs);
+foreach (ExcludedRuleset excluded in build.ExcludedRulesets)
+{
+    // composition drops first, then lowering drops; each carries its code and position
+}
+```
+
+`RulesetDiagnostics` still carries only composition diagnostics, so a host that reads only that
+list misses lowering failures. A ruleset that reads an excluded one through `use:` is excluded with
+it.
+
+**`ValidateRulesets` rejects three shapes it used to pass.** A net trigger on a kind that has no
+net path (`resolve.trigger.unsupported-for-kind`), a `while:` gate the planner cannot carry
+(`resolve.while.unsupported`), and a non-int `capture keep: list`
+(`resolve.keep-list.element-type`). Each failed at build or evaluation before, so a directory that
+validated with one of them never produced its numbers. The releasing note lists the exact shapes.
+
+**Shot angles round to nine decimal places.** `enrich.shot.turn_degrees`, `travel_from_spot_deg`
+and `spray_residual_deg` come from `ShotEnrichmentEdge.AngleDeltaDegrees`, which now returns a value
+rounded to `AngleDecimals` (9) and is exactly 0 for identical views. A value moves by at most about
+1e-6 degrees, the noise acos added near zero turn. Before, the last digits differed between Windows
+and macOS. `flick_error_deg` moves with `travel_from_spot_deg`, but its chest-angle term is not
+rounded and can still differ between them.
+
+**The per-pawn fold runs inside the frame, and engine-raised triggers read the frame's state.**
+`EntityChangeScanner` folded frame N's per-pawn digest into the pre-frame snapshot at the start of
+frame N+1; it now folds it during frame N, from the new `CompleteFrame`, which the evaluator calls
+right after the frame's wire messages. A game event or net message from the demo reads what it read
+before: the state from before its own frame's entity update, which is the wire's order. Everything
+after the fold reads frame N's state: `round_decided`, the freeze end synthesized beside it, cadence
+steps and the frame observer. Through 0.13.0 a `player.*` read on `round_decided` or on that
+synthesized freeze end saw the previous frame's state, and so did the freeze-end economy sample
+(the `round.team` and `round.enemies` `equipment` and `money` reads) on it. No shipped ruleset
+reads `player.*` there, but `round_facts` captures its `equipment`, `money` and `enemy_equipment`
+columns on `raw.round_freeze_end`, so on a round decided in freeze time (a surrender vote) those
+can move. The synthesized entity events (`projectile_created`, `projectile_removed`,
+`molotov_thrown`, `enemy_spotted`) dispatch after the fold as well, between the wire messages and
+`round_decided`, so a `player.*` or `thrower.*` read on one sees the frame the event describes, the
+same frame its payload and `projectile.*` read, and a wire event on a projectile's removal frame
+reaches the instance before `projectile_removed`. The decode-compromise latch sets
+at the same digest, and a caller that walks the scanner through `AdvanceAndPollAt` without calling
+`CompleteFrame` still gets the fold at its next poll.
+
+**A new per-player `entity.pawn.is_walking` column moves `pos_x`, `pos_y` and `pos_z` by one in the
+per-pawn digest**, the same shape the 0.13.0 `entity.controller.money` column caused for every
+column after it: index digest columns by provider name, not position.
+
+**Two more per-player columns, `entity.pawn.is_alive` and `entity.pawn.entity_index`, sit after
+`is_walking` and move the position trio by two more.** Same advice: index by provider name.
+
+**Four more, `entity.pawn.flags`, `entity.pawn.on_ground`, `entity.pawn.ducking` and
+`entity.weapon.throw_strength`, sit after `entity_index` and move the position trio by four more.**
+Same advice. `ProjectileRow` gains `ExplodeEffectTickBegin` as an `init` property, so positional
+construction and deconstruction are unchanged; record equality now includes it.
+
+**One more, `entity.controller.coaching_team`, sits after `throw_strength` and moves the position
+trio by one more.** Same advice.
+
+**A capture with no `on:` is no longer dropped.** Through 0.13.0 such a stat resolved to nothing
+at all: no diagnostic, no node, no column. It now lowers when it reads a bare `team.*` value
+`per: match`, and every other shape fails validation with `resolve.trigger.unsupported-for-kind`, so
+a directory that validated with one now reports it.
+
+**`EntityValueProviderRegistry.CreateDefault()` registers four more providers** after the
+game-rules ones: `entity.team.score@2`, `@3`, `entity.team.clan_name@2`, `@3`. A host that counts
+or indexes the registry's list moves with it; the catalog lists the two specs once each with
+`scope: "perTeam"`.
+
+**`CatalogView` gains a trailing `FrequencyClass`** (string, null unless the view's `views.yaml`
+entry is `rate: measured`), serialized as `frequencyClass` on such a view only, and `in [a, b]` in
+a `where:` or a baked filter now lowers to the v1 grammar as a disjunction of equalities, where
+before it failed to lower. A consumer constructing `CatalogView` positionally gains an optional
+argument.
+
+**The catalog lists eight `perPlayerCommand` providers** (`usercmd.buttons` and the rest, read as
+`player.cmd.*`, and as `thrower.cmd.*` in a projectile ruleset). A consumer that switches on
+`CatalogProvider.Scope` needs the fourth arm. They are not role-handle members and have no digest
+column.
+
+**`CheckedExpression.References` lists a look-back as its own entry.** `player.pos_x` and
+`player.pos_x@-8` in one expression are two references with the same `Path`; read
+`ResolvedReference.LookBackTicks` to tell them apart.
+
+**Per-player `show:` tables carry `steam_id`.** `per: player_round` and `per: player_match` rows
+gain a `steam_id` dimension between `player_name` and `team`: the SteamID64 as a decimal string, null
+when the demo has none for the slot. JSON rows gain a key; a CSV reader that indexes columns by
+position shifts every column after `player_name` by one. Join players by `steam_id` rather than slot.
+The built-in tables (`player_game_stats`, `player_round_stats` and the rest) are unchanged.
+
+**`player.team` reads at every site.** Through 0.13.0 it lowered only in a `where:` or trigger
+condition. As a `capture:`, `sum:` or bucket `value:` it excluded its ruleset with
+`Unknown player member: team`, and in a `while:`, a `flag: when:` or a `compute:` with "does not
+reference a sibling stat/context". Each now reads the player's live team: the last `player_team`
+event for the slot, seeded from the controller's `m_iTeamNum` before the first one. A ruleset that
+was excluded for this builds now, and its tables gain rows.
+
+**A `player_round` or `player_event` row's `team` is the team of that row.** Both read the roster's
+final team, the last `player_team` event, so every first-half row of a regulation match carried the
+second-half side, and on an overtime match rounds 13 to 27 carried the other side. A `player_round`
+row now reports the player's team at that round's freeze end (not at the sample, which falls after
+the halftime swap), a `player_event` row the team at the firing. `player_match` rows keep the final
+team. A host that grouped round rows by `team` to get a side per round can drop the join to a
+`team_round` table's `slots`; one that wanted the final side on every round reads the
+`player_match` row.
+
+**Sequential decode resyncs after a dropped snapshot.** Some GOTV recordings drop one tick's
+`svc_PacketEntities` (the seven tournament demos in the corpus each drop the `cs_intermission`
+tick's). Through 0.13.0 `EntityTracker` kept applying later deltas to the state from before the
+gap, so any field the dropped snapshot changed stayed stale to the end, `CCSTeam.m_iScore`
+included, and deltas for entities the gap created were skipped. The parallel decode recovered only
+when a chunk happened to start at a later `DEM_FullPacket`, so a value could depend on the core
+count. The tracker now notices a delta whose `delta_from` is not the last applied tick and replaces
+its entity state from the next full packet, exactly as a checkpoint prime would. Values after that
+full packet move on those demos, every decode path agrees, and `EntityTracker.SnapshotResyncCount`
+reports how often it happened. An entity the full packet re-sends with the class and serial it
+already had raises `EntityUpdated`, not a second `EntityCreated`, but its slot now holds a new
+`EntityState`, so read entities by index rather than keeping the instance across frames. A demo
+with no break decodes as before.
+
+## 5. New things worth adopting
+
+`BuildDiagnosticCodes.LoweringFailed` (`build.lowering-failed`) and the three new
+`ResolveDiagnosticCodes` constants are stable codes to key on.
+
+`PlayerGameStatsProjector.Project(AnalysisRun, DemoDescriptor)` projects the end-of-match scoreboard
+from a run with or without snapshots. A caller that evaluated a second time with snapshots on only to
+get `player_game_stats` can drop that evaluation.
+
+A decode meter replaces a host's own wrappers around every walk seam: `parser.entity_decode.started`
+(new Parser `Meter` `CS2DemoKit.Parser.Entities`) plus `analysis.entity_scan.started` (new counter on
+the existing Analysis evaluator `Meter`) sum to decodes per visit. See
+[`profiling.md`](profiling.md#runtime-sources-always-shipped-near-free-when-off).
+
+`PositionUtil.CellToWorld(entity, rejectZeroCell: true)` is the projectile position read
+`ProjectileSampler` makes, now callable on any entity carrying the cell leaves: null when a cell
+index is 0, which puts the axis outside every map. `CS2DemoKit.Analysis.Observation.ProjectileRow`
+is the per-frame projectile record the entity digest carries for the five grenade classes, read
+through the frame observer below.
+
+`AnalysisOptions.FrameObserver`, with `ObservedProviders` and `ObservedProjectileClasses`, is the
+per-frame hook: an `IFrameObserver` called once per frame on the evaluation thread with a
+`FrameView` over the declared per-player columns, the declared grenade projectiles (`Projectiles`,
+`Created`, `Removed`) and each slot's team, as of the end of that frame, at the engine's default
+parallelism. A host that ran its own `EntityTracker` beside a run to sample positions, places or
+grenade flights can declare those reads instead and drop the second decode. Resolve each declared
+name once with `FrameView.Provider` and read through the handle; the view is readable only inside
+`OnFrame`. See the README's "Reading state frame by frame".
+
+A host replacing `PositionSampler.Walk` with the observer declares `entity.pawn.is_alive` for the
+walk's `IsAlive` and sorts each frame's slots by `entity.pawn.entity_index` for its order. The
+snapshot never clears a slot, so a slot whose pawn left keeps its last cells. Measured on the sample
+demo, no such slot reads alive (16,616 slot-frames); nothing in the snapshot guarantees it.
+
+`projectile_thrown` and `projectile_landed` are new views over two synthesized events,
+`projectile_created` and `projectile_removed`, for all five grenades: thrower-bound, with `class`,
+`x`, `y` and `z` facets. A host that walked `ProjectileSampler` beside a run to find throw origins or
+landing points can subscribe instead, or collect `GameEventEdge<ProjectileRemovedEvent>`. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#3-views-and-facets--the-vocabulary).
+
+`team.score` and `team.clan_name` read a side's `CCSTeam` in a `for: each_team` ruleset. A host that
+replayed a demo to the last frame for the final score and clan names can capture them with no `on:`
+and read a `team_match` table instead:
+
+```yaml
+ruleset: library_teams
+for: each_team
+stats:
+  score:     { capture: team.score,     per: match }
+  clan_name: { capture: team.clan_name, per: match }
+show:
+  tables:
+    team_final:
+      per: team_match
+      columns:
+        - { stat: score, label: score }
+        - { stat: clan_name, label: clan_name }
+```
+
+Both are keyed by side, not by team, and a demo cut off at the buzzer can miss the last round's
+point, as a replay would. `GenericSideFieldProvider` is the provider shape behind them: a singleton
+read narrowed to the entity whose `m_iTeamNum` is the side. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-side-stats--for-each_team).
+
+A ruleset can sample state once per period instead of on every frame: declare `cadences:` and
+trigger on `cadence.<id>`. A host that ran a tick-rate `net.CNETMsg_Tick` stat, or sampled positions
+on its own walk at fixed intervals, can use a cadence instead. A step reads the frame's own state,
+after its entity update, so a `player.pos_x` capture on a step equals a frame observer's read of the
+frame the step fired on. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#cadences).
+
+```yaml
+cadences:
+  second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
+stats:
+  pos_x: { capture: player.pos_x, on: cadence.second, per: round }
+```
+
+An event table records one row per firing of a trigger, on either run path, so a host that sampled
+positions on its own walk can declare a cadence and a `per: player_event` table instead. Player rows
+carry `steam_id`, so they join to players by SteamID64 rather than by slot. A ruleset that resolves
+an event table also carries a hidden `#seq_<table>` stat; `EventTableSequence.IsSequenceStat` tells
+a stat list which ones to skip. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#8-displaying-results--show).
+
+```yaml
+show:
+  tables:
+    positions:
+      per: player_event
+      on: cadence.second
+      columns: [ { stat: pos_x }, { stat: pos_y } ]
+```
+
+A ruleset can read the player's input: `player.cmd.buttons`, `forward`, `left`, `view_pitch`,
+`view_yaw` and `tick`, off the latest user command, and two facts the lane keeps across commands:
+`player.cmd.last_jump_tick` (the frame-clock tick `IN_JUMP` last rose on, a sub-tick press
+included, -1 before the first) and `player.cmd.coverage` (the player's commands over the last 64
+ticks divided by 64, 0 when the demo carries none). A projectile ruleset reads them as
+`thrower.cmd.*`, so a host that kept its own ring of the thrower's commands to decide a jump-throw
+reads `thrower.cmd.last_jump_tick` between `projectile.first_seen_tick - 27` and
+`projectile.first_seen_tick` on `projectile_created` instead, gated on `thrower.cmd.coverage > 0`.
+Keep the upper bound: the created frame can come after the spawn, and a press in between is a jump
+after the release. A host that rebuilt commands itself for a frame
+observer can set `AnalysisOptions.DecodeUserCommands` and read `FrameView.Command(slot)` instead, and
+`PlanDecode` asks the reader for the commands either way. The command a read returns is the slot's
+live instance, rebuilt in place as later commands arrive, so copy what you keep. A read looks back with `@-N`, up to 64
+ticks on the frame clock, so a host that kept its own ring of recent positions can ask for
+`player.pos_x@-8`. See [`RULES_AUTHORING.md`](RULES_AUTHORING.md#7-contexts--reading-the-game-state).
+
+```yaml
+stats:
+  moved_x: { sum: abs(player.pos_x - player.pos_x@-8), on: cadence.step, per: round }
+  pressing: { count: cadence.step, where: player.cmd.buttons != 0, per: round }
+```
+
+A ruleset can be `for: each_projectile`: one instance per grenade, from `projectile_created` to
+`projectile_removed`, with `projectile.*` reading the grenade's row, `thrower.*` the thrower's
+per-player values, and a `per: projectile` table giving one row per throw, recorded as the grenade
+is removed, on either path, with `first_seen_tick` (the spawn), `created_tick` and `removed_tick`
+on the frame clock, `removed` (false for a grenade still live at the end of the demo) and the
+thrower's `steam_id`. A host that walked `ProjectileSampler` beside a run to build a throw log can
+declare the row instead, anchoring its windows on `first_seen_tick` as the sampler's first frame.
+`projectile.smoke_detonation_x` / `_y` / `_z` is where a smoke popped, and `projectile.last_moved_tick`
+kept last is the frame-clock tick it came to rest on (its position last changed by more than 0.1
+units between two frames), so a host that walked the trajectory only to find the landing tick can
+read it off the row. `AnalysisRun.Projectiles` carries the same rows as `ProjectileRecord`s for
+a host that reads them without a table. See
+[`RULES_AUTHORING.md`](RULES_AUTHORING.md#per-grenade-stats-for-each_projectile).
+
+```yaml
+ruleset: grenade_rows
+for: each_projectile
+stats:
+  class:   { capture: projectile.class,   keep: first }
+  spawn_x: { capture: projectile.pos_x,   keep: first }
+  end_x:   { capture: projectile.pos_x,   keep: last }
+  bounces: { capture: projectile.bounces, keep: last }
+show:
+  tables:
+    grenades:
+      per: projectile
+      columns: [ { stat: class }, { stat: spawn_x }, { stat: end_x }, { stat: bounces } ]
+```
+
+The release has a view too: `grenade_released` is `weapon_fire` baked to the six grenade weapons,
+bound to the thrower, with a `weapon` facet, and it carries its own measured rate
+(`CatalogView.FrequencyClass`, `perRound` on the corpus), so a `per: player_event` table on it
+passes the event-table gate that refuses the bare `weapon_fire`. One row per release, keyed by the
+thrower's slot and the frame tick, 6 to 15 ticks before the projectile row's `first_seen_tick`: a
+host that indexed grenade `weapon_fire` events beside its own walk declares the table instead.
+
+```yaml
+ruleset: releases
+for: each_player
+stats:
+  weapon: { capture: event.Weapon, on: grenade_released, per: match }
+show:
+  tables:
+    releases: { per: player_event, on: grenade_released, columns: [ { stat: weapon } ] }
+```
+
+The bursts have views for all five grenades: `he_grenade`, `flash_grenade` and `smoke_grenade`
+bound to the thrower, and `decoy_started` and `inferno_started` bound to nobody, each with
+`event.EntityId` and `event.X`, `Y`, `Z` (the facets `entity_id`, `x`, `y`, `z` on the two new
+ones). A host that matched `hegrenade_detonate` or `inferno_startburn` events to its own grenade
+walk can record them as `match_event` rows and join them to the `per: projectile` rows by entity
+index (a detonate's `EntityId` is the projectile's `entity_index`) or by position and tick (an
+inferno names its own entity).
+
+```yaml
+ruleset: bursts
+for: match
+stats:
+  fire_x: { capture: event.X, on: inferno_started, per: match }
+show:
+  tables:
+    fires: { per: match_event, on: inferno_started, columns: [ { stat: fire_x } ] }
+```

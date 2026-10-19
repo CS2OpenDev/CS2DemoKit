@@ -18,6 +18,7 @@ namespace CS2DemoKit.Analysis.RulesetsV2;
 ///         <item>ids are unique across the shared stat/highlight/param/define namespace (post-expansion).</item>
 ///         <item><c>title:</c> templates have balanced, non-empty <c>{}</c> holes.</item>
 ///         <item>the reserved <c>actor:</c> key carries only the keyword <c>any</c>.</item>
+///         <item>each cadence has an anchor and exactly one positive period.</item>
 ///     </list>
 ///     The kind discriminator and <c>match:</c> unary-test parsing are validated while mapping (the
 ///     model cannot be built otherwise); their diagnostics flow through the same pipeline.
@@ -49,8 +50,37 @@ public static class RulesetStructuralValidator
         ValidateHighlights(doc, diagnostics);
         ValidateDuplicateIds(doc, diagnostics);
         ValidateExports(doc, diagnostics);
+        ValidateCadences(doc, diagnostics);
 
         return diagnostics;
+    }
+
+    private static void ValidateCadences(RulesetDoc doc, List<RulesetDiagnostic> diagnostics)
+    {
+        foreach (CadenceDef cadence in doc.Cadences)
+        {
+            void Bad(string problem) =>
+                diagnostics.Add(new RulesetDiagnostic(RulesetDiagnosticCodes.BadCadence,
+                    $"cadence '{cadence.Id}' {problem}", cadence.Position));
+
+            if (cadence.Anchor == CadenceAnchor.None)
+            {
+                Bad("has no 'anchor:'; the only anchor is round_freeze_end");
+            }
+
+            if (cadence.Ticks is not null && cadence.Seconds is not null)
+            {
+                Bad("sets both 'ticks:' and 'seconds:'; give one period");
+            }
+            else if (cadence.Ticks is null && cadence.Seconds is null)
+            {
+                Bad("has no period; give 'ticks:' or 'seconds:'");
+            }
+            else if (cadence.Ticks is <= 0 || cadence.Seconds is not null && !(cadence.Seconds > 0))
+            {
+                Bad("has a period that is not positive");
+            }
+        }
     }
 
     /// <summary>

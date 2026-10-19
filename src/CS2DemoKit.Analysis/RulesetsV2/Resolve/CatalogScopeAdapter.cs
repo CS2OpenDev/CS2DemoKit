@@ -50,11 +50,64 @@ public sealed class CatalogScopeAdapter
     /// </summary>
     public const string TeamSidePath = "team.side";
 
+    /// <summary>
+    ///     The <c>thrower</c> role of a <c>for: each_projectile</c> ruleset: the per-player provider
+    ///     set read at the thrower's slot, in every expression slot, not only on a view that names it.
+    /// </summary>
+    public const string ThrowerRole = "thrower";
+
+    /// <summary>The root of the per-projectile reads a <c>for: each_projectile</c> ruleset sees.</summary>
+    public const string ProjectileRoot = "projectile";
+
+    /// <summary>
+    ///     The <c>projectile.*</c> members, each a field of the instance's
+    ///     <see cref="Observation.ProjectileRow" /> as the frame it is read on holds it: <c>class</c>
+    ///     is the short grenade name the views' <c>class</c> facet matches (<c>smoke</c>,
+    ///     <c>molotov</c>, ...), <c>class_name</c> the server class, <c>thrower</c> the thrower's slot
+    ///     held from its first resolution, <c>pos_*</c> the live position, <c>initial_*</c> where it
+    ///     left the hand and <c>velocity_*</c> the release velocity. A position component reads NaN
+    ///     while the position is unreadable; <c>is_incendiary</c> reads false off any class but a molotov;
+    ///     <c>explode_effect_tick</c> reads 0 until the grenade detonates, and when unseen;
+    ///     <c>first_seen_tick</c> is the frame-clock tick the projectile appeared on, which is the
+    ///     created tick unless <c>projectile_created</c> waited for the thrower;
+    ///     <c>smoke_detonation_*</c> is a smoke's <c>m_vSmokeDetonationPos</c>, NaN until it pops and
+    ///     on every other class; <c>last_moved_tick</c> is the frame-clock tick the position last
+    ///     changed by more than 0.1 units between two frames, the spawn until it first does.
+    /// </summary>
+    public static IReadOnlyList<(string Member, RulesType Type)> ProjectileMembers { get; } =
+    [
+        ("class", RulesType.String),
+        ("class_name", RulesType.String),
+        ("thrower", RulesType.Int),
+        ("team", RulesType.Int),
+        ("entity_index", RulesType.Int),
+        ("serial", RulesType.Int),
+        ("pos_x", RulesType.Float),
+        ("pos_y", RulesType.Float),
+        ("pos_z", RulesType.Float),
+        ("initial_x", RulesType.Float),
+        ("initial_y", RulesType.Float),
+        ("initial_z", RulesType.Float),
+        ("velocity_x", RulesType.Float),
+        ("velocity_y", RulesType.Float),
+        ("velocity_z", RulesType.Float),
+        ("bounces", RulesType.Int),
+        ("first_seen_tick", RulesType.Int),
+        ("last_moved_tick", RulesType.Int),
+        ("smoke_effect_tick", RulesType.Int),
+        ("smoke_detonation_x", RulesType.Float),
+        ("smoke_detonation_y", RulesType.Float),
+        ("smoke_detonation_z", RulesType.Float),
+        ("is_incendiary", RulesType.Bool),
+        ("explode_effect_tick", RulesType.Int)
+    ];
+
     private readonly Dictionary<string, CatalogEnrichment> _enrichmentsByName;
 
     private readonly Dictionary<string, IScopeSymbol> _eventNamespaces;
     private readonly Dictionary<string, IScopeSymbol> _netMessageNamespaces;
     private readonly IReadOnlyList<IScopeSymbol> _roleMembers;
+    private readonly IReadOnlyList<IScopeSymbol> _commandMembers;
 
     private CatalogScopeAdapter(
         CatalogRoot catalog,
@@ -62,9 +115,12 @@ public sealed class CatalogScopeAdapter
         IScopeSymbol round,
         IScopeSymbol match,
         IScopeSymbol enrich,
+        IScopeSymbol team,
+        IScopeSymbol projectile,
         Dictionary<string, IScopeSymbol> eventNamespaces,
         Dictionary<string, IScopeSymbol> netMessageNamespaces,
         IReadOnlyList<IScopeSymbol> roleMembers,
+        IReadOnlyList<IScopeSymbol> commandMembers,
         Dictionary<string, CatalogEnrichment> enrichmentsByName)
     {
         Catalog = catalog;
@@ -72,10 +128,12 @@ public sealed class CatalogScopeAdapter
         Round = round;
         Match = match;
         Enrich = enrich;
-        Team = ScopeSymbol.Namespace("team", [ScopeSymbol.Value("side", RulesType.Int)]);
+        Team = team;
+        Projectile = projectile;
         _eventNamespaces = eventNamespaces;
         _netMessageNamespaces = netMessageNamespaces;
         _roleMembers = roleMembers;
+        _commandMembers = commandMembers;
         _enrichmentsByName = enrichmentsByName;
     }
 
@@ -96,9 +154,15 @@ public sealed class CatalogScopeAdapter
 
     /// <summary>
     ///     The <c>team.*</c> root, in scope only for a <c>for: each_team</c> ruleset: <c>team.side</c>,
-    ///     the side the instance is for.
+    ///     the side the instance is for, and the per-side providers (<c>team.score</c>, ...).
     /// </summary>
     public IScopeSymbol Team { get; }
+
+    /// <summary>
+    ///     The <c>projectile.*</c> root, in scope only for a <c>for: each_projectile</c> ruleset:
+    ///     <see cref="ProjectileMembers" />, read off the instance's row.
+    /// </summary>
+    public IScopeSymbol Projectile { get; }
 
     /// <summary>Builds an adapter from the embedded catalog (<see cref="CatalogResource.Load" />).</summary>
     /// <returns>The adapter.</returns>
@@ -117,6 +181,9 @@ public sealed class CatalogScopeAdapter
         // Per-player providers double as role-handle members (spec §4: "the member set after the
         // role is exactly the per-player provider set").
         List<IScopeSymbol> roleMembers = [];
+        // The command providers are the thrower's too (player.cmd.* as thrower.cmd.*), since the
+        // thrower's slot is fixed per instance like the ruleset player's; a role read per fire is not.
+        List<IScopeSymbol> commandMembers = [];
         foreach (CatalogProvider provider in catalog.Providers)
         {
             RulesType type = FriendlyTypeMap.Map(provider.ClrType);
@@ -127,6 +194,10 @@ public sealed class CatalogScopeAdapter
             if (string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal))
             {
                 roleMembers.Add(ScopeSymbol.Value(LastSegment(path), type));
+            }
+            else if (string.Equals(provider.Scope, "perPlayerCommand", StringComparison.Ordinal))
+            {
+                commandMembers.Add(ScopeSymbol.Value(LastSegment(path), type));
             }
         }
 
@@ -145,8 +216,15 @@ public sealed class CatalogScopeAdapter
         tree.Add("player.name", RulesType.String);
         tree.Add("match.tick", RulesType.Instant); // instant — no catalog event field
         tree.AddIfAbsent(BombWasPlantedPath, RulesType.Bool); // sticky; the catalog gains it later
+        tree.Add(TeamSidePath, RulesType.Int);
+        foreach ((string member, RulesType type) in ProjectileMembers)
+        {
+            tree.Add($"{ProjectileRoot}.{member}", type);
+        }
 
         IScopeSymbol player = tree.Build("player");
+        IScopeSymbol team = tree.Build("team");
+        IScopeSymbol projectile = tree.Build(ProjectileRoot);
         IScopeSymbol round = tree.Build("round");
         IScopeSymbol match = tree.Build("match");
 
@@ -178,8 +256,8 @@ public sealed class CatalogScopeAdapter
             netMessageNamespaces[netMessage.Name] = BuildEventNamespaceCore(netMessage.Fields);
         }
 
-        return new CatalogScopeAdapter(catalog, player, round, match, enrich, eventNamespaces,
-            netMessageNamespaces, roleMembers, enrichmentsByName);
+        return new CatalogScopeAdapter(catalog, player, round, match, enrich, team, projectile, eventNamespaces,
+            netMessageNamespaces, roleMembers, commandMembers, enrichmentsByName);
     }
 
     /// <summary>
@@ -222,6 +300,17 @@ public sealed class CatalogScopeAdapter
         ArgumentNullException.ThrowIfNull(role);
         return ScopeSymbol.Namespace(role, [.. _roleMembers]);
     }
+
+    /// <summary>
+    ///     The <c>thrower</c> namespace of a <c>for: each_projectile</c> ruleset: the per-player
+    ///     provider set, plus <c>cmd.*</c> for the command providers, both at the instance's slot.
+    /// </summary>
+    /// <returns>The namespace symbol.</returns>
+    public IScopeSymbol ThrowerNamespace() =>
+        ScopeSymbol.Namespace(ThrowerRole, [.. _roleMembers, ScopeSymbol.Namespace(CommandMember, [.. _commandMembers])]);
+
+    /// <summary>The segment under <c>player</c> and <c>thrower</c> that holds the command providers.</summary>
+    public const string CommandMember = "cmd";
 
     /// <summary>
     ///     Lowers a view facet to the underlying read expression it desugars to (spec §5 row 5):

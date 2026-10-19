@@ -101,7 +101,9 @@ static int Help()
           (structure only), game-events, entity-replay (curated tracker off the reader),
           materialised-replay (the same walk over a retained parse), scoreboard-materialised
           (shipped rulesets over a retained parse, snapshots on), scoreboard-stream (the same
-          rulesets straight off the file, snapshots off), parse (the whole-file parse, every
+          rulesets straight off the file, snapshots off), observer-stream (scoreboard-stream plus
+          a frame observer declaring the five projectile classes), observer-pawns-stream (the same
+          plus seven per-pawn columns read for every slot each frame), parse (the whole-file parse, every
           frame retained) and materialise (the reader's windowed loop with one window over the
           whole file, every frame retained). Each row carries the arm's wall-clock, allocation,
           collector cost and the process's sampled memory high-water mark, plus a digest of what
@@ -111,6 +113,8 @@ static int Help()
           so the peak is the live set instead of live plus garbage; it perturbs the arm, so
           take wall-clock from a run without it. CS2DEMOKIT_PATHS_DOP caps the stream
           scoreboard's parallelism and CS2DEMOKIT_PATHS_READAHEAD sets the reader arms' window.
+          CS2DEMOKIT_PATHS_OBSERVE=<a,b,..> replaces the pawn observer arm's seven columns with
+          the named providers, and CS2DEMOKIT_PATHS_OBSERVER_READ=0 declares them without reading.
 
         The ray path (the enemy_spotted transition scan) is measured only when
         CS2DEMOKIT_COLLISION_DIR names a directory of per-map bakes (<dir>/<map>/collision.tris
@@ -122,6 +126,34 @@ static int Help()
         sweep take a row only when it has this build's columns and its vis agrees with the banner,
         so an arm published from a checkout older than the ray path fails its rows instead of
         sitting in the CSV without rays under a label that promises them.
+
+        CS2DEMOKIT_BENCH_USERCMD=1 loads an overlay that reads player.cmd.tick on an infrequent
+        event, so eval_ms carries the user-command lane's reconstructor cost without the read
+        itself adding any. measure, sweep and compare all read it; an arm published before this
+        variable existed ignores it and measures with the lane off regardless, so in a compare
+        only the newer arm runs the lane.
+
+        CS2DEMOKIT_BENCH_PROJECTILE=1 loads a for: each_projectile overlay (grenade_rows), so
+        eval_ms carries the per-projectile template cost. measure, sweep, compare and paths all
+        read it; an arm published before the scope existed ignores it and measures with no
+        projectile ruleset built regardless, so in a compare only the newer arm materializes
+        instances. The warm-up pass (measure, sweep, compare) fails loud if the overlay builds
+        but projects zero grenades rows; paths fails loud if the run finished with zero
+        projectiles in AnalysisRun.Projectiles, since a forward run has no show table to check.
+
+        CS2DEMOKIT_BENCH_R7_2A=1 loads an each_player overlay reading player.flags and
+        player.weapon_throw_strength, the lens-bound pawn pair. measure, sweep and compare read it;
+        paths does not.
+
+        CS2DEMOKIT_BENCH_R7_2A_EXPLODE=1 loads an each_projectile overlay (its own ruleset, so it
+        never touches CS2DEMOKIT_BENCH_PROJECTILE's grenades table) reading
+        projectile.explode_effect_tick, the third lens-bound read. This scope switches on the
+        per-projectile template, so a row with it set carries that cost too, not the field alone.
+        measure, sweep and compare read it; paths does not. The warm-up pass fails loud if the
+        overlay builds but projects zero rows.
+
+        CS2DEMOKIT_BENCH_COACH=1 loads an each_player overlay reading player.coaching_team, so
+        eval_ms carries the coaching-team read. measure, sweep and compare read it; paths does not.
 
         rays <collision.tris> [--rays N] [--seed S] [--threads T] [--rounds R] [--min-len L] [--max-len L]
           per-ray occlusion throughput on one bake, the binary tree and every tier of the

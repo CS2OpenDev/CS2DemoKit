@@ -4,7 +4,9 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
+using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.Rules.Ast;
 using CS2DemoKit.Analysis.Rules.Checking;
@@ -49,7 +51,7 @@ public static class RulesetResolver
         ArgumentNullException.ThrowIfNull(doc);
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(context);
-        return new Session(doc, adapter, context, exports).Run();
+        return new Session(EventTableSequence.WithSequenceStats(doc), adapter, context, exports).Run();
     }
 
     private sealed class Session
@@ -82,11 +84,16 @@ public static class RulesetResolver
         // for: each_team — one instance per side. The player root is out of scope (the subject is a
         // side, not a player); the team root (team.side) is in.
         private readonly bool _forEachTeam;
+
+        // for: each_projectile: one instance per grenade projectile. The player root is out of scope;
+        // the projectile root and the thrower role are in, in every expression slot.
+        private readonly bool _forEachProjectile;
         private readonly Dictionary<string, ParamDef> _paramDefsByName = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, ExpressionNode> _paramLiterals = new(StringComparer.Ordinal);
         private readonly IScopeSymbol? _paramsNamespace;
         private readonly Dictionary<string, CatalogProvider> _perPlayerProviderByMember;
+        private readonly Dictionary<string, CatalogProvider> _commandProviderByMember;
         private readonly Dictionary<string, CatalogProvider> _providerByV2Name;
         private readonly RulesetId _rulesetId;
         private readonly List<IScopeSymbol> _siblingSymbols = [];
@@ -101,6 +108,11 @@ public static class RulesetResolver
         // so their event.tick is the frame clock; see ResolveTickClock.
         private readonly HashSet<string> _synthesizedEvents;
 
+        // The cadences a stat triggers on, by id, with seconds folded to ticks.
+        private readonly Dictionary<string, CadenceDef> _usedCadences = new(StringComparer.Ordinal);
+
+        private readonly Dictionary<string, string> _cadenceKeyByStat = new(StringComparer.Ordinal);
+
         internal Session(RulesetDoc doc, CatalogScopeAdapter adapter, ResolveContext ctx, RulesetExportGraph? exports)
         {
             _doc = doc;
@@ -110,6 +122,7 @@ public static class RulesetResolver
             _rulesetId = new RulesetId(doc.Id, doc.For);
             _forEachPlayer = doc.For == RulesetScope.EachPlayer;
             _forEachTeam = doc.For == RulesetScope.EachTeam;
+            _forEachProjectile = doc.For == RulesetScope.EachProjectile;
 
             _viewsByName = adapter.Catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
             _synthesizedEvents = new HashSet<string>(
@@ -121,6 +134,9 @@ public static class RulesetResolver
                 .ToDictionary(p => p.V2Name!, StringComparer.Ordinal);
             _perPlayerProviderByMember = adapter.Catalog.Providers
                 .Where(p => string.Equals(p.Scope, "perPlayer", StringComparison.Ordinal) && p.V2Name is not null)
+                .ToDictionary(p => LastSegment(p.V2Name!), StringComparer.Ordinal);
+            _commandProviderByMember = adapter.Catalog.Providers
+                .Where(p => string.Equals(p.Scope, "perPlayerCommand", StringComparison.Ordinal) && p.V2Name is not null)
                 .ToDictionary(p => LastSegment(p.V2Name!), StringComparer.Ordinal);
 
             foreach (ParamDef param in doc.Params)
@@ -193,7 +209,10 @@ public static class RulesetResolver
 
             SkipDependentsOfSkipped(stats, highlights);
 
-            CheckedRuleset ruleset = new(_rulesetId, _doc.Title, _doc.For, stats, highlights, _coverage, _doc.Show);
+            CheckedRuleset ruleset = new(_rulesetId, _doc.Title, _doc.For, stats, highlights, _coverage, _doc.Show)
+            {
+                Cadences = UsedCadences(stats)
+            };
             return new RulesetResolveResult(ruleset, _diagnostics);
         }
 
@@ -475,7 +494,7 @@ public static class RulesetResolver
             }
 
             RulesType thisType = valueType;
-            ReadCollector reads = new(this, trigger.View);
+            ReadCollector reads = new(this, trigger.View, stat.Position);
 
             CheckedExpression? condition;
             CheckedExpression? valueSelector;
@@ -498,6 +517,7 @@ public static class RulesetResolver
             }
 
             CheckedExpression? whileGate = BuildWhileGate(stat, trigger, thisType, reads);
+            RejectUnloweredWhile(stat, trigger, concreteEvents, whileGate);
 
             // A team-bound view (round_won / round_lost) filters on the round-end winner against the
             // subject's team. The planner writes that condition, so the reads are declared here: they
@@ -509,6 +529,7 @@ public static class RulesetResolver
             }
 
             RejectPlayerSubjectReads(stat, reads);
+            RejectProjectileScopeKind(stat, trigger);
 
             RuleNodeKind kind = MapNodeKind(stat.Kind);
             KeepKind keep = MapKeep(stat);
@@ -565,6 +586,8 @@ public static class RulesetResolver
                 bucketReducer = effective == "count" ? null : effective;
             }
 
+            RejectNonIntKeepList(stat, valueSelector);
+            RejectTriggerlessCapture(stat, trigger, condition, whileGate, valueSelector, reads);
             RejectUngatedSentinelAggregate(stat, keep, bucketReducer, condition, valueSelector);
 
             return new CheckedStat(
@@ -618,6 +641,21 @@ public static class RulesetResolver
             if (string.Equals(reference.Path, "event." + CatalogScopeAdapter.FrameTickMember, StringComparison.Ordinal))
             {
                 return TickClock.Frame;
+            }
+
+            // The projectile's own ticks: first seen and last moved are the frame clock, the effect
+            // ticks are the server's (m_nExplodeEffectTickBegin, m_nSmokeEffectTickBegin). The last
+            // jump is the frame the command arrived on.
+            switch (reference.Path)
+            {
+                case CatalogScopeAdapter.ProjectileRoot + ".first_seen_tick":
+                case CatalogScopeAdapter.ProjectileRoot + ".last_moved_tick":
+                case "player." + CatalogScopeAdapter.CommandMember + ".last_jump_tick":
+                case CatalogScopeAdapter.ThrowerRole + "." + CatalogScopeAdapter.CommandMember + ".last_jump_tick":
+                    return TickClock.Frame;
+                case CatalogScopeAdapter.ProjectileRoot + ".explode_effect_tick":
+                case CatalogScopeAdapter.ProjectileRoot + ".smoke_effect_tick":
+                    return TickClock.Server;
             }
 
             if (!string.Equals(reference.Path, "event.tick", StringComparison.Ordinal))
@@ -796,7 +834,16 @@ public static class RulesetResolver
                 return null;
             }
 
-            ReadCollector reads = new(this, null);
+            if (_forEachProjectile)
+            {
+                Report(ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                    $"stat '{stat.Id}': a tally: settles at round end through the evaluator, which a projectile "
+                    + "instance cannot release when its projectile is removed; a for: each_projectile ruleset "
+                    + "takes count, sum, capture, a triggered flag and a round-end compute", stat.Position);
+                return null;
+            }
+
+            ReadCollector reads = new(this, null, stat.Position);
             IScopeEnvironment scope = StateScope(RulesType.Int, "tally:", []);
             CheckedExpression? source =
                 CheckExpressionText(stat.KindArg, "tally:", stat.Position, scope, RulesType.Int);
@@ -919,7 +966,7 @@ public static class RulesetResolver
             // Synthesize the of / per division into the row-5 expression slot (identity for free). The two
             // ids resolve as sibling stat references in state scope, so the checked expression carries their
             // resolved-reference identities — ExpressionHasher row 6 embeds each bucket's own node hash.
-            ReadCollector reads = new(this, null);
+            ReadCollector reads = new(this, null, stat.Position);
             IScopeEnvironment scope = StateScope(RulesType.Float, "rate:", []);
             CheckedExpression? ratio =
                 CheckExpressionText($"{ofId} / {perId}", "rate:", stat.Position, scope, null);
@@ -1127,6 +1174,13 @@ public static class RulesetResolver
         {
             List<ExpressionNode> conjuncts = [];
 
+            // 0. A cadence trigger selects its own schedule by key, which carries the period into the hash.
+            if (trigger.CadenceKey is { } cadenceKey)
+            {
+                conjuncts.Add(new BinaryNode(BinaryOperator.Equal,
+                    new ReferenceNode(["event", nameof(CadenceTickEvent.Cadence)]), new StringLiteralNode(cadenceKey)));
+            }
+
             // 1. merged match: bindings, catalog facet order (spec §4.2 / §5 row 5).
             foreach ((CatalogFacet facet, UnaryTest test) in trigger.MergedMatch)
             {
@@ -1167,7 +1221,7 @@ public static class RulesetResolver
                 new BinaryNode(BinaryOperator.And, left, right));
             IScopeEnvironment scope = EventScope(trigger, thisType, "where:");
             CheckedExpression? checkedExpression = CheckNode(composed, scope, RulesType.Bool, "where:", stat.Position);
-            reads.Collect(checkedExpression);
+            reads.Collect(checkedExpression, lookBackSite: true);
             return checkedExpression;
         }
 
@@ -1278,7 +1332,7 @@ public static class RulesetResolver
                 ValidateSelectorType(stat, checkedExpression);
             }
 
-            reads.Collect(checkedExpression);
+            reads.Collect(checkedExpression, lookBackSite: true);
             return checkedExpression;
         }
 
@@ -1328,6 +1382,150 @@ public static class RulesetResolver
             }
         }
 
+        // The kinds whose planner edges come from RequireGameEvent, which has no net-message path.
+        private static bool NetTriggerUnsupported(StatDef stat) =>
+            stat.Kind is StatKind.Streak or StatKind.Burst or StatKind.Bucket
+            || stat is { Kind: StatKind.Capture, Keep: KeepMode.List or KeepMode.Min or KeepMode.Max };
+
+        private static string DescribeKind(StatDef stat) =>
+            stat.Kind == StatKind.Capture
+                ? $"capture keep: {stat.Keep.ToString()!.ToLowerInvariant()}"
+                : stat.Kind.ToString().ToLowerInvariant();
+
+        /// <summary>
+        ///     Refuses the <c>while:</c> shapes the planner's gate lowering cannot build. Mirrors
+        ///     <c>RuleChainBuilder.ResolveGateSource</c>: only a bare reference or a single comparison
+        ///     lowers. A comparison over an entity read folds into the event condition on the kinds
+        ///     that thread one; any other comparison, and a bare B6 pull-node read, is a value gate,
+        ///     which only a game-event edge of count, sum, flag or capture first/last can carry.
+        /// </summary>
+        private void RejectUnloweredWhile(StatDef stat, ResolvedTrigger trigger,
+            IReadOnlyList<string> concreteEvents, CheckedExpression? whileGate)
+        {
+            if (whileGate is null)
+            {
+                return;
+            }
+
+            bool valueGate;
+            switch (whileGate.Root)
+            {
+                case ReferenceNode reference:
+                    valueGate = IsB6PullNodePath(reference.Path);
+                    break;
+                case BinaryNode cmp when IsComparison(cmp.Operator):
+                    bool threadsCondition = concreteEvents.Count > 0 && stat.Kind is StatKind.Count
+                        or StatKind.Sum or StatKind.Capture or StatKind.Flag or StatKind.Streak
+                        or StatKind.Bucket or StatKind.Burst;
+                    bool entityBearing = whileGate.References.Any(r => TryEntityRead(r, trigger.View, out _));
+                    valueGate = !(threadsCondition && entityBearing);
+                    break;
+                default:
+                    Report(ResolveDiagnosticCodes.WhileUnsupported,
+                        $"stat '{stat.Id}' while: '{whileGate.Root.CanonicalText}' is compound; a while: gate "
+                        + "must be a single context or flag reference, or a single comparison "
+                        + "(two while: gates, from a define and the site, also compose to a compound)",
+                        stat.Position);
+                    return;
+            }
+
+            if (!valueGate)
+            {
+                return;
+            }
+
+            if (trigger.IsNet)
+            {
+                Report(ResolveDiagnosticCodes.WhileUnsupported,
+                    $"stat '{stat.Id}' while: '{whileGate.Root.CanonicalText}' is a value gate, which a net-message "
+                    + "trigger cannot carry; use where: over the payload instead",
+                    stat.Position);
+                return;
+            }
+
+            if (NetTriggerUnsupported(stat))
+            {
+                Report(ResolveDiagnosticCodes.WhileUnsupported,
+                    $"stat '{stat.Id}' while: '{whileGate.Root.CanonicalText}' is a value gate, which "
+                    + $"{DescribeKind(stat)} cannot carry; only count, sum, flag and capture keep first/last can",
+                    stat.Position);
+            }
+        }
+
+        // The B6 reads the planner builds as always-active pull nodes; the economy members are written nodes.
+        private static bool IsB6PullNodePath(string path) =>
+            B6RuleIds.Members.Any(m => string.Equals(m.V2Name, path, StringComparison.Ordinal))
+            && !path.EndsWith(".equipment", StringComparison.Ordinal)
+            && !path.EndsWith(".money", StringComparison.Ordinal);
+
+        private static bool IsComparison(BinaryOperator op) =>
+            op is BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.Greater
+                or BinaryOperator.GreaterOrEqual or BinaryOperator.Less or BinaryOperator.LessOrEqual;
+
+        // The list node's append edge compiles typeof(int); instants and durations are tick counts.
+        private void RejectNonIntKeepList(StatDef stat, CheckedExpression? valueSelector)
+        {
+            if (stat is not { Kind: StatKind.Capture, Keep: KeepMode.List } || valueSelector is null)
+            {
+                return;
+            }
+
+            if (valueSelector.ResultType.Kind is not (RulesTypeKind.Int or RulesTypeKind.Instant
+                or RulesTypeKind.Duration))
+            {
+                Report(ResolveDiagnosticCodes.KeepListElementType,
+                    $"stat '{stat.Id}' capture keep: list element is {valueSelector.ResultType}; a list holds "
+                    + "int values only",
+                    stat.Position);
+            }
+        }
+
+        /// <summary>
+        ///     A capture with no <c>on:</c> follows its read's change events, so it holds the latest value
+        ///     when a table samples it. Only a per-team read emits on every change, and only a per: match
+        ///     node keeps a value that changes once (a clan name) past the first round's reset.
+        /// </summary>
+        private void RejectTriggerlessCapture(StatDef stat, ResolvedTrigger trigger, CheckedExpression? condition,
+            CheckedExpression? whileGate, CheckedExpression? valueSelector, ReadCollector reads)
+        {
+            if (stat.Kind != StatKind.Capture || trigger.HasEventSource || valueSelector is null)
+            {
+                return;
+            }
+
+            if (_forEachProjectile)
+            {
+                // A bare projectile.* read: kept first, it is sampled when the instance materializes;
+                // kept last, it reads the row live, so the table sees the value at removal.
+                bool bareProjectileRead = valueSelector.Root is ReferenceNode { Segments: [var root, _] }
+                                          && string.Equals(root, CatalogScopeAdapter.ProjectileRoot, StringComparison.Ordinal);
+                if (!bareProjectileRead || MapKeep(stat) is not (KeepKind.First or KeepKind.Last)
+                    || condition is not null || whileGate is not null)
+                {
+                    Report(ResolveDiagnosticCodes.TriggerUnsupportedForKind,
+                        $"stat '{stat.Id}' is a capture with no on:, which in a for: each_projectile ruleset "
+                        + "reads a bare projectile.* value, kept first or last and ungated; give it an on: to "
+                        + "capture anything else",
+                        stat.Position);
+                }
+
+                return;
+            }
+
+            bool bareTeamRead = valueSelector.Root is ReferenceNode
+                                && reads.EntityReads is [{ } read]
+                                && _providerByV2Name.TryGetValue(read.Path, out CatalogProvider? provider)
+                                && provider.Scope == "perTeam";
+            if (!bareTeamRead || MapKeep(stat) != KeepKind.Last || stat.Per != PerScope.Match
+                || condition is not null || whileGate is not null)
+            {
+                Report(ResolveDiagnosticCodes.TriggerUnsupportedForKind,
+                    $"stat '{stat.Id}' is a capture with no on:, which reads a bare team.* value, per: match, "
+                    + "kept last and ungated; give it an on: to capture anything else",
+                    stat.Position);
+            }
+        }
+
         private CheckedExpression? BuildWhileGate(StatDef stat, ResolvedTrigger trigger, RulesType thisType,
             ReadCollector reads)
         {
@@ -1363,7 +1561,7 @@ public static class RulesetResolver
 
         private CheckedHighlight? ResolveHighlight(HighlightDef highlight)
         {
-            ReadCollector reads = new(this, null);
+            ReadCollector reads = new(this, null, highlight.Position);
             IScopeEnvironment scope = StateScope(null, "when:", []);
             CheckedExpression? when = CheckExpressionText(highlight.When, "when:", highlight.Position, scope,
                 RulesType.Bool);
@@ -1380,6 +1578,15 @@ public static class RulesetResolver
                 Report(ResolveDiagnosticCodes.TeamScopeUnsupported,
                     $"highlight '{highlight.Id}': a for: each_team ruleset cannot declare highlights (a "
                     + "highlight is attributed to a player); count the moments with a stat instead",
+                    highlight.Position);
+                return null;
+            }
+
+            if (_forEachProjectile)
+            {
+                Report(ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                    $"highlight '{highlight.Id}': a for: each_projectile ruleset cannot declare highlights (a "
+                    + "highlight is attributed to a player); capture the moment's tick with a stat instead",
                     highlight.Position);
                 return null;
             }
@@ -1467,19 +1674,43 @@ public static class RulesetResolver
         {
             if (sourceRef is null)
             {
-                resolved.Ok = stat.Kind is StatKind.Flag or StatKind.Compute; // expression flag / compute need no source
+                // Expression flag / compute need no source. RejectTriggerlessCapture narrows what a
+                // capture without one may read.
+                resolved.Ok = stat.Kind is StatKind.Flag or StatKind.Compute or StatKind.Capture;
                 return;
             }
 
             switch (sourceRef.Kind)
             {
                 case TriggerRefKind.Raw:
+                    if (string.Equals(sourceRef.Name, CadenceTickEventName, StringComparison.Ordinal))
+                    {
+                        ReportBareCadenceTick(stat, silent);
+                        return;
+                    }
+
                     resolved.RawOrNetName = sourceRef.Name;
                     resolved.Ok = true;
+                    return;
+                case TriggerRefKind.Cadence:
+                    ResolveCadence(sourceRef, stat, resolved, silent);
                     return;
                 case TriggerRefKind.Net:
                     resolved.RawOrNetName = sourceRef.Name;
                     resolved.IsNet = true;
+                    if (NetTriggerUnsupported(stat))
+                    {
+                        if (!silent)
+                        {
+                            Report(ResolveDiagnosticCodes.TriggerUnsupportedForKind,
+                                $"stat '{stat.Id}' ({DescribeKind(stat)}) cannot trigger on a net message; "
+                                + "only count, sum, flag and capture keep first/last can",
+                                stat.Position);
+                        }
+
+                        return;
+                    }
+
                     resolved.Ok = true;
                     return;
                 case TriggerRefKind.This:
@@ -1493,6 +1724,12 @@ public static class RulesetResolver
             }
 
             string name = sourceRef.Name;
+            if (string.Equals(name, CadenceTickEventName, StringComparison.Ordinal))
+            {
+                ReportBareCadenceTick(stat, silent);
+                return;
+            }
+
             if (_viewsByName.TryGetValue(name, out CatalogView? view))
             {
                 resolved.View = view;
@@ -1518,6 +1755,86 @@ public static class RulesetResolver
                 Report(ResolveDiagnosticCodes.UnknownTriggerSource,
                     $"'{name}' is not a known view, trigger define, or sibling flag", stat.Position);
             }
+        }
+
+        private const string CadenceTickEventName = "cadence_tick";
+
+        private void ResolveCadence(TriggerRef sourceRef, StatDef stat, ResolvedTrigger resolved, bool silent)
+        {
+            CadenceDef? declared = _doc.Cadences.FirstOrDefault(c => string.Equals(c.Id, sourceRef.Name,
+                StringComparison.Ordinal));
+            if (declared is null)
+            {
+                if (!silent)
+                {
+                    Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                        $"'cadence.{sourceRef.Name}' names no entry of this ruleset's cadences:", stat.Position);
+                }
+
+                return;
+            }
+
+            // Same rounding as a duration literal.
+            int ticks = declared.Ticks
+                        ?? (int)Math.Round((declared.Seconds ?? 0) * _ctx.TicksPerSecond, MidpointRounding.AwayFromZero);
+            if (ticks <= 0)
+            {
+                if (!silent)
+                {
+                    Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                        $"cadence '{declared.Id}' rounds to {ticks} ticks at {_ctx.TicksPerSecond.ToString(CultureInfo.InvariantCulture)} ticks/s; "
+                        + "a period must be at least one tick", declared.Position);
+                }
+
+                return;
+            }
+
+            if (!_viewsByName.TryGetValue(CadenceTickEventName, out CatalogView? view))
+            {
+                if (!silent)
+                {
+                    Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                        "the catalog has no cadence_tick view", stat.Position);
+                }
+
+                return;
+            }
+
+            CadenceDef resolvedDef = declared with { Ticks = ticks, Seconds = null };
+            _usedCadences[declared.Id] = resolvedDef;
+            _cadenceKeyByStat[stat.Id] = resolvedDef.Key;
+            resolved.View = view;
+            resolved.CadenceKey = resolvedDef.Key;
+            resolved.Ok = true;
+        }
+
+        private void ReportBareCadenceTick(StatDef stat, bool silent)
+        {
+            if (!silent)
+            {
+                Report(ResolveDiagnosticCodes.UnknownTriggerSource,
+                    $"stat '{stat.Id}' triggers on cadence_tick directly, which fires for every cadence in the "
+                    + "build; declare one under cadences: and trigger on cadence.<id>", stat.Position);
+            }
+        }
+
+        // The cadences the surviving stats trigger on, in declaration order.
+        private List<CadenceDef> UsedCadences(List<CheckedStat> stats)
+        {
+            HashSet<string> keys = new(StringComparer.Ordinal);
+            foreach (CheckedStat stat in stats)
+            {
+                if (_cadenceKeyByStat.TryGetValue(stat.StatId, out string? key))
+                {
+                    keys.Add(key);
+                }
+            }
+
+            return _doc.Cadences
+                .Select(c => _usedCadences.GetValueOrDefault(c.Id))
+                .OfType<CadenceDef>()
+                .Where(c => keys.Contains(c.Key))
+                .ToList();
         }
 
         private void MergeDefineTrigger(TriggerDef trigger, ResolvedTrigger resolved, bool silent)
@@ -1662,6 +1979,11 @@ public static class RulesetResolver
             if (trimmed.StartsWith("net.", StringComparison.Ordinal))
             {
                 return new TriggerRef(TriggerRefKind.Net, trimmed["net.".Length..], pos);
+            }
+
+            if (trimmed.StartsWith("cadence.", StringComparison.Ordinal))
+            {
+                return new TriggerRef(TriggerRefKind.Cadence, trimmed["cadence.".Length..], pos);
             }
 
             return new TriggerRef(TriggerRefKind.ViewOrDefine, trimmed, pos);
@@ -1880,6 +2202,12 @@ public static class RulesetResolver
                 AddRoot(roots, _adapter.Team);
             }
 
+            if (_forEachProjectile)
+            {
+                AddRoot(roots, _adapter.Projectile);
+                AddRoot(roots, _adapter.ThrowerNamespace());
+            }
+
             AddRoot(roots, _adapter.Round);
             AddRoot(roots, _adapter.Match);
             if (_paramsNamespace is not null)
@@ -2072,7 +2400,30 @@ public static class RulesetResolver
             if (_providerByV2Name.TryGetValue(reference.Path, out CatalogProvider? provider))
             {
                 entity = new EntityProviderReference(reference.Path, provider.Name, EntityProviderReference.PlayerSubject,
-                    IsSingleton: string.Equals(provider.Scope, "singleton", StringComparison.Ordinal));
+                    IsSingleton: provider.Scope is "singleton" or "perTeam");
+                return true;
+            }
+
+            // The projectile subject's thrower: the role's slot is the instance's, fixed at
+            // materialization, so the read lowers like the ruleset player's own.
+            string[] segments = reference.Path.Split('.');
+            if (_forEachProjectile && segments.Length == 2
+                                   && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
+                                   && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider))
+            {
+                entity = new EntityProviderReference(reference.Path, throwerProvider.Name,
+                    EntityProviderReference.PlayerSubject);
+                return true;
+            }
+
+            // The thrower's commands: the lane is keyed by slot, so the read lowers like player.cmd.*.
+            if (_forEachProjectile && segments.Length == 3
+                                   && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
+                                   && string.Equals(segments[1], CatalogScopeAdapter.CommandMember, StringComparison.Ordinal)
+                                   && _commandProviderByMember.TryGetValue(segments[2], out CatalogProvider? commandProvider))
+            {
+                entity = new EntityProviderReference(reference.Path, commandProvider.Name,
+                    EntityProviderReference.PlayerSubject);
                 return true;
             }
 
@@ -2080,7 +2431,6 @@ public static class RulesetResolver
             // resolves to its event slot-field (killer → Attacker) via the view's roles table, threaded
             // onto the reference so the planner emits `<SlotField>.<provider>` — the read of the ROLE's
             // per-fire entity value, not the ruleset player's.
-            string[] segments = reference.Path.Split('.');
             if (view is not null && segments.Length == 2
                                  && view.Roles.FirstOrDefault(r => string.Equals(r.Role, segments[0], StringComparison.Ordinal)) is { } viewRole
                                  && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? roleProvider))
@@ -2093,6 +2443,39 @@ public static class RulesetResolver
             entity = null;
             return false;
         }
+
+        /// <summary>
+        ///     Only a per-player entity read at the subject's own slot carries a history the scanner
+        ///     keeps: <c>player.*</c>, and <c>thrower.*</c> in a projectile ruleset, whose slot is the
+        ///     instance's. A role handle reads a slot the event names per fire, so it has none.
+        /// </summary>
+        private bool CanLookBack(EntityProviderReference entity)
+        {
+            if (entity is not { Subject: EntityProviderReference.PlayerSubject, IsSingleton: false })
+            {
+                return false;
+            }
+
+            if (_providerByV2Name.TryGetValue(entity.Path, out CatalogProvider? provider))
+            {
+                return string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal);
+            }
+
+            string[] segments = entity.Path.Split('.');
+            return _forEachProjectile && segments.Length == 2
+                   && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
+                   && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider)
+                   && string.Equals(throwerProvider.Name, entity.ProviderName, StringComparison.Ordinal);
+        }
+
+        private void ReportLookBack(ResolvedReference reference, bool lookBackSite, SourcePosition position) =>
+            Report(ResolveDiagnosticCodes.LookBackUnsupported,
+                lookBackSite
+                    ? $"'{reference.Path}' cannot look back: only a player.* entity read, or thrower.* in a "
+                      + "for: each_projectile ruleset, keeps a history"
+                    : $"'{reference.Path}@-{reference.LookBackTicks.ToString(CultureInfo.InvariantCulture)}' looks back "
+                      + "outside a where: or an event-triggered value, the only places a look-back is served",
+                position);
 
         // ── Mapping helpers ────────────────────────────────────────────────────────
 
@@ -2136,6 +2519,7 @@ public static class RulesetResolver
                 (RulesetScope.EachPlayer, _) => ScopeAxis.PlayerRound,
                 (RulesetScope.EachTeam, PerScope.Match) => ScopeAxis.TeamMatch,
                 (RulesetScope.EachTeam, _) => ScopeAxis.TeamRound,
+                (RulesetScope.EachProjectile, _) => ScopeAxis.Projectile,
                 (_, PerScope.Match) => ScopeAxis.Match,
                 _ => ScopeAxis.Round
             };
@@ -2160,6 +2544,37 @@ public static class RulesetResolver
                         $"stat '{stat.Id}' reads '{read}', whose subject is a player (the clutching player); "
                         + "a for: each_team ruleset's subject is a side", stat.Position);
                 }
+            }
+        }
+
+        /// <summary>
+        ///     In a <c>for: each_projectile</c> ruleset, refuses the kinds whose nodes the evaluator
+        ///     cannot release with the instance: the ones that register logic nodes, transient pulses or
+        ///     settle edges (<c>streak</c>, <c>burst</c>, <c>bucket</c>, <c>rate</c>, a <c>flag:</c>
+        ///     with no trigger, a live <c>compute:</c>). <c>tally:</c> is refused on its own path.
+        /// </summary>
+        private void RejectProjectileScopeKind(StatDef stat, ResolvedTrigger trigger)
+        {
+            if (!_forEachProjectile)
+            {
+                return;
+            }
+
+            string? why = stat.Kind switch
+            {
+                StatKind.Streak or StatKind.Burst or StatKind.Bucket or StatKind.Rate =>
+                    $"a {stat.Kind.ToString().ToLowerInvariant()}: keeps state past a message",
+                StatKind.Flag when !trigger.HasEventSource => "a flag: with no on: is a logic node",
+                StatKind.Compute when stat.Live => "a live compute: registers with the evaluator",
+                _ => null
+            };
+
+            if (why is not null)
+            {
+                Report(ResolveDiagnosticCodes.ProjectileScopeUnsupported,
+                    $"stat '{stat.Id}': {why}, which a projectile instance cannot release when its projectile "
+                    + "is removed; a for: each_projectile ruleset takes count, sum, capture, a triggered flag "
+                    + "and a round-end compute", stat.Position);
             }
         }
 
@@ -2188,7 +2603,7 @@ public static class RulesetResolver
 
         // ── Read-set / entity-provider extraction ──────────────────────────────────
 
-        private sealed class ReadCollector(Session session, CatalogView? view)
+        private sealed class ReadCollector(Session session, CatalogView? view, SourcePosition position)
         {
             private readonly List<EntityProviderReference> _entities = [];
             private readonly HashSet<string> _entitySeen = new(StringComparer.Ordinal);
@@ -2197,7 +2612,7 @@ public static class RulesetResolver
 
             internal IReadOnlyList<string> DeclaredReads => _reads;
 
-            internal IReadOnlyList<EntityProviderReference> EntityReads => _entities;
+            internal List<EntityProviderReference> EntityReads => _entities;
 
             /// <summary>Declares a read the planner performs on the stat's behalf (no expression carries it).</summary>
             internal void Declare(string path)
@@ -2208,7 +2623,12 @@ public static class RulesetResolver
                 }
             }
 
-            internal void Collect(CheckedExpression? expression)
+            /// <param name="expression">The checked expression, or null when it failed to check.</param>
+            /// <param name="lookBackSite">
+            ///     True for the fire-time slots that lower through the event-condition seam, the only
+            ///     place a look-back is served.
+            /// </param>
+            internal void Collect(CheckedExpression? expression, bool lookBackSite = false)
             {
                 if (expression is null)
                 {
@@ -2222,8 +2642,21 @@ public static class RulesetResolver
                         _reads.Add(reference.Path);
                     }
 
-                    if (session.TryEntityRead(reference, view, out EntityProviderReference? entity)
-                        && _entitySeen.Add(entity.Path))
+                    bool isEntity = session.TryEntityRead(reference, view, out EntityProviderReference? entity);
+                    if (reference.LookBackTicks > 0)
+                    {
+                        if (!lookBackSite || !isEntity || !session.CanLookBack(entity!))
+                        {
+                            session.ReportLookBack(reference, lookBackSite, position);
+                            continue;
+                        }
+
+                        entity = entity! with { LookBackTicks = reference.LookBackTicks };
+                    }
+
+                    if (isEntity && _entitySeen.Add(entity!.LookBackTicks == 0
+                            ? entity.Path
+                            : $"{entity.Path}@-{entity.LookBackTicks.ToString(CultureInfo.InvariantCulture)}"))
                     {
                         _entities.Add(entity);
                     }
@@ -2239,6 +2672,9 @@ public static class RulesetResolver
             internal CatalogView? View { get; set; }
 
             internal string? RawOrNetName { get; set; }
+
+            /// <summary>The resolved cadence's key, when the trigger is <c>cadence.&lt;id&gt;</c>.</summary>
+            internal string? CadenceKey { get; set; }
 
             internal bool IsNet { get; set; }
 

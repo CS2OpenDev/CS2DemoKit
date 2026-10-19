@@ -63,6 +63,11 @@ public static class V1ExpressionWriter
                     contextV2ToV1 is not null && contextV2ToV1.TryGetValue(reference.Path, out string? v1Id)
                         ? v1Id
                         : reference.Path));
+                if (reference.LookBackTicks > 0)
+                {
+                    sb.Append("@-").Append(reference.LookBackTicks.ToString(CultureInfo.InvariantCulture));
+                }
+
                 break;
             case IntLiteralNode intLiteral:
                 sb.Append(intLiteral.Value.ToString(CultureInfo.InvariantCulture));
@@ -82,6 +87,31 @@ public static class V1ExpressionWriter
             case UnaryNode unary:
                 sb.Append(unary.Operator == UnaryOperator.Not ? "!" : "-").Append('(');
                 Write(unary.Operand, sb, contextV2ToV1);
+                sb.Append(')');
+                break;
+            case BinaryNode { Operator: BinaryOperator.In, Right: ListLiteralNode members } inList:
+                // The v1 grammar has no membership test: a list is a disjunction of equalities.
+                if (members.Items.Length == 0)
+                {
+                    sb.Append("false");
+                    break;
+                }
+
+                sb.Append('(');
+                for (int i = 0; i < members.Items.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(" || ");
+                    }
+
+                    sb.Append('(');
+                    Write(inList.Left, sb, contextV2ToV1);
+                    sb.Append(" == ");
+                    Write(members.Items[i], sb, contextV2ToV1);
+                    sb.Append(')');
+                }
+
                 sb.Append(')');
                 break;
             case BinaryNode binary:

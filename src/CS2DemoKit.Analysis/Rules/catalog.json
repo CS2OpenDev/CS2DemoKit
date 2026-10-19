@@ -460,6 +460,26 @@
       "fields": []
     },
     {
+      "name": "cadence_tick",
+      "clrType": "CadenceTickEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Cadence",
+          "type": "string",
+          "v2Name": "event.Cadence",
+          "v2Type": "String"
+        },
+        {
+          "name": "Step",
+          "type": "int",
+          "v2Name": "event.Step",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
       "name": "cs_intermission",
       "clrType": "CsIntermissionEvent",
       "synthesized": false,
@@ -585,6 +605,44 @@
           "name": "UserIdPawn",
           "type": "uint",
           "v2Name": "event.UserIdPawn",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "decoy_started",
+      "clrType": "DecoyStartedEvent",
+      "synthesized": false,
+      "frequencyClass": "perMatch",
+      "fields": [
+        {
+          "name": "EntityId",
+          "type": "short",
+          "v2Name": "event.EntityId",
+          "v2Type": "Int"
+        },
+        {
+          "name": "UserId",
+          "type": "uint",
+          "v2Name": "event.UserId",
           "v2Type": "Int"
         },
         {
@@ -1584,6 +1642,136 @@
           "type": "uint",
           "v2Name": "event.UserIdPawn",
           "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "projectile_created",
+      "clrType": "ProjectileCreatedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "ClassName",
+          "type": "string",
+          "v2Name": "event.ClassName",
+          "v2Type": "String"
+        },
+        {
+          "name": "EntityIndex",
+          "type": "int",
+          "v2Name": "event.EntityIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FirstSeenTick",
+          "type": "int",
+          "v2Name": "event.FirstSeenTick",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Grenade",
+          "type": "string",
+          "v2Name": "event.Grenade",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Serial",
+          "type": "int",
+          "v2Name": "event.Serial",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
+        }
+      ]
+    },
+    {
+      "name": "projectile_removed",
+      "clrType": "ProjectileRemovedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Bounces",
+          "type": "int",
+          "v2Name": "event.Bounces",
+          "v2Type": "Int"
+        },
+        {
+          "name": "ClassName",
+          "type": "string",
+          "v2Name": "event.ClassName",
+          "v2Type": "String"
+        },
+        {
+          "name": "EntityIndex",
+          "type": "int",
+          "v2Name": "event.EntityIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "FirstSeenTick",
+          "type": "int",
+          "v2Name": "event.FirstSeenTick",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Grenade",
+          "type": "string",
+          "v2Name": "event.Grenade",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Serial",
+          "type": "int",
+          "v2Name": "event.Serial",
+          "v2Type": "Int"
+        },
+        {
+          "name": "X",
+          "type": "float",
+          "v2Name": "event.X",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Y",
+          "type": "float",
+          "v2Name": "event.Y",
+          "v2Type": "Float"
+        },
+        {
+          "name": "Z",
+          "type": "float",
+          "v2Name": "event.Z",
+          "v2Type": "Float"
         }
       ]
     },
@@ -2847,6 +3035,14 @@
   ],
   "providers": [
     {
+      "name": "entity.controller.coaching_team",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.coaching_team",
+      "v2Type": "Int",
+      "note": "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a registered coach, 0 for everyone else. Read off the slot\u0027s controller, not through a pawn, so a slot with no player pawn bound reads it too."
+    },
+    {
       "name": "entity.controller.money",
       "scope": "perPlayer",
       "clrType": "int",
@@ -2942,6 +3138,22 @@
       "note": "Continuous over 0..1, not a flag: it ramps across the crouch transition, so a threshold on it reads as \u0022how far into the crouch\u0022, not \u0022is crouching\u0022."
     },
     {
+      "name": "entity.pawn.ducking",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.ducking",
+      "v2Type": "Bool",
+      "note": "The crouch bit of \u0060player.flags\u0060 (FL_DUCKING). A flag, unlike \u0060player.duck_amount\u0060, which ramps across the transition."
+    },
+    {
+      "name": "entity.pawn.entity_index",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.entity_index",
+      "v2Type": "Int",
+      "note": "The pawn\u0027s entity index. Only an order key: it changes when the slot gets a new pawn and means nothing compared across players."
+    },
+    {
       "name": "entity.pawn.equipment_value",
       "scope": "perPlayer",
       "clrType": "int",
@@ -2967,6 +3179,14 @@
       "note": "Counter-clockwise from world \u002BX, and it wraps at 360, so subtract two of these only after normalising the difference."
     },
     {
+      "name": "entity.pawn.flags",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.flags",
+      "v2Type": "Int",
+      "note": "The pawn\u0027s raw m_fFlags bitfield. The rules language has no bitwise operators, so test \u0060player.on_ground\u0060 or \u0060player.ducking\u0060 rather than this."
+    },
+    {
       "name": "entity.pawn.flash_duration",
       "scope": "perPlayer",
       "clrType": "float",
@@ -2983,10 +3203,25 @@
       "v2Type": "Int"
     },
     {
+      "name": "entity.pawn.is_alive",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.is_alive",
+      "v2Type": "Bool",
+      "note": "Entity liveness: life state alive and health above zero. Not \u0060player.alive\u0060, which follows events: a player who disconnects reads false here with no player_death."
+    },
+    {
       "name": "entity.pawn.is_scoped",
       "scope": "perPlayer",
       "clrType": "bool",
       "v2Name": "player.is_scoped",
+      "v2Type": "Bool"
+    },
+    {
+      "name": "entity.pawn.is_walking",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.is_walking",
       "v2Type": "Bool"
     },
     {
@@ -2997,6 +3232,14 @@
       "v2Type": "Float",
       "unit": "units/second",
       "note": "Per-weapon (an AWP out caps far lower than a knife), which is what makes it the denominator of a counter-strafe test rather than a fixed speed."
+    },
+    {
+      "name": "entity.pawn.on_ground",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.on_ground",
+      "v2Type": "Bool",
+      "note": "The ground bit of \u0060player.flags\u0060 (FL_ONGROUND): false through a jump or a fall."
     },
     {
       "name": "entity.pawn.place",
@@ -3054,6 +3297,23 @@
       "note": "Position within the CURRENT burst, not a round or match total: it resets on trigger release and on weapon change."
     },
     {
+      "name": "entity.team.clan_name",
+      "scope": "perTeam",
+      "clrType": "string",
+      "v2Name": "team.clan_name",
+      "v2Type": "String",
+      "note": "The side\u0027s clan name as the server set it (m_szClanTeamname on the side\u0027s CCSTeam). Keyed by side, not by team: after halftime the team that started T is the CT row."
+    },
+    {
+      "name": "entity.team.score",
+      "scope": "perTeam",
+      "clrType": "int",
+      "v2Name": "team.score",
+      "v2Type": "Int",
+      "unit": "rounds",
+      "note": "Rounds won by whoever is on the side now (m_iScore on the side\u0027s CCSTeam). Keyed by side, not by team: after halftime the team that started T is the CT row."
+    },
+    {
       "name": "entity.weapon.accuracy_penalty",
       "scope": "perPlayer",
       "clrType": "float",
@@ -3068,6 +3328,74 @@
       "v2Name": "player.weapon_recoil_index",
       "v2Type": "Float",
       "note": "A raw engine accumulator in no unit, scaled per weapon. Its useful property is that it rises within a spray and falls between sprays (a run over which it never drops is one spray), not its absolute magnitude, which is not comparable across weapons. Not the same number as the \u0060recoil_index\u0060 FACET on \u0060shot_landed\u0060: that one is \u0060bullet_damage.RecoilIndex\u0060, the index the server fired the shot at, and is authoritative for \u0022what did this shot fire at\u0022. This column is the entity read as it stood BEFORE the frame, so it answers \u0022where was the spray up to when the shot site fired\u0022 and is the only answer on a demo carrying no \u0060bullet_damage\u0060 or for a shot that missed. Do not pool the two in one stat."
+    },
+    {
+      "name": "entity.weapon.throw_strength",
+      "scope": "perPlayer",
+      "clrType": "float",
+      "v2Name": "player.weapon_throw_strength",
+      "v2Type": "Float",
+      "unit": "fraction",
+      "note": "The held grenade\u0027s throw strength: 1 for a full throw, 0 for an underhand lob, about 0.5 with both buttons. Only a grenade carries it, and a read that stops resolving does not clear a player column: after the grenade is thrown or put away this keeps its last value, so test it together with \u0060player.active_weapon_class\u0060. Read before the event\u0027s frame, like every player column."
+    },
+    {
+      "name": "usercmd.buttons",
+      "scope": "perPlayerCommand",
+      "clrType": "long",
+      "v2Name": "player.cmd.buttons",
+      "v2Type": "Int"
+    },
+    {
+      "name": "usercmd.coverage",
+      "scope": "perPlayerCommand",
+      "clrType": "float",
+      "v2Name": "player.cmd.coverage",
+      "v2Type": "Float",
+      "unit": "fraction",
+      "note": "The player\u0027s commands over the last 64 frame ticks divided by 64, capped at 1: 0 when the demo carries none for the player lately. Gate a jump read on it: while this is 0, \u0060last_jump_tick\u0060 says nothing about the player."
+    },
+    {
+      "name": "usercmd.forward",
+      "scope": "perPlayerCommand",
+      "clrType": "float",
+      "v2Name": "player.cmd.forward",
+      "v2Type": "Float"
+    },
+    {
+      "name": "usercmd.last_jump_tick",
+      "scope": "perPlayerCommand",
+      "clrType": "int",
+      "v2Name": "player.cmd.last_jump_tick",
+      "v2Type": "Int",
+      "note": "The frame-clock tick IN_JUMP last rose on in this player\u0027s commands: set in buttonstate1 where the previous command had it clear, or pressed in a sub-tick move step. -1 before the first. A jump-throw read on \u0060projectile_created\u0060 is \u0060thrower.cmd.last_jump_tick \u003E= projectile.first_seen_tick - 27 and thrower.cmd.last_jump_tick \u003C= projectile.first_seen_tick\u0060: the created frame can come after the spawn, and a press in between is not a jump-throw."
+    },
+    {
+      "name": "usercmd.left",
+      "scope": "perPlayerCommand",
+      "clrType": "float",
+      "v2Name": "player.cmd.left",
+      "v2Type": "Float"
+    },
+    {
+      "name": "usercmd.tick",
+      "scope": "perPlayerCommand",
+      "clrType": "int",
+      "v2Name": "player.cmd.tick",
+      "v2Type": "Int"
+    },
+    {
+      "name": "usercmd.view_pitch",
+      "scope": "perPlayerCommand",
+      "clrType": "float",
+      "v2Name": "player.cmd.view_pitch",
+      "v2Type": "Float"
+    },
+    {
+      "name": "usercmd.view_yaw",
+      "scope": "perPlayerCommand",
+      "clrType": "float",
+      "v2Name": "player.cmd.view_yaw",
+      "v2Type": "Float"
     }
   ],
   "profiles": [
@@ -3153,6 +3481,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3164,6 +3499,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -3360,6 +3702,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "player_team"
+          ]
+        },
+        {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
           ]
         },
         {
@@ -3552,6 +3908,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3563,6 +3926,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -3759,6 +4129,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "player_team"
+          ]
+        },
+        {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
           ]
         },
         {
@@ -3944,6 +4328,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3955,6 +4346,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -4151,6 +4549,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "player_team"
+          ]
+        },
+        {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
           ]
         },
         {
@@ -4343,6 +4755,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4354,6 +4773,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -4539,6 +4965,20 @@
           ]
         },
         {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
           "logicalName": "$round_decided",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4707,6 +5147,13 @@
           ]
         },
         {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
           "logicalName": "$combat_start",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4718,6 +5165,13 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
           ]
         },
         {
@@ -4914,6 +5368,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "player_team"
+          ]
+        },
+        {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
           ]
         },
         {
@@ -5333,6 +5801,55 @@
       ]
     },
     {
+      "name": "cadence_tick",
+      "event": "cadence_tick",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "step",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Step"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        }
+      ],
+      "note": "Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once per period on the first frame at or after each due tick, after the frame\u0027s own events. Reach it as cadence.\u003Cid\u003E; Step is the step since the anchor, 0 on the anchor\u0027s frame."
+    },
+    {
       "name": "damage_dealt",
       "event": "player_hurt",
       "binding": "actor_slot",
@@ -5601,6 +6118,79 @@
       ]
     },
     {
+      "name": "decoy_started",
+      "event": "decoy_started",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "entity_id",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "EntityId"
+        },
+        {
+          "name": "pawn",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "UserId"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        }
+      ],
+      "note": "Binds to nobody: the wire names the thrower\u0027s pawn handle (pawn), not a slot. Join a decoy to its projectile row by entity_id (the projectile\u0027s entity_index) or by position and tick."
+    },
+    {
       "name": "enemy_spotted",
       "event": "enemy_spotted",
       "binding": "actor_slot",
@@ -5725,6 +6315,64 @@
       ]
     },
     {
+      "name": "grenade_released",
+      "event": "weapon_fire",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "UserId"
+        }
+      ],
+      "baked": [
+        "event.Weapon in [\u0022weapon_hegrenade\u0022, \u0022weapon_flashbang\u0022, \u0022weapon_smokegrenade\u0022, \u0022weapon_molotov\u0022, \u0022weapon_incgrenade\u0022, \u0022weapon_decoy\u0022]"
+      ],
+      "facets": [
+        {
+          "name": "weapon",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Weapon"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        }
+      ],
+      "note": "Fires on the release, 6 to 15 ticks before the projectile row appears (projectile_created, or first_seen_tick on a per: projectile row). Its rate is measured through its weapon filter, so an event table may trigger on it where the bare weapon_fire may not.",
+      "frequencyClass": "perRound"
+    },
+    {
       "name": "he_grenade",
       "event": "hegrenade_detonate",
       "binding": "actor_slot",
@@ -5770,6 +6418,73 @@
           ]
         }
       ]
+    },
+    {
+      "name": "inferno_started",
+      "event": "inferno_startburn",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "entity_id",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "EntityId"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        }
+      ],
+      "note": "Binds to nobody: the event names the inferno entity, not the projectile or a player. Join it to a molotov\u0027s projectile row by position (the fire starts where the projectile burst) and tick."
     },
     {
       "name": "kill",
@@ -5930,6 +6645,158 @@
         }
       ],
       "note": "Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views."
+    },
+    {
+      "name": "projectile_landed",
+      "event": "projectile_removed",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "bounces",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Bounces"
+        },
+        {
+          "name": "class",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Grenade"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        }
+      ],
+      "note": "Synthesized from entity state on the first frame the projectile is gone, so event.tick is the FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy lands here only when its cloud or sound ends. Fires for every projectile, but binds to no player when the thrower never resolved."
+    },
+    {
+      "name": "projectile_thrown",
+      "event": "projectile_created",
+      "binding": "actor_slot",
+      "actor": "thrower",
+      "roles": [
+        {
+          "role": "thrower",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "class",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Grenade"
+        },
+        {
+          "name": "x",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "X"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Y"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "v2Type": "Float",
+          "field": "Z"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        }
+      ],
+      "note": "Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile whose thrower never resolves fires no projectile_thrown."
     },
     {
       "name": "round_decided",

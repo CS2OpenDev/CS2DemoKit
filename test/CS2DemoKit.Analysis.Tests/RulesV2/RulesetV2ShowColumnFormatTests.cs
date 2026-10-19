@@ -89,6 +89,47 @@ public class RulesetV2ShowColumnFormatTests
         await Assert.That(plantRaw.Format).IsEqualTo(ColumnValueFormat.None);
     }
 
+    private const string EventFmtProbe = """
+                                         ruleset: event_fmt_probe
+                                         for: each_player
+                                         cadences:
+                                           second: { ticks: 64, anchor: round_freeze_end }
+                                         stats:
+                                           at:
+                                             capture: event.tick
+                                             on: cadence.second
+                                             per: match
+                                         show:
+                                           tables:
+                                             samples:
+                                               per: player_event
+                                               on: cadence.second
+                                               columns:
+                                                 - { stat: at, label: AtSec, as: seconds }
+                                         """;
+
+    /// <summary>
+    ///     An event table's tick column takes <c>as: seconds</c> like any other, and the cadence's
+    ///     <c>event.tick</c> is on the frame clock, the same clock as the table's <c>tick</c> dimension.
+    /// </summary>
+    [Test]
+    public async Task EventTable_TickColumn_AsSeconds_OnTheFrameClock()
+    {
+        OutputDef samples = ShowLowering.LowerTables(Compile(EventFmtProbe)).Single(o => o.Id == "samples");
+
+        await Assert.That(samples.Scope).IsEqualTo(OutputScope.PerPlayerPerEvent);
+        await Assert.That(samples.Trigger).IsEqualTo("cadence.second");
+        await Assert.That(samples.Dimensions).Contains("tick");
+        MetricRef at = samples.Metrics.Single();
+        await Assert.That(at.Format).IsEqualTo(ColumnValueFormat.Seconds);
+        await Assert.That(at.Clock).IsEqualTo(TickClock.Frame);
+
+        MetricTable table = ConfiguredOutputProjector.WithColumnClocks(
+            new MetricTable("samples", samples.Dimensions, ["AtSec"], []), samples);
+        await Assert.That(table.ColumnClocks["tick"]).IsEqualTo(MetricTable.FrameClock);
+        await Assert.That(table.ColumnClocks["AtSec"]).IsEqualTo(MetricTable.FrameClock);
+    }
+
     /// <summary>The un-reserve is additive: the <c>as:</c> keys load with no diagnostics.</summary>
     [Test]
     public async Task As_LoadsCleanNotRejected()

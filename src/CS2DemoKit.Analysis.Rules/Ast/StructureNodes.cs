@@ -18,21 +18,45 @@ public sealed class ReferenceNode : ExpressionNode
 {
     private string? _path;
 
+    /// <summary>The largest look-back a reference may carry, in ticks.</summary>
+    public const int MaxLookBackTicks = 64;
+
     /// <summary>Creates a reference from its segments.</summary>
     /// <param name="segments">The dotted segments, at least one.</param>
     /// <param name="span">Source position; excluded from canonical identity.</param>
-    public ReferenceNode(ImmutableArray<string> segments, SourceSpan span = default) : base(span)
+    public ReferenceNode(ImmutableArray<string> segments, SourceSpan span = default) : this(segments, 0, span)
+    {
+    }
+
+    /// <summary>Creates a reference that reads its value <paramref name="lookBackTicks" /> ticks earlier.</summary>
+    /// <param name="segments">The dotted segments, at least one.</param>
+    /// <param name="lookBackTicks">0 for a plain read, else 1 to <see cref="MaxLookBackTicks" />.</param>
+    /// <param name="span">Source position; excluded from canonical identity.</param>
+    public ReferenceNode(ImmutableArray<string> segments, int lookBackTicks, SourceSpan span = default) : base(span)
     {
         if (segments.IsDefaultOrEmpty)
         {
             throw new ArgumentException("a reference needs at least one segment", nameof(segments));
         }
 
+        if (lookBackTicks is < 0 or > MaxLookBackTicks)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lookBackTicks), lookBackTicks,
+                $"a look-back is 0 to {MaxLookBackTicks} ticks");
+        }
+
         Segments = segments;
+        LookBackTicks = lookBackTicks;
     }
 
     /// <summary>The dotted segments, head first.</summary>
     public ImmutableArray<string> Segments { get; }
+
+    /// <summary>
+    ///     How many ticks earlier on the frame clock the value is read (<c>player.pos_x@-8</c>), or 0
+    ///     for a plain read. Part of the canonical identity, so it dedups and hashes apart.
+    /// </summary>
+    public int LookBackTicks { get; }
 
     /// <summary>The full dotted path, e.g. <c>round.bomb.was_planted</c>.</summary>
     public string Path => _path ??= string.Join('.', Segments);
@@ -52,6 +76,12 @@ public sealed class ReferenceNode : ExpressionNode
     /// <param name="span">The combined source span.</param>
     /// <returns>The extended reference.</returns>
     internal ReferenceNode Append(string segment, SourceSpan span) => new(Segments.Add(segment), span);
+
+    /// <summary>Returns this reference reading <paramref name="ticks" /> ticks earlier.</summary>
+    /// <param name="ticks">1 to <see cref="MaxLookBackTicks" />.</param>
+    /// <param name="span">The combined source span.</param>
+    /// <returns>The look-back reference.</returns>
+    public ReferenceNode WithLookBack(int ticks, SourceSpan span) => new(Segments, ticks, span);
 }
 
 /// <summary>

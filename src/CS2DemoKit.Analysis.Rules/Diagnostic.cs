@@ -98,6 +98,18 @@ public static class DiagnosticCodes
     /// <summary>A numeric literal that does not fit the language's 64-bit integer / IEEE double range.</summary>
     public const string InvalidNumber = "lex.invalid-number";
 
+    /// <summary>An <c>@</c> that does not start a well-formed <c>@-N</c> look-back.</summary>
+    public const string InvalidLookBack = "lex.invalid-look-back";
+
+    /// <summary>A look-back N outside 1 to <see cref="Ast.ReferenceNode.MaxLookBackTicks" />.</summary>
+    public const string LookBackRange = "parse.look-back-range";
+
+    /// <summary>A look-back on something other than a plain reference, or a member after one.</summary>
+    public const string LookBackTarget = "parse.look-back-target";
+
+    /// <summary>A look-back on a stat or a pseudo-member: only a value read off the demo has a history.</summary>
+    public const string LookBackStat = "check.look-back-stat";
+
     /// <summary>The parser expected one construct and found another.</summary>
     public const string UnexpectedToken = "parse.unexpected-token";
 

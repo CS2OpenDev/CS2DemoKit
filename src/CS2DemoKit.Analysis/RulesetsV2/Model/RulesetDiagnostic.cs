@@ -86,4 +86,10 @@ public static class RulesetDiagnosticCodes
     ///     §3.4).
     /// </summary>
     public const string MixedMapDefine = "ruleset.mixed-map-define";
+
+    /// <summary>
+    ///     A <c>cadences:</c> entry with no <c>anchor:</c>, with both or neither of <c>ticks:</c> and
+    ///     <c>seconds:</c>, or with a period that is not positive.
+    /// </summary>
+    public const string BadCadence = "ruleset.bad-cadence";
 }

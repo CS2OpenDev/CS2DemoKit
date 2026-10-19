@@ -876,6 +876,118 @@ public class EntityIntegrationTests
             .Because("a demo with no molotov throws exercises none of the assertions above");
     }
 
+    private static readonly HashSet<string> AllProjectileClasses = [.. GrenadeProjectileClasses.All];
+
+    internal static List<(int FrameIndex, int ServerTick, GameEvent Event)> ScanProjectileEvents(
+        ParsedDemo demo, int? maxDegreeOfParallelism = 1)
+    {
+        EntityChangeScanner scanner = new(new EntityStateLayer { StoreUnlensedFields = false }, [], null, true, null, null, null,
+            AllProjectileClasses, true);
+        List<(int, int, GameEvent)> events = [];
+        foreach ((int n, DemoFrame frame, IReadOnlyList<NetMessage> msgs) in SequentialScan.Frames(scanner, demo, maxDegreeOfParallelism))
+        {
+            foreach (NetMessage msg in msgs)
+            {
+                if (msg is GameEventMessage { DecodedEvent: ProjectileCreatedEvent or ProjectileRemovedEvent or MolotovThrownEvent } gem)
+                {
+                    events.Add((n, frame.ServerTick, gem.DecodedEvent));
+                }
+            }
+        }
+
+        return events;
+    }
+
+    /// <summary>
+    ///     One <c>projectile_created</c> per projectile the sampler walk sees, less the ones whose
+    ///     thrower never resolves in their life, each with a real slot, and each molotov on the frame
+    ///     and slot of its <c>molotov_thrown</c>. The never-resolved set is read off the sampler, not
+    ///     assumed empty.
+    /// </summary>
+    [Test]
+    public async Task ProjectileCreated_FiresOncePerSerial_WithThrower()
+    {
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        Dictionary<(int Index, int Serial, string Class), bool> resolved = new();
+        foreach (ProjectileSample sample in ProjectileSampler.Walk(parsed))
+        {
+            (int, int, string) key = (sample.EntityIndex, sample.Serial, sample.ClassName);
+            resolved[key] = (resolved.TryGetValue(key, out bool r) && r) || sample.ThrowerSlot >= 0;
+        }
+
+        List<(int FrameIndex, int ServerTick, GameEvent Event)> events = ScanProjectileEvents(parsed);
+        List<(int Tick, ProjectileCreatedEvent E)> created = [.. events
+            .Where(e => e.Event is ProjectileCreatedEvent)
+            .Select(e => (e.ServerTick, (ProjectileCreatedEvent)e.Event))];
+
+        int neverResolved = resolved.Count(kv => !kv.Value);
+        Console.WriteLine($"sampler projectiles: {resolved.Count} (never resolved {neverResolved}); projectile_created: {created.Count}");
+
+        await Assert.That(resolved.Count).IsGreaterThan(0);
+        await Assert.That(created.Count).IsEqualTo(resolved.Count - neverResolved);
+        await Assert.That(created.All(c => c.E.PlayerSlot is >= 0 and < 64)).IsTrue();
+        await Assert.That(created.Select(c => (c.E.EntityIndex, c.E.Serial, c.E.ClassName)).Distinct().Count())
+            .IsEqualTo(created.Count)
+            .Because("a projectile is created once, however many frames it lives");
+        await Assert.That(created.All(c => resolved.TryGetValue((c.E.EntityIndex, c.E.Serial, c.E.ClassName), out bool r) && r))
+            .IsTrue();
+        await Assert.That(created.All(c => c.E.ServerTick == c.Tick && c.E.GameTick == c.Tick && c.E.FrameNumber == c.Tick))
+            .IsTrue()
+            .Because("every synthesized event carries the frame clock in all three slots");
+
+        List<(int, int)> molotovs = [.. events.Where(e => e.Event is MolotovThrownEvent)
+            .Select(e => (e.ServerTick, ((MolotovThrownEvent)e.Event).PlayerSlot))];
+        List<(int, int)> molotovCreates = [.. created.Where(c => c.E.ClassName == GrenadeProjectileClasses.Molotov)
+            .Select(c => (c.Tick, c.E.PlayerSlot))];
+        await Assert.That(molotovs.Count).IsGreaterThan(0);
+        await Assert.That(molotovCreates).IsEquivalentTo(molotovs);
+    }
+
+    /// <summary>
+    ///     One <c>projectile_removed</c> per removal the sampler walk reports, on the same frame, with
+    ///     the projectile as last seen: position, bounces, and the thrower held from its first
+    ///     resolution, -1 when it never resolved.
+    /// </summary>
+    [Test]
+    public async Task ProjectileRemoved_CarriesLastPosition()
+    {
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        List<string> expected = [.. ProjectileSampler.Walk(parsed)
+            .Where(s => s.Removed)
+            .Select(s => Describe(s.FrameIndex, s.ThrowerSlot, s.EntityIndex, s.Serial, s.ClassName,
+                s.Position?.X ?? float.NaN, s.Position?.Y ?? float.NaN, s.Position?.Z ?? float.NaN, s.Bounces))];
+
+        List<string> actual = [.. ScanProjectileEvents(parsed)
+            .Where(e => e.Event is ProjectileRemovedEvent)
+            .Select(e => (e.FrameIndex, R: (ProjectileRemovedEvent)e.Event))
+            .Select(e => Describe(e.FrameIndex, e.R.PlayerSlot, e.R.EntityIndex, e.R.Serial, e.R.ClassName,
+                e.R.X, e.R.Y, e.R.Z, e.R.Bounces))];
+
+        Console.WriteLine($"sampler removals: {expected.Count}; projectile_removed: {actual.Count}");
+        await Assert.That(expected.Count).IsGreaterThan(0);
+        await Assert.That(actual.Count).IsEqualTo(expected.Count);
+        await Assert.That(FirstDifference(expected, actual)).IsNull();
+    }
+
+    internal static string? FirstDifference(List<string> expected, List<string> actual)
+    {
+        int n = Math.Min(expected.Count, actual.Count);
+        for (int i = 0; i < n; i++)
+        {
+            if (expected[i] != actual[i])
+            {
+                return $"[{i}] expected {expected[i]} but got {actual[i]}";
+            }
+        }
+
+        return expected.Count == actual.Count ? null : $"count {expected.Count} vs {actual.Count}";
+    }
+
+    private static string Describe(int frame, int slot, int index, int serial, string cls, float x, float y, float z, int bounces) =>
+        FormattableString.Invariant($"f{frame} s{slot} {index}/{serial} {cls} ({x:R}, {y:R}, {z:R}) b{bounces}");
+
     // ── Shared skip helper ────────────────────────────────────────────────────
     //
     // Entity-state decoding hits a known bit-misalignment bug on the bench /

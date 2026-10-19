@@ -50,7 +50,15 @@ They are gated on listener attachment, not on `Profiling.Enabled`:
   `EventLevel.Verbose`; the rest are `Informational` or `Warning`.
 - **`Meter` `CS2DemoKit.Analysis.Evaluator`** — counters (`analysis.messages.processed`,
   `analysis.edges.evaluated`, `analysis.edges.fired`, `analysis.logic_nodes.recomputed`,
-  `analysis.players.materialized`) plus the `analysis.frame.duration_ms` histogram.
+  `analysis.players.materialized`, `analysis.entity_scan.started`) plus the
+  `analysis.frame.duration_ms` histogram.
+- **`Meter` `CS2DemoKit.Parser.Entities`**: `parser.entity_decode.started`, +1 the first time a
+  metered `EntityTracker` folds a frame. Together with `analysis.entity_scan.started` above, this is
+  the decode meter: a host's "decodes per visit" is the sum of both counters. A tracker a rules run
+  owns (every `EntityStateLayer` in CS2DemoKit.Analysis) sets `EntityTracker.Metered` false, because
+  that run already counts itself once on the Analysis counter regardless of its worker count. A
+  tracker nothing owns, such as `PositionSampler.Walk`, `ProjectileSampler.Walk`, or a bare `new
+  EntityTracker()` replay, counts on the Parser counter instead.
 - **`ActivitySource` `CS2DemoKit.Analysis`**: the `analysis.eval` phase-timeline span, and
   `analysis.precompute` around `EntityChangeScanner.PrecomputeParallelDigests` when a host calls it.
   `StartActivity` returns `null` when nothing is sampling, so the spans are
@@ -72,7 +80,10 @@ data you want; they are intentionally distinct because their scopes differ.
 For an in-proc report **dumped on exit** with no external tooling, use
 `CS2DemoKit.Analysis.Diagnostics.ProfilingSession`. It attaches the Meter + ActivitySource listeners
 for the whole session and, on `Dispose`, writes a combined report (phase timeline + evaluator
-counters) to a `TextWriter` — `Console.Out` by default.
+counters) to a `TextWriter`, `Console.Out` by default. It subscribes by meter name to
+`CS2DemoKit.Analysis.Evaluator` only, so its report now also prints `analysis.entity_scan.started`
+but never `parser.entity_decode.started`; read that counter from `dotnet-counters` or your own
+listener on `CS2DemoKit.Parser.Entities` instead.
 
 ```csharp
 using CS2DemoKit.Analysis.Diagnostics;

@@ -50,6 +50,13 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     private const string DimChain = "chain";
     private const string DimSide = "side";
     private const string DimSlots = "slots";
+    private const string DimSteamId = "steam_id";
+    private const string DimFirstSeenTick = "first_seen_tick";
+    private const string DimCreatedTick = "created_tick";
+    private const string DimRemovedTick = "removed_tick";
+    private const string DimRemoved = "removed";
+    private const string DimEntityIndex = "entity_index";
+    private const string DimSerial = "serial";
 
     private readonly IReadOnlyDictionary<string, StateNode>? _gameNodesByRuleId;
     private readonly OutputDef _output;
@@ -79,6 +86,12 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     public IReadOnlyDictionary<int, StateNode>? TeamRosterNodes { get; init; }
 
     /// <summary>
+    ///     The projectile instances the run finished (<c>AnalysisRun.Projectiles</c>), the rows of a
+    ///     <c>per: projectile</c> table on either path. Without them such a table has no rows.
+    /// </summary>
+    public IReadOnlyList<ProjectileRecord>? Projectiles { get; init; }
+
+    /// <summary>
     ///     The match identifier used in the <c>match_id</c> dimension (typically the demo filename).
     ///     Optional — when null the dimension is omitted, matching the built-in projectors.
     /// </summary>
@@ -95,7 +108,16 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
             return [WithColumnClocks(ProjectPerEvent(result, demo), _output)];
         }
 
-        return Project(ProjectionSource.FromSnapshots(result), demo);
+        ProjectionSource source = ProjectionSource.FromSnapshots(result);
+        if (ConfiguredOutputRecorder.IsEventScope(_output.Scope))
+        {
+            source = source with
+            {
+                Events = ProjectionSource.EventsFromSnapshots(result, EventInstances(source).Keys)
+            };
+        }
+
+        return Project(source, demo);
     }
 
     /// <summary>
@@ -116,6 +138,9 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
             OutputScope.PerMatch => ProjectPerMatch(source, demo),
             OutputScope.PerTeamPerRound => ProjectPerTeam(source, demo, true),
             OutputScope.PerTeamPerGame => ProjectPerTeam(source, demo, false),
+            OutputScope.PerPlayerPerEvent or OutputScope.PerTeamPerEvent or OutputScope.PerMatchPerEvent =>
+                ProjectEventTable(source, demo),
+            OutputScope.PerProjectile => ProjectProjectiles(demo),
             _ => throw new InvalidOperationException(
                 $"output '{_output.Id}' logs timeline events, which only a snapshot run records.")
         };
@@ -130,6 +155,17 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
     internal static MetricTable WithColumnClocks(MetricTable table, OutputDef output)
     {
         Dictionary<string, string> clocks = new(StringComparer.Ordinal);
+        if (ConfiguredOutputRecorder.IsEventScope(output.Scope))
+        {
+            clocks[DimTick] = MetricTable.FrameClock;
+        }
+        else if (output.Scope == OutputScope.PerProjectile)
+        {
+            clocks[DimFirstSeenTick] = MetricTable.FrameClock;
+            clocks[DimCreatedTick] = MetricTable.FrameClock;
+            clocks[DimRemovedTick] = MetricTable.FrameClock;
+        }
+
         foreach (MetricRef metric in output.Metrics)
         {
             switch (metric.Clock)
@@ -279,6 +315,221 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
 
         return new MetricRow(dimensions, values);
     }
+
+    // ── event tables: one row per increase of an instance's sequence node ─
+
+    /// <summary>
+    ///     Each sequence node of this event table with what owns it: a player, a side, or the match.
+    ///     Players in materialization order, then sides 2 and 3, so both paths walk instances alike.
+    /// </summary>
+    private Dictionary<StateNode, EventOwner> EventInstances(ProjectionSource source)
+    {
+        Dictionary<StateNode, EventOwner> owners = new(ReferenceEqualityComparer.Instance);
+        if (_output.SequenceRef is not { } sequenceRef)
+        {
+            return owners;
+        }
+
+        switch (_output.Scope)
+        {
+            case OutputScope.PerPlayerPerEvent:
+                foreach (PerPlayerNodeTemplate.MaterializedPlayer mp in source.Players)
+                {
+                    if (mp.NodesByRuleId?.GetValueOrDefault(sequenceRef) is { } node)
+                    {
+                        owners.TryAdd(node, new EventOwner(mp, null, mp.NodesByRuleId));
+                    }
+                }
+
+                break;
+            case OutputScope.PerTeamPerEvent:
+                foreach (int side in (int[])[2, 3])
+                {
+                    if (TeamNodesByRuleId?.GetValueOrDefault(side) is { } sideNodes
+                        && sideNodes.GetValueOrDefault(sequenceRef) is { } node)
+                    {
+                        owners.TryAdd(node, new EventOwner(null, side, sideNodes));
+                    }
+                }
+
+                break;
+            case OutputScope.PerMatchPerEvent:
+                if (_gameNodesByRuleId?.GetValueOrDefault(sequenceRef) is { } matchNode)
+                {
+                    owners.TryAdd(matchNode, new EventOwner(null, null, null));
+                }
+
+                break;
+        }
+
+        return owners;
+    }
+
+    private MetricTable ProjectEventTable(ProjectionSource source, DemoDescriptor demo)
+    {
+        List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
+        Dictionary<StateNode, EventOwner> owners = EventInstances(source);
+        List<MetricRow> rows = [];
+        foreach (EventRow ev in source.Events)
+        {
+            if (!owners.TryGetValue(ev.Sequence, out EventOwner owner))
+            {
+                continue;
+            }
+
+            Dictionary<string, object?> dimensions = new(StringComparer.Ordinal);
+            foreach (string dimension in _output.Dimensions)
+            {
+                switch (dimension)
+                {
+                    case DimMatchId:
+                        if (MatchId is not null)
+                        {
+                            dimensions[DimMatchId] = MatchId;
+                        }
+
+                        break;
+                    case DimMap:
+                        dimensions[DimMap] = demo.MapName;
+                        break;
+                    case DimRoundNumber:
+                        dimensions[DimRoundNumber] = ev.RoundNumber;
+                        break;
+                    case DimTick:
+                        dimensions[DimTick] = ev.Tick;
+                        break;
+                    case DimSide:
+                        dimensions[DimSide] = owner.Side;
+                        break;
+                    case DimPlayerSlot:
+                        dimensions[DimPlayerSlot] = owner.Player?.PlayerSlot;
+                        break;
+                    case DimPlayerName:
+                        dimensions[DimPlayerName] = owner.Player?.PlayerName;
+                        break;
+                    case DimSteamId:
+                        dimensions[DimSteamId] = SteamId(demo, owner.Player);
+                        break;
+                    case DimTeam:
+                        dimensions[DimTeam] = owner.Player is { } p
+                            ? TeamAt(p.TeamNode, ev.Read, demo, p.PlayerSlot)
+                            : 0;
+                        break;
+                }
+            }
+
+            Dictionary<string, object?> values = new(StringComparer.Ordinal);
+            foreach (MetricRef metric in _output.Metrics)
+            {
+                StateNode? node = owner.Nodes?.GetValueOrDefault(metric.RuleRef)
+                                  ?? _gameNodesByRuleId?.GetValueOrDefault(metric.RuleRef);
+                values[metric.Label] = node is not null
+                    ? StatValues.ApplyColumnFormat(ev.Read(node), metric.Format, demo.TickRate)
+                    : null;
+            }
+
+            rows.Add(new MetricRow(dimensions, values));
+        }
+
+        return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
+    }
+
+    // ── per_projectile: one row per finished projectile instance ───────────
+
+    private MetricTable ProjectProjectiles(DemoDescriptor demo)
+    {
+        List<string> valueColumns = _output.Metrics.Select(m => m.Label).ToList();
+        List<MetricRow> rows = [];
+        foreach (ProjectileRecord record in Projectiles ?? [])
+        {
+            Dictionary<string, object?> dimensions = new(StringComparer.Ordinal);
+            foreach (string dimension in _output.Dimensions)
+            {
+                switch (dimension)
+                {
+                    case DimMatchId:
+                        if (MatchId is not null)
+                        {
+                            dimensions[DimMatchId] = MatchId;
+                        }
+
+                        break;
+                    case DimMap:
+                        dimensions[DimMap] = demo.MapName;
+                        break;
+                    case DimRoundNumber:
+                        dimensions[DimRoundNumber] = record.RoundNumber;
+                        break;
+                    case DimFirstSeenTick:
+                        dimensions[DimFirstSeenTick] = record.FirstSeenTick;
+                        break;
+                    case DimCreatedTick:
+                        dimensions[DimCreatedTick] = record.CreatedTick;
+                        break;
+                    case DimRemovedTick:
+                        dimensions[DimRemovedTick] = record.RemovedTick;
+                        break;
+                    case DimRemoved:
+                        dimensions[DimRemoved] = record.Removed;
+                        break;
+                    case DimEntityIndex:
+                        dimensions[DimEntityIndex] = record.EntityIndex;
+                        break;
+                    case DimSerial:
+                        dimensions[DimSerial] = record.Serial;
+                        break;
+                    case DimPlayerSlot:
+                        dimensions[DimPlayerSlot] = record.ThrowerSlot;
+                        break;
+                    case DimPlayerName:
+                        dimensions[DimPlayerName] = record.ThrowerName;
+                        break;
+                    case DimSteamId:
+                        dimensions[DimSteamId] = SteamId(demo, record.ThrowerSlot);
+                        break;
+                    case DimTeam:
+                        dimensions[DimTeam] = record.Team;
+                        break;
+                }
+            }
+
+            Dictionary<string, object?> values = new(StringComparer.Ordinal);
+            foreach (MetricRef metric in _output.Metrics)
+            {
+                values[metric.Label] = StatValues.ApplyColumnFormat(
+                    record.Values.GetValueOrDefault(metric.RuleRef), metric.Format, demo.TickRate);
+            }
+
+            rows.Add(new MetricRow(dimensions, values));
+        }
+
+        return new MetricTable(_output.Id, _output.Dimensions, valueColumns, rows);
+    }
+
+    // A row's team as its state held it, or the roster's final team when the node is absent or had not
+    // latched a team yet (-1), which keeps a hand-built template on the old answer.
+    private static int TeamAt(StateNode? node, Func<StateNode, object?> read, DemoDescriptor demo, int slot) =>
+        node is not null && read(node) is { } value
+                         && Convert.ToInt32(value, CultureInfo.InvariantCulture) is var team and >= 0
+            ? team
+            : RosterTeam(demo, slot);
+
+    private static int RosterTeam(DemoDescriptor demo, int slot) =>
+        demo.Players.TryGetValue(slot, out PlayerInfo? pi) ? pi.Team : 0;
+
+    // A string: a SteamID64 does not survive a double, which is what a JSON reader may parse it into.
+    private static string? SteamId(DemoDescriptor demo, PerPlayerNodeTemplate.MaterializedPlayer? player) =>
+        player is { } p ? SteamId(demo, p.PlayerSlot) : null;
+
+    private static string? SteamId(DemoDescriptor demo, int slot) =>
+        demo.Players.TryGetValue(slot, out PlayerInfo? pi) && pi.SteamId64 != 0
+            ? pi.SteamId64.ToString(CultureInfo.InvariantCulture)
+            : null;
+
+    private readonly record struct EventOwner(
+        PerPlayerNodeTemplate.MaterializedPlayer? Player,
+        int? Side,
+        IReadOnlyDictionary<string, StateNode>? Nodes);
 
     // ── per_player_per_game: final-state sampling ─────────────────────────
 
@@ -447,8 +698,14 @@ public sealed class ConfiguredOutputProjector : IOutputProjector
                 case DimPlayerName:
                     dimensions[DimPlayerName] = mp.PlayerName;
                     break;
+                case DimSteamId:
+                    dimensions[DimSteamId] = SteamId(demo, mp);
+                    break;
                 case DimTeam:
-                    dimensions[DimTeam] = demo.Players.TryGetValue(mp.PlayerSlot, out PlayerInfo? pi) ? pi.Team : 0;
+                    dimensions[DimTeam] = roundNumber is null
+                        ? RosterTeam(demo, mp.PlayerSlot)
+                        : TeamAt(group.Select(m => m.RoundTeamNode).FirstOrDefault(n => n is not null), read, demo,
+                            mp.PlayerSlot);
                     break;
             }
         }
@@ -593,6 +850,65 @@ internal sealed record ProjectionSource(
     Func<StateNode, object?>? Final,
     IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> Players)
 {
+    /// <summary>The event tables' rows, in firing order; empty when the build has no event table.</summary>
+    public IReadOnlyList<EventRow> Events { get; init; } = [];
+
+    /// <summary>
+    ///     The snapshot run's event rows for <paramref name="sequences" />: one wherever a sequence
+    ///     node's value rose from the row before, read off that row. The recorder applies the same rule
+    ///     live, so the two paths agree row for row.
+    /// </summary>
+    public static IReadOnlyList<EventRow> EventsFromSnapshots(EvaluationResult result, IEnumerable<StateNode> sequences)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(sequences);
+        Dictionary<StateNode, int> nodeIndex = StatValues.BuildNodeIndex(result.FinalTrackedNodes);
+        List<int> columns = [];
+        List<StateNode> nodes = [];
+        foreach (StateNode sequence in sequences)
+        {
+            if (nodeIndex.TryGetValue(sequence, out int column))
+            {
+                columns.Add(column);
+                nodes.Add(sequence);
+            }
+        }
+
+        List<EventRow> events = [];
+        if (columns.Count == 0)
+        {
+            return events;
+        }
+
+        int roundIndex = StatValues.FindRoundNumberIndex(result.FinalTrackedNodes);
+        float[] last = new float[columns.Count];
+        SnapshotTable table = result.MessageSnapshots;
+        for (int m = 0; m < table.Count; m++)
+        {
+            int? round = null;
+            for (int i = 0; i < columns.Count; i++)
+            {
+                float value = table[m, columns[i]].NumericValue ?? 0;
+                if (value <= last[i])
+                {
+                    last[i] = value;
+                    continue;
+                }
+
+                last[i] = value;
+                round ??= roundIndex >= 0 && table[m, roundIndex] is { IsActive: true, NumericValue: { } rn }
+                    ? (int)rn
+                    : 0;
+                // Cell reads, not a materialized row: a cadence table holds tens of thousands of rows.
+                int row = m;
+                events.Add(new EventRow(nodes[i], result.Messages[m].Tick, round.Value, node =>
+                    nodeIndex.TryGetValue(node, out int idx) ? StatValues.ReadSnapshotValue(table[row, idx], node) : null));
+            }
+        }
+
+        return events;
+    }
+
     /// <summary>
     ///     The snapshot run's source: rounds sampled at the last snapshot holding each live round
     ///     number, the final state at the last snapshot, cells read off the snapshot rows.
@@ -630,3 +946,10 @@ internal sealed record ProjectionSource(
         return new ProjectionSource(rounds, final, result.MaterializedPlayers);
     }
 }
+
+/// <summary>One firing of an event table's trigger on one instance.</summary>
+/// <param name="Sequence">The instance's sequence node, which says which table and which instance.</param>
+/// <param name="Tick">The firing message's frame tick (the frame clock).</param>
+/// <param name="RoundNumber">The live round number after the message, or 0 when none is live.</param>
+/// <param name="Read">Reads a column node as it stood right after the firing message.</param>
+internal sealed record EventRow(StateNode Sequence, int Tick, int RoundNumber, Func<StateNode, object?> Read);

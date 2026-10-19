@@ -47,7 +47,6 @@ public class DemoParserTests
     ///     hundreds of phantom CCSGameRulesProxy enterPvs events (965+ vs demofile-net's 1).
     ///     Ground truth from demofile-net 0.42.1 on furia-vs-vitality-m1-mirage.dem:
     ///     1 CCSGameRulesProxy creation, 1 distinct slot, 1 max simultaneous.
-    ///     This test asserts the count stays in single digits with margin.
     /// </summary>
     [Test]
     [Category("Oracle")]
@@ -85,9 +84,9 @@ public class DemoParserTests
             Console.WriteLine($"  {kv.Key,-40} {kv.Value}");
         }
 
-        // Strict bound: ground truth is 1. Allow up to 5 to absorb minor scoring differences
-        // across baselines/full-packets without letting the bug back in.
-        await Assert.That(gameRulesProxyCreations).IsLessThanOrEqualTo(5);
+        // Exact: the demo resyncs after a dropped snapshot, and the full packet it resyncs from
+        // re-enters the proxy as an update.
+        await Assert.That(gameRulesProxyCreations).IsEqualTo(1);
     }
 
     /// <summary>Parse demo_all inner messages have payload.</summary>

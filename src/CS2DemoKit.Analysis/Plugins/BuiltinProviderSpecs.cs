@@ -50,7 +50,7 @@ public static class BuiltinProviderSpecs
     ///     empty magazine; -1 is a weapon with no magazine (knives, grenades, the C4), which the
     ///     engine's <c>minusone</c> serializer sends as 0 on the wire. Both are real observations
     ///     and emit as-is. NOTE:
-    ///     rule-site reads are PRE-FRAME (the scanner snapshots the previous frame), so at a
+    ///     a read at a game event is PRE-FRAME (the scanner snapshots the previous frame), so at a
     ///     kill event this is the clip BEFORE the killing shot — "last bullet" is <c>== 1</c>,
     ///     not <c>== 0</c>.
     /// </summary>
@@ -205,6 +205,49 @@ public static class BuiltinProviderSpecs
             SchemaNames.CCSPlayerController.InGameMoneyServices + "."
                                                                 + SchemaNames.CCSPlayerControllerInGameMoneyServices.Account));
 
+    /// <summary>
+    ///     entity.controller.coaching_team: <c>m_iCoachingTeam</c> on the slot's controller, read by
+    ///     <see cref="ControllerFieldProvider" />. 0 for a player who is not a coach, else the side
+    ///     coached (2 or 3).
+    ///     <para>
+    ///         Not a pawn hop like <see cref="ControllerMoney" />: the pawn sweep visits only
+    ///         <c>CCSPlayerPawn</c>, and this reads every controller, pawn bound or not.
+    ///     </para>
+    /// </summary>
+    public static ProviderSpec ControllerCoachingTeam { get; } = new(
+        "entity.controller.coaching_team", ControllerFieldProvider.ControllerClass,
+        SchemaNames.CCSPlayerController.CoachingTeam, typeof(int));
+
+    /// <summary>
+    ///     entity.pawn.is_walking: the shift-to-walk toggle, <c>m_bIsWalking</c>. Changes only on a
+    ///     walk-key edge, not per tick, so it costs the digest's delta encoding almost nothing.
+    /// </summary>
+    public static ProviderSpec PawnIsWalking { get; } = new(
+        "entity.pawn.is_walking", "CCSPlayerPawn",
+        SchemaNames.CCSPlayerPawn.IsWalking, typeof(bool));
+
+    /// <summary>
+    ///     entity.pawn.flags: the pawn's raw <c>m_fFlags</c> bitfield, a <c>uint32</c> on the int lane.
+    ///     The rules language has no bitwise operators, so the two bits a rule wants are their own
+    ///     columns, <see cref="PawnFlagBitProvider.OnGround" /> and <see cref="PawnFlagBitProvider.Ducking" />.
+    /// </summary>
+    public static ProviderSpec PawnFlags { get; } = new(
+        "entity.pawn.flags", "CCSPlayerPawn",
+        SchemaNames.CBaseEntity.Flags, typeof(int));
+
+    /// <summary>
+    ///     entity.weapon.throw_strength: the active weapon's <c>m_flThrowStrength</c> through the
+    ///     active-weapon handle: 1 for a full throw, 0 for an underhand lob, about 0.5 with both
+    ///     buttons. Only grenade weapons carry the field, so any other weapon reads no value, which
+    ///     leaves the pre-frame snapshot holding the last grenade's strength.
+    /// </summary>
+    public static ProviderSpec WeaponThrowStrength { get; } = new(
+        "entity.weapon.throw_strength", "CCSPlayerPawn",
+        "", typeof(float),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
+            SchemaNames.CBaseCSGrenade.ThrowStrength));
+
     /// <summary>entity.game.freeze_period — the singleton freeze-period poll.</summary>
     public static ProviderSpec GameFreezePeriod { get; } = new(
         "entity.game.freeze_period", "CCSGameRulesProxy",
@@ -274,6 +317,26 @@ public static class BuiltinProviderSpecs
         typeof(int));
 
     /// <summary>
+    ///     entity.team.score: a side's rounds won, <c>CCSTeam.m_iScore</c>. Read per side
+    ///     (<see cref="GenericSideFieldProvider" />), so it is <c>team.score</c> in a
+    ///     <c>for: each_team</c> ruleset. The engine credits a round at its decision.
+    /// </summary>
+    public static ProviderSpec TeamScore { get; } = new(
+        "entity.team.score", "CCSTeam",
+        SchemaNames.CTeam.Score, typeof(int));
+
+    /// <summary>
+    ///     entity.team.clan_name: a side's clan name, <c>CCSTeam.m_szClanTeamname</c>, as the server
+    ///     set it. Empty when the server set none, which is the usual matchmaking case.
+    /// </summary>
+    public static ProviderSpec TeamClanName { get; } = new(
+        "entity.team.clan_name", "CCSTeam",
+        SchemaNames.CCSTeam.ClanTeamName, typeof(string));
+
+    /// <summary>The per-side reads, one spec each; <see cref="CreateTeamProviders" /> instantiates them per side.</summary>
+    public static IReadOnlyList<ProviderSpec> TeamSpecs { get; } = [TeamScore, TeamClanName];
+
+    /// <summary>
     ///     The generic per-player providers equivalent to
     ///     <see cref="PerPlayerEntityValueProviderRegistry.CreateDefault" />.
     /// </summary>
@@ -313,6 +376,19 @@ public static class BuiltinProviderSpecs
         new PawnEyeAngleProvider(PawnAngleAxis.Yaw),
         new PawnAimPunchProvider(PawnAngleAxis.Pitch),
         new PawnAimPunchProvider(PawnAngleAxis.Yaw),
+        // Same position in CreateDefault. Before the position trio, not appended:
+        // PawnPositionProviderTests pins those three as the last three.
+        new GenericPerPlayerFieldProvider(PawnIsWalking),
+        // Computed, no spec form; the same classes at the same position in CreateDefault.
+        new PawnAliveProvider(),
+        new PawnEntityIndexProvider(),
+        // Same position in CreateDefault, before the position trio.
+        new GenericPerPlayerFieldProvider(PawnFlags),
+        PawnFlagBitProvider.OnGround(),
+        PawnFlagBitProvider.Ducking(),
+        new GenericPerPlayerFieldProvider(WeaponThrowStrength),
+        // Same position in CreateDefault, before the position trio.
+        new ControllerFieldProvider(ControllerCoachingTeam),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
         // parity gate rather than a hand-written-vs-spec comparison. The gate's population is
@@ -343,6 +419,19 @@ public static class BuiltinProviderSpecs
             typeof(CCSGameRulesBombPlantedMarker), false),
         new GenericSingletonFieldProvider(GameRoundTime, ChangeDirection.RisingOnly,
             typeof(CCSGameRulesRoundTimeMarker), 0)
+    ];
+
+    /// <summary>
+    ///     The per-side team reads: each of <see cref="TeamSpecs" /> for side 2 then side 3. They emit
+    ///     on every change (a string has no rising edge) from a null default, so the first read emits
+    ///     even when it is 0.
+    /// </summary>
+    public static IReadOnlyList<IEntityValueProvider> CreateTeamProviders() =>
+    [
+        new GenericSideFieldProvider(TeamScore, 2, ChangeDirection.Both, typeof(CCSTeamScoreTMarker), null),
+        new GenericSideFieldProvider(TeamScore, 3, ChangeDirection.Both, typeof(CCSTeamScoreCTMarker), null),
+        new GenericSideFieldProvider(TeamClanName, 2, ChangeDirection.Both, typeof(CCSTeamClanNameTMarker), null),
+        new GenericSideFieldProvider(TeamClanName, 3, ChangeDirection.Both, typeof(CCSTeamClanNameCTMarker), null)
     ];
 
     /// <summary>The generic singleton provider equivalent to <see cref="FreezePeriodProvider" />.</summary>

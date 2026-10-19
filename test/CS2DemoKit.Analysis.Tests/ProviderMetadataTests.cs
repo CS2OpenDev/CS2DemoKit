@@ -48,6 +48,34 @@ public class ProviderMetadataTests
         await Assert.That(provider.DefaultValue).IsEqualTo(false);
     }
 
+    /// <summary>
+    ///     The per-side team reads: one instance per spec and side, named <c>{spec}@{side}</c>, each
+    ///     with its own marker, reading <c>m_iScore</c> / <c>m_szClanTeamname</c> off <c>CCSTeam</c>.
+    /// </summary>
+    [Test]
+    public async Task TeamSideProviders_ExposeExpectedMetadata()
+    {
+        List<GenericSideFieldProvider> providers =
+            BuiltinProviderSpecs.CreateTeamProviders().Cast<GenericSideFieldProvider>().ToList();
+        await Assert.That(string.Join(",", providers.Select(p => p.ContextName))).IsEqualTo(
+            "entity.team.score@2,entity.team.score@3,entity.team.clan_name@2,entity.team.clan_name@3");
+        await Assert.That(providers.Select(p => p.MarkerType).Distinct().Count()).IsEqualTo(4);
+        foreach (GenericSideFieldProvider provider in providers)
+        {
+            await Assert.That(provider.EntityClass).IsEqualTo("CCSTeam");
+            await Assert.That(provider.EmitOn).IsEqualTo(ChangeDirection.Both);
+            await Assert.That(provider.DefaultValue).IsNull();
+            await Assert.That(provider.Side is 2 or 3).IsTrue();
+            await Assert.That(((GenericSideFieldProvider)((IWorkerCloneable<IEntityValueProvider>)provider).CloneForWorker()).Side)
+                .IsEqualTo(provider.Side);
+        }
+
+        await Assert.That(providers[0].FieldName).IsEqualTo("m_iScore");
+        await Assert.That(providers[0].ValueType).IsEqualTo(typeof(int));
+        await Assert.That(providers[2].FieldName).IsEqualTo("m_szClanTeamname");
+        await Assert.That(providers[2].ValueType).IsEqualTo(typeof(string));
+    }
+
     /// <summary>Pawn health provider_exposes expected metadata.</summary>
     [Test]
     public async Task PawnHealthProvider_ExposesExpectedMetadata()
@@ -94,6 +122,97 @@ public class ProviderMetadataTests
         await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
         await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
         await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+    }
+
+    /// <summary>
+    ///     Walking provider (spec-constructed, no hand-written twin) exposes expected metadata: a
+    ///     plain bool read of <c>m_bIsWalking</c>, no handle hop, no emit gates.
+    /// </summary>
+    [Test]
+    public async Task PawnIsWalkingProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.PawnIsWalking);
+        await Assert.That(provider.Name).IsEqualTo("entity.pawn.is_walking");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo(SchemaNames.CCSPlayerPawn.IsWalking);
+        await Assert.That(provider.FieldName).IsEqualTo("m_bIsWalking");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(bool));
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+        await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
+        await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+    }
+
+    /// <summary>The raw flags column: a plain int read of <c>m_fFlags</c>, no hop, no gates.</summary>
+    [Test]
+    public async Task PawnFlagsProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.PawnFlags);
+        await Assert.That(provider.Name).IsEqualTo("entity.pawn.flags");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo("m_fFlags");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(int));
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+        await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
+        await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+    }
+
+    /// <summary>The two flag bits: bool columns over <c>m_fFlags</c>, cloned per worker with their mask.</summary>
+    [Test]
+    public async Task PawnFlagBitProviders_ExposeExpectedMetadata()
+    {
+        PawnFlagBitProvider onGround = PawnFlagBitProvider.OnGround();
+        PawnFlagBitProvider ducking = PawnFlagBitProvider.Ducking();
+        await Assert.That(onGround.Name).IsEqualTo("entity.pawn.on_ground");
+        await Assert.That(onGround.Mask).IsEqualTo(1);
+        await Assert.That(ducking.Name).IsEqualTo("entity.pawn.ducking");
+        await Assert.That(ducking.Mask).IsEqualTo(2);
+        foreach (PawnFlagBitProvider provider in new[] { onGround, ducking })
+        {
+            await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+            await Assert.That(provider.FieldName).IsEqualTo("m_fFlags");
+            await Assert.That(provider.ValueType).IsEqualTo(typeof(bool));
+            IPerPlayerEntityValueProvider clone = provider.CloneForWorker();
+            await Assert.That(clone).IsNotSameReferenceAs(provider);
+            await Assert.That(clone.Name).IsEqualTo(provider.Name);
+            await Assert.That(((PawnFlagBitProvider)clone).Mask).IsEqualTo(provider.Mask);
+        }
+    }
+
+    /// <summary>Throw strength: a float two-hop read through the active-weapon handle to <c>m_flThrowStrength</c>.</summary>
+    [Test]
+    public async Task WeaponThrowStrengthProvider_ExposesExpectedMetadata()
+    {
+        GenericPerPlayerFieldProvider provider = new(BuiltinProviderSpecs.WeaponThrowStrength);
+        await Assert.That(provider.Name).IsEqualTo("entity.weapon.throw_strength");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerPawn");
+        await Assert.That(provider.FieldName).IsEqualTo("m_pWeaponServices.m_hActiveWeapon");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(float));
+        await Assert.That(provider.Spec.ViaHandleToField!.TargetField).IsEqualTo("m_flThrowStrength");
+        await Assert.That(provider.Spec.PositiveOnly).IsFalse();
+        await Assert.That(provider.Spec.UnseenAsDefault).IsFalse();
+    }
+
+    /// <summary>Coaching team: a direct int read of <c>m_iCoachingTeam</c> on the slot's controller, no pawn hop.</summary>
+    [Test]
+    public async Task ControllerCoachingTeamProvider_ExposesExpectedMetadata()
+    {
+        ControllerFieldProvider provider = new(BuiltinProviderSpecs.ControllerCoachingTeam);
+        await Assert.That(provider.Name).IsEqualTo("entity.controller.coaching_team");
+        await Assert.That(provider.EntityClass).IsEqualTo("CCSPlayerController");
+        await Assert.That(provider.FieldName).IsEqualTo("m_iCoachingTeam");
+        await Assert.That(provider.ValueType).IsEqualTo(typeof(int));
+        await Assert.That(provider.Spec.ViaHandleToField).IsNull();
+        await Assert.That(provider.Spec.ViaHandleToClassName).IsNull();
+    }
+
+    /// <summary>A controller read refuses a spec on any other class, or one with a hop.</summary>
+    [Test]
+    public void ControllerFieldProvider_RefusesAPawnSpec()
+    {
+        Assert.Throws<ArgumentException>(() => _ = new ControllerFieldProvider(BuiltinProviderSpecs.ControllerMoney));
+        Assert.Throws<ArgumentException>(() => _ = new ControllerFieldProvider(BuiltinProviderSpecs.PawnHealth));
     }
 
     /// <summary>

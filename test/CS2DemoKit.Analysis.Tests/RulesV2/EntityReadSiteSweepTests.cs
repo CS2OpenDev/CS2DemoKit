@@ -113,6 +113,35 @@ public class EntityReadSiteSweepTests
             per: round
         """;
 
+    private static string IsWalkingSite =>
+        """
+        ruleset: sweep_is_walking
+        for: each_player
+        stats:
+          walking_kills:
+            count: kill
+            where: "player.is_walking"
+            per: round
+        """;
+
+    // The flag bits and the throw-strength hop, one where: site each.
+    private static string OnGroundSite => Site("on_ground", "player.on_ground");
+    private static string DuckingSite => Site("ducking", "player.ducking");
+    private static string FlagsSite => Site("flags", "player.flags > 0");
+    private static string ThrowStrengthSite => Site("throw_strength", "player.weapon_throw_strength > 0.5");
+    private static string CoachingTeamSite => Site("coaching_team", "player.coaching_team == 0");
+
+    private static string Site(string id, string where) =>
+        $$"""
+        ruleset: sweep_{{id}}
+        for: each_player
+        stats:
+          {{id}}_kills:
+            count: kill
+            where: "{{where}}"
+            per: round
+        """;
+
     [Test]
     public async Task Where_Site_Probe()
     {
@@ -177,6 +206,42 @@ public class EntityReadSiteSweepTests
             "role handles now route to the entity seam via the victim slot: " + detail);
     }
 
+    /// <summary>A bare bool entity read (player.is_walking) routes to the entity seam like player.health.</summary>
+    [Test]
+    public async Task IsWalking_Site_Probe()
+    {
+        (string outcome, string detail) = Probe(IsWalkingSite, "entity.pawn.is_walking");
+        Console.WriteLine($"[sweep] where: player.is_walking outcome={outcome} detail={detail}");
+        await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
+    }
+
+    /// <summary>The R7 part 2a reads route to the entity seam under their own provider names.</summary>
+    [Test]
+    [Arguments("entity.pawn.on_ground")]
+    [Arguments("entity.pawn.ducking")]
+    [Arguments("entity.pawn.flags")]
+    [Arguments("entity.weapon.throw_strength")]
+    public async Task FlagsAndThrowStrength_Site_Probe(string provider)
+    {
+        string yaml = provider switch
+        {
+            "entity.pawn.on_ground" => OnGroundSite,
+            "entity.pawn.ducking" => DuckingSite,
+            "entity.pawn.flags" => FlagsSite,
+            _ => ThrowStrengthSite
+        };
+        (string outcome, string detail) = Probe(yaml, provider);
+        await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
+    }
+
+    /// <summary>The R8 part 2 coach read routes to the entity seam under its own provider name.</summary>
+    [Test]
+    public async Task CoachingTeam_Site_Probe()
+    {
+        (string outcome, string detail) = Probe(CoachingTeamSite, "entity.controller.coaching_team");
+        await Assert.That(outcome).IsEqualTo("PLUMBED").Because(detail);
+    }
+
     /// <summary>
     ///     Runs the full resolve + no-demo materialize pipeline (entity providers wired) and classifies
     ///     the outcome: LOAD_ERROR, RESOLVE_ERROR (checker rejects), PLUMBED (the build's scanner
@@ -184,7 +249,7 @@ public class EntityReadSiteSweepTests
     ///     BUILD_THROW (a materialize throw: a site that never reached the entity seam), or CLEAN (built
     ///     and materialized without the provider ever being gated in).
     /// </summary>
-    private static (string Outcome, string Detail) Probe(string yaml)
+    private static (string Outcome, string Detail) Probe(string yaml, string providerName = "entity.pawn.health")
     {
         RulesetDocumentLoader.Outcome loaded = RulesetDocumentLoader.Load(yaml, "sweep.rules.yaml");
         if (loaded.Doc is null)
@@ -215,9 +280,9 @@ public class EntityReadSiteSweepTests
             return ("BUILD_THROW", $"{ex.GetType().Name}: {ex.Message}");
         }
 
-        bool gated = build.EntityScanner?.PerPlayerProviders.Any(p => p.Name == "entity.pawn.health") ?? false;
+        bool gated = build.EntityScanner?.PerPlayerProviders.Any(p => p.Name == providerName) ?? false;
         return gated
-            ? ("PLUMBED", "resolved + materialized; the scanner snapshots entity.pawn.health")
-            : ("CLEAN", "resolved + materialized without gating entity.pawn.health into the scanner");
+            ? ("PLUMBED", $"resolved + materialized; the scanner snapshots {providerName}")
+            : ("CLEAN", $"resolved + materialized without gating {providerName} into the scanner");
     }
 }

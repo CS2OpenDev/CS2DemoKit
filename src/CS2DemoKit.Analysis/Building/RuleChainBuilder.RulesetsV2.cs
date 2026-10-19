@@ -1,5 +1,6 @@
 #region
 
+using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -7,6 +8,7 @@ using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Edges;
+using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Nodes;
 using CS2DemoKit.Analysis.Plugins;
@@ -17,8 +19,10 @@ using CS2DemoKit.Analysis.Rules.Checking;
 using CS2DemoKit.Analysis.Rules.Hashing;
 using CS2DemoKit.Analysis.RulesetsV2.Compile;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 using TriggerDef = CS2DemoKit.Analysis.Config.TriggerDef;
 
@@ -47,14 +51,80 @@ public sealed partial class RuleChainBuilder
     /// <summary>The (absent) player name for a game-scoped node — no player attribution (empty subtitle).</summary>
     private const string GameScopePlayerName = "";
 
+    private static readonly MethodInfo _entityChangeCopyEdgeMethod =
+        typeof(RuleChainBuilder).GetMethod(nameof(CreateEntityChangeCopyEdgeGeneric),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static readonly MethodInfo _matchRestartReseedEdgeMethod =
+        typeof(RuleChainBuilder).GetMethod(nameof(CreateMatchRestartReseedEdgeGeneric),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
     private static readonly MethodInfo _listAppendEdgeMethod =
         typeof(RuleChainBuilder).GetMethod(nameof(CreateListAppendEdgeGeneric),
             BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    // The rulesets lowering excluded, and the ruleset and source position being lowered, which a
+    // lowering throw is attributed to. Cleared at the start of every Build.
+    private readonly List<ExcludedRuleset> _loweringExclusions = [];
+    private readonly HashSet<string> _loweringExcludedIds = new(StringComparer.Ordinal);
+    private string? _loweringRulesetId;
+    private SourcePosition _loweringPosition;
 
     // The side a for: each_team ruleset is being built for (2 or 3) while BuildV2TeamScope runs; null
     // everywhere else. The subject binding reads it: an actor view binds the actor's live team to
     // it, and round_won / round_lost compare the round's winner with it.
     private int? _teamSubjectSide;
+
+    // The projectile a for: each_projectile instance is being built for while its factory runs; null
+    // everywhere else. The subject binding reads it: a projectile event binds its entity index and
+    // serial to it.
+    private (int Index, int Serial)? _projectileSubject;
+
+    // The projectile the stat being lowered binds its edges to: the subject while a projectile
+    // event's stat lowers, null for any other stat and outside the factory.
+    private (int Index, int Serial)? _projectileEdgeBinding;
+
+    // What the projectile factory now running has lowered before; null everywhere else. Every
+    // instance lowers the same stats over the same game hashes in the same order, so the trial
+    // materialization's hashes, strings and instance-free delegates serve the hundreds that follow.
+    private ProjectileLoweringCache? _projectileCache;
+
+    private sealed class ProjectileLoweringCache
+    {
+        public readonly Dictionary<CheckedStat, StatEntry> Stats = new(ReferenceEqualityComparer.Instance);
+
+        // Keyed by the expression and everything else the compile binds that is the same for every
+        // instance; an expression that reads the instance (projectile.*) or its node is never here.
+        public readonly Dictionary<(string Expression, Type EventType, Type? ValueType, int? Slot), Delegate> Compiled = [];
+
+        // The lookup, condition overlay and hash map every instance lowers into, built by the
+        // trial materialization. An instance's own keys (its pull nodes, its stats, whatever a
+        // stat materialized under a read path) are the same set every time; they are learned at
+        // the trial and removed after each instance, so the next one starts from the base again
+        // and never finds a predecessor's node under a key it has yet to write.
+        public Dictionary<string, StateNode>? Lookup;
+        public Dictionary<string, object>? Overlay;
+        public Dictionary<string, ReadOnlyMemory<byte>>? Hashes;
+        public MapStatHashSource? HashSource;
+        public int BaseCount;
+        public int BaseOverlayCount;
+        public List<string> InstanceKeys = [];
+        public List<string> InstanceOverlayKeys = [];
+
+        public sealed class StatEntry
+        {
+            public required byte[] Hash;
+            public required string Hex;
+            public required string QualifiedId;
+            public string? Condition;
+            public bool ConditionKnown;
+            public string? ValueExpr;
+        }
+
+        public static bool IsInstanceFree(string expression) =>
+            !expression.Contains("node", StringComparison.Ordinal)
+            && !expression.Contains("projectile", StringComparison.Ordinal);
+    }
 
     // The for: each_team build's per-side outputs: side → {ruleset}.{stat} node map, and side → the
     // roster node its tables' `slots` dimension reads. Empty when no team ruleset was built.
@@ -83,6 +153,12 @@ public sealed partial class RuleChainBuilder
     internal IReadOnlyDictionary<string, ReadOnlyMemory<byte>>? LastMaterializedV2StatHashes
         => _lastMaterializedV2StatHashes;
 
+    /// <summary>Where the per-player probe's exclusions are memoized; tests pass their own.</summary>
+    internal LoweringProbeCache ProbeCache { get; init; } = LoweringProbeCache.Shared;
+
+    /// <summary>Slot-0 probe materializations this builder has run, across its builds.</summary>
+    internal int LoweringProbeRuns { get; private set; }
+
     /// <summary>
     ///     Builds every v2 ruleset into the shared graph: <c>for: each_player</c> rulesets register
     ///     a per-player template; the pilot lives here. Called from
@@ -106,6 +182,7 @@ public sealed partial class RuleChainBuilder
         List<CheckedRuleset> perPlayer = [];
         List<CheckedRuleset> gameScope = [];
         List<CheckedRuleset> teamScope = [];
+        List<CheckedRuleset> projectileScope = [];
         foreach (CheckedRuleset rs in rulesets)
         {
             if (rs.For == RulesetScope.EachPlayer)
@@ -116,37 +193,147 @@ public sealed partial class RuleChainBuilder
             {
                 teamScope.Add(rs);
             }
+            else if (rs.For == RulesetScope.EachProjectile)
+            {
+                projectileScope.Add(rs);
+            }
             else
             {
                 gameScope.Add(rs);
             }
-
-            // show: tables -> export defs. The metric refs are the planner's
-            // qualified {ruleset}.{stat} keys, resolved by the projector against the per-player
-            // node map (for: each_player) or the game node map (for: match, the PerMatch scope
-            // fallback). No v1 ValidateOutputs pass runs on these keys.
-            v2Outputs.AddRange(ShowLowering.LowerTables(rs));
         }
 
         if (perPlayer.Count > 0)
         {
-            BuildV2PerPlayerTemplate(perPlayer, options, graph, nodeLookup, relevantTypes,
+            BuildV2PerPlayerTemplate(perPlayer, rulesets, options, graph, nodeLookup, relevantTypes,
                 perPlayerContextRules);
         }
 
+        gameScope.RemoveAll(IsLoweringExcluded);
         if (gameScope.Count > 0)
         {
-            BuildV2GameScope(gameScope, options, graph, wiring, nodeLookup, allNodes,
+            BuildV2GameScope(gameScope, rulesets, options, graph, wiring, nodeLookup, allNodes,
                 gameNodesByRuleId, relevantTypes);
         }
 
         // After the match rulesets, so a team ruleset's use: of one resolves against its nodes.
+        teamScope.RemoveAll(IsLoweringExcluded);
         if (teamScope.Count > 0)
         {
-            BuildV2TeamScope(teamScope, options, graph, wiring, nodeLookup, allNodes,
+            BuildV2TeamScope(teamScope, rulesets, options, graph, wiring, nodeLookup, allNodes,
                 gameNodesByRuleId, relevantTypes);
         }
+
+        projectileScope.RemoveAll(IsLoweringExcluded);
+        if (projectileScope.Count > 0)
+        {
+            BuildV2ProjectileTemplate(projectileScope, rulesets, options, graph, wiring, nodeLookup,
+                gameNodesByRuleId, relevantTypes);
+        }
+
+        // show: tables -> export defs, in input order, for the rulesets that lowered. The metric refs
+        // are the planner's qualified {ruleset}.{stat} keys, resolved by the projector against the
+        // per-player node map (for: each_player) or the game node map (for: match, the PerMatch
+        // scope fallback). No v1 ValidateOutputs pass runs on these keys.
+        foreach (CheckedRuleset rs in rulesets)
+        {
+            if (!IsLoweringExcluded(rs))
+            {
+                v2Outputs.AddRange(ShowLowering.LowerTables(rs));
+            }
+        }
     }
+
+    private bool IsLoweringExcluded(CheckedRuleset rs) => _loweringExcludedIds.Contains(rs.Id.Id);
+
+    private void BeginLowering(CheckedRuleset rs)
+    {
+        _loweringRulesetId = rs.Id.Id;
+        _loweringPosition = rs.Stats.Count > 0 ? rs.Stats[0].Position
+            : rs.Highlights.Count > 0 ? rs.Highlights[0].Position
+            : default;
+    }
+
+    /// <summary>
+    ///     Records the ruleset that was lowering when <paramref name="ex" /> was thrown as a lowering
+    ///     exclusion, and every ruleset that reads it as excluded with it. False when no ruleset was
+    ///     lowering, which leaves the throw to the caller.
+    /// </summary>
+    private bool TryExcludeForLowering(InvalidOperationException ex, IReadOnlyList<CheckedRuleset> all)
+    {
+        if (_loweringRulesetId is not { } failed)
+        {
+            return false;
+        }
+
+        _loweringRulesetId = null;
+        AddLoweringExclusion(failed, BuildDiagnosticCodes.LoweringFailed, ex.Message, _loweringPosition);
+
+        Queue<string> pending = new([failed]);
+        while (pending.TryDequeue(out string? excludedId))
+        {
+            CheckedRuleset? excluded = all.FirstOrDefault(r => string.Equals(r.Id.Id, excludedId, StringComparison.Ordinal));
+            if (excluded is null)
+            {
+                continue;
+            }
+
+            foreach (CheckedRuleset reader in all)
+            {
+                if (!IsLoweringExcluded(reader) && FindReadOf(reader, excluded) is { } position)
+                {
+                    AddLoweringExclusion(reader.Id.Id, ResolveDiagnosticCodes.CrossRefUnknownRuleset,
+                        $"ruleset '{reader.Id.Id}' reads ruleset '{excludedId}', which was excluded because "
+                        + "it could not be lowered", position);
+                    pending.Enqueue(reader.Id.Id);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private void AddLoweringExclusion(string rulesetId, string code, string message, SourcePosition position)
+    {
+        _loweringExcludedIds.Add(rulesetId);
+        _loweringExclusions.Add(new ExcludedRuleset(rulesetId, position.File,
+        [
+            new RulesetCompositionDiagnostic(rulesetId, DiagnosticSeverity.Error, code, message, position)
+        ]));
+    }
+
+    // A qualified read of a member of `target`, by position of the reading stat or highlight.
+    private static SourcePosition? FindReadOf(CheckedRuleset reader, CheckedRuleset target)
+    {
+        string prefix = target.Id.Id + ".";
+        bool IsRead(IReadOnlyList<string> reads) => reads.Any(path =>
+            path.StartsWith(prefix, StringComparison.Ordinal)
+            && (target.Stats.Any(s => IsMember(path, prefix, s.StatId))
+                || target.Highlights.Any(h => IsMember(path, prefix, h.HighlightId))));
+
+        foreach (CheckedStat stat in reader.Stats)
+        {
+            if (IsRead(stat.DeclaredReads))
+            {
+                return stat.Position;
+            }
+        }
+
+        foreach (CheckedHighlight highlight in reader.Highlights)
+        {
+            if (IsRead(highlight.DeclaredReads))
+            {
+                return highlight.Position;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsMember(string path, string prefix, string member) =>
+        path.Length >= prefix.Length + member.Length
+        && string.CompareOrdinal(path, prefix.Length, member, 0, member.Length) == 0
+        && (path.Length == prefix.Length + member.Length || path[prefix.Length + member.Length] == '.');
 
     /// <summary>
     ///     Builds every <c>for: each_team</c> ruleset twice onto the shared graph, once per side (2 = T,
@@ -166,6 +353,7 @@ public sealed partial class RuleChainBuilder
     /// </summary>
     private void BuildV2TeamScope(
         IReadOnlyList<CheckedRuleset> rulesets,
+        IReadOnlyList<CheckedRuleset> all,
         RulesetCompilerOptions options,
         StateGraph graph,
         GraphWiring wiring,
@@ -178,107 +366,36 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> baseContextV2ToV1 = BuildContextV2ToV1(catalog);
 
-        foreach (int side in (int[])[2, 3])
+        // Both sides lower before either registers: a ruleset that fails on one side is retried out of both.
+        List<CheckedRuleset> active = [.. rulesets];
+        List<(int Side, List<StateNode> Nodes, GraphWiring Scope, Dictionary<string, StateNode> NodesByRuleId, StateNode Roster)> sides;
+        while (true)
         {
-            string sideName = side == 2 ? "T" : "CT";
-
-            // team.side lowers to the side itself: a constant per instance.
-            Dictionary<string, string> contextV2ToV1 = new(baseContextV2ToV1, StringComparer.Ordinal)
-            {
-                [CatalogScopeAdapter.TeamSidePath] = side.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            };
-
-            Dictionary<string, StateNode> localLookup = new(nodeLookup, StringComparer.OrdinalIgnoreCase);
-
-            // A match ruleset's qualified nodes, for a team ruleset's use: of one.
-            foreach ((string key, StateNode node) in gameNodesByRuleId)
-            {
-                if (key.Contains('.', StringComparison.Ordinal))
-                {
-                    localLookup.TryAdd(key, node);
-                }
-            }
-
-            Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
-
-            // And their hashes, which a compute's reference embeds.
-            Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(_gameStatHashes, StringComparer.Ordinal);
-            MapStatHashSource hashSource = new(statHashesByPath);
-            Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
-            List<StateNode> nodes = [];
-
-            // Collected, and registered on the graph below at the same point as before.
-            GraphWiring scope = new(_registry, wiring.Externals);
-
-            InjectB6SideAggregates(side, sideName, localLookup, nodes, scope);
-
-            IntListCaptureNode roster = new($"__slots_side_{side}", sideName);
-            nodes.Add(roster);
-            if (_playerContextIndex is { } index)
-            {
-                scope.AddEdge(new SideRosterFreezeEndEdge(localLookup["root"], index, side, roster),
-                    GraphEdgeKind.FreezeEndRoster);
-            }
-
-            _gameProvenance.Stamp(nodes, 0, RuleGraphNodeOrigin.Context, teamSide: side);
-
-            _currentPlayerTeam = null;
-            _teamSubjectSide = side;
-            _v2ConditionNodeOverlay = BuildV2ConditionOverlay(localLookup, []);
             try
             {
-                foreach (CheckedRuleset rs in rulesets)
+                sides = [];
+                foreach (int side in (int[])[2, 3])
                 {
-                    // The resolver and the show validator report both; these stay as invariants for a
-                    // caller that builds without composing.
-                    if (rs.Highlights.Count > 0)
-                    {
-                        throw new InvalidOperationException(
-                            $"ruleset '{rs.Id.Id}' is for: each_team but declares highlights — a highlight "
-                            + "is attributed to a player.");
-                    }
-
-                    if (rs.Show is { Scoreboard.Count: > 0 })
-                    {
-                        throw new InvalidOperationException(
-                            $"ruleset '{rs.Id.Id}' is for: each_team but declares show: scoreboard — a "
-                            + "scoreboard is per-player; use show: tables (per: team_round | team_match).");
-                    }
-
-                    foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind is not (RuleNodeKind.Compute or RuleNodeKind.Rate)))
-                    {
-                        int mark = nodes.Count;
-                        BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
-                            localLookup, nodes, scope, nodesByRuleId,
-                            statHashesByPath, hashSource, nodesByHash);
-                        _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
-                    }
-
-                    foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Rate))
-                    {
-                        int mark = nodes.Count;
-                        BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
-                            localLookup, nodes, scope, nodesByRuleId,
-                            statHashesByPath, hashSource, nodesByHash);
-                        _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
-                    }
-
-                    foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Compute))
-                    {
-                        int mark = nodes.Count;
-                        BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
-                            localLookup, nodes, scope, nodesByRuleId,
-                            statHashesByPath, hashSource, nodesByHash);
-                        _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
-                    }
+                    sides.Add(LowerV2TeamSide(side, active, options, views, baseContextV2ToV1, wiring,
+                        nodeLookup, gameNodesByRuleId));
                 }
-            }
-            finally
-            {
-                _v2ConditionNodeOverlay = null;
-                _teamSubjectSide = null;
-            }
 
+                break;
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (!TryExcludeForLowering(ex, all))
+                {
+                    throw;
+                }
+
+                active.RemoveAll(IsLoweringExcluded);
+            }
+        }
+
+        foreach ((int side, List<StateNode> nodes, GraphWiring scope, Dictionary<string, StateNode> nodesByRuleId,
+                     StateNode roster) in sides)
+        {
             foreach (StateNode node in nodes)
             {
                 allNodes.Add(node);
@@ -309,6 +426,136 @@ public sealed partial class RuleChainBuilder
             _teamNodesByRuleId[side] = nodesByRuleId;
             _teamRosters[side] = roster;
         }
+    }
+
+    /// <summary>Lowers the team rulesets for one side into collected nodes and wiring, registering nothing.</summary>
+    private (int Side, List<StateNode> Nodes, GraphWiring Scope, Dictionary<string, StateNode> NodesByRuleId, StateNode Roster)
+        LowerV2TeamSide(
+            int side,
+            IReadOnlyList<CheckedRuleset> rulesets,
+            RulesetCompilerOptions options,
+            Dictionary<string, CatalogView> views,
+            Dictionary<string, string> baseContextV2ToV1,
+            GraphWiring wiring,
+            Dictionary<string, StateNode> nodeLookup,
+            Dictionary<string, StateNode> gameNodesByRuleId)
+    {
+        string sideName = side == 2 ? "T" : "CT";
+
+        // team.side lowers to the side itself: a constant per instance.
+        Dictionary<string, string> contextV2ToV1 = new(baseContextV2ToV1, StringComparer.Ordinal)
+        {
+            [CatalogScopeAdapter.TeamSidePath] = side.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+
+        Dictionary<string, StateNode> localLookup = new(nodeLookup, StringComparer.OrdinalIgnoreCase);
+
+        // A match ruleset's qualified nodes, for a team ruleset's use: of one.
+        foreach ((string key, StateNode node) in gameNodesByRuleId)
+        {
+            if (key.Contains('.', StringComparison.Ordinal))
+            {
+                localLookup.TryAdd(key, node);
+            }
+        }
+
+        Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
+
+        // And their hashes, which a compute's reference embeds.
+        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(_gameStatHashes, StringComparer.Ordinal);
+        MapStatHashSource hashSource = new(statHashesByPath);
+        Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
+        List<StateNode> nodes = [];
+
+        // Collected, and registered on the graph by the caller.
+        GraphWiring scope = new(_registry, wiring.Externals);
+
+        InjectB6SideAggregates(side, sideName, localLookup, nodes, scope);
+
+        IntListCaptureNode roster = new($"__slots_side_{side}", sideName);
+        nodes.Add(roster);
+        if (_playerContextIndex is { } index)
+        {
+            scope.AddEdge(new SideRosterFreezeEndEdge(localLookup["root"], index, side, roster),
+                GraphEdgeKind.FreezeEndRoster);
+        }
+
+        _gameProvenance.Stamp(nodes, 0, RuleGraphNodeOrigin.Context, teamSide: side);
+
+        _currentPlayerTeam = null;
+        _teamSubjectSide = side;
+        Dictionary<string, object> overlay = BuildV2ConditionOverlay(localLookup, [])!;
+        _v2ConditionNodeOverlay = overlay;
+
+        // A team.* read lowers to the spec name, which names this side's instance here. The instance
+        // name itself carries '@', which the expression tokenizer does not read.
+        foreach (ProviderSpec spec in BuiltinProviderSpecs.TeamSpecs)
+        {
+            if (_entityContextNodes?.GetValueOrDefault(GenericSideFieldProvider.InstanceName(spec.Name, side)) is { } sideNode)
+            {
+                localLookup[spec.Name] = sideNode;
+                overlay[spec.Name] = sideNode;
+            }
+        }
+        try
+        {
+            foreach (CheckedRuleset rs in rulesets)
+            {
+                BeginLowering(rs);
+
+                // The resolver and the show validator report both; these stay as invariants for a
+                // caller that builds without composing.
+                if (rs.Highlights.Count > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"ruleset '{rs.Id.Id}' is for: each_team but declares highlights: a highlight "
+                        + "is attributed to a player.");
+                }
+
+                if (rs.Show is { Scoreboard.Count: > 0 })
+                {
+                    throw new InvalidOperationException(
+                        $"ruleset '{rs.Id.Id}' is for: each_team but declares show: scoreboard; a "
+                        + "scoreboard is per-player; use show: tables (per: team_round | team_match).");
+                }
+
+                foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind is not (RuleNodeKind.Compute or RuleNodeKind.Rate)))
+                {
+                    int mark = nodes.Count;
+                    BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
+                        localLookup, nodes, scope, nodesByRuleId,
+                        statHashesByPath, hashSource, nodesByHash);
+                    _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
+                }
+
+                foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Rate))
+                {
+                    int mark = nodes.Count;
+                    BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
+                        localLookup, nodes, scope, nodesByRuleId,
+                        statHashesByPath, hashSource, nodesByHash);
+                    _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
+                }
+
+                foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind == RuleNodeKind.Compute))
+                {
+                    int mark = nodes.Count;
+                    BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, sideName,
+                        localLookup, nodes, scope, nodesByRuleId,
+                        statHashesByPath, hashSource, nodesByHash);
+                    _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId, side);
+                }
+            }
+
+            _loweringRulesetId = null;
+        }
+        finally
+        {
+            _v2ConditionNodeOverlay = null;
+            _teamSubjectSide = null;
+        }
+
+        return (side, nodes, scope, nodesByRuleId, roster);
     }
 
     /// <summary>
@@ -346,6 +593,281 @@ public sealed partial class RuleChainBuilder
     }
 
     /// <summary>
+    ///     Registers the <see cref="ProjectileNodeTemplate" /> that materializes every
+    ///     <c>for: each_projectile</c> ruleset for one projectile. Trial-materializes once at build so
+    ///     a ruleset that fails to lower is excluded here, as the per-player probe does, rather than
+    ///     on the first <c>projectile_created</c> of the run.
+    /// </summary>
+    private void BuildV2ProjectileTemplate(
+        IReadOnlyList<CheckedRuleset> rulesets,
+        IReadOnlyList<CheckedRuleset> all,
+        RulesetCompilerOptions options,
+        StateGraph graph,
+        GraphWiring wiring,
+        Dictionary<string, StateNode> nodeLookup,
+        Dictionary<string, StateNode> gameNodesByRuleId,
+        HashSet<Type> relevantTypes)
+    {
+        CatalogRoot catalog = CatalogResource.Load();
+        Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
+
+        // A projectile.* read lowers to the instance's pull node, keyed like a singleton provider so
+        // the compiler's entity.* branch resolves it through the condition overlay.
+        Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
+        foreach ((string member, _) in CatalogScopeAdapter.ProjectileMembers)
+        {
+            contextV2ToV1[$"{CatalogScopeAdapter.ProjectileRoot}.{member}"] = ProjectileMemberNodes.Key(member);
+        }
+
+        List<CheckedRuleset> active = [.. rulesets];
+        Func<ProjectileRow, int, ProjectileNodeTemplate.MaterializedProjectile> factory =
+            CreateV2ProjectileFactory(active, options, views, contextV2ToV1, wiring.Externals, nodeLookup, gameNodesByRuleId);
+
+        // Without the scanner a thrower read throws on any shape; that build keeps the late failure.
+        bool canProbe = _entityScanner is not null || !active.Any(HasEntityReads);
+        ProjectileRow probe = new(0, 0, GrenadeProjectileClasses.Smoke, 0, 2, Vector3.Zero, Vector3.Zero, Vector3.Zero,
+            0, 0, null, null);
+        while (canProbe && active.Count > 0)
+        {
+            try
+            {
+                _ = factory(probe, 0);
+                break;
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (!TryExcludeForLowering(ex, all))
+                {
+                    throw;
+                }
+
+                active.RemoveAll(IsLoweringExcluded);
+                factory = CreateV2ProjectileFactory(active, options, views, contextV2ToV1, wiring.Externals, nodeLookup,
+                    gameNodesByRuleId);
+            }
+        }
+
+        if (active.Count == 0)
+        {
+            return;
+        }
+
+        graph.AddProjectileTemplate(new ProjectileNodeTemplate(factory));
+
+        // The scanner compares consecutive rows only for a build that reads the member.
+        if (_entityScanner is not null && active.Any(rs => rs.Stats.Any(s =>
+                s.DeclaredReads.Contains(CatalogScopeAdapter.ProjectileRoot + ".last_moved_tick", StringComparer.Ordinal))))
+        {
+            _entityScanner.Projectiles.TrackMovement = true;
+        }
+
+        // The lifecycle events materialize and release the instances whatever the stats trigger on.
+        relevantTypes.Add(typeof(ProjectileCreatedEvent));
+        relevantTypes.Add(typeof(ProjectileRemovedEvent));
+        foreach (CheckedRuleset rs in active)
+        {
+            foreach (CheckedStat stat in rs.Stats)
+            {
+                foreach (string ev in stat.ConcreteEvents)
+                {
+                    if (_registry.TryResolve(ev, out Type type))
+                    {
+                        relevantTypes.Add(type);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     The projectile template factory over <paramref name="rulesets" />: one instance's nodes and
+    ///     edges, lowered like a team side's with the projectile as the subject and the thrower's slot
+    ///     as the player slot a <c>thrower.*</c> read binds to.
+    /// </summary>
+    private Func<ProjectileRow, int, ProjectileNodeTemplate.MaterializedProjectile> CreateV2ProjectileFactory(
+        IReadOnlyList<CheckedRuleset> rulesets,
+        RulesetCompilerOptions options,
+        Dictionary<string, CatalogView> views,
+        Dictionary<string, string> contextV2ToV1,
+        GraphExternals externals,
+        Dictionary<string, StateNode> parentNodeLookup,
+        Dictionary<string, StateNode> gameNodesByRuleId)
+    {
+        // The lookup every instance starts from: the graph's nodes plus a match ruleset's
+        // qualified nodes, for a projectile ruleset's use: of one. Copied once here, not per grenade.
+        Dictionary<string, StateNode> baseLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
+        foreach ((string key, StateNode node) in gameNodesByRuleId)
+        {
+            if (key.Contains('.', StringComparison.Ordinal))
+            {
+                baseLookup.TryAdd(key, node);
+            }
+        }
+
+        ProjectileLoweringCache cache = new();
+        return (row, firstSeenTick) =>
+        {
+            // Hundreds of instances a demo, each edge firing a few times: interpretation beats a
+            // JIT compile per instance.
+            bool interpret = ExpressionCompiler.Interpret;
+            ExpressionCompiler.Interpret = true;
+            _projectileCache = cache;
+            try
+            {
+                return LowerV2Projectile(row, firstSeenTick, rulesets, options, views, contextV2ToV1, externals, baseLookup);
+            }
+            finally
+            {
+                ExpressionCompiler.Interpret = interpret;
+                _projectileCache = null;
+            }
+        };
+    }
+
+    private ProjectileNodeTemplate.MaterializedProjectile LowerV2Projectile(
+        ProjectileRow row,
+        int firstSeenTick,
+        IReadOnlyList<CheckedRuleset> rulesets,
+        RulesetCompilerOptions options,
+        Dictionary<string, CatalogView> views,
+        Dictionary<string, string> contextV2ToV1,
+        GraphExternals externals,
+        Dictionary<string, StateNode> baseLookup)
+    {
+        ProjectileInstanceState state = new(_entityScanner, row, firstSeenTick);
+        string subtitle = $"{ProjectileGrenadeName.Of(row.ClassName)} {row.EntityIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                          + $":{row.Serial.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+        ProjectileLoweringCache cache = _projectileCache!;
+        bool trial = cache.Lookup is null;
+        Dictionary<string, StateNode> localLookup;
+        Dictionary<string, object> overlay;
+        if (trial)
+        {
+            localLookup = new Dictionary<string, StateNode>(baseLookup, StringComparer.OrdinalIgnoreCase);
+            overlay = BuildV2ConditionOverlay(localLookup, [])!;
+            cache.Lookup = localLookup;
+            cache.Overlay = overlay;
+            cache.BaseCount = localLookup.Count;
+            cache.BaseOverlayCount = overlay.Count;
+            cache.Hashes = new Dictionary<string, ReadOnlyMemory<byte>>(_gameStatHashes, StringComparer.Ordinal);
+            cache.HashSource = new MapStatHashSource(cache.Hashes);
+        }
+        else
+        {
+            localLookup = cache.Lookup!;
+            overlay = cache.Overlay!;
+        }
+
+        Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = cache.Hashes!;
+        MapStatHashSource hashSource = cache.HashSource!;
+        Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
+        List<StateNode> nodes = [];
+        GraphWiring scope = new(_registry, externals);
+
+        _currentPlayerTeam = null;
+        _teamSubjectSide = null;
+        _projectileSubject = (row.EntityIndex, row.Serial);
+        _v2ConditionNodeOverlay = overlay;
+        foreach ((string member, _) in CatalogScopeAdapter.ProjectileMembers)
+        {
+            string key = ProjectileMemberNodes.Key(member);
+            StateNode pull = ProjectileMemberNodes.Create(member, ProjectileMemberNodes.NodeName(member), subtitle, state);
+            localLookup[key] = pull;
+            overlay[key] = pull;
+        }
+
+        try
+        {
+            foreach (CheckedRuleset rs in rulesets)
+            {
+                BeginLowering(rs);
+
+                // The resolver reports both; these stay as invariants for a caller that builds
+                // without composing.
+                if (rs.Highlights.Count > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"ruleset '{rs.Id.Id}' is for: each_projectile but declares highlights: a highlight "
+                        + "is attributed to a player.");
+                }
+
+                if (rs.Show is { Scoreboard.Count: > 0 })
+                {
+                    throw new InvalidOperationException(
+                        $"ruleset '{rs.Id.Id}' is for: each_projectile but declares show: scoreboard; a "
+                        + "scoreboard is per-player; use show: tables (per: projectile).");
+                }
+
+                foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind is not (RuleNodeKind.Compute or RuleNodeKind.Rate)))
+                {
+                    BuildV2Stat(rs, stat, options, views, contextV2ToV1, row.ThrowerSlot, subtitle,
+                        localLookup, nodes, scope, nodesByRuleId, statHashesByPath, hashSource, nodesByHash);
+                }
+
+                foreach (CheckedStat stat in rs.Stats.Where(s => s.Kind is RuleNodeKind.Compute or RuleNodeKind.Rate))
+                {
+                    BuildV2Stat(rs, stat, options, views, contextV2ToV1, row.ThrowerSlot, subtitle,
+                        localLookup, nodes, scope, nodesByRuleId, statHashesByPath, hashSource, nodesByHash);
+                }
+            }
+
+            _loweringRulesetId = null;
+        }
+        finally
+        {
+            _v2ConditionNodeOverlay = null;
+            _projectileSubject = null;
+            _projectileEdgeBinding = null;
+            if (trial)
+            {
+                cache.InstanceKeys = localLookup.Keys.Where(k => !baseLookup.ContainsKey(k)).ToList();
+                cache.InstanceOverlayKeys = CatalogScopeAdapter.ProjectileMembers.Select(m => ProjectileMemberNodes.Key(m.Member)).ToList();
+            }
+
+            foreach (string key in cache.InstanceKeys)
+            {
+                localLookup.Remove(key);
+            }
+
+            foreach (string key in cache.InstanceOverlayKeys)
+            {
+                overlay.Remove(key);
+            }
+        }
+
+        if (localLookup.Count != cache.BaseCount || overlay.Count != cache.BaseOverlayCount)
+        {
+            throw new InvalidOperationException(
+                "a for: each_projectile instance lowered a key its trial did not; the shared lookup would carry it into the next grenade");
+        }
+
+        return new ProjectileNodeTemplate.MaterializedProjectile(
+            row.EntityIndex, row.Serial, row.ClassName, row.ThrowerSlot, nodes, scope.Edges, scope.Descriptors,
+            nodesByRuleId, scope.RisingEdgeActions.Count > 0 ? scope.RisingEdgeActions : null);
+    }
+
+    /// <summary>Seeds a fresh value node from a pull node's current value, the <c>keep: first</c> of a bare read.</summary>
+    private static void SeedValueNode(StateNode node, StateNode pull)
+    {
+        switch (node)
+        {
+            case GenericValueNode<int> i:
+                i.SetValue((int)(pull.GetNumericValue() ?? 0));
+                break;
+            case GenericValueNode<double> d:
+                d.SetValue(pull.GetNumericValue() ?? double.NaN);
+                break;
+            case GenericValueNode<string> s:
+                s.SetValue(pull.GetDisplayValue() ?? "");
+                break;
+            default:
+                throw new InvalidOperationException($"node '{node.Name}' cannot be seeded from '{pull.Name}'.");
+        }
+    }
+
+    /// <summary>
     ///     Builds every <c>for: match</c> (game-scoped) v2 ruleset directly onto the shared graph —
     ///     one node per stat, not a per-player template. A match-scoped stat has <b>no subject</b>: the
     ///     resolver already suppresses the view's per-player actor binding
@@ -370,6 +892,7 @@ public sealed partial class RuleChainBuilder
     /// </summary>
     private void BuildV2GameScope(
         IReadOnlyList<CheckedRuleset> rulesets,
+        IReadOnlyList<CheckedRuleset> all,
         RulesetCompilerOptions options,
         StateGraph graph,
         GraphWiring wiring,
@@ -382,98 +905,28 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
 
-        // The B6 subject-relative aggregate v2 paths (round.team.* / round.enemies.* / round.alive.*):
-        // legal in an each_player ruleset (subject = the materialized slot) but meaningless at match
-        // scope (no subject) — rejected below rather than bound to a phantom slot.
-        HashSet<string> subjectRelativePaths =
-            new(B6RuleIds.Members.Select(m => m.V2Name), StringComparer.Ordinal);
-
-        // Game scope has no subject: no per-player team, no per-player condition overlay. The stats
-        // materialize once (sentinel slot 0, null player name — both unreferenced because the actor
-        // binding is suppressed and player.* reads are resolve-rejected).
-        _currentPlayerTeam = null;
-        _v2ConditionNodeOverlay = null;
-
-        // Shared across every game ruleset in this build (mirrors the per-player template's shared
-        // maps): one localLookup seeded from the game node map (so root + game contexts resolve), one
-        // resolved-identity dedup + reference-hash space, and one {ruleset}.{stat} map for cross-ruleset
-        // (D11a) reads and the configured-output projector.
-        Dictionary<string, StateNode> localLookup = new(nodeLookup, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(StringComparer.Ordinal);
-        MapStatHashSource hashSource = new(statHashesByPath);
-        Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
-
-        List<StateNode> nodes = [];
-
-        // Collected, and registered on the graph below at the same point as before.
-        GraphWiring scope = new(_registry, wiring.Externals);
-
-        foreach (CheckedRuleset rs in rulesets)
+        // A failed ruleset leaves partial nodes and dedup entries behind, so the scope lowers again without it.
+        List<CheckedRuleset> active = [.. rulesets];
+        List<StateNode> nodes;
+        GraphWiring scope;
+        Dictionary<string, StateNode> nodesByRuleId;
+        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath;
+        while (true)
         {
-            // A match ruleset cannot surface a per-player scoreboard; a highlight is per-round rising-edge
-            // attribution the game path does not yet lower. Both fail loud (design gaps, not silent drops).
-            if (rs.Show is { Scoreboard.Count: > 0 })
+            try
             {
-                throw new InvalidOperationException(
-                    $"ruleset '{rs.Id.Id}' is for: match but declares show: scoreboard — a scoreboard is "
-                    + "per-player; use show: tables (per: match) for a match ruleset.");
+                (nodes, scope, nodesByRuleId, statHashesByPath) =
+                    LowerV2GameScope(active, options, views, contextV2ToV1, wiring, nodeLookup);
+                break;
             }
-
-            if (rs.Highlights.Count > 0)
+            catch (InvalidOperationException ex)
             {
-                throw new InvalidOperationException(
-                    $"ruleset '{rs.Id.Id}' is for: match but declares highlights — game-scoped highlight "
-                    + "lowering (match-level timeline attribution) is not yet wired.");
-            }
-
-            foreach (CheckedStat stat in rs.Stats)
-            {
-                RejectSubjectRelativeReads(rs, stat, subjectRelativePaths);
-            }
-
-            // Same build order as the per-player template: compute + rate deferred so their sibling/bucket
-            // reads are in localLookup + the reference-hash space first.
-            foreach (CheckedStat stat in rs.Stats)
-            {
-                if (stat.Kind is RuleNodeKind.Compute or RuleNodeKind.Rate)
+                if (!TryExcludeForLowering(ex, all))
                 {
-                    continue;
+                    throw;
                 }
 
-                int mark = nodes.Count;
-                BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
-                    localLookup, nodes, scope, nodesByRuleId,
-                    statHashesByPath, hashSource, nodesByHash);
-                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
-            }
-
-            foreach (CheckedStat stat in rs.Stats)
-            {
-                if (stat.Kind != RuleNodeKind.Rate)
-                {
-                    continue;
-                }
-
-                int mark = nodes.Count;
-                BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
-                    localLookup, nodes, scope, nodesByRuleId,
-                    statHashesByPath, hashSource, nodesByHash);
-                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
-            }
-
-            foreach (CheckedStat stat in rs.Stats)
-            {
-                if (stat.Kind != RuleNodeKind.Compute)
-                {
-                    continue;
-                }
-
-                int mark = nodes.Count;
-                BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
-                    localLookup, nodes, scope, nodesByRuleId,
-                    statHashesByPath, hashSource, nodesByHash);
-                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+                active.RemoveAll(IsLoweringExcluded);
             }
         }
 
@@ -525,6 +978,118 @@ public sealed partial class RuleChainBuilder
         }
     }
 
+    /// <summary>Lowers the match rulesets into collected nodes and wiring, registering nothing.</summary>
+    private (List<StateNode> Nodes, GraphWiring Scope, Dictionary<string, StateNode> NodesByRuleId,
+        Dictionary<string, ReadOnlyMemory<byte>> StatHashesByPath) LowerV2GameScope(
+            IReadOnlyList<CheckedRuleset> rulesets,
+            RulesetCompilerOptions options,
+            Dictionary<string, CatalogView> views,
+            Dictionary<string, string> contextV2ToV1,
+            GraphWiring wiring,
+            Dictionary<string, StateNode> nodeLookup)
+    {
+        // The B6 subject-relative aggregate v2 paths (round.team.* / round.enemies.* / round.alive.*):
+        // legal in an each_player ruleset (subject = the materialized slot) but meaningless at match
+        // scope (no subject) — rejected below rather than bound to a phantom slot.
+        HashSet<string> subjectRelativePaths =
+            new(B6RuleIds.Members.Select(m => m.V2Name), StringComparer.Ordinal);
+
+        // Game scope has no subject: no per-player team, no per-player condition overlay. The stats
+        // materialize once (sentinel slot 0, null player name — both unreferenced because the actor
+        // binding is suppressed and player.* reads are resolve-rejected).
+        _currentPlayerTeam = null;
+        _v2ConditionNodeOverlay = null;
+
+        // Shared across every game ruleset in this build (mirrors the per-player template's shared
+        // maps): one localLookup seeded from the game node map (so root + game contexts resolve), one
+        // resolved-identity dedup + reference-hash space, and one {ruleset}.{stat} map for cross-ruleset
+        // (D11a) reads and the configured-output projector.
+        Dictionary<string, StateNode> localLookup = new(nodeLookup, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, StateNode> nodesByRuleId = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath = new(StringComparer.Ordinal);
+        MapStatHashSource hashSource = new(statHashesByPath);
+        Dictionary<string, StateNode> nodesByHash = new(StringComparer.Ordinal);
+
+        List<StateNode> nodes = [];
+
+        // Collected, and registered on the graph by the caller.
+        GraphWiring scope = new(_registry, wiring.Externals);
+
+        foreach (CheckedRuleset rs in rulesets)
+        {
+            BeginLowering(rs);
+
+            // A match ruleset cannot surface a per-player scoreboard; a highlight is per-round rising-edge
+            // attribution the game path does not yet lower. Both fail loud (design gaps, not silent drops).
+            if (rs.Show is { Scoreboard.Count: > 0 })
+            {
+                throw new InvalidOperationException(
+                    $"ruleset '{rs.Id.Id}' is for: match but declares show: scoreboard — a scoreboard is "
+                    + "per-player; use show: tables (per: match) for a match ruleset.");
+            }
+
+            if (rs.Highlights.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"ruleset '{rs.Id.Id}' is for: match but declares highlights — game-scoped highlight "
+                    + "lowering (match-level timeline attribution) is not yet wired.");
+            }
+
+            foreach (CheckedStat stat in rs.Stats)
+            {
+                _loweringPosition = stat.Position;
+                RejectSubjectRelativeReads(rs, stat, subjectRelativePaths);
+            }
+
+            // Same build order as the per-player template: compute + rate deferred so their sibling/bucket
+            // reads are in localLookup + the reference-hash space first.
+            foreach (CheckedStat stat in rs.Stats)
+            {
+                if (stat.Kind is RuleNodeKind.Compute or RuleNodeKind.Rate)
+                {
+                    continue;
+                }
+
+                int mark = nodes.Count;
+                BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
+                    localLookup, nodes, scope, nodesByRuleId,
+                    statHashesByPath, hashSource, nodesByHash);
+                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+            }
+
+            foreach (CheckedStat stat in rs.Stats)
+            {
+                if (stat.Kind != RuleNodeKind.Rate)
+                {
+                    continue;
+                }
+
+                int mark = nodes.Count;
+                BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
+                    localLookup, nodes, scope, nodesByRuleId,
+                    statHashesByPath, hashSource, nodesByHash);
+                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+            }
+
+            foreach (CheckedStat stat in rs.Stats)
+            {
+                if (stat.Kind != RuleNodeKind.Compute)
+                {
+                    continue;
+                }
+
+                int mark = nodes.Count;
+                BuildV2Stat(rs, stat, options, views, contextV2ToV1, GameScopeSlot, GameScopePlayerName,
+                    localLookup, nodes, scope, nodesByRuleId,
+                    statHashesByPath, hashSource, nodesByHash);
+                _gameProvenance.StampRule(nodes, mark, rs.Id.Id, stat.StatId, nodesByRuleId);
+            }
+        }
+
+        _loweringRulesetId = null;
+        return (nodes, scope, nodesByRuleId, statHashesByPath);
+    }
+
     /// <summary>
     ///     The planner's v2 path → v1 node-name table: every catalog context (<c>round.number</c> →
     ///     <c>round_number</c>, <c>player.survived</c> → <c>survived</c>, the B6 members) and every
@@ -547,7 +1112,7 @@ public sealed partial class RuleChainBuilder
         foreach (CatalogProvider provider in catalog.Providers)
         {
             if (provider.V2Name is { } v2
-                && string.Equals(provider.Scope, "singleton", StringComparison.Ordinal))
+                && provider.Scope is "singleton" or "perTeam")
             {
                 contextV2ToV1[v2] = provider.Name;
             }
@@ -593,6 +1158,7 @@ public sealed partial class RuleChainBuilder
         List<IEntityValueProvider> matched,
         List<IPerPlayerEntityValueProvider> perPlayerList)
     {
+        _lookBackTicks.Clear();
         if (rulesets.Count == 0)
         {
             return;
@@ -606,6 +1172,10 @@ public sealed partial class RuleChainBuilder
                 foreach (EntityProviderReference read in stat.EntityReads)
                 {
                     providerNames.Add(read.ProviderName);
+                    if (read.LookBackTicks > _lookBackTicks.GetValueOrDefault(read.ProviderName))
+                    {
+                        _lookBackTicks[read.ProviderName] = read.LookBackTicks;
+                    }
                 }
             }
 
@@ -627,7 +1197,9 @@ public sealed partial class RuleChainBuilder
         {
             foreach (IEntityValueProvider provider in _entityProviders.All)
             {
-                if (providerNames.Contains(provider.ContextName) && !matched.Contains(provider))
+                // A team.* read names the spec; both sides' instances activate, one per side build.
+                string name = provider is GenericSideFieldProvider side ? side.Spec.Name : provider.ContextName;
+                if (providerNames.Contains(name) && !matched.Contains(provider))
                 {
                     matched.Add(provider);
                 }
@@ -652,6 +1224,7 @@ public sealed partial class RuleChainBuilder
     ///     <see cref="CheckedStat" /> IR.
     /// </summary>
     /// <param name="rulesets">The per-player rulesets.</param>
+    /// <param name="all">Every ruleset in the build, for excluding the readers of one that fails to lower.</param>
     /// <param name="options">Planner options (C7 env vs constant lowering).</param>
     /// <param name="graph">The shared graph.</param>
     /// <param name="parentNodeLookup">The game-scope lookup (contexts + enrichment) the templates inherit.</param>
@@ -668,6 +1241,7 @@ public sealed partial class RuleChainBuilder
     /// </param>
     private void BuildV2PerPlayerTemplate(
         IReadOnlyList<CheckedRuleset> rulesets,
+        IReadOnlyList<CheckedRuleset> all,
         RulesetCompilerOptions options,
         StateGraph graph,
         Dictionary<string, StateNode> parentNodeLookup,
@@ -677,6 +1251,111 @@ public sealed partial class RuleChainBuilder
         CatalogRoot catalog = CatalogResource.Load();
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
+
+        // Trial-materialize at slot 0 and drop the ruleset a throw is attributed to. Without entity
+        // providers an entity read throws on any shape, so that build keeps today's late failure.
+        List<CheckedRuleset> active = [.. rulesets];
+        Func<int, int, string, PerPlayerNodeTemplate.MaterializedPlayer> factory =
+            CreateV2PerPlayerFactory(active, options, views, contextV2ToV1, graph, parentNodeLookup, perPlayerContextRules);
+        bool canProbe = (_entityScanner is not null && _perPlayerEntityProviders is not null)
+                        || !active.Any(HasEntityReads);
+        UInt128? cacheKey = canProbe
+            ? LoweringProbeCache.ComputeKey(all, options, _tickRate, Profile.GetType(), _registry,
+                _entityProviders, _perPlayerEntityProviders, _visibilityEngine is not null)
+            : null;
+        if (cacheKey is { } hitKey && ProbeCache.TryGet(hitKey, out ExcludedRuleset[] cached))
+        {
+            foreach (ExcludedRuleset excluded in cached)
+            {
+                _loweringExcludedIds.Add(excluded.Id);
+                _loweringExclusions.Add(excluded);
+            }
+
+            active.RemoveAll(IsLoweringExcluded);
+            if (cached.Length > 0)
+            {
+                factory = CreateV2PerPlayerFactory(active, options, views, contextV2ToV1, graph, parentNodeLookup,
+                    perPlayerContextRules);
+            }
+
+            canProbe = false;
+        }
+
+        int exclusionsBefore = _loweringExclusions.Count;
+        bool probeCompleted = false;
+        while (canProbe && active.Count > 0)
+        {
+            try
+            {
+                LoweringProbeRuns++;
+                ExpressionCompiler.Interpret = true;
+                try
+                {
+                    _ = factory(0, 0, "probe");
+                }
+                finally
+                {
+                    ExpressionCompiler.Interpret = false;
+                }
+
+                probeCompleted = true;
+                break;
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (!TryExcludeForLowering(ex, all))
+                {
+                    break;
+                }
+
+                active.RemoveAll(IsLoweringExcluded);
+                factory = CreateV2PerPlayerFactory(active, options, views, contextV2ToV1, graph, parentNodeLookup,
+                    perPlayerContextRules);
+            }
+        }
+
+        // Excluding every ruleset is a verdict too; an unattributed throw is not.
+        if (cacheKey is { } missKey && canProbe && (probeCompleted || active.Count == 0))
+        {
+            ProbeCache.Set(missKey, [.. _loweringExclusions.Skip(exclusionsBefore)]);
+        }
+
+        if (active.Count == 0)
+        {
+            return;
+        }
+
+        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate(factory));
+
+        // Subscribe the graph to every v2 concrete event (the evaluator short-circuits others).
+        foreach (CheckedRuleset rs in active)
+        {
+            foreach (CheckedStat stat in rs.Stats)
+            {
+                foreach (string ev in stat.ConcreteEvents)
+                {
+                    if (_registry.TryResolve(ev, out Type type))
+                    {
+                        relevantTypes.Add(type);
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool HasEntityReads(CheckedRuleset rs) =>
+        rs.Stats.Any(s => s.EntityReads.Count > 0) || rs.Highlights.Any(h => h.EntityReads.Count > 0);
+
+    /// <summary>The per-player template factory over <paramref name="rulesets" />.</summary>
+    private Func<int, int, string, PerPlayerNodeTemplate.MaterializedPlayer> CreateV2PerPlayerFactory(
+        IReadOnlyList<CheckedRuleset> rulesets,
+        RulesetCompilerOptions options,
+        Dictionary<string, CatalogView> views,
+        Dictionary<string, string> contextV2ToV1,
+        StateGraph graph,
+        Dictionary<string, StateNode> parentNodeLookup,
+        IReadOnlyList<RuleDef> perPlayerContextRules)
+    {
         GraphExternals externals = _externals;
 
         // Provenance does not depend on the slot: the template makes the same nodes in the same order
@@ -684,7 +1363,7 @@ public sealed partial class RuleChainBuilder
         // materialisation and shared by every later one.
         IReadOnlyList<NodeProvenance>? sharedProvenance = null;
 
-        graph.AddPerPlayerTemplate(new PerPlayerNodeTemplate((slot, _, playerName) =>
+        return (slot, _, playerName) =>
         {
             Dictionary<string, StateNode> localLookup = new(parentNodeLookup, StringComparer.OrdinalIgnoreCase);
             List<StateNode> nodes = [];
@@ -728,6 +1407,7 @@ public sealed partial class RuleChainBuilder
             // pass below because it needs a written node + the entity digest.
             InjectB6AliveAggregates(slot, playerName, localLookup, nodes, scope);
             InjectB6EconomyAggregates(slot, playerName, localLookup, nodes, scope);
+            (PlayerTeamNode Live, StateNode Round)? teamNodes = InjectPlayerTeam(slot, playerName, localLookup, nodes, scope);
             provenance?.Stamp(nodes, 0, RuleGraphNodeOrigin.Context);
 
             // Gap G1 (event-gated per-player aggregate reads): expose THIS slot's per-player context
@@ -740,6 +1420,7 @@ public sealed partial class RuleChainBuilder
             {
                 foreach (CheckedRuleset rs in rulesets)
                 {
+                    BeginLowering(rs);
                     foreach (CheckedStat stat in rs.Stats)
                     {
                         // compute: builds LAST (mirror v1's deferredExpressions in BuildPerPlayerTemplate):
@@ -785,6 +1466,7 @@ public sealed partial class RuleChainBuilder
                     foreach (CheckedHighlight highlight in rs.Highlights)
                     {
                         int mark = nodes.Count;
+                        _loweringPosition = highlight.Position;
                         BuildV2Highlight(rs, highlight, slot, playerName, contextV2ToV1, localLookup, nodes, scope,
                             graph.HighlightSink, nodesByRuleId);
                         provenance?.StampRule(nodes, mark, rs.Id.Id, highlight.HighlightId, nodesByRuleId,
@@ -832,6 +1514,8 @@ public sealed partial class RuleChainBuilder
                     // in the same template can't cross-bind a column).
                     columns.AddRange(ShowLowering.LowerScoreboard(rs, nodesByRuleId));
                 }
+
+                _loweringRulesetId = null;
             }
             finally
             {
@@ -851,24 +1535,11 @@ public sealed partial class RuleChainBuilder
                 LiveComputes: scope.LiveComputes.Count > 0 ? scope.LiveComputes : null,
                 ContextRisingEdgeActions: scope.ContextRisingEdgeActions.Count > 0 ? scope.ContextRisingEdgeActions : null)
             {
-                Provenance = sharedProvenance ??= provenance!.Aligned(nodes)
+                Provenance = sharedProvenance ??= provenance!.Aligned(nodes),
+                TeamNode = teamNodes?.Live,
+                RoundTeamNode = teamNodes?.Round
             };
-        }));
-
-        // Subscribe the graph to every v2 concrete event (the evaluator short-circuits others).
-        foreach (CheckedRuleset rs in rulesets)
-        {
-            foreach (CheckedStat stat in rs.Stats)
-            {
-                foreach (string ev in stat.ConcreteEvents)
-                {
-                    if (_registry.TryResolve(ev, out Type type))
-                    {
-                        relevantTypes.Add(type);
-                    }
-                }
-            }
-        }
+        };
     }
 
     /// <summary>Lowers one checked stat to its node + edges (the construct→graph lowering table).</summary>
@@ -882,11 +1553,25 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath, MapStatHashSource hashSource,
         Dictionary<string, StateNode> nodesByHash)
     {
+        _loweringPosition = stat.Position;
+
         // Resolved-identity dedup (obligation 3): a hash-equal stat shares the existing node.
-        byte[] hash = V2StatHasher.Hash(stat, hashSource);
+        ProjectileLoweringCache.StatEntry? cached = _projectileCache?.Stats.GetValueOrDefault(stat);
+        if (cached is null)
+        {
+            byte[] fresh = V2StatHasher.Hash(stat, hashSource);
+            cached = new ProjectileLoweringCache.StatEntry
+            {
+                Hash = fresh, Hex = Convert.ToHexString(fresh), QualifiedId = $"{rs.Id.Id}.{stat.StatId}"
+            };
+            _projectileCache?.Stats.Add(stat, cached);
+        }
+
+        byte[] hash = cached.Hash;
+        string qualifiedId = cached.QualifiedId;
         statHashesByPath[stat.StatId] = hash;
-        statHashesByPath[$"{rs.Id.Id}.{stat.StatId}"] = hash;
-        string hex = Convert.ToHexString(hash);
+        statHashesByPath[qualifiedId] = hash;
+        string hex = cached.Hex;
         if (nodesByHash.TryGetValue(hex, out StateNode? shared))
         {
             localLookup[stat.StatId] = shared;
@@ -903,7 +1588,14 @@ public sealed partial class RuleChainBuilder
         EnsureSettleEntityPullNodes(stat, slot, playerName, localLookup, nodes, wiring);
 
         bool roundScoped = stat.Scope is ScopeAxis.PlayerRound or ScopeAxis.Round or ScopeAxis.TeamRound;
-        string? condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
+        if (!cached.ConditionKnown)
+        {
+            cached.Condition = RewriteEntityReads(BuildConditionString(rs, stat, views, contextV2ToV1, _teamSubjectSide), stat);
+            cached.ConditionKnown = true;
+        }
+
+        string? condition = cached.Condition;
+        _projectileEdgeBinding = BindsProjectile(stat) ? _projectileSubject : null;
 
         // While: gate. An entity-bearing single-comparison while: (e.g. `while: player.health > 50`) has
         // NO graph node to gate on — it is a subject-slot pre-frame entity-provider read, not a
@@ -1010,6 +1702,64 @@ public sealed partial class RuleChainBuilder
                 break;
             }
 
+            case RuleNodeKind.Capture when stat.ConcreteEvents.Count == 0 && _projectileSubject is not null:
+            {
+                // A bare projectile.* read. Kept last, the stat is the pull node itself, so the table
+                // reads the row at removal; kept first, a value node seeded here, on the frame the
+                // instance materializes.
+                string path = stat.ValueSelector!.Root is ReferenceNode reference
+                    ? reference.Path
+                    : throw new InvalidOperationException(
+                        $"stat '{rs.Id.Id}.{stat.StatId}' captures with no on: something that is not a bare projectile.* read.");
+                StateNode pull = localLookup[contextV2ToV1[path]];
+                if (stat.Keep == KeepKind.First)
+                {
+                    StateNode seeded = MakeValueNode(stat.StatId, stat.ValueType, false, playerName);
+                    SeedValueNode(seeded, pull);
+                    RegisterV2Node(seeded, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
+                }
+                else
+                {
+                    RegisterV2Node(pull, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
+                }
+
+                break;
+            }
+
+            case RuleNodeKind.Capture when stat.ConcreteEvents.Count == 0:
+            {
+                // No event to capture at: the node follows the side provider's change events, so a
+                // table reads the latest value as it samples the row. The resolver admits only a
+                // per-team read here.
+                EntityProviderReference read = stat.EntityReads.Single();
+                IEntityValueProvider? provider = _teamSubjectSide is { } side
+                    ? _entityProviders?.Get(GenericSideFieldProvider.InstanceName(read.ProviderName, side))
+                    : null;
+                if (provider is null
+                    || _entityContextNodes?.GetValueOrDefault(provider.ContextName) is not { } providerNode)
+                {
+                    throw new InvalidOperationException(
+                        $"stat '{rs.Id.Id}.{stat.StatId}' captures '{read.Path}' with no on:, and no side "
+                        + "provider backs that read in this build.");
+                }
+
+                StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
+                RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
+                Type valueType = stat.ValueType.Kind == RulesTypeKind.String ? typeof(string) : typeof(int);
+                StateEdge edge = (StateEdge)_entityChangeCopyEdgeMethod
+                    .MakeGenericMethod(provider.MarkerType, valueType)
+                    .Invoke(null, [source, node])!;
+                wiring.AddEdge(edge, GraphEdgeKind.Trigger, provider.ContextName);
+
+                // A match restart resets the node, and a value set before it (a clan name set in
+                // warmup) never changes again, so the restart re-seeds it from the provider.
+                StateEdge reseed = (StateEdge)_matchRestartReseedEdgeMethod
+                    .MakeGenericMethod(valueType)
+                    .Invoke(null, [source, node, providerNode])!;
+                wiring.AddEdge(reseed, GraphEdgeKind.Trigger, "begin_new_match", null, [providerNode]);
+                break;
+            }
+
             case RuleNodeKind.Capture when stat.Keep == KeepKind.List:
             {
                 RequireNoWhileValueGate(sourceGate, stat.StatId, "capture: keep list");
@@ -1060,7 +1810,8 @@ public sealed partial class RuleChainBuilder
                 // (v1 `value` semantics, the default) = plain set.
                 StateNode node = MakeValueNode(stat.StatId, stat.ValueType, roundScoped, playerName);
                 RegisterV2Node(node, rs, stat.StatId, localLookup, nodes, nodesByRuleId);
-                string valueExpr = RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
+                string valueExpr = cached.ValueExpr ??=
+                    RewriteEntityReads(V1ExpressionWriter.Write(stat.ValueSelector!.Root, contextV2ToV1), stat)!;
                 foreach (string ev in stat.ConcreteEvents)
                 {
                     BoolNode? guard = null;
@@ -1891,6 +2642,16 @@ public sealed partial class RuleChainBuilder
     }
 
     /// <summary>
+    ///     Whether a <c>for: each_projectile</c> instance binds this stat's edges to its own
+    ///     projectile: a projectile event fires for the instance whose entity index and serial it
+    ///     carries (<see cref="ProjectileEdgeBinding" />). Any other event is left unbound and fires
+    ///     for every live instance, as a <c>for: match</c> stat fires for the match.
+    /// </summary>
+    private static bool BindsProjectile(CheckedStat stat) =>
+        stat.ConcreteEvents.Count > 0
+        && stat.ConcreteEvents.All(e => e is "projectile_created" or "projectile_removed");
+
+    /// <summary>
     ///     The implicit subject binding a view lowers to.
     ///     <list type="bullet">
     ///         <item>
@@ -2210,6 +2971,7 @@ public sealed partial class RuleChainBuilder
             Expose(member.RuleId);
         }
 
+        Expose(PlayerTeamPath);
         Expose(B6RuleIds.TeamEquipment);
         Expose(B6RuleIds.EnemiesEquipment);
         Expose(B6RuleIds.TeamMoney);
@@ -2256,6 +3018,34 @@ public sealed partial class RuleChainBuilder
             new RoundClutchFacetNode(B6RuleIds.AliveInClutch, index, slot, playerName));
         Add(B6RuleIds.ClutchSize,
             new RoundClutchSizeNode(B6RuleIds.ClutchSize, index, slot, playerName));
+    }
+
+    // The localLookup key of the subject's PlayerTeamNode: the v2 path itself, so ResolveWhenRef, the
+    // compute remap and the declared-read resolution find it without a context-table entry.
+    private const string PlayerTeamPath = "player.team";
+
+    // The live team and the team latched at the round's freeze end, which the player_event and
+    // player_round rows report. Both null when no index exists.
+    private (PlayerTeamNode Live, StateNode Round)? InjectPlayerTeam(int slot, string? playerName,
+        Dictionary<string, StateNode> localLookup, List<StateNode> nodes, GraphWiring wiring)
+    {
+        if (_playerContextIndex is not { } index)
+        {
+            return null;
+        }
+
+        PlayerTeamNode node = new("player_team", index, slot, playerName);
+        localLookup[PlayerTeamPath] = node;
+        nodes.Add(node);
+        wiring.AddEdge(new PlayerTeamNodeEdge(localLookup["root"], node, false), GraphEdgeKind.PlayerState);
+        wiring.AddEdge(new PlayerTeamNodeEdge(localLookup["root"], node, true), GraphEdgeKind.PlayerState);
+
+        // -1 until the first freeze end the player is present for.
+        GenericRoundScopedValueNode<int> roundTeam = new("player_round_team", -1, playerName);
+        nodes.Add(roundTeam);
+        wiring.AddEdge(new PlayerRoundTeamEdge(localLookup["root"], index, slot, roundTeam),
+            GraphEdgeKind.FreezeEndRoster);
+        return (node, roundTeam);
     }
 
     /// <summary>
@@ -2721,6 +3511,18 @@ public sealed partial class RuleChainBuilder
         Func<GameEvent, bool>? cond = (Func<GameEvent, bool>?)condition;
         return new OnGameEventSetValue<TEvent, IReadOnlyList<int>>(
             source, target, evt => AppendCopy(target.Value, element(evt)), cond, declaredReads: declaredReads);
+    }
+
+    private static OnEntityChangeSetValue<TMarker, TValue> CreateEntityChangeCopyEdgeGeneric<TMarker, TValue>(
+        StateNode source, StateNode target) =>
+        new(source, (ValueNode<TValue>)target, evt => (TValue)evt.NewValue!);
+
+    private static OnGameEventSetValue<BeginNewMatchEvent, TValue> CreateMatchRestartReseedEdgeGeneric<TValue>(
+        StateNode source, StateNode target, StateNode providerNode)
+    {
+        ValueNode<TValue> from = (ValueNode<TValue>)providerNode;
+        return new OnGameEventSetValue<BeginNewMatchEvent, TValue>(
+            source, (ValueNode<TValue>)target, _ => from.Value, _ => from.IsActive, declaredReads: [providerNode]);
     }
 
     private static int[] AppendCopy(IReadOnlyList<int>? old, int item)

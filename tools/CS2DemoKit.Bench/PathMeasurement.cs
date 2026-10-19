@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text;
 using CS2DemoKit.Analysis;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Observation;
+using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.Entities;
@@ -43,14 +45,23 @@ internal static class PathMeasurement
     public const string MaterialisedReplay = "materialised-replay";
     public const string ScoreboardMaterialised = "scoreboard-materialised";
     public const string ScoreboardStream = "scoreboard-stream";
+    public const string ObserverStream = "observer-stream";
+    public const string ObserverPawnsStream = "observer-pawns-stream";
     public const string TrackerPrime = "tracker-prime";
     public const string Parse = "parse";
     public const string Materialise = "materialise";
 
     public static readonly IReadOnlyList<string> AllArms =
     [
-        FileRead, MessageScan, GameEvents, EntityReplay, MaterialisedReplay, ScoreboardMaterialised, ScoreboardStream, TrackerPrime,
-        Parse, Materialise
+        FileRead, MessageScan, GameEvents, EntityReplay, MaterialisedReplay, ScoreboardMaterialised, ScoreboardStream,
+        ObserverStream, ObserverPawnsStream, TrackerPrime, Parse, Materialise
+    ];
+
+    /// <summary>The per-pawn columns the pawn observer arm declares: what a round index reads per frame.</summary>
+    public static readonly IReadOnlyList<string> ObservedPawnProviders =
+    [
+        "entity.pawn.pos_x", "entity.pawn.pos_y", "entity.pawn.pos_z", "entity.pawn.place",
+        "entity.pawn.duck_amount", "entity.pawn.eye_pitch", "entity.pawn.eye_yaw"
     ];
 
     /// <summary>Arm pairs that must produce the same digest on the same demo.</summary>
@@ -58,6 +69,8 @@ internal static class PathMeasurement
     [
         (EntityReplay, MaterialisedReplay),
         (ScoreboardStream, ScoreboardMaterialised),
+        (ScoreboardStream, ObserverStream),
+        (ScoreboardStream, ObserverPawnsStream),
         (Parse, Materialise)
     ];
 
@@ -86,6 +99,8 @@ internal static class PathMeasurement
             MaterialisedReplay => RunMaterialisedReplay,
             ScoreboardMaterialised => RunScoreboardMaterialised,
             ScoreboardStream => RunScoreboardStream,
+            ObserverStream => RunObserverStream,
+            ObserverPawnsStream => RunObserverPawnsStream,
             TrackerPrime => RunTrackerPrime,
             Parse => RunParse,
             Materialise => RunMaterialise,
@@ -257,6 +272,7 @@ internal static class PathMeasurement
         RuleConfigLoadResult rules = LoadRules();
         ParsedDemo demo = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
         AnalysisRun run = DemoAnalysis.Run(demo, rules.Rulesets, new AnalysisOptions { MaxDegreeOfParallelism = Dop });
+        CheckProjectileLane(run);
         ArmResult result = new(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
         GC.KeepAlive(demo);
         return result;
@@ -264,13 +280,31 @@ internal static class PathMeasurement
 
     // The shipped rulesets straight off the file, snapshots off: the forward path. The
     // parallelism cap is the one knob worth sweeping here, so the environment may set it.
-    private static ArmResult RunScoreboardStream(string demoPath)
+    private static ArmResult RunScoreboardStream(string demoPath) => RunStream(demoPath, null);
+
+    // The forward path with a frame observer declaring the five projectile classes and
+    // counting the rows it is handed. The scoreboard digest must not move.
+    private static ArmResult RunObserverStream(string demoPath) =>
+        RunStream(demoPath, new CountingObserver([]));
+
+    // The same observer also declaring the seven per-pawn columns a round index reads, and
+    // reading every one for every slot on every frame.
+    private static ArmResult RunObserverPawnsStream(string demoPath) =>
+        RunStream(demoPath, new CountingObserver(
+            Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_OBSERVE") is { Length: > 0 } subset
+                ? subset.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                : ObservedPawnProviders));
+
+    private static ArmResult RunStream(string demoPath, CountingObserver? observer)
     {
         RuleConfigLoadResult rules = LoadRules();
         AnalysisOptions options = new()
         {
             MaxDegreeOfParallelism = Dop,
-            ProbeDialect = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_PROBE") != "0"
+            ProbeDialect = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_PROBE") != "0",
+            FrameObserver = observer,
+            ObservedProjectileClasses = observer is null ? [] : GrenadeProjectileClasses.All,
+            ObservedProviders = observer?.Providers ?? []
         };
         AnalysisRun run;
         if (ReadAhead > 0)
@@ -284,7 +318,57 @@ internal static class PathMeasurement
             run = DemoAnalysis.Run(demoPath, rules.Rulesets, options);
         }
 
+        if (observer is not null)
+        {
+            Console.Error.WriteLine(
+                $"observer: frames={observer.Frames} projectile rows={observer.Rows} created={observer.Created} pawn cells={observer.Cells}");
+        }
+
+        CheckProjectileLane(run);
         return new ArmResult(run.Provenance.FramesConsumed, run.Provenance.MessagesConsumed, ScoreboardDigest(run));
+    }
+
+    private sealed class CountingObserver(IReadOnlyList<string> providers) : IFrameObserver
+    {
+        // CS2DEMOKIT_PATHS_OBSERVER_READ=0 declares the columns without reading them, which
+        // separates the decode and fold cost from the read cost.
+        private readonly bool _read = Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_OBSERVER_READ") != "0";
+
+        private ObservedProvider[]? _handles;
+
+        public IReadOnlyList<string> Providers => providers;
+        public long Frames;
+        public long Rows;
+        public long Created;
+        public long Cells;
+
+        public void OnFrame(FrameView frame)
+        {
+            Frames++;
+            Rows += frame.Projectiles.Length;
+            Created += frame.Created.Length;
+            if (!_read)
+            {
+                return;
+            }
+
+            _handles ??= [.. providers.Select(frame.Provider)];
+            foreach (ObservedProvider handle in _handles)
+            {
+                bool text = handle.Kind == PawnCellKind.String;
+                for (int slot = 0; slot < 64; slot++)
+                {
+                    if (text ? frame.TryReadString(handle, slot, out _) : frame.TryReadFloat(handle, slot, out _))
+                    {
+                        Cells++;
+                    }
+                }
+            }
+        }
+
+        public void Finish()
+        {
+        }
     }
 
     // One digest worker's fixed cost: a curated tracker primed from the signon prefix and the
@@ -389,9 +473,14 @@ internal static class PathMeasurement
 
     private static int? Dop => int.TryParse(Environment.GetEnvironmentVariable("CS2DEMOKIT_PATHS_DOP"), out int dop) ? dop : null;
 
+    /// <summary>Set to make a run materialize for: each_projectile, so the WS arm carries its template cost.</summary>
+    private static bool ProjectileLane => Environment.GetEnvironmentVariable(Measurement.ProjectileLaneVariable) == "1";
+
     private static RuleConfigLoadResult LoadRules()
     {
-        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+        RuleConfigLoadResult rules = ProjectileLane
+            ? YamlConfigLoader.LoadShippedWithOverlay([(Measurement.ProjectileOverlayLabel, Measurement.ProjectileOverlayYaml)])
+            : YamlConfigLoader.LoadShippedEmbedded();
         if (!rules.Success)
         {
             throw new InvalidOperationException(
@@ -399,6 +488,19 @@ internal static class PathMeasurement
         }
 
         return rules;
+    }
+
+    /// <summary>
+    ///     A silent miss here would label a lane-off run as lane-on; <see cref="AnalysisRun.Projectiles" /> is
+    ///     populated in both capture modes, so it needs no demo and no show table.
+    /// </summary>
+    private static void CheckProjectileLane(AnalysisRun run)
+    {
+        if (ProjectileLane && run.Projectiles.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{Measurement.ProjectileLaneVariable} is set but the run materialized no projectiles");
+        }
     }
 
     /// <summary>

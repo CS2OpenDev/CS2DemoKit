@@ -37,19 +37,19 @@ public sealed record TriggerDef(
 public sealed record MatchBinding(string Key, UnaryTest Test, SourcePosition Position);
 
 /// <summary>
-///     A parsed <c>on:</c> / <c>off:</c> reference. The four forms carry distinct namespace
+///     A parsed <c>on:</c> / <c>off:</c> reference. The forms carry distinct namespace
 ///     semantics that the resolver dispatches on: a bare name is a view or a define (indistinguishable
 ///     pre-catalog), <c>raw.&lt;event&gt;</c> is a wire event with no actor convention,
-///     <c>net.&lt;Message&gt;</c> is a live net-message trigger, and <c>this</c> is the reserved
-///     self-reference.
+///     <c>net.&lt;Message&gt;</c> is a live net-message trigger, <c>cadence.&lt;id&gt;</c> is one of
+///     the ruleset's own cadences, and <c>this</c> is the reserved self-reference.
 /// </summary>
-/// <param name="Kind">Which of the four reference forms this is.</param>
+/// <param name="Kind">Which reference form this is.</param>
 /// <param name="Name">The reference name with the sigil stripped (e.g. <c>player_death</c> for <c>raw.player_death</c>).</param>
 /// <param name="Position">The document-absolute position of the reference.</param>
 public sealed record TriggerRef(TriggerRefKind Kind, string Name, SourcePosition Position);
 
 /// <summary>
-///     The four <c>on:</c> reference forms (<c>this</c> / <c>net.*</c> / <c>raw.*</c> among them).
+///     The <c>on:</c> reference forms (<c>this</c> / <c>net.*</c> / <c>raw.*</c> / <c>cadence.*</c> among them).
 /// </summary>
 public enum TriggerRefKind
 {
@@ -66,5 +66,8 @@ public enum TriggerRefKind
     Net,
 
     /// <summary>The reserved <c>this</c> self-reference.</summary>
-    This
+    This,
+
+    /// <summary><c>cadence.&lt;id&gt;</c>: one of the ruleset's own <c>cadences:</c>.</summary>
+    Cadence
 }

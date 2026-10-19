@@ -1047,6 +1047,18 @@ runs per-evaluator and synthesises `EntityChangeMessage` events (a `NetMessage`
 subclass) when registered field providers cross emission edges — the "edge
 detection" layer that lets rulesets react to entity-state changes.
 
+The scanner also carries the one seam a host has into per-frame state at the
+engine's default parallelism: `AnalysisOptions.FrameObserver`
+([`IFrameObserver`](../src/CS2DemoKit.Analysis/Observation/IFrameObserver.cs)).
+Digest workers extract what the run declared (`ObservedProviders`,
+`ObservedProjectileClasses`) beside what the rules read; the loop thread folds
+each frame's digest at the end of that frame (`EntityChangeScanner.CompleteFrame`)
+and then hands the observer a
+[`FrameView`](../src/CS2DemoKit.Analysis/Observation/FrameView.cs) over the
+folded state. No tracker is ever exposed, which is what keeps the pipelined
+producer legal: the workers own the only trackers, and the view reads the
+snapshot they fed.
+
 Plugged in via the `StateGraphEvaluator` and the YAML ruleset loader; the
 specifics are out of scope for this doc — see the `CS2DemoKit.Analysis`
 package README and [`RULES_AUTHORING.md`](RULES_AUTHORING.md).

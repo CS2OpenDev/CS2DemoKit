@@ -1,8 +1,14 @@
 #region
 
+using CS2DemoKit.Analysis.Building;
+using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Output;
+using CS2DemoKit.Analysis.Plugins;
+using CS2DemoKit.Analysis.Registry;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
+using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Parser;
 using CS2DemoKit.TestSupport;
 
@@ -79,6 +85,162 @@ public class BuildRulesetDiagnosticsTests
                 "bad_ref"
             })
             .Because("exactly the broken ruleset is excluded from the graph");
+    }
+
+    /// <summary>
+    ///     A stat whose trigger the planner cannot lower for its kind. The resolver refuses the same
+    ///     shape written as YAML, so the ruleset is built by hand: <c>Build</c> has to defend itself
+    ///     against any <see cref="CheckedRuleset" /> a caller constructs.
+    /// </summary>
+    [Test]
+    public async Task LoweringFailure_EachPlayer_IsExcludedAndSiblingsBuild()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        RuleChainBuilder builder = new(
+            EventRegistry.Build(),
+            AnalysisTarget.From(demo),
+            entityProviders: EntityValueProviderRegistry.CreateDefault(),
+            perPlayerEntityProviders: PerPlayerEntityValueProviderRegistry.CreateDefault());
+
+        CheckedRuleset streak = Resolve(demo, builder, """
+                                                       ruleset: bad_streak
+                                                       for: each_player
+                                                       stats:
+                                                         sprees:
+                                                           streak: kill
+                                                           window: 640
+                                                           min_streak: 2
+                                                           per: match
+                                                       """);
+        CheckedStat spree = streak.Stats.Single();
+        CheckedRuleset broken = streak with { Stats = [spree with { ConcreteEvents = ["CDemoFileHeader"] }] };
+        CheckedRuleset healthy = Resolve(demo, builder, """
+                                                        ruleset: healthy_player
+                                                        for: each_player
+                                                        stats:
+                                                          kills:
+                                                            count: kill
+                                                            per: round
+                                                        show:
+                                                          tables:
+                                                            kills_by_round:
+                                                              per: player_round
+                                                              columns:
+                                                                - stat: kills
+                                                        """);
+
+        BuildResult build = builder.Build([broken, healthy]);
+
+        ExcludedRuleset excluded = build.ExcludedRulesets.Single();
+        await Assert.That(excluded.Id).IsEqualTo("bad_streak");
+        RulesetCompositionDiagnostic diagnostic = excluded.Diagnostics.Single();
+        await Assert.That(diagnostic.Code).IsEqualTo(BuildDiagnosticCodes.LoweringFailed);
+        await Assert.That(diagnostic.RulesetId).IsEqualTo("bad_streak");
+        await Assert.That(diagnostic.Position).IsEqualTo(spree.Position);
+
+        AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
+        MetricTable table = run.ProjectConfiguredOutputs(demo).Single(t => t.Name == "kills_by_round");
+        await Assert.That(table.Rows.Count).IsGreaterThan(0)
+            .Because("the healthy sibling still builds and evaluates");
+    }
+
+    /// <summary>
+    ///     A subject-relative read on a <c>for: match</c> ruleset validates (it sits under the
+    ///     always-present <c>round</c> root) but only the game-scope lowering can see it has no
+    ///     subject. Composed through the facade beside a healthy ruleset.
+    /// </summary>
+    [Test]
+    public async Task LoweringFailure_Match_IsExcluded()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo());
+        RulesetDoc subjectRelative = RulesetCompositionDiagnosticsTests.Doc("bad_agg.rules.yaml", """
+            ruleset: bad_agg
+            for: match
+            stats:
+              s:
+                count: kill
+                where: round.team.alive > 0
+                per: match
+            """);
+
+        RulesetValidationResult validated = DemoAnalysis.ValidateRulesets([subjectRelative]);
+        await Assert.That(validated.Success).IsTrue()
+            .Because("this shape must get past validation, or it proves nothing about Build: "
+                     + string.Join("; ", validated.Diagnostics));
+
+        BuildResult build = DemoAnalysis.Build(demo, [subjectRelative, HealthyMatchScoped()]);
+
+        ExcludedRuleset excluded = build.ExcludedRulesets.Single();
+        await Assert.That(excluded.Id).IsEqualTo("bad_agg");
+        await Assert.That(excluded.SourceFile).IsEqualTo("bad_agg.rules.yaml");
+        RulesetCompositionDiagnostic diagnostic = excluded.Diagnostics.Single();
+        await Assert.That(diagnostic.Code).IsEqualTo(BuildDiagnosticCodes.LoweringFailed);
+        await Assert.That(diagnostic.Message).Contains("round.team.alive");
+        await Assert.That(diagnostic.Position.Line).IsGreaterThan(0);
+        await Assert.That(build.GameNodesByRuleId!.Keys.Any(k => k.StartsWith("bad_agg.", StringComparison.Ordinal)))
+            .IsFalse();
+        await Assert.That(build.GameNodesByRuleId!.ContainsKey("healthy_match.total_kills")).IsTrue();
+
+        AnalysisRun run = DemoAnalysis.Evaluate(demo, build);
+        await Assert.That(run).IsNotNull();
+    }
+
+    /// <summary>A ruleset that reads an excluded one through <c>use:</c> goes with it, under the cross-ref code.</summary>
+    [Test]
+    [Category("Unit")]
+    public async Task LoweringFailure_TakesItsReadersWithIt()
+    {
+        RulesetDoc provider = RulesetCompositionDiagnosticsTests.Doc("bad_streak.rules.yaml", """
+            ruleset: bad_streak
+            for: each_player
+            exports: [sprees]
+            stats:
+              sprees:
+                streak: kill
+                window: 640
+                min_streak: 2
+                per: match
+            """);
+        RulesetDoc reader = RulesetCompositionDiagnosticsTests.Doc("reader.rules.yaml", """
+            ruleset: reader
+            for: each_player
+            use: [bad_streak]
+            stats:
+              more:
+                compute: "bad_streak.sprees + 1"
+            """);
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        RulesetComposition.Result composed =
+            RulesetComposition.Compose([provider, reader], adapter, 64.0, "Cs2GotvProfile");
+        await Assert.That(composed.Excluded.Count).IsEqualTo(0)
+            .Because(string.Join("; ", composed.Diagnostics));
+
+        List<CheckedRuleset> rulesets = [.. composed.Rulesets.Select(rs => rs.Id.Id == "bad_streak"
+            ? rs with { Stats = [rs.Stats.Single() with { ConcreteEvents = ["CDemoFileHeader"] }] }
+            : rs)];
+
+        BuildResult build = new RuleChainBuilder(EventRegistry.Build()).Build(rulesets);
+
+        await Assert.That(build.ExcludedRulesets.Select(e => (e.Id, e.Diagnostics.Single().Code)).ToList())
+            .IsEquivalentTo(new List<(string, string)>
+            {
+                ("bad_streak", BuildDiagnosticCodes.LoweringFailed),
+                ("reader", ResolveDiagnosticCodes.CrossRefUnknownRuleset)
+            });
+        await Assert.That(build.ExcludedRulesets.Single(e => e.Id == "reader").SourceFile)
+            .IsEqualTo("reader.rules.yaml");
+        await Assert.That(build.Graph.PerPlayerTemplates.Count).IsEqualTo(0);
+    }
+
+    private static CheckedRuleset Resolve(ParsedDemo demo, RuleChainBuilder builder, string yaml)
+    {
+        RulesetDoc doc = RulesetCompositionDiagnosticsTests.Doc("probe.rules.yaml", yaml);
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        RulesetResolveResult resolved = CheckedRulesetDraft.Load(doc, adapter)
+            .Build(demo.TickRate, builder.Profile.GetType().Name);
+        return resolved.Ruleset
+               ?? throw new InvalidOperationException(
+                   "test ruleset failed to resolve: " + string.Join("; ", resolved.Diagnostics));
     }
 
     [Test]

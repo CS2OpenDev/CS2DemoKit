@@ -88,6 +88,19 @@ public static class ResolveDiagnosticCodes
     /// </summary>
     public const string ShowTableScopeMismatch = "resolve.show.table-scope-mismatch";
 
+    /// <summary>
+    ///     An event table (<c>per: player_event</c>, <c>team_event</c>, <c>match_event</c>) with no
+    ///     <c>on:</c>, or a table of any other grain that declares one.
+    /// </summary>
+    public const string ShowEventTableTrigger = "resolve.show.event-table-trigger";
+
+    /// <summary>
+    ///     An event table whose trigger fires too often to keep a row per firing: a catalog
+    ///     <c>frequencyClass</c> of <c>perTick</c> or <c>frequent</c>, or a wire event whose
+    ///     frequency was never measured. Cadences and synthesized events pass.
+    /// </summary>
+    public const string ShowEventTableFrequency = "resolve.show.event-table-frequency";
+
     /// <summary>A <c>show: scoreboard:</c> in a ruleset that is not <c>for: each_player</c>: a scoreboard is per-player.</summary>
     public const string ShowScoreboardScope = "resolve.show.scoreboard-scope";
 
@@ -97,6 +110,14 @@ public static class ResolveDiagnosticCodes
     ///     <c>round.clutch.size</c>).
     /// </summary>
     public const string TeamScopeUnsupported = "resolve.team-scope.unsupported";
+
+    /// <summary>
+    ///     Something a <c>for: each_projectile</c> ruleset cannot lower: a highlight, or a stat kind
+    ///     whose nodes outlive a message (<c>tally</c>, <c>streak</c>, <c>burst</c>, <c>bucket</c>,
+    ///     <c>rate</c>, a <c>flag:</c> with no trigger, a live <c>compute:</c>). An instance is
+    ///     released when its projectile is removed, and only plain value nodes and their edges release.
+    /// </summary>
+    public const string ProjectileScopeUnsupported = "resolve.projectile-scope.unsupported";
 
     /// <summary>
     ///     A stat kind the resolver cannot yet lower faithfully — gated loudly rather than emitting a
@@ -113,4 +134,22 @@ public static class ResolveDiagnosticCodes
     ///     alone, the sentinel is summed and the result is a plausible number rather than an error.
     /// </summary>
     public const string UngatedSentinelAggregate = "resolve.ungated-sentinel-aggregate";
+
+    /// <summary>A trigger form the stat kind cannot lower (a net message on keep list/min/max, streak, burst or bucket).</summary>
+    public const string TriggerUnsupportedForKind = "resolve.trigger.unsupported-for-kind";
+
+    /// <summary>
+    ///     A <c>while:</c> gate this trigger or kind cannot carry: a value gate on a net trigger, a
+    ///     compound gate anywhere, or a value gate on a kind without a source-gate slot.
+    /// </summary>
+    public const string WhileUnsupported = "resolve.while.unsupported";
+
+    /// <summary>
+    ///     A look-back (<c>@-N</c>) this build cannot serve: one outside a <c>where:</c> or the value
+    ///     of an event-triggered stat, or on anything but the ruleset player's per-player entity read.
+    /// </summary>
+    public const string LookBackUnsupported = "resolve.look-back.unsupported";
+
+    /// <summary>A <c>keep: list</c> element that is not int-typed.</summary>
+    public const string KeepListElementType = "resolve.keep-list.element-type";
 }

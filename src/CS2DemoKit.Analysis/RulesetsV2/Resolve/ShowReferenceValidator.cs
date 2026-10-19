@@ -1,5 +1,6 @@
 #region
 
+using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 
 #endregion
@@ -136,16 +137,24 @@ public sealed class ShowReferenceIds
 /// </summary>
 public static class ShowReferenceValidator
 {
+    /// <summary>The <c>per:</c> grain of a <c>for: each_projectile</c> ruleset's table: one row per projectile.</summary>
+    public const string ProjectileGrain = "projectile";
+
     private static readonly string[] _supportedPer =
-        ["player_round", "player_match", "match", "team_round", "team_match"];
+    [
+        "player_round", "player_match", "match", "team_round", "team_match",
+        EventTableSequence.PlayerEvent, EventTableSequence.TeamEvent, EventTableSequence.MatchEvent,
+        ProjectileGrain
+    ];
 
     /// <summary>The <c>per:</c> values each <c>for:</c> scope's tables may use.</summary>
     private static string[] PerFor(RulesetScope scope) =>
         scope switch
         {
-            RulesetScope.EachPlayer => ["player_round", "player_match"],
-            RulesetScope.EachTeam => ["team_round", "team_match"],
-            _ => ["match"]
+            RulesetScope.EachPlayer => ["player_round", "player_match", EventTableSequence.PlayerEvent],
+            RulesetScope.EachTeam => ["team_round", "team_match", EventTableSequence.TeamEvent],
+            RulesetScope.EachProjectile => [ProjectileGrain],
+            _ => ["match", EventTableSequence.MatchEvent]
         };
 
     private static string ScopeText(RulesetScope scope) =>
@@ -153,13 +162,24 @@ public static class ShowReferenceValidator
         {
             RulesetScope.EachPlayer => "each_player",
             RulesetScope.EachTeam => "each_team",
+            RulesetScope.EachProjectile => "each_projectile",
             _ => "match"
         };
 
     /// <summary>Validates <paramref name="ruleset" />'s show block.</summary>
     /// <param name="ruleset">The resolved ruleset.</param>
     /// <returns>One diagnostic per bad reference or dimension; empty when the show block is sound.</returns>
-    public static IReadOnlyList<RulesetDiagnostic> Validate(CheckedRuleset ruleset)
+    /// <remarks>Without the catalog an event table's trigger frequency is not checked.</remarks>
+    public static IReadOnlyList<RulesetDiagnostic> Validate(CheckedRuleset ruleset) => Validate(ruleset, null);
+
+    /// <summary>
+    ///     Validates <paramref name="ruleset" />'s show block, and with <paramref name="catalog" /> also
+    ///     refuses an event table whose trigger fires too often to keep a row per firing.
+    /// </summary>
+    /// <param name="ruleset">The resolved ruleset.</param>
+    /// <param name="catalog">The catalog the ruleset resolved against, or null to skip the frequency gate.</param>
+    /// <returns>One diagnostic per bad reference, dimension or trigger; empty when the show block is sound.</returns>
+    public static IReadOnlyList<RulesetDiagnostic> Validate(CheckedRuleset ruleset, CatalogRoot? catalog)
     {
         ArgumentNullException.ThrowIfNull(ruleset);
         if (ruleset.Show is not { } show)
@@ -212,6 +232,35 @@ public static class ShowReferenceValidator
                     table.Position));
             }
 
+            bool eventGrain = EventTableSequence.IsEventGrain(table.Per);
+            if (eventGrain && string.IsNullOrWhiteSpace(table.On))
+            {
+                diagnostics.Add(new RulesetDiagnostic(
+                    ResolveDiagnosticCodes.ShowEventTableTrigger,
+                    $"show: table '{table.Name}' in ruleset '{ruleset.Id.Id}' is per: {table.Per}, which needs an "
+                    + "on: trigger: one row per firing.",
+                    table.Position));
+            }
+            else if (!eventGrain && table.On is not null)
+            {
+                diagnostics.Add(new RulesetDiagnostic(
+                    ResolveDiagnosticCodes.ShowEventTableTrigger,
+                    $"show: table '{table.Name}' in ruleset '{ruleset.Id.Id}' declares on: but is per: "
+                    + $"{table.Per ?? "<missing>"}; only an event table (per: player_event | team_event | "
+                    + "match_event) takes a trigger.",
+                    table.OnPosition));
+            }
+            else if (eventGrain && catalog is not null
+                     && TooFrequent(ruleset, table, catalog) is { } frequent)
+            {
+                diagnostics.Add(new RulesetDiagnostic(
+                    ResolveDiagnosticCodes.ShowEventTableFrequency,
+                    $"show: table '{table.Name}' in ruleset '{ruleset.Id.Id}' triggers on '{table.On}', which fires "
+                    + $"'{frequent.Name}' ({frequent.Why}); an event table keeps a row per firing, so its trigger "
+                    + "must be a cadence, a synthesized event, or a wire event or view measured at most per round.",
+                    table.OnPosition));
+            }
+
             foreach (TableColumn column in table.Columns)
             {
                 if (!ids.IsCoverageSkipped(column.Stat) && !ids.Resolves(column.Stat))
@@ -226,5 +275,53 @@ public static class ShowReferenceValidator
         }
 
         return diagnostics;
+    }
+
+    // Reads the concrete events off the resolved sequence stat: a view can expand to several. A
+    // view measured through its baked filters answers for itself, before its events.
+    private static (string Name, string Why)? TooFrequent(CheckedRuleset ruleset, TableDef table, CatalogRoot catalog)
+    {
+        string id = EventTableSequence.StatId(table.Name);
+        if (ruleset.Stats.FirstOrDefault(s => s.StatId == id) is not { } sequence)
+        {
+            return null;
+        }
+
+        if (sequence.ResolvedView is { } viewName
+            && catalog.Views.FirstOrDefault(v => string.Equals(v.Name, viewName, StringComparison.Ordinal))
+                is { FrequencyClass: { } viewClass } view)
+        {
+            return viewClass switch
+            {
+                "perTick" or "frequent" => (view.Name, $"frequencyClass {viewClass}, measured through its baked filters"),
+                "unmeasured" => (view.Name, "a view whose rate was never measured"),
+                _ => null
+            };
+        }
+
+        foreach (string name in sequence.ConcreteEvents)
+        {
+            if (catalog.Events.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))
+                is { } ev)
+            {
+                if (ev.FrequencyClass is "perTick" or "frequent")
+                {
+                    return (ev.Name, $"frequencyClass {ev.FrequencyClass}");
+                }
+
+                if (ev.FrequencyClass == "unmeasured" && !ev.Synthesized)
+                {
+                    return (ev.Name, "an unmeasured wire event");
+                }
+            }
+            else if (catalog.NetMessages.FirstOrDefault(n =>
+                         string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)) is { } net
+                     && net.FrequencyClass is "perTick" or "frequent" or "unmeasured")
+            {
+                return (net.Name, $"frequencyClass {net.FrequencyClass}");
+            }
+        }
+
+        return null;
     }
 }

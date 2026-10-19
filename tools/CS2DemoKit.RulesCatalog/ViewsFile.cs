@@ -70,7 +70,25 @@ internal static class ViewsFile
         ///     <c>match:</c> block. A YAML comment in this file reaches nobody who writes a rule.
         /// </summary>
         public string? Note { get; set; }
+
+        /// <summary>
+        ///     <c>measured</c> to give the view its own frequency class, folded by <c>--measure</c>
+        ///     over the corpus through <see cref="Baked" />, which the event-table gate reads before
+        ///     the event's. Absent, the view has none and the gate reads the event's class.
+        /// </summary>
+        public string? Rate { get; set; }
     }
+
+    /// <summary>The views whose rate is measured, as <see cref="FrequencyBaseline.Measure" /> takes them.</summary>
+    public static IReadOnlyList<FrequencyBaseline.MeasuredView> MeasuredViews() =>
+        Load().Views
+            .Where(v => string.Equals(v.Value.Rate, RateMeasured, StringComparison.Ordinal))
+            .Select(v => new FrequencyBaseline.MeasuredView(v.Key, v.Value.Event ?? "", v.Value.Baked))
+            .OrderBy(v => v.Name, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>The one <c>rate:</c> value: the generator measures the view itself.</summary>
+    public const string RateMeasured = "measured";
 
     internal sealed class FacetDto
     {

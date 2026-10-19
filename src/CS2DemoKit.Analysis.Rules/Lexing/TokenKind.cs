@@ -98,7 +98,10 @@ public enum TokenKind
     Dot,
 
     /// <summary>Synthetic end-of-input marker; always the last token of a successful lex.</summary>
-    EndOfInput
+    EndOfInput,
+
+    /// <summary>A look-back suffix <c>@-N</c>; <see cref="Token.IntegerValue" /> carries N.</summary>
+    LookBack
 }
 
 /// <summary>The unit a duration literal was written in.</summary>

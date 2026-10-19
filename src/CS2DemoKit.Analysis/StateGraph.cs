@@ -34,6 +34,7 @@ public sealed class StateGraph
     private readonly List<StateEdge> _edges = [];
     private readonly List<LiveComputeRegistration> _liveComputes = [];
     private readonly List<PerPlayerNodeTemplate> _perPlayerTemplates = [];
+    private readonly List<ProjectileNodeTemplate> _projectileTemplates = [];
     private readonly List<StateNode> _ruleNodes = [];
     private List<(StateNode Node, Action Restore)>? _ruleNodeBaselines;
     private readonly Dictionary<StateNode, List<(Action Invoke, StateNode? Writes)>> _risingEdgeActions = new(ReferenceEqualityComparer.Instance);
@@ -42,6 +43,7 @@ public sealed class StateGraph
 
     internal IReadOnlyList<StateEdge> Edges => _edges;
     internal IReadOnlyList<PerPlayerNodeTemplate> PerPlayerTemplates => _perPlayerTemplates;
+    internal IReadOnlyList<ProjectileNodeTemplate> ProjectileTemplates => _projectileTemplates;
     internal IReadOnlyDictionary<StateNode, List<(Action Invoke, StateNode? Writes)>> RisingEdgeActions => _risingEdgeActions;
 
     /// <summary>
@@ -120,6 +122,16 @@ public sealed class StateGraph
     public StateGraph AddPerPlayerTemplate(PerPlayerNodeTemplate template)
     {
         _perPlayerTemplates.Add(template);
+        return this;
+    }
+
+    /// <summary>
+    ///     Adds a per-projectile node template. The evaluator materializes it on each
+    ///     <c>projectile_created</c> and releases the instance on the matching <c>projectile_removed</c>.
+    /// </summary>
+    public StateGraph AddProjectileTemplate(ProjectileNodeTemplate template)
+    {
+        _projectileTemplates.Add(template);
         return this;
     }
 

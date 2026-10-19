@@ -83,7 +83,15 @@ public sealed class EntityStateLayer
         Tracker.AdoptSchemaState(template.Tracker);
     }
 
-    private static EntityTracker BootstrapTracker() => EntityTrackerFactory.CreateCurated();
+    // Metered = false: every layer here is engine-owned (a rules run or its schema-loading
+    // template), which the analysis-side scan counter already counts once per run. See
+    // EntityTracker.Metered and docs/profiling.md.
+    private static EntityTracker BootstrapTracker()
+    {
+        EntityTracker tracker = EntityTrackerFactory.CreateCurated();
+        tracker.Metered = false;
+        return tracker;
+    }
 
     /// <summary>Applies one frame. The caller guarantees recording order.</summary>
     public void Apply(DemoFrame frame) => Tracker.AdvanceOneFrame(frame);

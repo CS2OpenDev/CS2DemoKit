@@ -51,9 +51,13 @@ public sealed record RulesetDoc(
     ShowDef? Show,
     string? CatalogVersion,
     string? MinAppVersion,
-    SourcePosition Position);
+    SourcePosition Position)
+{
+    /// <summary>The declared <c>cadences:</c>, in source order (empty when none).</summary>
+    public IReadOnlyList<CadenceDef> Cadences { get; init; } = [];
+}
 
-/// <summary>The two v2 ruleset materialization scopes (<c>for:</c>).</summary>
+/// <summary>The v2 ruleset materialization scopes (<c>for:</c>).</summary>
 public enum RulesetScope
 {
     /// <summary>Unset. Never produced by the mapper.</summary>
@@ -70,5 +74,13 @@ public enum RulesetScope
     ///     an actor view to the actor's live team, <c>round_won</c> / <c>round_lost</c> to the round's
     ///     winner, and <c>round.team.*</c> / <c>round.enemies.*</c> read relative to the side.
     /// </summary>
-    EachTeam
+    EachTeam,
+
+    /// <summary>
+    ///     <c>for: each_projectile</c>: one instance per grenade projectile, keyed by its entity index
+    ///     and serial, from <c>projectile_created</c> to <c>projectile_removed</c>. The projectile
+    ///     events bind to the instance, <c>projectile.*</c> reads its row, and <c>thrower.*</c> is a
+    ///     role handle into the thrower's per-player reads.
+    /// </summary>
+    EachProjectile
 }

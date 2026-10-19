@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Rules;
 using CS2DemoKit.Analysis.Rules.Checking;
 using CS2DemoKit.Analysis.Rules.Hashing;
+using CS2DemoKit.Analysis.RulesetsV2.Compile;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
@@ -481,5 +482,117 @@ public class RulesetV2ResolverTests
             d.Code == ResolveDiagnosticCodes.StatReferenceCycle);
         await Assert.That(cycle.Message.Contains("->", StringComparison.Ordinal)).IsTrue();
         await Assert.That(cycle.Position.Line).IsGreaterThan(0);
+    }
+
+    // ── Cadences ───────────────────────────────────────────────────────────────
+
+    private const string Cadenced = """
+                                    ruleset: round_positions
+                                    for: each_player
+                                    cadences:
+                                      second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
+                                      unused: { ticks: 32, anchor: round_freeze_end }
+                                    stats:
+                                      pos_x:
+                                        capture: event.Step
+                                        on: cadence.second
+                                        per: round
+                                      samples:
+                                        count: cadence.second
+                                        per: round
+                                      sampled_x:
+                                        capture: player.pos_x
+                                        on: cadence.second
+                                        per: round
+                                    """;
+
+    /// <summary>
+    ///     <c>cadence.&lt;id&gt;</c> lowers to the <c>cadence_tick</c> view plus a conjunct on the
+    ///     cadence's key, which carries the period in ticks (folded from <c>seconds:</c> at the build's
+    ///     tick rate), the anchor and the stop. The ruleset carries the cadences its stats use.
+    /// </summary>
+    [Test]
+    public async Task CadenceTrigger_ResolvesToSynthesizedView()
+    {
+        RulesetResolveResult result = CheckedRulesetDraft.Load(Doc(Cadenced), _adapter).Build(64.0, Gotv);
+        await Assert.That(result.Success).IsTrue().Because(string.Join("; ", result.Diagnostics));
+        CheckedRuleset rs = result.Ruleset!;
+
+        const string Key = "second:64:round_freeze_end:round_ended";
+        foreach (string id in (string[])["pos_x", "samples", "sampled_x"])
+        {
+            CheckedStat stat = Stat(rs, id);
+            await Assert.That(stat.ResolvedView).IsEqualTo("cadence_tick");
+            await Assert.That(string.Join(",", stat.ConcreteEvents)).IsEqualTo("cadence_tick");
+            await Assert.That(stat.TriggerCondition!.Root.CanonicalText).Contains("(ref event.Cadence)");
+            await Assert.That(stat.TriggerCondition!.Root.CanonicalText).Contains(Key);
+        }
+
+        await Assert.That(rs.Cadences.Count).IsEqualTo(1);
+        await Assert.That(rs.Cadences[0].Ticks).IsEqualTo(64);
+        await Assert.That(rs.Cadences[0].Seconds).IsNull();
+        await Assert.That(rs.Cadences[0].Key).IsEqualTo(Key);
+
+        CheckedRuleset fast = CheckedRulesetDraft.Load(Doc(Cadenced), _adapter).Build(128.0, Gotv).Ruleset!;
+        await Assert.That(fast.Cadences[0].Key).IsEqualTo("second:128:round_freeze_end:round_ended");
+    }
+
+    /// <summary>Two cadences that differ only in period give their stats different hashes.</summary>
+    [Test]
+    public async Task CadenceTrigger_PeriodEntersTheHash()
+    {
+        static byte[] HashOf(string ticks)
+        {
+            string yaml = $$"""
+                            ruleset: r
+                            for: each_player
+                            cadences:
+                              tick: { ticks: {{ticks}}, anchor: round_freeze_end }
+                            stats:
+                              n:
+                                count: cadence.tick
+                                per: round
+                            """;
+            CheckedStat stat = CheckedRulesetDraft.Load(Doc(yaml), _adapter).Build(64.0, Gotv).Ruleset!.Stats[0];
+            return V2StatHasher.Hash(stat,
+                new MapStatHashSource(new Dictionary<string, ReadOnlyMemory<byte>>()));
+        }
+
+        await Assert.That(Convert.ToHexString(HashOf("64"))).IsNotEqualTo(Convert.ToHexString(HashOf("32")));
+        await Assert.That(Convert.ToHexString(HashOf("64"))).IsEqualTo(Convert.ToHexString(HashOf("64")));
+    }
+
+    /// <summary>
+    ///     A <c>cadence.&lt;id&gt;</c> naming no declared cadence, and a bare <c>cadence_tick</c>
+    ///     reference (view or raw), are unknown-trigger-source errors.
+    /// </summary>
+    [Test]
+    public async Task CadenceTrigger_UnknownOrBare_IsError()
+    {
+        const string Yaml = """
+                            ruleset: r
+                            for: each_player
+                            cadences:
+                              second: { ticks: 64, anchor: round_freeze_end }
+                            stats:
+                              missing:
+                                count: cadence.minute
+                                per: round
+                              bare:
+                                count: cadence_tick
+                                per: round
+                              raw:
+                                count: raw.cadence_tick
+                                per: round
+                            """;
+
+        RulesetResolveResult result = CheckedRulesetDraft.Load(Doc(Yaml), _adapter).Build(64.0, Gotv);
+        string[] messages = result.Diagnostics
+            .Where(d => d.Code == ResolveDiagnosticCodes.UnknownTriggerSource)
+            .Select(d => d.Message)
+            .ToArray();
+        await Assert.That(messages.Length).IsEqualTo(3);
+        await Assert.That(messages.Count(m => m.Contains("cadence.<id>", StringComparison.Ordinal))).IsEqualTo(2);
+        await Assert.That(messages.Count(m => m.Contains("cadence.minute", StringComparison.Ordinal))).IsEqualTo(1);
     }
 }

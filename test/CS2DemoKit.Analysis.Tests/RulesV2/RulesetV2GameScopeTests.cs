@@ -132,11 +132,11 @@ public class RulesetV2GameScopeTests
 
     /// <summary>
     ///     A subject-relative B6 read (<c>round.team.alive</c>) type-checks at match scope (it sits
-    ///     under the always-present <c>round</c> root) but has no subject — the planner rejects it loud
-    ///     rather than binding a phantom slot-0 aggregate.
+    ///     under the always-present <c>round</c> root) but has no subject. The planner excludes the
+    ///     ruleset with a diagnostic rather than binding a phantom slot-0 aggregate.
     /// </summary>
     [Test]
-    public async Task MatchScope_SubjectRelativeRead_RejectedAtBuild()
+    public async Task MatchScope_SubjectRelativeRead_ExcludedAtBuild()
     {
         const string Yaml = """
                             ruleset: bad_agg
@@ -148,20 +148,30 @@ public class RulesetV2GameScopeTests
                                 per: match
                             """;
 
-        CheckedRuleset rs = Checked(Yaml);
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => Build(rs));
-        await Assert.That(ex.Message.Contains("round.team.alive", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(ex.Message.Contains("subject-relative", StringComparison.Ordinal)).IsTrue();
+        RulesetCompositionDiagnostic diagnostic = SingleLoweringFailure(Build(Checked(Yaml)), "bad_agg");
+        await Assert.That(diagnostic.Message.Contains("round.team.alive", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(diagnostic.Message.Contains("subject-relative", StringComparison.Ordinal)).IsTrue();
+    }
+
+    private static RulesetCompositionDiagnostic SingleLoweringFailure(BuildResult build, string rulesetId)
+    {
+        ExcludedRuleset excluded = build.ExcludedRulesets.Single();
+        if (excluded.Id != rulesetId || excluded.Diagnostics.Single().Code != BuildDiagnosticCodes.LoweringFailed)
+        {
+            throw new InvalidOperationException($"expected '{rulesetId}' excluded for lowering, got {excluded}");
+        }
+
+        return excluded.Diagnostics.Single();
     }
 
     // ── STEP 3 projection: scoreboard rejected, tables per:match → match-level output ──
 
     /// <summary>
-    ///     <c>show: scoreboard</c> is per-player and has no match-level meaning — rejected loud on a
-    ///     <c>for: match</c> ruleset (use <c>show: tables (per: match)</c> instead).
+    ///     <c>show: scoreboard</c> is per-player and has no match-level meaning, so a <c>for: match</c>
+    ///     ruleset that declares one is excluded (use <c>show: tables (per: match)</c> instead).
     /// </summary>
     [Test]
-    public async Task MatchScope_ShowScoreboard_Rejected()
+    public async Task MatchScope_ShowScoreboard_Excluded()
     {
         const string Yaml = """
                             ruleset: sb_match
@@ -175,9 +185,8 @@ public class RulesetV2GameScopeTests
                                 - stat: total_kills
                             """;
 
-        CheckedRuleset rs = Checked(Yaml);
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => Build(rs));
-        await Assert.That(ex.Message.Contains("scoreboard", StringComparison.Ordinal)).IsTrue();
+        RulesetCompositionDiagnostic diagnostic = SingleLoweringFailure(Build(Checked(Yaml)), "sb_match");
+        await Assert.That(diagnostic.Message.Contains("scoreboard", StringComparison.Ordinal)).IsTrue();
     }
 
     /// <summary>

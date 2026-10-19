@@ -490,6 +490,13 @@ session (2.49 s and 3.13 s). The retained peak heap is the `ParsedDemo` and its 
 it moves only on the small demos, where the digest array the old producer held for every frame
 was a visible share of it.
 
+**Where the fold lands (0.14.0).** The consume side used to fold frame N's per-pawn digest into
+the pre-frame snapshot at the start of frame N+1; since the frame observer it folds at the end of
+frame N (`EntityChangeScanner.CompleteFrame`, called by the evaluator after the post-frame
+block), so the observer and the next frame's first edge read the same cells. Same fold, same
+digest, one frame earlier on the loop thread; the producer is untouched. Measured under "The
+frame observer" below.
+
 **The control.** Nothing on the forward path changed in a way that should move it, and the
 single-run rows above move both ways because the default collector is bimodal on this arm (the
 base build measured 2.7 s and 3.8 s on consecutive runs of the 524 MB demo). Three rounds each,
@@ -569,6 +576,398 @@ against 136, 592, 794, 1242 and 1482), because the decode partitions are pooled 
 window's tasks where the old loop's local-init built one per task; its peak heap is within 19 MB
 of the base, collector pauses within 8 ms, and the gen2 counts are the same. Against the rows
 above, the reader's loop now decodes every frame that reaches a `ParsedDemo`.
+
+### The frame observer
+
+    commit    f6dccfc
+    runs      30 (3 rounds x 5 demos x 2 arms, compare), 45 (3 rounds x 5 demos x 3 arms, paths),
+              15 (3 rounds x 5 demos, paths, base build dop=1), zero failures, zero digest mismatches
+    load      2.45 to 5.36 throughout
+
+DemoViewer's `demos/benchmarks` set (172 to 279 MB), not the 40 to 524 MB corpus "One producer"
+and "Two decode loops" above read. Base is `a728ae3`, the version-bump commit before any
+single-walk code; it has no observer arms, so the two perf questions split across two tools.
+"Step 0" below is the baseline run taken on this 5-demo set before any of that code: `compare`
+base against base for the noise floor, and `paths` on `scoreboard-stream` at the
+default parallelism, arm (a), and at `CS2DEMOKIT_PATHS_DOP=1` with no read-ahead window, arm (c).
+
+**Nothing declared.** `compare`, cooldown dropped from the default 12 s to 5 s on both arms
+(order still flips per round, so the shorter cooldown lands on both sides alike): `eval_ms`
+medians per demo, base against this commit:
+
+| demo | size | base | this commit | delta |
+|---|---|---|---|---|
+| ...5266002_0544286934.dem | 172.3 MB | 863.7 ms | 1044.8 ms | +21.0% |
+| ...7406845372_0003771537.dem | 273.4 MB | 652.3 ms | 678.5 ms | +4.0% |
+| ...0180689112_1066991563.dem | 243.5 MB | 630.5 ms | 641.4 ms | +1.7% |
+| ...1231606001_0126308730.dem | 278.8 MB | 689.4 ms | 685.0 ms | -0.6% |
+| ...3634708_1168926414.dem | 248.7 MB | 643.6 ms | 663.3 ms | +3.1% |
+
+Median +3.1%, cumulative since `a728ae3` (every 0.14.0 change up to this hook, from the lowering
+diagnostics on, not this item alone). `frames` and `inner_messages` are equal to the base build on
+every demo in every round, so nothing structural moved. The one demo at +21% is the smallest file,
+and both builds' three rounds span it: base 541 to 974 ms, this commit 548 to 1177 ms, the same
+bimodal collector "GC configuration" above describes, not a figure that separates from its own
+round-to-round range. Step 0's own base-vs-base noise floor on this corpus (5 rounds) reads
+median 1.7%, max 4.2%; this three-round median, +3.1%, is above that floor and inside that max.
+Within noise.
+
+**The digest.** The item build's `scoreboard-stream` digest (`60F7A3ED714DA9FB`, smallest demo)
+differs from `a728ae3`'s (`56A790526144AEA6`), but a one-demo spot check at two earlier publishes
+in this branch's history, stamped `4bb9002` and `8c40eed`, both already print `60F7A3ED714DA9FB`:
+the shift happened before this item started, somewhere between `a728ae3` and `4bb9002` (the
+window includes the shot-angle rounding fix and its own golden re-pin, landed in its own commit).
+Nothing in this item's own range of commits moved it.
+
+**Projectiles and pawn reads.** `paths` has no two-build mode and the base build cannot declare
+an observer, so this is three arms on one build: `scoreboard-stream` (no observer),
+`observer-stream` (the five projectile classes declared and counted), `observer-pawns-stream`
+(the same plus the seven per-pawn columns a round index reads, for every slot, every frame,
+through `9fb4fca`'s handle reads). `--cooldown` was already 5 s, the tool's own default. Three
+rounds, arm order rotated each round (`scoreboard,observer,pawns` /
+`pawns,observer,scoreboard` / `observer,scoreboard,pawns`) so no arm always lands last and
+absorbs whatever the demo before it left behind. All three arms agreed on scoreboard digest on
+every demo in every round.
+
+**The noise control.** `scoreboard-stream` itself, no observer at all, three single-shot rounds
+per demo this session: 1678 to 2832 ms, 2125 to 2777 ms, 2928 to 3770 ms, 1896 to 3499 ms, 2331
+to 3667 ms, a 25 to 48 percent spread per demo. A delta smaller than that on this corpus, with
+this many rounds, is not separable from the collector.
+
+Paired within the same demo and round (cancels demo size and round-level drift, 15 pairs each):
+
+| arm | wall_ms median overhead vs scoreboard-stream | mean |
+|---|---|---|
+| observer-stream | -3.0% | +5.1% |
+| observer-pawns-stream | +13.0% | +15.3% |
+
+Pooled medians over all 15 samples per arm: scoreboard-stream 2788.7 ms, observer-stream
+2785.7 ms (-0.1%), observer-pawns-stream 3085.7 ms (+10.6%). Per-demo medians across the three
+rounds, then medianed over the five demos: observer-stream +5.0%, observer-pawns-stream +27.9%.
+Every reading for observer-stream (-3.0 to +5.1%) sits inside the 25 to 48 percent control
+spread above, so it is not distinguishable from noise. Every reading for observer-pawns-stream
+(+10.6, +13.0, +15.3, +27.9%) is also inside that same spread, so three rounds cannot separate
+it from noise either; the gate below is a point test on the median against the stated budget.
+
+Working set (`peak_working_set_mb` minus `size_mb`, `peak_private_mb` reads 0 on this OS):
+scoreboard-stream median 180.5 MB, observer-stream 185.9 MB (+5.4 MB), observer-pawns-stream
+197.5 MB (+17.0 MB).
+
+**Arm (c), fresh.** Step 0's dop=1 arm is cross-session, and this session's own no-observer
+`scoreboard-stream` pools 22% faster than step 0's default-parallel arm (a), so that pair alone
+does not settle this leg. Re-run this session, base build, `CS2DEMOKIT_PATHS_DOP=1`,
+`scoreboard-stream`, 3 rounds, after the item rounds above rather than interleaved with them:
+pooled median 4479 ms, within 1% of step 0's arm (c), 4510 ms; the dop=1 arm reproduces across
+sessions where the default-parallel one does not. Per-demo medians 4015, 4631, 4469, 4633 and
+4426 ms. Observer-pawns-stream's medians (3128, 2880, 3086, 2884, 3567 ms) sit 19 to 38 percent
+below arm (c) on every demo.
+
+**Gate.** Nothing declared: within noise, pass. Digest: unmoved by this item, pass. Projectiles
+only: within noise, pass. Below arm (c) (fresh, within 1% of step 0): 19 to 38 percent under on
+every demo, pass.
+Observer-pawns-stream against scoreboard-stream, budget +10%: pooled +10.6%, paired +13.0%, mean
++15.3%, per-demo +27.9%. Every aggregation reads over budget. Fails. Re-measured at `e9f4329`
+below: still fails.
+
+**Re-run after row storage recycling.**
+
+    commit    e9f4329, and d7489e3 (its parent) in the second session
+    runs      45 (session 1: 3 rounds x 5 demos x 3 arms, e9f4329 alone),
+              90 (session 2: 3 rounds x 5 demos x 3 arms x 2 builds, builds alternating which
+              goes first per round), zero failures, zero digest mismatches, digests equal
+              across the two builds on every demo
+    load      1.99 to 3.78 (session 1), 2.52 to 5.28 (session 2)
+
+The same protocol as the three-arm leg above: same demos, `--cooldown 5`, `--rounds 1` three
+times with the same three rotated arm orders. `e9f4329` pools the per-frame `PerPawnColumns` and
+projectile row storage, which a sampled trace blamed for the observer-pawns overhead.
+
+Collector counters, observer-pawns-stream minus `scoreboard-stream` paired within demo and round,
+median (range). The f6dccfc column is the leg above; session 2's `d7489e3` arm reproduces it
+(+98.0 MB, +16 gen0, +78.0 ms pause).
+
+| | f6dccfc | e9f4329, session 1 | e9f4329, session 2 |
+|---|---|---|---|
+| `alloc_mb` | +97.8 (69.4 to 113.3) | +35.3 (30.0 to 45.5) | +32.5 (27.0 to 44.4) |
+| `gen0` | +16 (11 to 20) | +4 (3 to 5) | +4 (2 to 5) |
+| `pause_ms` | +84.8 (50.7 to 99.2) | +118.2 (63.5 to 156.0) | +113.8 (76.3 to 164.4) |
+| working set, pooled median | +17.0 MB | +48.0 MB | +39.0 MB |
+| peak heap, pooled median | +15.3 MB | +73.1 MB | +71.8 MB |
+
+Allocation is down by two thirds and gen0 to a quarter, and gen1 and gen2 are back to the
+no-observer arm's medians (24 and 7 against 23 and 8; before, 33 and 12). Total pause went up
+by 30 to 36 ms and peak heap by about 57 MB, in both sessions. Why is not measured; the pool has
+no cap and keeps as many instances as were ever in flight at once, which may be the heap.
+
+Wall clock. Session 2 runs both builds against each other in the same rounds: `e9f4329` over
+`d7489e3`, paired within demo, round and arm, median -1.5% on observer-pawns-stream, +3.6% on
+observer-stream and +2.7% on `scoreboard-stream`, which declares nothing. No wall
+difference between the two builds separates from that.
+
+Observer-pawns-stream against `scoreboard-stream` at `e9f4329`, all six rounds pooled: pooled
++35.4%, paired median +29.9%, paired mean +29.0%, per-demo +27.0%. Session 1 alone reads +49.9,
++44.9, +38.4 and +48.9%; session 2 alone +5.0, +3.3, +19.6 and +3.3%. The no-observer arm's own
+rounds spread 9 to 111 percent per demo in session 1 and 17 to 66 percent at `e9f4329` in
+session 2, so a single session's three rounds can land on either side of +10%.
+Observer-pawns-stream per-demo medians over the six rounds sit 16 to 41 percent below the fresh
+arm (c) above (cross-session).
+
+Run 2 at `e9f4329`, observer-stream against `scoreboard-stream`, six rounds: pooled +24.0%, paired
+median +5.8%, paired mean +14.4%, per-demo +8.6%; working set +17.4 MB. `d7489e3` in session 2
+reads paired +4.4%, per-demo +9.3% on the same arm, so this is not a change `e9f4329` made.
+
+**Gate at `e9f4329`.** Run 3, budget +10%: over on every six-round aggregation, fails. The
+pooling removed the allocation the trace named and did not move wall clock. Run 2, budget +5%
+and +20 MB: wall over on every six-round aggregation, working set inside. Both readings are from
+a machine at load 2 to 5; neither gate is cleared, and the hook's perf gate is open.
+Re-measured at `e510a2a` in "The 0.14.0 release review" below, still over, and
+accepted for 0.14.0.
+
+### Pawn flags, throw strength, the explode tick and the coaching team
+
+The four lens-bound reads of 0.14.0: the pawn pair `player.flags` and `player.throw_strength`, the
+projectile read `projectile.explode_effect_tick`, and `player.coaching_team`. The bench names the
+first three `R7_2A` and the last `COACH` in its environment switches. `compare`, two bench commits.
+Every run in this section was measured on the named commit plus a local-feed SDK restore that
+touches `Directory.Packages.props` and `nuget.config` only, because 1.2.0 was not on nuget.org
+when these runs were taken; those overlay commits were never pushed, so the reachable commit is
+named instead.
+At `74d6071`, `CS2DEMOKIT_BENCH_R7_2A` loaded all three reads: `flags`, `throw_strength` and, on its
+own `each_projectile` ruleset so it never touches the bench's `for: each_projectile` `grenades`
+table, `projectile.explode_effect_tick`. `CS2DEMOKIT_BENCH_COACH` loaded `coaching_team`. At
+`146e75c`, `R7_2A` was split: it now loads only the pawn pair, and the explode ruleset moved to its
+own `CS2DEMOKIT_BENCH_R7_2A_EXPLODE`, left off for every run below. `eval_ms` had no row for any of
+the four reads until this session.
+
+**Cumulative against `a728ae3`, `R7_2A` and `COACH` on (`74d6071`: all three reads plus coach),
+5 rounds, demos/benchmarks:**
+
+| demo | base median | `74d6071` median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 601.0 ms | 673.3 ms | +12.0% |
+| ...7406845372_0003771537.dem | 652.3 ms | 733.3 ms | +12.4% |
+| ...0180689112_1066991563.dem | 635.9 ms | 706.3 ms | +11.1% |
+| ...1231606001_0126308730.dem | 679.0 ms | 773.6 ms | +13.9% |
+| ...3634708_1168926414.dem | 650.3 ms | 746.2 ms | +14.8% |
+
+Median +12.4%, load1 1.79 to 4.63, zero failures and zero rejected rows over 50. This is every
+0.14.0 change up to the lens pin, not the four reads alone, the same caveat the frame
+observer table above carries.
+
+**Isolated, same build, lane off against on (still `74d6071`: all four reads together), 5 rounds:**
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 1110.9 ms | 676.7 ms | -39.1% (bimodal, smallest file) |
+| ...7406845372_0003771537.dem | 711.1 ms | 785.1 ms | +10.4% |
+| ...0180689112_1066991563.dem | 700.7 ms | 776.5 ms | +10.8% |
+| ...1231606001_0126308730.dem | 744.8 ms | 810.2 ms | +8.8% |
+| ...3634708_1168926414.dem | 696.0 ms | 788.0 ms | +13.2% |
+
+Median +10.4% (the smallest file's own round-to-round spread is wider than its delta here; the
+frame observer section above reads the same file the same way). This number is all four reads
+together and does not split them.
+
+**Isolated, split by item, `146e75c`, 3 rounds, cooldown 5s.**
+`CS2DEMOKIT_BENCH_R7_2A_EXPLODE` stayed off on both arms below, so the explode tick's own
+`each_projectile` cost is not in either table, and the cost of the `for: each_projectile` scope it
+reads under is not measured here; "The 0.14.0 release review" below measures the scope.
+
+The pawn pair, `flags` and `throw_strength`:
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 638.2 ms | 815.1 ms | +27.7% |
+| ...7406845372_0003771537.dem | 695.1 ms | 766.6 ms | +10.3% |
+| ...0180689112_1066991563.dem | 709.6 ms | 707.2 ms | -0.3% |
+| ...1231606001_0126308730.dem | 757.1 ms | 765.8 ms | +1.1% |
+| ...3634708_1168926414.dem | 668.4 ms | 723.7 ms | +8.3% |
+
+Median +8.3%, load1 3.17 to 7.73. Inside the +10% budget, but on a machine that was not quiet
+(load1 crossed 7 twice; the step-0 noise floor on this corpus is median 1.7%, max 4.2%,
+taken at load 2 to 5) and over 3 rounds rather than 5. The smallest file reads
++27.7%, the same bimodal file the frame observer and cumulative tables above both flag; the other
+four sit -0.3% to +10.3%. Pass, with the margin noted rather than hidden.
+
+The coaching team, `coaching_team`:
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 602.5 ms | 624.0 ms | +3.6% |
+| ...7406845372_0003771537.dem | 698.9 ms | 708.1 ms | +1.3% |
+| ...0180689112_1066991563.dem | 718.6 ms | 698.4 ms | -2.8% |
+| ...1231606001_0126308730.dem | 728.1 ms | 741.2 ms | +1.8% |
+| ...3634708_1168926414.dem | 679.7 ms | 683.5 ms | +0.6% |
+
+Median +1.3%, load1 3.64 to 5.32, every reading inside the step-0 noise floor (max 4.2%). Within
+noise. One controller-class scan per frame, the same shape as the other singleton providers
+(`team.score`, `team.clan_name`) that read within noise when they landed.
+
+**The three reads without the coaching team, derived.** The joint `74d6071` run above (all four
+reads, median +10.4%) minus the coaching-team median (+1.3%) puts the other three at about +9.1%,
+against a budget of +10%, the same budget as the observer-pawns-stream arm in "The frame observer"
+above (the five projectile classes plus seven per-pawn columns, every slot, every frame). It was
+not measured directly as one isolated run; it is two medians subtracted across
+sessions, not a paired difference, and the explode tick's own increment inside it was not
+isolated from the `each_projectile` scope cost. Still inside +10%.
+
+### The 0.14.0 release review
+
+    commit    e510a2a, plus a local-feed SDK restore that touches Directory.Packages.props
+              and nuget.config only (that overlay commit was never pushed)
+    runs      90 (paths: 2 sessions x 3 rounds x 5 demos x 3 arms), 50 (sweep: 5 rounds x 5
+              demos x 2 lanes), 70 (compare, base against base, 50 pooled), zero failures, zero
+              digest mismatches
+    load      2.64 to 7.27 throughout, Rider open
+
+The release review of the three engine rows "The frame observer" and "Pawn flags, throw strength,
+the explode tick and the coaching team" above left open or never measured. Same five demos, same
+protocols, one published bench used for every leg. Rider was open throughout, as it was for every
+accepted session above, and the "load1 above 2, the round does not count" rule was waived
+for this run: load1 was recorded per chunk and no round was dropped. These are not quiet-machine
+numbers. A row is inside its budget only if every aggregation is, the convention the `e9f4329`
+gate above uses.
+
+**Every miss below was accepted for 0.14.0 on 2026-10-17.** The likely causes after each table are
+read from the code, not measured apart; candidate fixes are tracked outside this file, since none
+of them is work 0.14.0 waits on.
+
+**Base against base, for context.** `compare`, the same binary under both labels, five
+`--rounds 1` calls. Each call ran as the tool's round 1, and `Compare.Run` flips the order on the
+round number (`round % 2 == 1` runs A first), so the A label went first on all 50 pairs. That
+matters on one binary: read by position across 35 demo-pairs, `parse_ms` reads higher on whichever
+run went first on 28 of 35 (second over first, median 0.935) and `total_ms` on 24 of 35 (median
+0.974). Rounds 2 and 4 were rerun with the labels swapped, for the 3:2 split one continuous
+5-round call produces. That pool, rounds 1, 3 and 5 and the two reruns, 10 samples per label per
+demo:
+
+| | median | range over the five demos |
+|---|---|---|
+| `eval_ms` | +1.40% | -1.48% to +2.02% |
+| `total_ms` | +0.27% | -2.94% to +3.09% |
+
+load1 3.32 to 5.51, median 4.13. The 5:0 pool read `total_ms` -3.74%, inflated by the position
+effect; do not reuse it. A 3:2 split reduces the effect and does not remove it: `build_ms` on the
+smallest file still reads 32.56 against 29.55 ms between the labels. This is the retained `sweep`
+pipeline, not the `paths` wall clock the frame observer rows read, so it sizes the machine's noise
+today and does not bound those rows. A `compare` run split into single-round calls has to
+alternate `--label-a` between calls.
+
+**Frame observer, per-player** (`observer-pawns-stream` against `scoreboard-stream`). Budget +10%
+wall. Two sessions of three rounds, arm order rotated as above, 30 paired samples:
+
+| aggregation | `f6dccfc` | `e9f4329` | `e510a2a` |
+|---|---|---|---|
+| pooled | +10.6% | +35.4% | +9.3% |
+| paired median | +13.0% | +29.9% | +14.1% |
+| paired mean | +15.3% | +29.0% | +13.6% |
+| per-demo | +27.9% | +27.0% | +12.3% |
+
+Over on 3 of 4; the pooled figure is the one that clears. Lower than `e9f4329` on all four, lower
+than `f6dccfc` on three and higher on the paired median. Per-demo: 0544286934 +18.6%, 0003771537
++27.7%, 1066991563 +12.3%, 0126308730 -3.4%, 1168926414 +7.1%. Session 1 alone reads paired median
++10.3%, session 2 +18.1%; the two ran about 12 minutes apart, so that split is drift inside one
+sitting, not two days. load1 3.62 to 7.08, median 4.93. `scoreboard-stream`'s own per-demo spread
+over three rounds was 12.9 to 116.5% in session 1 and 9.9 to 109.5% in session 2, the same range as
+`e9f4329` session 1.
+
+Collector counters, paired median (range) unless marked, in the shape of the `e9f4329` table:
+
+| | `e9f4329`, session 1 | `e9f4329`, session 2 | `e510a2a` |
+|---|---|---|---|
+| `alloc_mb` | +35.3 | +32.5 | +30.4 (17.6 to 40.6) |
+| `gen0` | +4 | +4 | +2 (0 to 5) |
+| `pause_ms` | +118.2 | +113.8 | +90.8 (43.9 to 165.7) |
+| working set, pooled median | +48.0 MB | +39.0 MB | +28.0 MB (paired +30.3, +1.9 to +62.6) |
+| peak heap, pooled median | +73.1 MB | +71.8 MB | +40.8 MB |
+
+**Frame observer, projectiles only** (`observer-stream` against `scoreboard-stream`). Budget +5%
+wall and +20 MB working set. Same build, same 30 pairs:
+
+| aggregation | `f6dccfc` | `e9f4329` | `e510a2a` |
+|---|---|---|---|
+| pooled | -0.1% | +24.0% | -1.7% |
+| paired median | -3.0% | +5.8% | -0.6% |
+| paired mean | +5.1% | +14.4% | +9.4% |
+| per-demo | +5.0% | +8.6% | +3.3% (-0.8% by median of the per-round ratios) |
+| working set | +5.4 MB | +17.4 MB | +4.5 MB pooled, +6.3 MB paired |
+
+Over on the paired mean only; working set inside. The two per-demo methods disagree on sign and
+both are given. Four pairs carry the mean, at +75.6 to +87.0% (session 2 rotation 1 1168926414,
+session 2 rotation 3 0003771537 and 0544286934, session 1 rotation 3 0544286934); without the top
+three it reads +0.9%. The low end has two pairs at -42.7%. Collector, paired median: `alloc_mb`
++9.1, `gen0` 0, `pause_ms` +3.6; peak heap pooled +2.2 MB.
+
+**`for: each_projectile`, `eval_ms`.** Budget +5%. Not `compare`: `Compare.Measure` sets one
+variable, `DOTNET_gcServer`, on each child's `ProcessStartInfo`, which starts from a copy of the
+parent's environment, so `CS2DEMOKIT_BENCH_PROJECTILE` set in the shell reaches both arms, and on
+one build that has the scope that is on against on. Instead `sweep` on the one build, run twice
+per round with the variable unset and then `=1`, the "isolated, same build, lane off against on"
+pattern above. 5 rounds, `--cooldown 5`, off first on rounds 1, 3 and 5 and on first on 2 and 4.
+`rulesets` reads 5 on every off row and 6 on every on row.
+
+| demo | off median | on median | delta |
+|---|---|---|---|
+| ...5266002_0544286934.dem | 618.5 ms | 965.5 ms | +56.1% (smallest file) |
+| ...7406845372_0003771537.dem | 732.7 ms | 781.1 ms | +6.6% |
+| ...0180689112_1066991563.dem | 753.4 ms | 763.4 ms | +1.3% |
+| ...1231606001_0126308730.dem | 762.3 ms | 852.7 ms | +11.9% |
+| ...3634708_1168926414.dem | 726.0 ms | 765.2 ms | +5.4% |
+
+Per-demo median +6.6%, paired median (n=25) +6.6%, paired mean +14.8%, pooled +7.0%. Over on 4 of
+4. The figure accepted for development on 2026-10-14 was +5.9%, with no raw table
+located for it. The smallest file's off column alone spans 586 to 1065 ms over the five rounds,
+wider than its own delta; three of its pairs, +43.7, +98.7 and +56.1% on rounds 1, 2 and 5, pull
+the mean, and the other 20 pairs sit at -4.9 to +21.0%. `eval_alloc_mb` is higher on every on row
+than its off row, by 7.5 to 16.6 MB. load1 2.64 to 7.27, median 5.16.
+
+| round | first | paired median | load1 |
+|---|---|---|---|
+| 1 | off | +18.0% | 2.64 to 5.47 |
+| 2 | on | +4.4% | 4.66 to 6.54 |
+| 3 | off | +5.5% | 5.01 to 7.27 |
+| 4 | on | +6.6% | 4.46 to 6.38 |
+| 5 | off | +4.4% | 3.46 to 4.09 |
+
+Round 1 is the outlier, and neither load nor order explains it: it has the lowest load1 range of
+the five, and rounds 3 and 5, also off first, read +4.9% together. Round 1's off arm reads the
+lowest `eval_ms` of the five rounds on 4 of 5 demos; no cause is known. Rounds 2 to 5 alone read
+per-demo +4.81% and paired median +4.97%, just inside. That is a sensitivity check, not the result:
+the waiver gives no ground to drop a round.
+
+**Per-player: likely cause.** Measured: the paired wall delta's median is +352 ms, and the GC pause
+delta, +90.8 ms, is about a quarter of it. The rest is not attributed. From the code, two costs
+grow with the declaration, and the run does not split them. First, the digest: `RuleChainBuilder`
+gates `AnalysisOptions.ObservedProviders` into the per-pawn column layout by name, and none of the
+seven `ObservedPawnProviders` is read by the four shipped rulesets the `paths` arms load, so every
+one is a new column. `EntityDigestExtractor.ReadPawn` reads them for every pawn on every frame on
+the digest workers, and position and eye angles likely change on most frames of a live pawn,
+so `AppendRow` writes a `PerPawnColumns` row for nearly every live pawn on nearly every frame, and
+`PreFrameSnapshot.Fold` folds each one on the evaluation thread. That fits the allocation and heap
+deltas. Second, the bench's own reader: `CountingObserver.OnFrame` reads 7 columns for all 64 slots
+on every frame, 448 handle reads, each through `FrameView.Open()`, the owner check, a kind check
+and `PreFrameSnapshot.TryRow`, on the evaluation thread, whether or not the slot has a pawn.
+**Projectiles-only: likely cause.** No engine cost shows in the data. The collector deltas are
+near zero, the paired median wall delta is -22 ms, and the one aggregation over budget is a mean
+carried by four pairs inside a no-observer control whose own per-demo spread reaches 116%. The
+declaration adds the projectile visit in `EntityDigestExtractor` over the five classes and the
+`FrameView` spans, which is all this arm pays for. Likely noise.
+**`for: each_projectile`: likely cause.** The lane changes more than the template. From the code,
+the overlay switches on three things the off arm does not have. `RuleChainBuilder` sets
+`emitProjectiles` for any
+`for: each_projectile` ruleset, so the digest carries rows for all five classes and dispatches
+`projectile_created` and `projectile_removed`. The overlay's `thrower_walk` reads
+`thrower.is_walking`, which `RulesetResolver` records as an entity read of `entity.pawn.is_walking`
+and `UnionV2EntityReads` gates into the per-pawn layout, so the on arm reads one more pawn column on
+every frame; no shipped ruleset reads it. And `StateGraphEvaluator.MaterializeProjectile` builds an
+instance per grenade on the evaluation thread: `LowerV2Projectile` lowers the instance under
+`ExpressionCompiler.Interpret`, every edge is registered, and `TopologicalSortEdges` re-sorts the
+whole edge list of every message type the instance touched, allocating its adjacency lists each
+time. `ReleaseInstance` removes each edge with `List.Remove`, linear in the list. The measured
+`eval_alloc_mb` increase fits the per-grenade allocation; how the delta splits between the three is
+not measured. The projectiles-only arm above suggests the digest rows alone are cheap on the
+forward path, but that is a different tool and pipeline. The smallest file's +56.1% is likely the
+bimodal collector "GC configuration" describes, the file the tables above already flag.
 
 ## Reading these numbers later
 

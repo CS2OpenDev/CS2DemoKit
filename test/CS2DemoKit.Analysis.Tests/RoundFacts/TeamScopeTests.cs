@@ -1,5 +1,6 @@
 #region
 
+using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Rules;
@@ -9,6 +10,7 @@ using CS2DemoKit.Analysis.RulesetsV2.Compile;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.TestSupport;
 
 #endregion
@@ -135,6 +137,22 @@ public class TeamScopeTests
                 - { stat: kills, label: K }
                 - { stat: equipment, label: EQ }
                 - { stat: money, label: M }
+        """;
+
+    /// <summary>The plan's library replacement: each side's final score and clan name.</summary>
+    internal const string LibraryTeams = """
+        ruleset: library_teams
+        for: each_team
+        stats:
+          score:     { capture: team.score,     per: match }
+          clan_name: { capture: team.clan_name, per: match }
+        show:
+          tables:
+            team_final:
+              per: team_match
+              columns:
+                - { stat: score, label: score }
+                - { stat: clan_name, label: clan_name }
         """;
 
     // ── resolver and validator ─────────────────────────────────────────────
@@ -541,6 +559,170 @@ public class TeamScopeTests
         await Assert.That(match.Rows.Count).IsEqualTo(2);
         await Assert.That(match.Rows.Sum(r => RoundFactsTestSupport.Int(r, "K") ?? 0))
             .IsEqualTo(players.Rows.Sum(r => RoundFactsTestSupport.Int(r, "K") ?? 0));
+    }
+
+    [Test]
+    public async Task TeamReads_ResolveAsSideProviders()
+    {
+        CheckedRuleset rs = RoundFactsTestSupport.Checked(LibraryTeams);
+        EntityProviderReference score = rs.Stats.Single(s => s.StatId == "score").EntityReads.Single();
+        EntityProviderReference clan = rs.Stats.Single(s => s.StatId == "clan_name").EntityReads.Single();
+        await Assert.That(score.ProviderName).IsEqualTo("entity.team.score");
+        await Assert.That(score.IsSingleton).IsTrue();
+        await Assert.That(clan.ProviderName).IsEqualTo("entity.team.clan_name");
+        await Assert.That(rs.Stats.Single(s => s.StatId == "clan_name").ValueType).IsEqualTo(RulesType.String);
+    }
+
+    [Test]
+    public async Task TeamReads_AreOutOfScope_OutsideEachTeam()
+    {
+        RulesetResolveResult result = RoundFactsTestSupport.Resolve("""
+            ruleset: bad
+            for: match
+            stats:
+              s:
+                capture: team.score
+                on: round_ended
+                per: match
+            """);
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.Diagnostics.Any(d => d.Code == DiagnosticCodes.UnknownRoot)).IsTrue();
+    }
+
+    /// <summary>A capture with no on: reads only a bare team.* value, per: match, kept last.</summary>
+    [Test]
+    [Arguments("each_team", "capture: team.score\n    per: round")]
+    [Arguments("each_team", "capture: team.score\n    keep: first\n    per: match")]
+    [Arguments("each_team", "capture: team.score + 1\n    per: match")]
+    [Arguments("each_team", "capture: round.number\n    per: match")]
+    [Arguments("match", "capture: match.round_time\n    per: match")]
+    public async Task ATriggerlessCapture_OfAnythingElse_IsRefused(string scope, string body)
+    {
+        RulesetResolveResult result = RoundFactsTestSupport.Resolve(
+            $"ruleset: bad\nfor: {scope}\nstats:\n  s:\n    {body}\n");
+        await Assert.That(result.Diagnostics.Any(d => d.Code == ResolveDiagnosticCodes.TriggerUnsupportedForKind))
+            .IsTrue().Because(string.Join("; ", result.Diagnostics.Select(d => d.Code + " " + d.Message)));
+    }
+
+    /// <summary>
+    ///     Each side's <c>team.score</c> and <c>team.clan_name</c>, captured with no trigger, read the
+    ///     last frame: equal to a hand walk over that frame's two <c>CCSTeam</c> entities, in both
+    ///     capture modes. The sample ends 1-1, so the clan names are what tell the sides apart.
+    /// </summary>
+    [Test]
+    [Category("Integration")]
+    [NotInParallel]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task TeamScore_ReadsEachSide(bool captureSnapshots)
+    {
+        ParsedDemo demo = RoundFactsTestSupport.Sample();
+        Dictionary<int, (int Score, string Clan)> oracle = LastFrameTeams(demo);
+        AnalysisRun run = RoundFactsTestSupport.Run(demo, new AnalysisOptions { CaptureSnapshots = captureSnapshots },
+            LibraryTeams);
+        MetricTable table = RoundFactsTestSupport.Table(run, "team_final", demo);
+
+        await Assert.That(string.Join(",", table.Rows.Select(r => RoundFactsTestSupport.Dim(r, "side")))).IsEqualTo("2,3");
+        foreach (MetricRow row in table.Rows)
+        {
+            int side = RoundFactsTestSupport.Dim(row, "side");
+            await Assert.That(RoundFactsTestSupport.Int(row, "score")).IsEqualTo(oracle[side].Score).Because($"side {side}");
+            await Assert.That(row.Values["clan_name"]?.ToString()).IsEqualTo(oracle[side].Clan).Because($"side {side}");
+        }
+
+        await Assert.That(oracle[2].Score).IsGreaterThan(0);
+        await Assert.That(oracle[3].Score).IsGreaterThan(0);
+        await Assert.That(oracle[2].Clan).IsNotEmpty();
+        await Assert.That(oracle[2].Clan).IsNotEqualTo(oracle[3].Clan);
+    }
+
+    /// <summary>The forward run over the file reads the same final score and clan names.</summary>
+    [Test]
+    [Category("Integration")]
+    [NotInParallel]
+    public async Task TeamScore_ReadsEachSide_OnTheForwardPath()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        Dictionary<int, (int Score, string Clan)> oracle = LastFrameTeams(DemoTestHelper.GetOrParse(path));
+        AnalysisRun run = DemoAnalysis.Run(path, RoundFactsTestSupport.Load(LibraryTeams));
+        MetricTable table = RoundFactsTestSupport.Table(run, "team_final");
+
+        await Assert.That(run.Provenance.Source).IsEqualTo(AnalysisSourceKind.Stream);
+        await Assert.That(string.Join(";", table.Rows.Select(r =>
+                $"{RoundFactsTestSupport.Dim(r, "side")}:{RoundFactsTestSupport.Int(r, "score")}:{r.Values["clan_name"]}")))
+            .IsEqualTo($"2:{oracle[2].Score}:{oracle[2].Clan};3:{oracle[3].Score}:{oracle[3].Clan}");
+    }
+
+    /// <summary>
+    ///     A side's score is the rounds won by the team on that side at the end, across the halftime
+    ///     swap, not the rounds won on that side: the first half counts for the other side's row.
+    ///     Checked on every regulation-length demo beside the pinned one; overtime is left out.
+    /// </summary>
+    [Test]
+    [Category("Corpus")]
+    [NotInParallel]
+    public async Task Corpus_ScoreFollowsTheTeamAcrossHalftime()
+    {
+        string pinned = DemoTestHelper.RequireDemo("match730_003770625492944683328_1992712646_129.dem");
+        IReadOnlyList<RulesetDoc> rules = RoundFactsTestSupport.Load(LibraryTeams, """
+            ruleset: decided
+            for: match
+            stats:
+              winners:
+                capture: event.Winner
+                on: round_decided
+                keep: list
+                per: match
+            """);
+
+        int checkedDemos = 0, telling = 0;
+        foreach (string path in Directory.EnumerateFiles(Path.GetDirectoryName(pinned)!, "match730_*.dem").Order(StringComparer.Ordinal))
+        {
+            AnalysisRun run = DemoAnalysis.Run(path, rules);
+            int[] winners = RoundFactsCorpusTests.Ints(run, "decided.winners");
+            if (winners.Length is <= 12 or > 24)
+            {
+                continue;
+            }
+
+            MetricTable table = RoundFactsTestSupport.Table(run, "team_final");
+            foreach (int side in (int[])[2, 3])
+            {
+                string because = $"{Path.GetFileName(path)} side {side}";
+                int followsTeam = winners.Take(12).Count(w => w == 5 - side) + winners.Skip(12).Count(w => w == side);
+                telling += followsTeam != winners.Count(w => w == side) ? 1 : 0;
+                MetricRow row = table.Rows.Single(r => RoundFactsTestSupport.Dim(r, "side") == side);
+                await Assert.That(RoundFactsTestSupport.Int(row, "score")).IsEqualTo(followsTeam).Because(because);
+            }
+
+            checkedDemos++;
+        }
+
+        await Assert.That(checkedDemos).IsGreaterThan(0);
+        await Assert.That(telling).IsGreaterThan(0).Because("some side's two counts must differ, or the check proves nothing");
+    }
+
+    /// <summary>The oracle: a hand walk to the last frame, then each side's <c>CCSTeam</c> by its <c>m_iTeamNum</c>.</summary>
+    internal static Dictionary<int, (int Score, string Clan)> LastFrameTeams(ParsedDemo demo)
+    {
+        EntityStateLayer layer = new();
+        foreach (DemoFrame frame in demo.Frames)
+        {
+            layer.Apply(frame);
+        }
+
+        Dictionary<int, (int Score, string Clan)> teams = [];
+        foreach ((int _, EntityState ent) in layer.Tracker.CurrentEntities.AllIndexed())
+        {
+            if (ent.ClassName == "CCSTeam" && ent["m_iTeamNum"] is { } team
+                && Convert.ToInt32(team, System.Globalization.CultureInfo.InvariantCulture) is var side and (2 or 3))
+            {
+                teams[side] = (Convert.ToInt32(ent["m_iScore"] ?? 0, System.Globalization.CultureInfo.InvariantCulture),
+                    ent["m_szClanTeamname"] as string ?? "");
+            }
+        }
+
+        return teams;
     }
 
     /// <summary>A team-only build still tracks players: its side binding and rosters need them.</summary>

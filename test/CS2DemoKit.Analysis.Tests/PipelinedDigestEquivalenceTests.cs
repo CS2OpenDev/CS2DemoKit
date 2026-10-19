@@ -3,8 +3,10 @@
 using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Events;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 using CS2DemoKit.TestSupport;
 
@@ -46,7 +48,7 @@ public class PipelinedDigestEquivalenceTests
     // Per-worker provider factories. Order is fixed (the digest's per-pawn value arrays and Singletons[]
     // are positionally indexed), and each call returns FRESH instances so a worker never shares a
     // provider with another (FreezePeriodProvider caches a mutable entity index).
-    private static IReadOnlyList<IPerPlayerEntityValueProvider> NewPerPlayer() =>
+    internal static IReadOnlyList<IPerPlayerEntityValueProvider> NewPerPlayer() =>
     [
         new PawnHealthProvider(),
         new PawnArmorProvider(),
@@ -418,6 +420,114 @@ public class PipelinedDigestEquivalenceTests
     }
 
     /// <summary>
+    ///     The projectile rows are absolute state at the seeked tick, like the smokes, and the
+    ///     pipelined producer must carry the same rows on every frame as the sequential one: a
+    ///     worker primed from a checkpoint meets projectiles already in flight, and a row read
+    ///     through the five-class slot index must equal one found by the full walk. Compared frame
+    ///     for frame, field for field, including the per-frame thrower resolution.
+    /// </summary>
+    [Test]
+    public async Task ObservedProjectiles_SequentialAndPipelined_Agree()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        IReadOnlyList<DemoFrame> frames = demo.Frames;
+        HashSet<string> classes = [.. GrenadeProjectileClasses.All];
+
+        EntityFrameDigest[] sequential = BuildSequential(frames, projectileClasses: classes);
+        EntityFrameDigest[] pipelined = PipelinedDigests.Produce(
+            demo.AsFrameSource(), NewPerPlayer, NewSingletons, true, out IReadOnlyList<PipelinedDigestSource.ChunkSpan> spans,
+            projectileClasses: classes);
+
+        int framesWithRows = 0;
+        int mismatchFrames = 0;
+        string? firstMismatch = null;
+        HashSet<string> classesSeen = [];
+        for (int n = 0; n < frames.Count; n++)
+        {
+            ReadOnlySpan<ProjectileRow> s = sequential[n].Projectiles;
+            if (s.Length > 0)
+            {
+                framesWithRows++;
+                foreach (ProjectileRow row in s)
+                {
+                    classesSeen.Add(row.ClassName);
+                }
+            }
+
+            if (DiffProjectiles(sequential[n], pipelined[n]) is { } diff)
+            {
+                mismatchFrames++;
+                firstMismatch ??= $"frame {n} (tick {frames[n].ServerTick}): {diff}";
+            }
+        }
+
+        Console.WriteLine($"chunks={spans.Count}  frames carrying projectile rows: {framesWithRows:N0} / {frames.Count:N0}  "
+                          + $"classes: {string.Join(", ", classesSeen.Order())}");
+        await Assert.That(pipelined.Length).IsEqualTo(sequential.Length);
+        await Assert.That(mismatchFrames).IsEqualTo(0).Because(firstMismatch ?? "");
+        await Assert.That(classesSeen.Count).IsGreaterThan(2)
+            .Because("the sample carries molotovs, smokes, flashes and HE grenades; a two-class index would hide the rest");
+        await Assert.That(spans.Count).IsGreaterThan(1)
+            .Because("with one chunk the producer is the sequential fold and the gate proves nothing about checkpoints");
+    }
+
+    private sealed class ProjectileRecorder : IFrameObserver
+    {
+        public readonly List<string> Lines = [];
+
+        public void OnFrame(FrameView frame)
+        {
+            foreach (ProjectileRow row in frame.Created)
+            {
+                Lines.Add($"f{frame.FrameIndex} t{frame.Tick} + {row}");
+            }
+
+            foreach (ProjectileRow row in frame.Removed)
+            {
+                Lines.Add($"f{frame.FrameIndex} t{frame.Tick} - {row}");
+            }
+
+            foreach (ProjectileRow row in frame.Projectiles)
+            {
+                Lines.Add($"f{frame.FrameIndex} t{frame.Tick} = {row}");
+            }
+        }
+
+        public void Finish()
+        {
+        }
+    }
+
+    /// <summary>
+    ///     The same statement through the public seam: a run declaring every projectile class hands
+    ///     its observer the same created, removed and live rows on every frame at the sequential
+    ///     cap and at the default one.
+    /// </summary>
+    [Test]
+    public async Task ObservedProjectiles_ThroughTheObserver_SequentialAndPipelined_Agree()
+    {
+        ParsedDemo demo = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        ProjectileRecorder sequential = new();
+        ProjectileRecorder pipelined = new();
+        DemoAnalysis.Run(demo, [], new AnalysisOptions
+        {
+            MaxDegreeOfParallelism = 1, CaptureSnapshots = false,
+            ObservedProjectileClasses = GrenadeProjectileClasses.All, FrameObserver = sequential
+        });
+        DemoAnalysis.Run(demo, [], new AnalysisOptions
+        {
+            CaptureSnapshots = false,
+            ObservedProjectileClasses = GrenadeProjectileClasses.All, FrameObserver = pipelined
+        });
+
+        Console.WriteLine($"rows: {sequential.Lines.Count:N0}");
+        await Assert.That(sequential.Lines.Count(l => l.Contains(" + "))).IsGreaterThan(0);
+        await Assert.That(EntityIntegrationTests.FirstDifference(sequential.Lines, pipelined.Lines)).IsNull();
+    }
+
+    /// <summary>
     ///     The dedup rule <see cref="DedupMolotovEvents" /> replays, stated directly against the scanner:
     ///     a molotov whose thrower has not resolved on the frame the projectile first appears must still
     ///     throw on the frame that does resolve it, and must throw exactly once after that.
@@ -485,12 +595,29 @@ public class PipelinedDigestEquivalenceTests
     }
 
     /// <summary>
+    ///     The projectile event stream is the same at the sequential cap and the default one: the
+    ///     pipelined producer re-primes a worker per chunk, and the lifecycle is what hides that.
+    /// </summary>
+    [Test]
+    public async Task ProjectileEvents_AtTheDefaultCap_MatchTheSequentialCap()
+    {
+        ParsedDemo parsed = DemoTestHelper.GetOrParse(DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName));
+
+        List<string> sequential = [.. EntityIntegrationTests.ScanProjectileEvents(parsed, 1).Select(e => $"f{e.FrameIndex} {e.Event}")];
+        List<string> pipelined = [.. EntityIntegrationTests.ScanProjectileEvents(parsed, null).Select(e => $"f{e.FrameIndex} {e.Event}")];
+
+        await Assert.That(sequential.Count).IsGreaterThan(0);
+        await Assert.That(EntityIntegrationTests.FirstDifference(sequential, pipelined)).IsNull();
+    }
+
+    /// <summary>
     ///     The sequential reference path: drive ONE forward-only layer through every frame with the same
     ///     <c>SeekToTick</c> + <see cref="EntityDigestExtractor.Build" /> the scanner's
     ///     <c>BuildDigest</c> uses, capturing the digest at each frame.
     /// </summary>
     private static EntityFrameDigest[] BuildSequential(
-        IReadOnlyList<DemoFrame> frames, bool dedup = false, bool captureSmokes = false)
+        IReadOnlyList<DemoFrame> frames, bool dedup = false, bool captureSmokes = false,
+        IReadOnlySet<string>? projectileClasses = null)
     {
         EntityStateLayer layer = new(frames);
         IReadOnlyList<IPerPlayerEntityValueProvider> perPlayer = NewPerPlayer();
@@ -501,7 +628,8 @@ public class PipelinedDigestEquivalenceTests
         for (int n = 0; n < frames.Count; n++)
         {
             layer.SeekToTick(frames[n].ServerTick);
-            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, true, captureSmokes);
+            digests[n] = EntityDigestExtractor.Build(layer, delta, singletons, true, captureSmokes,
+                projectileClasses: projectileClasses);
         }
 
         return digests;
@@ -512,7 +640,7 @@ public class PipelinedDigestEquivalenceTests
     ///     <c>EntityChangeScanner.MergePreFrameSnapshot</c> does, including skipping nulls, which is what
     ///     makes an unchanged cell in a delta row a no-op rather than an erasure.
     /// </summary>
-    private static void Fold(Dictionary<(int Provider, int Slot), object?> snapshot, EntityFrameDigest d)
+    internal static void Fold(Dictionary<(int Provider, int Slot), object?> snapshot, EntityFrameDigest d)
     {
         PerPawnColumns rows = d.PerPawn;
         for (int r = 0; r < rows.Count; r++)
@@ -529,7 +657,7 @@ public class PipelinedDigestEquivalenceTests
     }
 
     /// <summary>Returns null when the two folded snapshots hold identical values, else a description.</summary>
-    private static string? DiffSnapshots(
+    internal static string? DiffSnapshots(
         Dictionary<(int Provider, int Slot), object?> a,
         Dictionary<(int Provider, int Slot), object?> b)
     {
@@ -558,7 +686,7 @@ public class PipelinedDigestEquivalenceTests
     ///     Returns null when the singleton portions of the two digests are identical, else a short
     ///     description. Singletons are consumed every frame with no dedup, so they still match exactly.
     /// </summary>
-    private static string? DiffSingletons(EntityFrameDigest a, EntityFrameDigest b)
+    internal static string? DiffSingletons(EntityFrameDigest a, EntityFrameDigest b)
     {
         if (a.Singletons.Length != b.Singletons.Length)
         {
@@ -608,6 +736,27 @@ public class PipelinedDigestEquivalenceTests
             if (!a.Molotovs[i].Equals(b.Molotovs[i]))
             {
                 return $"molotov[{i}] {a.Molotovs[i]} vs {b.Molotovs[i]}";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Returns null when the two projectile row lists are identical, else a short description.</summary>
+    private static string? DiffProjectiles(EntityFrameDigest a, EntityFrameDigest b)
+    {
+        ReadOnlySpan<ProjectileRow> s = a.Projectiles;
+        ReadOnlySpan<ProjectileRow> p = b.Projectiles;
+        if (s.Length != p.Length)
+        {
+            return $"projectile-count {s.Length} vs {p.Length}";
+        }
+
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (!s[i].Equals(p[i]))
+            {
+                return $"projectile[{i}] {s[i]} vs {p[i]}";
             }
         }
 

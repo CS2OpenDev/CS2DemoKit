@@ -1350,7 +1350,7 @@
           "SteamID": 76561197982907430,
           "Connected": 0,
           "TeamNum": 1,
-          "PendingTeamNum": 1,
+          "PendingTeamNum": 0,
           "Account": 800
         }
       },
@@ -1362,8 +1362,8 @@
           "SteamID": 76561198134401925,
           "Connected": 0,
           "TeamNum": 3,
-          "PendingTeamNum": 3,
-          "Account": 4500
+          "PendingTeamNum": 0,
+          "Account": 8000
         }
       },
       {
@@ -1374,7 +1374,7 @@
           "SteamID": 76561198213765927,
           "Connected": 0,
           "TeamNum": 1,
-          "PendingTeamNum": 1,
+          "PendingTeamNum": 0,
           "Account": 800
         }
       },
@@ -1410,8 +1410,8 @@
           "SteamID": 76561198200982290,
           "Connected": 0,
           "TeamNum": 3,
-          "PendingTeamNum": 3,
-          "Account": 1800
+          "PendingTeamNum": 0,
+          "Account": 5300
         }
       },
       {
@@ -1422,8 +1422,8 @@
           "SteamID": 76561197960690195,
           "Connected": 0,
           "TeamNum": 3,
-          "PendingTeamNum": 3,
-          "Account": 2950
+          "PendingTeamNum": 0,
+          "Account": 6450
         }
       },
       {
@@ -1434,8 +1434,8 @@
           "SteamID": 76561198058500492,
           "Connected": 0,
           "TeamNum": 3,
-          "PendingTeamNum": 3,
-          "Account": 5550
+          "PendingTeamNum": 0,
+          "Account": 9350
         }
       },
       {
@@ -1446,8 +1446,8 @@
           "SteamID": 76561198164970560,
           "Connected": 0,
           "TeamNum": 3,
-          "PendingTeamNum": 3,
-          "Account": 2400
+          "PendingTeamNum": 0,
+          "Account": 5900
         }
       },
       {
@@ -1458,8 +1458,8 @@
           "SteamID": 76561197973140692,
           "Connected": 0,
           "TeamNum": 2,
-          "PendingTeamNum": 2,
-          "Account": 100
+          "PendingTeamNum": 0,
+          "Account": 4100
         }
       },
       {
@@ -1470,8 +1470,8 @@
           "SteamID": 76561197991272318,
           "Connected": 0,
           "TeamNum": 2,
-          "PendingTeamNum": 2,
-          "Account": 650
+          "PendingTeamNum": 0,
+          "Account": 4650
         }
       },
       {
@@ -1482,8 +1482,8 @@
           "SteamID": 76561197989744167,
           "Connected": 0,
           "TeamNum": 2,
-          "PendingTeamNum": 2,
-          "Account": 100
+          "PendingTeamNum": 0,
+          "Account": 4100
         }
       },
       {
@@ -1494,8 +1494,8 @@
           "SteamID": 76561197978835160,
           "Connected": 0,
           "TeamNum": 2,
-          "PendingTeamNum": 2,
-          "Account": 300
+          "PendingTeamNum": 0,
+          "Account": 4300
         }
       },
       {
@@ -1506,8 +1506,8 @@
           "SteamID": 76561198113666193,
           "Connected": 0,
           "TeamNum": 2,
-          "PendingTeamNum": 2,
-          "Account": 100
+          "PendingTeamNum": 0,
+          "Account": 4100
         }
       },
       {
@@ -1635,8 +1635,8 @@
         "slot": 219,
         "class": "CCSGameRulesProxy",
         "fields": {
-          "TotalRoundsPlayed": 23,
-          "GamePhase": 3,
+          "TotalRoundsPlayed": 24,
+          "GamePhase": 5,
           "WarmupPeriod": 0
         }
       },

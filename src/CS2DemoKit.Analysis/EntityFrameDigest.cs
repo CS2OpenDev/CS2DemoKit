@@ -3,6 +3,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
@@ -17,14 +18,20 @@ namespace CS2DemoKit.Analysis;
 ///     only this, never the live layer, so it is identical for either decode.
 ///     <para>
 ///         A digest for a frame where nothing happened allocates nothing beyond itself: the row
-///         storage starts as the shared <see cref="PerPawnColumns.Empty" /> and the projectile and
-///         smoke lists are created on the first entry.
+///         storage starts as the shared <see cref="PerPawnColumns.Empty" />, the smoke list is
+///         created on the first entry, and the projectile rows land in the pool's shared block.
 ///     </para>
 /// </summary>
 internal sealed class EntityFrameDigest
 {
     private List<(int Index, int Serial, int ThrowerSlot)>? _molotovs;
     private List<Vector4>? _smokes;
+
+    // This digest's rows are [_projectileStart, _projectileStart + _projectileCount) of the
+    // block: a pool's shared block, or one this digest owns when it has no pool.
+    private ProjectileRow[]? _projectileBlock;
+    private int _projectileStart;
+    private int _projectileCount;
 
     /// <summary>
     ///     Per-player-provider cells that CHANGED this frame, one row per pawn with at least one
@@ -85,10 +92,72 @@ internal sealed class EntityFrameDigest
     /// </summary>
     public ReadOnlySpan<Vector4> Smokes => _smokes is null ? default : CollectionsMarshal.AsSpan(_smokes);
 
+    /// <summary>
+    ///     Every live projectile of a class the producing decode was asked for, ascending entity
+    ///     index, as of the end of this frame. Empty when no class was asked for. The lifecycle (created, removed, the
+    ///     thrower held across frames) is derived on the consume side by
+    ///     <see cref="ProjectileLifecycle" />, since a chunk worker has no previous frame.
+    /// </summary>
+    public ReadOnlySpan<ProjectileRow> Projectiles =>
+        _projectileBlock is null ? default : new ReadOnlySpan<ProjectileRow>(_projectileBlock, _projectileStart, _projectileCount);
+
     /// <summary>Records one live molotov projectile.</summary>
     public void AddMolotov(int index, int serial, int throwerSlot) =>
         (_molotovs ??= new List<(int, int, int)>(4)).Add((index, serial, throwerSlot));
 
     /// <summary>Records one active smoke cloud.</summary>
     public void AddSmoke(Vector4 sphere) => (_smokes ??= new List<Vector4>(4)).Add(sphere);
+
+    /// <summary>Records one live projectile of an asked-for class.</summary>
+    public void AddProjectile(in ProjectileRow row)
+    {
+        if (Pool is { } pool)
+        {
+            pool.AppendProjectile(ref _projectileBlock, ref _projectileStart, ref _projectileCount, row);
+            return;
+        }
+
+        if (_projectileBlock is null)
+        {
+            _projectileBlock = new ProjectileRow[4];
+        }
+        else if (_projectileCount == _projectileBlock.Length)
+        {
+            Array.Resize(ref _projectileBlock, _projectileCount * 2);
+        }
+
+        _projectileBlock[_projectileCount++] = row;
+    }
+
+    /// <summary>
+    ///     Ends the projectile rows: the extractor calls it once, after the last
+    ///     <see cref="AddProjectile" />, so rows equal to the last digest's can share its segment.
+    /// </summary>
+    public void CommitProjectiles() =>
+        Pool?.CommitProjectiles(ref _projectileBlock, ref _projectileStart, ref _projectileCount);
+
+    /// <summary>The pool the row storage came from, set by the extractor; null for a digest that owns its storage.</summary>
+    internal DigestStoragePool? Pool;
+
+    /// <summary>
+    ///     Hands pooled row storage back once the consumer has folded this digest. A digest without
+    ///     a pool keeps its rows, so tests that hold digests see them unchanged. After this,
+    ///     <see cref="PerPawn" /> and <see cref="Projectiles" /> read empty.
+    /// </summary>
+    public void ReleaseStorage()
+    {
+        if (Pool is null)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(PerPawn, PerPawnColumns.Empty))
+        {
+            Pool.Return(PerPawn);
+            PerPawn = PerPawnColumns.Empty;
+        }
+
+        _projectileBlock = null;
+        _projectileCount = 0;
+    }
 }

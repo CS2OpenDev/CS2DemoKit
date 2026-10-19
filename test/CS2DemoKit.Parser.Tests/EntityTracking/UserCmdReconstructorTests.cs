@@ -293,6 +293,230 @@ public class UserCmdReconstructorTests
         await Assert.That(r.Stats.CheckpointMismatches).IsEqualTo(0L);
     }
 
+    [Test]
+    public async Task OnDemand_RebuildsOnRead_AndEmitsNothing()
+    {
+        UserCmdReconstructor r = new() { OnDemand = true };
+
+        IReadOnlyList<ReconstructedUserCmd> emitted =
+            r.AdvanceOneFrame(Packet(Keyframe(10, 100, 1), Delta(11, 101, 2), Delta(12, 102, 3)));
+        await Assert.That(emitted.Count).IsEqualTo(0);
+        await Assert.That(r.Stats).IsEqualTo(default(UserCmdReconstructionStats)).Because("nothing is parsed before a read");
+
+        CSGOUserCmdPB? read = r.Current(Slot);
+        await Assert.That(read!.Base.Mousedx).IsEqualTo(3);
+        await Assert.That(read.Base.ClientTick).IsEqualTo(102);
+        await Assert.That(r.Stats.Full).IsEqualTo(1L);
+        await Assert.That(r.Stats.Delta).IsEqualTo(2L);
+
+        r.AdvanceOneFrame(Packet(Delta(13, 103, 4)));
+        await Assert.That(read.Base.Mousedx).IsEqualTo(3).Because("a queued delta waits for the next read");
+        await Assert.That(r.Current(Slot)).IsSameReferenceAs(read).Because("a later rebuild updates the instance in place");
+        await Assert.That(read.Base.Mousedx).IsEqualTo(4);
+    }
+
+    [Test]
+    public async Task OnDemand_KeyframeDropsTheQueueBeforeIt_AndReadsLikeEager()
+    {
+        DemoFrame[] frames = [Packet(Keyframe(10, 100, 1), Delta(11, 101, 2)), Packet(Keyframe(20, 200, 9), Delta(21, 201, 8))];
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true };
+        foreach (DemoFrame frame in frames)
+        {
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        await Assert.That(lazy.Current(Slot)).IsEqualTo(eager.Current(Slot));
+        await Assert.That(lazy.Current(Slot)!.Base.Mousedx).IsEqualTo(8);
+        await Assert.That(eager.Stats.Full).IsEqualTo(2L);
+        await Assert.That(lazy.Stats.Full).IsEqualTo(1L);
+        await Assert.That(lazy.Stats.Delta).IsEqualTo(1L);
+    }
+
+    [Test]
+    public async Task OnDemand_MatchesEager_AcrossSnapshots_OutOfOrder_BadDeltas_AndARestart()
+    {
+        CMsgServerUserCmd broken = Delta(13, 103);
+        broken.DeltaData = ByteString.CopyFrom(0x0A, 0x7F);
+        DemoFrame[] frames =
+        [
+            Packet(Keyframe(10, 100, 1), Delta(11, 101, 2)),
+            Packet(Delta(12, 102, 3)),
+            Snapshot(Keyframe(12, 102, 3)),
+            Packet(Delta(9, 99, 7)),
+            Packet(broken),
+            Packet(Delta(14, 104, 5)),
+            Snapshot(Keyframe(14, 104, 6)),
+            Packet(Delta(15, 105, 4)),
+            Packet(Keyframe(2, 2, 1), Delta(3, 3, 2))
+        ];
+
+        UserCmdReconstructor eager = new(), everyFrame = new() { OnDemand = true }, atTheEnd = new() { OnDemand = true };
+        foreach (DemoFrame frame in frames)
+        {
+            eager.AdvanceOneFrame(frame);
+            everyFrame.AdvanceOneFrame(frame);
+            atTheEnd.AdvanceOneFrame(frame);
+            await Assert.That(everyFrame.Current(Slot)).IsEqualTo(eager.Current(Slot));
+        }
+
+        await Assert.That(everyFrame.Stats).IsEqualTo(eager.Stats);
+        await Assert.That(atTheEnd.Current(Slot)).IsEqualTo(eager.Current(Slot));
+        await Assert.That(atTheEnd.Current(Slot)!.Base.Mousedx).IsEqualTo(2);
+        await Assert.That(atTheEnd.Stats.Full).IsEqualTo(1L).Because("the restart keyframe dropped everything queued before it");
+        await Assert.That(atTheEnd.Stats.Delta).IsEqualTo(1L);
+    }
+
+    [Test]
+    public async Task OnDemand_ReadsStoredPayloads_LikeEager()
+    {
+        // Parse-time frames carry their payloads in the store, which on demand reads without protobuf.
+        CSVCMsg_UserCommands one = new();
+        one.Commands.Add(Keyframe(10, 100, 1));
+        one.Commands.Add(Delta(11, 101, 2));
+        CSVCMsg_UserCommands two = new();
+        two.Commands.Add(Delta(12, 102, 3, slot: 0));
+        two.Commands.Add(new CMsgServerUserCmd { CmdNumber = 1, PlayerSlot = Slot });
+
+        UserCmdsWriter writer = new();
+        writer.BeginFrame();
+        writer.Append(one.ToByteArray(), 0);
+        writer.Append(two.ToByteArray(), 1);
+        (byte[]? block, int offset, int count) = writer.EndFrame();
+        DemoFrame frame = new()
+        {
+            CommandKind = EDemoCommands.DemPacket,
+            FrameNumber = 0,
+            HeaderLength = 0,
+            IsCompressed = false,
+            RawLength = 0,
+            RawStart = 0,
+            ServerTick = 0,
+            MessageList = [],
+            UserCmdsBlock = block,
+            UserCmdsOffset = offset,
+            UserCmdsCount = count
+        };
+
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true };
+        eager.AdvanceOneFrame(frame);
+        await Assert.That(lazy.AdvanceOneFrame(frame).Count).IsEqualTo(0);
+        await Assert.That(lazy.Current(Slot)).IsEqualTo(eager.Current(Slot));
+        await Assert.That(lazy.Current(Slot)!.Base.Mousedx).IsEqualTo(2);
+        await Assert.That(lazy.Current(0)).IsNull();
+        await Assert.That(lazy.Stats).IsEqualTo(eager.Stats);
+        await Assert.That(lazy.Stats.MissingBaseline).IsEqualTo(1L);
+        await Assert.That(lazy.Stats.Empty).IsEqualTo(1L);
+    }
+
+    [Test]
+    public async Task OnDemand_Apply_RebuildsTheQueueFirst()
+    {
+        UserCmdReconstructor r = new() { OnDemand = true };
+        r.AdvanceOneFrame(Packet(Keyframe(10, 100, 1), Delta(11, 101, 2)));
+
+        await Assert.That(r.Apply(Delta(12, 102, 3), false, out CSGOUserCmdPB? cmd)).IsEqualTo(UserCmdApplyStatus.Delta);
+        await Assert.That(cmd!.Base.Mousedx).IsEqualTo(3);
+        await Assert.That(r.Stats.Full).IsEqualTo(1L);
+        await Assert.That(r.Stats.Delta).IsEqualTo(2L);
+    }
+
+    [Test]
+    public async Task OnDemand_LongUnreadQueue_IsCaughtUpFromTheOldestFrames()
+    {
+        // Past the queue bound the oldest frames are applied to every slot, so a late read still
+        // sees every delta and nothing was dropped.
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true };
+        DemoFrame first = Packet(Keyframe(10, 100, 1));
+        eager.AdvanceOneFrame(first);
+        lazy.AdvanceOneFrame(first);
+        for (int i = 1; i < 5000; i++)
+        {
+            DemoFrame frame = Packet(Delta(10 + i, 100 + i, i % 7));
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        await Assert.That(lazy.Current(Slot)).IsEqualTo(eager.Current(Slot));
+        await Assert.That(lazy.Current(Slot)!.Base.ClientTick).IsEqualTo(5099);
+        await Assert.That(lazy.Stats).IsEqualTo(eager.Stats);
+        await Assert.That(lazy.Stats.Delta).IsEqualTo(4999L);
+    }
+
+    [Test]
+    public async Task OnDemand_BoundedQueue_AppliesTheOldestFramesToEverySlot()
+    {
+        // Two slots on keyframes every frame, a third that joins and leaves inside one flushed
+        // range, read only at the end: each holds what the eager mode holds.
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true, OnDemandFrameBound = 8 };
+        for (int i = 0; i < 100; i++)
+        {
+            List<CMsgServerUserCmd> commands = [Keyframe(10 + i, 100 + i, i, slot: 1), Delta(20 + i, 200 + i, i + 1, slot: 2)];
+            if (i % 10 == 0)
+            {
+                commands.Add(Keyframe(20 + i, 200 + i, i, slot: 2));
+            }
+
+            if (i is >= 40 and < 44)
+            {
+                commands.Add(i == 40 ? Keyframe(i, i, 7, slot: 5) : Delta(i, i, 7, slot: 5));
+            }
+
+            DemoFrame frame = i % 25 == 24 ? Snapshot(Keyframe(10 + i, 100 + i, i, slot: 1)) : Packet([.. commands]);
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        foreach (int slot in new[] { 1, 2, 5, 9 })
+        {
+            await Assert.That(lazy.Current(slot)).IsEqualTo(eager.Current(slot));
+        }
+
+        await Assert.That(lazy.Current(5)!.Base.ClientTick).IsEqualTo(43);
+        await Assert.That(lazy.Stats.Full).IsLessThan(eager.Stats.Full).Because("commands before a keyframe are skipped");
+        await Assert.That(lazy.Stats.DecodeFailed + lazy.Stats.MissingBaseline + lazy.Stats.OutOfOrder).IsEqualTo(0L);
+    }
+
+    [Test]
+    public async Task OnDemand_BoundedQueue_AppliesAFlushedRangeOfOnlySnapshots()
+    {
+        // The second flush covers frames 2 and 3, which hold only full-packet commands: one
+        // overwrites slot 3's stale baseline, the other primes slot 9 for the first time.
+        UserCmdReconstructor eager = new(), lazy = new() { OnDemand = true, OnDemandFrameBound = 4 };
+        DemoFrame[] frames =
+        [
+            Packet(Keyframe(1, 1, 0, slot: 3)),
+            Packet(),
+            Snapshot(Keyframe(1, 1, 9, slot: 3), Keyframe(5, 5, 7, slot: 9)),
+            Snapshot(),
+            Packet(),
+            Packet(),
+            Packet(),
+        ];
+        foreach (DemoFrame frame in frames)
+        {
+            eager.AdvanceOneFrame(frame);
+            lazy.AdvanceOneFrame(frame);
+        }
+
+        await Assert.That(eager.Current(3)!.Base.Mousedx).IsEqualTo(9);
+        await Assert.That(eager.Current(9)).IsNotNull();
+        await Assert.That(lazy.Current(3)).IsEqualTo(eager.Current(3));
+        await Assert.That(lazy.Current(9)).IsEqualTo(eager.Current(9));
+    }
+
+    private static DemoFrame Packet(params CMsgServerUserCmd[] commands) => Frame(EDemoCommands.DemPacket, Message(commands));
+
+    private static DemoFrame Snapshot(params CMsgServerUserCmd[] commands) =>
+        Frame(EDemoCommands.DemFullPacket, Message(commands));
+
+    private static NetMessage Message(CMsgServerUserCmd[] commands)
+    {
+        CSVCMsg_UserCommands payload = new();
+        payload.Commands.AddRange(commands);
+        return new NetMessage { MessageTypeName = "svc_UserCmds", Payload = payload };
+    }
+
     private static DemoFrame Frame(EDemoCommands kind, params NetMessage[] messages) => new()
     {
         CommandKind = kind,

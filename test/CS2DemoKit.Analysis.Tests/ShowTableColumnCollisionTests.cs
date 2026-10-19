@@ -123,6 +123,55 @@ public class ShowTableColumnCollisionTests
                                                - { stat: total_kills, label: K, group: game }
                                            """;
 
+    private const string EventTableTwoColumnsOneLabel = """
+                                                        ruleset: g_event_dup
+                                                        for: each_player
+                                                        cadences:
+                                                          second: { ticks: 64, anchor: round_freeze_end }
+                                                        stats:
+                                                          pos_x:
+                                                            capture: player.pos_x
+                                                            on: cadence.second
+                                                            per: match
+                                                          pos_y:
+                                                            capture: player.pos_y
+                                                            on: cadence.second
+                                                            per: match
+                                                        show:
+                                                          tables:
+                                                            positions:
+                                                              per: player_event
+                                                              on: cadence.second
+                                                              columns:
+                                                                - { stat: pos_x, label: P }
+                                                                - { stat: pos_y, label: P }
+                                                        """;
+
+    /// <summary>The event grains key their columns the same way, so the same guard covers them.</summary>
+    [Test]
+    public async Task EventTable_TwoColumnsSharingALabel_IsALoadError()
+    {
+        RuleConfigLoadResult loaded = YamlConfigLoader.LoadDocuments(
+            [("g_event_dup.rules.yaml", EventTableTwoColumnsOneLabel)]);
+
+        RuleConfigError collision = loaded.Errors.Single();
+        await Assert.That(collision.ChainId).IsEqualTo("g_event_dup");
+        await Assert.That(collision.Message).Contains("positions");
+        await Assert.That(collision.Message).Contains("'P'");
+    }
+
+    /// <summary>A clean event table loads with no error, so the error above is the label clash alone.</summary>
+    [Test]
+    public async Task EventTable_DistinctLabels_LoadsClean()
+    {
+        RuleConfigLoadResult loaded = YamlConfigLoader.LoadDocuments(
+            [("g_event_dup.rules.yaml", EventTableTwoColumnsOneLabel.Replace(
+                "{ stat: pos_x, label: P }", "{ stat: pos_x, label: X }", StringComparison.Ordinal))]);
+
+        await Assert.That(loaded.Errors).IsEmpty();
+        await Assert.That(loaded.Rulesets.Single().Show!.Tables.Single().On).IsEqualTo("cadence.second");
+    }
+
     [Test]
     public async Task TwoColumnsOfOneTable_SharingALabel_IsALoadError()
     {

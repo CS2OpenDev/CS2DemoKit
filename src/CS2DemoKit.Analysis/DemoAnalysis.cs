@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Graphs;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Profiles;
@@ -15,6 +16,7 @@ using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
 using CS2DemoKit.Parser.GameEvents;
+using CS2DemoKit.Parser.EntityTracking;
 
 #endregion
 
@@ -116,6 +118,40 @@ public sealed record AnalysisOptions
     ///     </para>
     /// </summary>
     public VisibilityEngine? VisibilityEngine { get; init; }
+
+    /// <summary>
+    ///     Per-player providers <see cref="FrameObserver" /> reads, by catalog name
+    ///     (<c>entity.pawn.place</c>, <c>entity.pawn.pos_x</c> ...). Each activates its digest
+    ///     column the way a rule reference would, so the run pays for the columns it declares and no
+    ///     others; a name no registered provider carries throws at build time. The observer may
+    ///     read only these names.
+    /// </summary>
+    public IReadOnlyList<string> ObservedProviders { get; init; } = [];
+
+    /// <summary>
+    ///     Grenade projectile classes <see cref="FrameObserver" /> reads, from
+    ///     <see cref="GrenadeProjectileClasses.All" />. Each digest then carries a
+    ///     <see cref="ProjectileRow" /> per live projectile of those classes; empty leaves the digest
+    ///     exactly as a run with no observer builds it. A name outside the five throws at build time.
+    /// </summary>
+    public IReadOnlyList<string> ObservedProjectileClasses { get; init; } = [];
+
+    /// <summary>
+    ///     Called once per frame on the evaluation thread, after the frame's messages and
+    ///     synthesized events have dispatched, with a <see cref="FrameView" /> over the declared
+    ///     state as of the end of that frame. Null for no observer. An observer that throws aborts
+    ///     the run.
+    /// </summary>
+    public IFrameObserver? FrameObserver { get; init; }
+
+    /// <summary>
+    ///     Rebuild the players' user commands on the evaluation thread and serve them to
+    ///     <c>player.cmd.*</c> reads and to <see cref="FrameView.Command" />. Widens the decode plan
+    ///     with <see cref="MessageCategories.UserCmds" />. A build that reads <c>player.cmd.*</c>
+    ///     turns the lane on without it. Pass it to <c>Build</c>, which plans the decode: set on
+    ///     <c>Evaluate</c> alone, the lane sees only the commands the source already decodes.
+    /// </summary>
+    public bool DecodeUserCommands { get; init; }
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
@@ -155,6 +191,13 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
 
     /// <summary>Every per-player node materialised during the run. Populated in both capture modes.</summary>
     public IReadOnlyList<StateNode> MaterializedNodes { get; init; } = [];
+
+    /// <summary>
+    ///     Every <c>for: each_projectile</c> instance the run finished, removed ones in removal order
+    ///     and the ones still live at the end last. The rows of a <c>per: projectile</c> table.
+    ///     Populated in both capture modes; empty when no projectile ruleset built.
+    /// </summary>
+    public IReadOnlyList<ProjectileRecord> Projectiles { get; init; } = [];
 
     /// <summary>
     ///     The graph's static nodes followed by the materialised per-player nodes the snapshot table
@@ -227,7 +270,8 @@ public sealed record AnalysisRun(BuildResult Build, RuleChainTimeline Timeline, 
             {
                 MatchId = matchId,
                 TeamNodesByRuleId = Build.TeamNodesByRuleId,
-                TeamRosterNodes = Build.TeamRosterNodes
+                TeamRosterNodes = Build.TeamRosterNodes,
+                Projectiles = Projectiles
             };
             tables.AddRange(Snapshots is not null
                 ? projector.Project(Snapshots, demo)
@@ -356,7 +400,8 @@ public static class DemoAnalysis
     ///     The narrowest decode plan that still feeds <paramref name="build" /> everything its graph
     ///     dispatches: the header and string tables always, every game event an edge or the
     ///     evaluator consumes, and the schema, entities and retained signon prefix only when the
-    ///     build has an entity scanner. A net message an edge subscribes to is included by wire
+    ///     build has an entity scanner, and the user commands only when
+    ///     <see cref="BuildResult.DecodesUserCommands" />. A net message an edge subscribes to is included by wire
     ///     id; one the catalog cannot place widens the plan to every
     ///     <see cref="MessageCategories.Other" /> message rather than dropping it.
     /// </summary>
@@ -390,6 +435,11 @@ public static class DemoAnalysis
         if (scanner)
         {
             categories |= MessageCategories.Schema | MessageCategories.Entities;
+        }
+
+        if (build.DecodesUserCommands)
+        {
+            categories |= MessageCategories.UserCmds;
         }
 
         return new DecodePlan
@@ -567,9 +617,11 @@ public static class DemoAnalysis
         RuleChainBuilder builder = CreateBuilder(target, options);
         if (v2Docs.Count == 0)
         {
-            return builder.Build() with
+            BuildResult bare = builder.Build();
+            return bare with
             {
-                ProfileResolution = resolution
+                ProfileResolution = resolution,
+                DecodesUserCommands = bare.DecodesUserCommands || options.DecodeUserCommands
             };
         }
 
@@ -580,8 +632,9 @@ public static class DemoAnalysis
         return build with
         {
             RulesetDiagnostics = composed.AttributedDiagnostics,
-            ExcludedRulesets = composed.Excluded,
-            ProfileResolution = resolution
+            ExcludedRulesets = [.. composed.Excluded, .. build.ExcludedRulesets],
+            ProfileResolution = resolution,
+            DecodesUserCommands = build.DecodesUserCommands || options.DecodeUserCommands
         };
     }
 
@@ -590,7 +643,9 @@ public static class DemoAnalysis
         target,
         entityProviders: options.EntityProviders ?? EntityValueProviderRegistry.CreateDefault(),
         perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault(),
-        visibilityEngine: options.VisibilityEngine);
+        visibilityEngine: options.VisibilityEngine,
+        observedProviders: options.ObservedProviders,
+        observedProjectileClasses: options.ObservedProjectileClasses);
 
     private static (DemoSourceProfile Profile, ProfileResolutionKind Resolution) ResolveProfileCore(
         ParsedDemo demo, AnalysisOptions? options)
@@ -648,7 +703,14 @@ public static class DemoAnalysis
         ParsedDemo? demo)
     {
         ArgumentNullException.ThrowIfNull(build);
-        StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner);
+        StateGraphEvaluator evaluator = new(build.Graph, demo, build.PlayerContextIndex, build.EntityScanner)
+        {
+            FrameObserver = options.FrameObserver,
+            ObservedProviders = options.ObservedProviders,
+            DecodeUserCommands = build.DecodesUserCommands || options.DecodeUserCommands,
+            Cadences = build.CadencePlans,
+            RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId)
+        };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;
 
         RuleChainTimeline timeline;
@@ -680,6 +742,7 @@ public static class DemoAnalysis
             Demo = source.Enrichment.Snapshot(),
             MaterializedPlayers = evaluator.MaterializedPlayers,
             MaterializedNodes = evaluator.MaterializedNodes,
+            Projectiles = [.. evaluator.ProjectileRecords],
             Provenance = new AnalysisProvenance(
                 source.SupportsRandomAccess ? AnalysisSourceKind.Materialised : AnalysisSourceKind.Stream,
                 build.Profile,

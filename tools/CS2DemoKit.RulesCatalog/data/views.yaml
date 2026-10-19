@@ -42,6 +42,12 @@
 # Facet lowering forms (closed set, §5): `field:` (event field read), `enrichment:` (an
 # enrich.* node — existing machinery), `expr:` (a v2 expression over event.* + roles). `type:`
 # is the author-facing type; the generator verifies it against the real field/enrichment type.
+#
+# `rate:` (OPTIONAL, the one value `measured`) gives the view its own frequency class. The
+#   generator's --measure folds the corpus through the view's `baked:` filters and records the max
+#   firings per demo in frequency-baseline.json; the event-table gate reads the view's class before
+#   its event's, so a view that keeps a small slice of a frequent event can trigger a per-firing
+#   table. Needs a `baked:` filter: without one the view fires as its event does.
 
 views:
 
@@ -144,6 +150,27 @@ views:
       amount: { type: int,    field: DmgHealth }
       hitgroup: { type: int,    field: HitGroup }
       weapon: { type: string, field: Weapon }
+    availability: all
+
+  # Every grenade release: weapon_fire baked to the six grenade weapons, the thrower bound. It
+  # has its own measured rate, since weapon_fire itself is `frequent`, so a per-firing table on it
+  # passes the event-table gate; a throw log joins it to the projectile row through the thrower's
+  # slot and the spawn tick.
+  grenade_released:
+    event: weapon_fire
+    note: >-
+      Fires on the release, 6 to 15 ticks before the projectile row appears (projectile_created, or
+      first_seen_tick on a per: projectile row). Its rate is measured through its weapon filter, so an
+      event table may trigger on it where the bare weapon_fire may not.
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: UserId
+    baked:
+      - 'event.Weapon in ["weapon_hegrenade", "weapon_flashbang", "weapon_smokegrenade", "weapon_molotov", "weapon_incgrenade", "weapon_decoy"]'
+    facets:
+      weapon: { type: string, field: Weapon }
+    rate: measured
     availability: all
 
   # ── weapon_fire (actor_slot) ─────────────────────────────────────────────────
@@ -306,6 +333,44 @@ views:
     facets: { }
     availability: all
 
+  # The two bursts that are not a *_detonate event. decoy_started is the decoy's sound beginning
+  # (decoy_detonate is each fake shot after it); its userid is a player_pawn field, so the wire
+  # carries the pawn's entity handle and no controller slot, which rules out an actor_slot binding.
+  # inferno_startburn is a molotov's or incendiary's fire lighting, and names no player at all.
+  # Both bind to nobody and are joined to the grenade by entity id and position instead.
+  decoy_started:
+    event: decoy_started
+    note: >-
+      Binds to nobody: the wire names the thrower's pawn handle (pawn), not a slot. Join a decoy to
+      its projectile row by entity_id (the projectile's entity_index) or by position and tick.
+    binding: none
+    roles: { }
+    baked: [ ]
+    facets:
+      entity_id: { type: int, field: EntityId }
+      pawn: { type: int, field: UserId }
+      x: { type: float, field: X }
+      y: { type: float, field: Y }
+      z: { type: float, field: Z }
+    availability: all
+
+  inferno_started:
+    event: inferno_startburn
+    logical: inferno_start
+    note: >-
+      Binds to nobody: the event names the inferno entity, not the projectile or a player. Join it
+      to a molotov's projectile row by position (the fire starts where the projectile burst) and
+      tick.
+    binding: none
+    roles: { }
+    baked: [ ]
+    facets:
+      entity_id: { type: int, field: EntityId }
+      x: { type: float, field: X }
+      y: { type: float, field: Y }
+      z: { type: float, field: Z }
+    availability: all
+
   # Synthesized molotov_thrown (m_hThrower attribution). The note travels into catalog.json and the
   # schema hover, because the clock caveat is for the rule author, not for this file's reader.
   molotov:
@@ -320,6 +385,49 @@ views:
       thrower: PlayerSlot
     baked: [ ]
     facets: { }
+    availability: all
+
+  # Synthesized projectile lifecycle (actor = the thrower, held from its first resolution). The
+  # five classes share both views; `class` is the short name (smoke, molotov, he, flash, decoy),
+  # with incendiaries under molotov. projectile_thrown fires on the frame the thrower resolves,
+  # which is a molotov's molotov_thrown frame; projectile_landed fires on the first frame the
+  # entity is gone, which for a smoke or a decoy is when the cloud or the sound ends.
+  projectile_thrown:
+    event: projectile_created
+    note: >-
+      Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick
+      reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile
+      whose thrower never resolves fires no projectile_thrown.
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: PlayerSlot
+    baked: [ ]
+    facets:
+      class: { type: string, field: Grenade }
+      x: { type: float, field: X }
+      y: { type: float, field: Y }
+      z: { type: float, field: Z }
+    availability: all
+
+  projectile_landed:
+    event: projectile_removed
+    note: >-
+      Synthesized from entity state on the first frame the projectile is gone, so event.tick is the
+      FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy
+      lands here only when its cloud or sound ends. Fires for every projectile, but binds to no
+      player when the thrower never resolved.
+    binding: actor_slot
+    actor: thrower
+    roles:
+      thrower: PlayerSlot
+    baked: [ ]
+    facets:
+      class: { type: string, field: Grenade }
+      x: { type: float, field: X }
+      y: { type: float, field: Y }
+      z: { type: float, field: Z }
+      bounces: { type: int, field: Bounces }
     availability: all
 
   # ── bomb events (binding: none) ──────────────────────────────────────────────
@@ -389,6 +497,21 @@ views:
       winner_side: { type: int, field: Winner }
       reason: { type: int, field: Reason }
       rounds_played: { type: int, field: RoundsPlayed }
+    availability: all
+
+  # cadence_tick is a ruleset cadence's period, synthesized by the evaluator. Authors reach it as
+  # cadence.<id>, which the resolver lowers to this view filtered on event.Cadence; a bare
+  # reference is rejected because it would fire on every cadence in the build.
+  cadence_tick:
+    event: cadence_tick
+    note: >-
+      Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once
+      per period on the first frame at or after each due tick, after the frame's own events. Reach
+      it as cadence.<id>; Step is the step since the anchor, 0 on the anchor's frame.
+    binding: none
+    baked: [ ]
+    facets:
+      step: { type: int, field: Step }
     availability: all
 
   # round_ended is the round's close ($round_end), bound to nobody: every player's template fires,

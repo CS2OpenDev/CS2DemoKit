@@ -98,7 +98,15 @@ public sealed class EventRegistry
         // after the decision (544 at the end of a half; either can land a tick early or late), when
         // the status has already reset.
         ("round_decided", typeof(RoundDecidedEvent)),
+        // Synthesized (EntityChangeScanner): a grenade projectile's first and last frame, from the
+        // projectile rows of the entity digest.
+        ("projectile_created", typeof(ProjectileCreatedEvent)),
+        ("projectile_removed", typeof(ProjectileRemovedEvent)),
+        // Synthesized (StateGraphEvaluator): a ruleset cadence's period on the frame clock.
+        ("cadence_tick", typeof(CadenceTickEvent)),
         ("decoy_detonate", typeof(DecoyDetonateEvent)),
+        // The decoy's sound starting, once per decoy; decoy_detonate is each fake shot after it.
+        ("decoy_started", typeof(DecoyStartedEvent)),
         ("bullet_impact", typeof(BulletImpactEvent)),
         ("other_death", typeof(OtherDeathEvent)),
         // HLTV/pro round-end marker — used by Cs2HltvProfile.RoundEnd. Generated

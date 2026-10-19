@@ -1,13 +1,17 @@
 #region
 
 using System.Diagnostics;
+using System.Numerics;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Diagnostics;
 using CS2DemoKit.Analysis.Events;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Nodes;
+using CS2DemoKit.Analysis.Observation;
+using CS2DemoKit.Analysis.Output;
 using CS2DemoKit.Parser;
+using CS2DemoKit.Parser.EntityTracking;
 using CS2DemoKit.Parser.GameEvents;
 using Microsoft.Extensions.Logging;
 
@@ -101,6 +105,14 @@ public sealed class StateGraphEvaluator
 
     private readonly IReadOnlyList<PerPlayerNodeTemplate> _perPlayerTemplates;
 
+    // ── Per-projectile materialization ──────────────────────────────────────
+    // One instance per (entity index, serial) from projectile_created to projectile_removed. Its
+    // nodes never join the snapshot node list, so a snapshot row does not widen per grenade; its
+    // edges are registered on creation and unregistered at removal.
+    private readonly IReadOnlyList<ProjectileNodeTemplate> _projectileTemplates;
+    private readonly Dictionary<(int Index, int Serial), LiveProjectile> _liveProjectiles = [];
+    private readonly List<ProjectileRecord> _projectileRecords = [];
+
     private readonly PlayerContextIndex? _playerContextIndex;
 
     // Multi-action per trigger (registration used to silently last-wins).
@@ -149,6 +161,28 @@ public sealed class StateGraphEvaluator
     /// </summary>
     internal Output.IEvaluationObserver? Observer { get; set; }
 
+    /// <summary>
+    ///     The host's per-frame hook, called after each frame's post-frame messages with a
+    ///     <see cref="FrameView" /> over the scanner's folded state. Null (the default) costs one
+    ///     null check per frame.
+    /// </summary>
+    internal IFrameObserver? FrameObserver { get; set; }
+
+    /// <summary>The provider names <see cref="FrameObserver" /> may read; resolved to columns once per run.</summary>
+    internal IReadOnlyList<string> ObservedProviders { get; set; } = [];
+
+    /// <summary>The build's cadences (<see cref="Graphs.BuildResult.CadencePlans" />); empty costs one check per frame.</summary>
+    internal IReadOnlyList<CadencePlan> Cadences { get; set; } = [];
+
+    /// <summary>
+    ///     Rebuild user commands for <see cref="FrameView.Command" /> even when no rule reads one
+    ///     (<see cref="Graphs.BuildResult.DecodesUserCommands" />). A rule read turns the lane on by itself.
+    /// </summary>
+    internal bool DecodeUserCommands { get; set; }
+
+    // The lane when only the observer asked for it; a rule read uses the scanner's.
+    private UserCmdReconstructor? _observerCommands;
+
     /// <param name="graph">The compiled rule-chain graph to evaluate.</param>
     /// <param name="demo">Optional parsed demo for player-roster lookups during per-player materialization.</param>
     /// <param name="playerContextIndex">Optional cross-player state index for enrichment edges.</param>
@@ -165,6 +199,7 @@ public sealed class StateGraphEvaluator
         _conjunctionIndex = BuildLogicNodeIndex(graph.Edges, graph.ConjunctionNodes);
         _disjunctionIndex = BuildLogicNodeIndex(graph.Edges, graph.DisjunctionNodes);
         _perPlayerTemplates = graph.PerPlayerTemplates;
+        _projectileTemplates = graph.ProjectileTemplates;
 
         foreach ((StateNode trigger, List<(Action Invoke, StateNode? Writes)> actions) in graph.RisingEdgeActions)
         {
@@ -265,6 +300,15 @@ public sealed class StateGraphEvaluator
 
     /// <summary>Every player materialised so far, in order. Both modes.</summary>
     public IReadOnlyList<PerPlayerNodeTemplate.MaterializedPlayer> MaterializedPlayers => _materializedPlayers;
+
+    /// <summary>
+    ///     Every projectile instance the most recent evaluation finished, in the order they were
+    ///     removed, with the ones still live at the end last. Both modes. Reset per evaluation.
+    /// </summary>
+    public IReadOnlyList<ProjectileRecord> ProjectileRecords => _projectileRecords;
+
+    /// <summary>The build's live round-number node, which a projectile record's round reads; null when the build has none.</summary>
+    internal StateNode? RoundNumberNode { get; set; }
 
     /// <summary>Frames read by the most recent evaluation.</summary>
     public int FramesConsumed { get; private set; }
@@ -492,6 +536,8 @@ public sealed class StateGraphEvaluator
         RoundOfficiallyEndedSeen = 0;
         CsPreRestartSeen = 0;
         _roundDecidedSinceFreezeEnd = false;
+        ReleaseProjectiles();
+        _projectileRecords.Clear();
 
         // Static ruleset nodes start from their build-time values, so evaluating one build twice
         // does not carry the first run's totals into the second. A no-op on a fresh build.
@@ -528,11 +574,28 @@ public sealed class StateGraphEvaluator
             _enrichment = frames.Enrichment;
         }
 
+        // Must be reset per run: a second evaluation over one build would start from the last
+        // run's baselines.
+        UserCmdReconstructor? commands = _entityScanner?.Commands
+                                         ?? (DecodeUserCommands ? _observerCommands ??= new UserCmdReconstructor { OnDemand = true } : null);
+        // The queue keeps its default bound over a frame list too: a bound of the demo's length
+        // is 32 bytes a frame of large-object growth held for the whole run, and a flush over
+        // frames every slot has already consumed is a header walk.
+        commands?.Reset();
+
+        // One view per run; the observer reads it inside OnFrame only.
+        IFrameObserver? frameObserver = FrameObserver;
+        FrameView? view = frameObserver is not null ? new FrameView(_entityScanner, ObservedProviders, commands) : null;
+
         // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
         // producer applies the whole run before any frame in it is polled, which is what a
         // tick-gated seek over a list did, so every frame of a run reads the same entity state.
+        CadenceScheduler? cadences = Cadences.Count > 0 ? new CadenceScheduler(Cadences) : null;
+        List<CadenceTickEvent> dueCadences = [];
+
         int frameIdx = 0;
         int runPos = 0;
+        int lastFrameTick = 0;
         List<DemoFrame> run = new(4);
         try
         {
@@ -561,6 +624,8 @@ public sealed class StateGraphEvaluator
             }
 
             DemoFrame frame = run[runPos++];
+            int frameTick = frame.GameTick ?? frame.ServerTick;
+            lastFrameTick = frameTick;
             long frameStart = timeFrame ? Stopwatch.GetTimestamp() : 0;
             int frameMessageCount = 0;
 
@@ -584,44 +649,13 @@ public sealed class StateGraphEvaluator
                 snap?.CaptureAfterMessage(frameIdx, frame.ServerTick, ordinal, message, fired > 0);
             }
 
-            // ── Synthesize entity-state change events (lazy: scanner is null when no rule
-            //    references an entity context). Each synthesized message participates in the
-            //    snapshot/dirty bookkeeping exactly like a real frame message. ──
-            if (_entityScanner is not null)
-            {
-                IReadOnlyList<NetMessage> synthesized = _entityScanner.AdvanceAndPollAt(frameIdx, frame.ServerTick);
-                for (int s = 0; s < synthesized.Count; s++)
-                {
-                    NetMessage syntheticMsg = synthesized[s];
-                    Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
+            // Before the poll, so every read in this frame sees the frame's own commands.
+            commands?.AdvanceOneFrame(frame);
 
-                    // Synthesized game events (molotov_thrown) must materialize
-                    // their player exactly like real-message events below — a player whose first
-                    // qualifying activity is entity-derived was otherwise silently dropped. The
-                    // TrackNewlyMaterializedNodes call is mandatory in snapshot mode (a past
-                    // bug class — undeclared writes: untracked mid-run nodes break row padding).
-                    if (syntheticMsg is GameEventMessage sgem)
-                    {
-                        MaterializeNewPlayers(sgem.DecodedEvent);
-                        snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
-                        if (sgem.DecodedEvent is PlayerTeamObservedEvent observedTeam)
-                        {
-                            SeedObservedTeam(observedTeam);
-                        }
-                    }
-
-                    Type sKey = GetDispatchKey(syntheticMsg);
-                    int sEvaluated = 0, sFired = 0, sLogic = 0;
-                    EvaluateEdgesInstrumented(new EvaluationContext(syntheticMsg, frame), sKey,
-                        trace, ref sEvaluated, ref sFired,
-                        snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
-                    CheckLogicNodesInstrumented(events, sKey, frameIdx, frame.ServerTick,
-                        trace, ref sLogic, snap);
-
-                    FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
-                    Observer?.AfterMessage();
-                }
-            }
+            // The poll consumes the frame's digest (lazy: scanner is null when no rule references an
+            // entity context). The entity events it synthesizes are held and dispatched after the
+            // fold below: they are raised from this frame's state, so they read it.
+            IReadOnlyList<NetMessage>? synthesized = _entityScanner?.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
 
             // DecodedMessages, not InnerMessages: the stored svc_UserCmds entries are synthesized on
             // access and their dispatch key is the storage wrapper's type, which matches no rule.
@@ -662,6 +696,8 @@ public sealed class StateGraphEvaluator
                     CsPreRestartSeen++;
                 }
 
+                cadences?.Observe(key, frameTick);
+
                 int edgesEvaluated = 0, edgesFired = 0, logicRecomputed = 0;
                 EvaluateEdgesInstrumented(new EvaluationContext(message, frame), key,
                     trace, ref edgesEvaluated, ref edgesFired,
@@ -677,7 +713,59 @@ public sealed class StateGraphEvaluator
                 }
 
                 FinishMessage(message, edgesEvaluated, edgesFired, logicRecomputed);
-                Observer?.AfterMessage();
+                Observer?.AfterMessage(frame.ServerTick);
+            }
+
+            // The frame's fold sits between its wire messages and everything the engine raises from
+            // it: wire triggers read the state before their own PacketEntities; the synthesized
+            // entity events, round_decided, the cadence steps and the observer read the folded frame.
+            _entityScanner?.CompleteFrame();
+
+            // ── Synthesized entity-state events (projectile_created, molotov_thrown, team and
+            //    singleton changes). Each participates in the snapshot/dirty bookkeeping exactly like
+            //    a wire message. ──
+            if (synthesized is not null)
+            {
+                for (int s = 0; s < synthesized.Count; s++)
+                {
+                    NetMessage syntheticMsg = synthesized[s];
+                    Observer?.BeforeMessage(GetDispatchKey(syntheticMsg));
+
+                    // Synthesized game events (molotov_thrown) must materialize their player exactly
+                    // like wire events: a player's first qualifying activity can be entity-derived.
+                    // TrackNewlyMaterializedNodes is mandatory in snapshot mode (untracked mid-run
+                    // nodes break row padding).
+                    if (syntheticMsg is GameEventMessage sgem)
+                    {
+                        MaterializeNewPlayers(sgem.DecodedEvent);
+                        snap?.TrackNewlyMaterializedNodes(_materializedNodeList);
+                        if (sgem.DecodedEvent is PlayerTeamObservedEvent observedTeam)
+                        {
+                            SeedObservedTeam(observedTeam);
+                        }
+                        else if (sgem.DecodedEvent is ProjectileCreatedEvent createdProjectile)
+                        {
+                            MaterializeProjectile(createdProjectile, frameTick);
+                        }
+                    }
+
+                    Type sKey = GetDispatchKey(syntheticMsg);
+                    int sEvaluated = 0, sFired = 0, sLogic = 0;
+                    EvaluateEdgesInstrumented(new EvaluationContext(syntheticMsg, frame), sKey,
+                        trace, ref sEvaluated, ref sFired,
+                        snap?.Dirty, snap?.NodeToIndex, snap?.AppliedByEdge, snap?.Snapshots.Count ?? -1);
+                    CheckLogicNodesInstrumented(events, sKey, frameIdx, frame.ServerTick,
+                        trace, ref sLogic, snap);
+
+                    FinishMessage(syntheticMsg, sEvaluated, sFired, sLogic);
+                    Observer?.AfterMessage(frame.ServerTick);
+
+                    // After the message settles, so a capture on projectile_removed is in the row.
+                    if (syntheticMsg is GameEventMessage { DecodedEvent: ProjectileRemovedEvent removedProjectile })
+                    {
+                        FinalizeProjectile((removedProjectile.EntityIndex, removedProjectile.Serial), frameTick, true);
+                    }
+                }
             }
 
             // ── Post-frame synthesized events (round_decided). Dispatched after the frame's own
@@ -713,6 +801,17 @@ public sealed class StateGraphEvaluator
                 }
             }
 
+            // ── Cadence steps, after everything else the frame dispatches. ──
+            if (cadences is not null)
+            {
+                dueCadences.Clear();
+                cadences.Drain(frameTick, dueCadences);
+                for (int c = 0; c < dueCadences.Count; c++)
+                {
+                    DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(dueCadences[c]));
+                }
+            }
+
             void DispatchPostFrame(NetMessage postMsg)
             {
                 Type pKey = GetDispatchKey(postMsg);
@@ -729,6 +828,8 @@ public sealed class StateGraphEvaluator
                     snap?.MarkRoundScopedDirty(_roundScopedNodes);
                 }
 
+                cadences?.Observe(pKey, frameTick);
+
                 int pEvaluated = 0, pFired = 0, pLogic = 0;
                 EvaluateEdgesInstrumented(new EvaluationContext(postMsg, frame), pKey,
                     trace, ref pEvaluated, ref pFired,
@@ -737,7 +838,20 @@ public sealed class StateGraphEvaluator
                     trace, ref pLogic, snap);
 
                 FinishMessage(postMsg, pEvaluated, pFired, pLogic);
-                Observer?.AfterMessage();
+                Observer?.AfterMessage(frame.ServerTick);
+            }
+
+            if (view is not null)
+            {
+                view.Publish(frame, frameIdx);
+                try
+                {
+                    frameObserver!.OnFrame(view);
+                }
+                finally
+                {
+                    view.Close();
+                }
             }
 
             if (timeFrame)
@@ -765,7 +879,9 @@ public sealed class StateGraphEvaluator
 
         FramesConsumed = frameIdx;
         MessagesConsumed = totalMessages;
+        FinalizeLiveProjectiles(lastFrameTick);
         Observer?.Finish();
+        frameObserver?.Finish();
 
         // A1: snapshot the collected highlight firings for this evaluation (copy — the graph's
         // sink is cleared by the NEXT evaluation over this graph, ours must stay stable).
@@ -1300,6 +1416,16 @@ public sealed class StateGraphEvaluator
 
                 break;
 
+            case ProjectileCreatedEvent created:
+                yield return created.PlayerSlot;
+
+                break;
+
+            case ProjectileRemovedEvent removed:
+                yield return removed.PlayerSlot;
+
+                break;
+
             // Both halves of a spot materialize: the viewer because the view binds its actor slot
             // to them, and the target because a role handle on `target` reads that player's own
             // nodes, which do not exist until the slot is materialized.
@@ -1547,6 +1673,163 @@ public sealed class StateGraphEvaluator
         }
 
         ResortAllSlots();
+    }
+
+    // ── Per-projectile materialization ──────────────────────────────────────
+
+    private void MaterializeProjectile(ProjectileCreatedEvent created, int tick)
+    {
+        (int Index, int Serial) key = (created.EntityIndex, created.Serial);
+        if (_projectileTemplates.Count == 0 || _liveProjectiles.ContainsKey(key))
+        {
+            return;
+        }
+
+        // The scanner's live row carries the thrower held from its first resolution; the event is
+        // the fallback for a scanner that does not keep rows.
+        ProjectileRow row = new(created.EntityIndex, created.Serial, created.ClassName, created.PlayerSlot, -1,
+            new Vector3(created.X, created.Y, created.Z), null, null, 0, 0, null, null);
+        if (_entityScanner is { } scanner)
+        {
+            foreach (ProjectileRow live in scanner.Projectiles.Live)
+            {
+                if (live.EntityIndex == created.EntityIndex && live.Serial == created.Serial)
+                {
+                    row = live;
+                    break;
+                }
+            }
+        }
+
+        List<ProjectileNodeTemplate.MaterializedProjectile> instances = new(_projectileTemplates.Count);
+        HashSet<Type> touched = [];
+        foreach (ProjectileNodeTemplate template in _projectileTemplates)
+        {
+            ProjectileNodeTemplate.MaterializedProjectile instance = template.Materialize(row, created.FirstSeenTick);
+            foreach (StateEdge edge in instance.Edges)
+            {
+                RegisterEdge(edge);
+                touched.Add(edge.MessageType);
+            }
+
+            if (instance.RisingEdgeActions is { } actions)
+            {
+                foreach ((StateNode trigger, Action action, StateNode? writes) in actions)
+                {
+                    if (!_risingEdgeActions.TryGetValue(trigger, out List<RegisteredRisingEdgeAction>? registered))
+                    {
+                        _risingEdgeActions[trigger] = registered = [];
+                        _risingEdgeFireCounts[trigger] = 0;
+                    }
+
+                    registered.Add(new RegisteredRisingEdgeAction(action, null, writes));
+                }
+            }
+
+            instances.Add(instance);
+        }
+
+        // Only the keys this instance's edges joined: a full resort per grenade would walk every
+        // edge list of the graph hundreds of times a demo.
+        Dictionary<Type, List<StateEdge>> sub = new(touched.Count);
+        foreach (Type key2 in touched)
+        {
+            sub[key2] = _edgeIndex[key2];
+        }
+
+        TopologicalSortEdges(sub);
+        _liveProjectiles[key] = new LiveProjectile(created.FirstSeenTick, tick, row.Team, instances);
+    }
+
+    private void FinalizeProjectile((int Index, int Serial) key, int tick, bool removed)
+    {
+        if (!_liveProjectiles.Remove(key, out LiveProjectile? live))
+        {
+            return;
+        }
+
+        Dictionary<string, object?> values = new(StringComparer.OrdinalIgnoreCase);
+        ProjectileNodeTemplate.MaterializedProjectile first = live.Instances[0];
+        foreach (ProjectileNodeTemplate.MaterializedProjectile instance in live.Instances)
+        {
+            // A round-end compute has no round end of its own; it settles on the instance's.
+            foreach (StateNode node in instance.Nodes)
+            {
+                if (node is ComputedStatNode compute)
+                {
+                    compute.Recompute();
+                }
+            }
+
+            foreach ((string id, StateNode node) in instance.NodesByRuleId)
+            {
+                values[id] = StatValues.ReadSnapshotValue(
+                    new NodeSnapshot(node.IsActive, node.GetDisplayValue(), node.GetNumericValue()), node);
+            }
+
+            ReleaseInstance(instance);
+        }
+
+        _projectileRecords.Add(new ProjectileRecord(
+            first.EntityIndex, first.Serial, first.ClassName, first.ThrowerSlot, ResolvePlayerName(first.ThrowerSlot),
+            live.Team, live.FirstSeenTick, live.CreatedTick, tick, CurrentRoundNumber(), removed, values));
+    }
+
+    private void FinalizeLiveProjectiles(int tick)
+    {
+        foreach ((int Index, int Serial) key in _liveProjectiles.Keys.ToList())
+        {
+            FinalizeProjectile(key, tick, false);
+        }
+    }
+
+    private void ReleaseProjectiles()
+    {
+        foreach (LiveProjectile live in _liveProjectiles.Values)
+        {
+            foreach (ProjectileNodeTemplate.MaterializedProjectile instance in live.Instances)
+            {
+                ReleaseInstance(instance);
+            }
+        }
+
+        _liveProjectiles.Clear();
+    }
+
+    private void ReleaseInstance(in ProjectileNodeTemplate.MaterializedProjectile instance)
+    {
+        foreach (StateEdge edge in instance.Edges)
+        {
+            if (_edgeIndex.TryGetValue(edge.MessageType, out List<StateEdge>? list))
+            {
+                list.Remove(edge);
+            }
+
+            _edgeIds.Remove(edge);
+        }
+
+        if (instance.RisingEdgeActions is { } actions)
+        {
+            foreach ((StateNode trigger, _, _) in actions)
+            {
+                _risingEdgeActions.Remove(trigger);
+                _risingEdgeFireCounts.Remove(trigger);
+            }
+        }
+    }
+
+    private int CurrentRoundNumber() =>
+        RoundNumberNode is { IsActive: true } node && node.GetNumericValue() is { } round ? (int)round : 0;
+
+    private sealed class LiveProjectile(int firstSeenTick, int createdTick, int team, List<ProjectileNodeTemplate.MaterializedProjectile> instances)
+    {
+        public int FirstSeenTick { get; } = firstSeenTick;
+
+        public int CreatedTick { get; } = createdTick;
+
+        public int Team { get; } = team;
+
+        public List<ProjectileNodeTemplate.MaterializedProjectile> Instances { get; } = instances;
     }
 
     private void ProcessWrittenNodes(bool[]? snapshotDirty = null,

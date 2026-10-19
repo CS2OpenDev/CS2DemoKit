@@ -152,6 +152,28 @@ public class ShotEnrichmentEdgeTests
         await Assert.That(delta).IsGreaterThan(0.0);
     }
 
+    [Test]
+    public async Task AngleDelta_IdenticalAngles_IsExactlyZero()
+    {
+        await Assert.That(ShotEnrichmentEdge.AngleDeltaDegrees(-12.5f, 133.7f, -12.5f, 133.7f))
+            .IsEqualTo(0.0);
+    }
+
+    [Test]
+    public async Task AngleDelta_IsSnappedToItsDecimalGrid()
+    {
+        // Libm differs per OS in the last ulp; only a snapped value hashes the same everywhere.
+        (float, float, float, float)[] cases =
+        [
+            (1.25f, 10.5f, 1.3f, 10.75f), (-4.1f, 179.9f, -3.9f, -179.8f), (30f, 0f, 30.0001f, 0.0001f)
+        ];
+        foreach ((float pa, float ya, float pb, float yb) in cases)
+        {
+            double d = ShotEnrichmentEdge.AngleDeltaDegrees(pa, ya, pb, yb);
+            await Assert.That(Math.Round(d, ShotEnrichmentEdge.AngleDecimals)).IsEqualTo(d);
+        }
+    }
+
     // ── Flick anchoring (turn_degrees / ticks_since_last_shot) ───────────────
 
     [Test]

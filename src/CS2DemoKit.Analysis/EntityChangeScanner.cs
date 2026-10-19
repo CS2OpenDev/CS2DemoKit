@@ -6,6 +6,7 @@ using System.Reflection;
 using CS2DemoKit.Analysis.Abstractions;
 using CS2DemoKit.Analysis.Diagnostics;
 using CS2DemoKit.Analysis.Events;
+using CS2DemoKit.Analysis.Observation;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Visibility;
 using CS2DemoKit.Parser;
@@ -50,12 +51,9 @@ public sealed class EntityChangeScanner
         new(ReferenceEqualityComparer.Instance);
 
     // ── Per-player pre-frame snapshot ─────────────────────────────────────────
-    // For each registered per-player provider, the most-recently-captured value PER PLAYER
-    // SLOT. Captured at the START of each AdvanceAndPollAt call, BEFORE the layer advances,
-    // so when consumers read inside that frame's inner-message processing they see the
-    // PREVIOUS frame's value. This is the right input for "compute pre-event state from
-    // entity ground truth" because the current frame's PacketEntities update arrives
-    // concurrently with the event we're handling.
+    // For each registered per-player provider, the last folded value PER PLAYER SLOT. A frame's
+    // wire messages read it before CompleteFrame folds that frame in: the previous frame's value,
+    // which is the state an event arrived in, since its PacketEntities follows it on the wire.
     private readonly List<IPerPlayerEntityValueProvider> _perPlayerProviders;
 
     // The column plan of every digest this scanner consumes, and the typed snapshot indexed by
@@ -111,6 +109,15 @@ public sealed class EntityChangeScanner
     private int _lastWinStatus = -1;
     private readonly HashSet<(int Index, int Serial)> _seenMolotovs = [];
 
+    // projectile_created / projectile_removed synthesis. A projectile waits here, keyed by
+    // (index, serial), from its first row until its thrower resolves; its first row supplies the
+    // created event's position.
+    private readonly bool _emitProjectileEvents;
+    private readonly Dictionary<(int Index, int Serial), ProjectileRow> _pendingProjectiles = [];
+
+    // The frame-clock tick each live projectile first appeared on, for the events' FirstSeenTick.
+    private readonly Dictionary<(int Index, int Serial), int> _projectileFirstSeen = [];
+
     // The singleton providers in _tracked order — the digest's Singletons[] aligns with these. Held
     // separately so the shared EntityDigestExtractor (used by the pipelined producer too) reads the
     // same providers in the same order.
@@ -126,11 +133,19 @@ public sealed class EntityChangeScanner
     // the rest, so a run cut short leaves nothing half-consumed for the next.
     private EntityFrameDigest?[]? _precomputed;
 
-    // The previous frame's digest. The pre-frame snapshot consumed inside frame N
-    // is the per-pawn state from frame N-1 — which is exactly _prevDigest.PerPawn (built last frame from
-    // N-1's post-seek state == N's pre-seek state). Holding one frame back lets the digest carry the
-    // "previous values", so a chunk worker needn't preserve the layer's pre-seek state.
+    // The digest Consume last stored, and whether it has been folded into the pre-frame snapshot.
+    // The snapshot an edge reads inside frame N is the per-pawn state from frame N-1: CompleteFrame
+    // folds digest N-1 at the end of its frame, and Consume folds it one frame late for a caller
+    // that polls without ever completing a frame. Either way the fold runs once.
     private EntityFrameDigest? _prevDigest;
+    private bool _prevFolded = true;
+
+    // Look-back: the frame clock of the poll in flight, of _prevDigest, and of the state the
+    // snapshot holds, plus the per-column histories KeepHistory asked for (null when none).
+    private int _pollClock;
+    private int _prevClock;
+    private int _snapshotClock = int.MinValue;
+    private ColumnHistory?[]? _history;
 
     private int _profFramesPolled;
 
@@ -171,8 +186,24 @@ public sealed class EntityChangeScanner
 
     // The projectile slots the per-frame digest reads instead of walking every live entity. Bound
     // to the layer's tracker on first use and rebound if the layer is reset under it.
-    private readonly ProjectileSlotIndex _projectiles = new();
+    private readonly ProjectileSlotIndex _projectiles;
     private readonly PawnSlotIndex _pawns = new();
+
+    // The classes every digest carries projectile rows for. Null or empty adds no rows.
+    private readonly IReadOnlySet<string>? _projectileClasses;
+
+    /// <summary>
+    ///     The projectile lifecycle derived from the consumed digests' rows: what appeared on the
+    ///     frame last polled, what was removed, and the live set. Empty unless the scanner was
+    ///     built with projectile classes.
+    /// </summary>
+    internal ProjectileLifecycle Projectiles { get; } = new();
+
+    /// <summary>The per-pawn snapshot the frame observer reads after <see cref="CompleteFrame" />. Replaced per evaluation.</summary>
+    internal PreFrameSnapshot Snapshot => _preFrameSnapshot;
+
+    /// <summary>The column plan of the per-pawn snapshot, which names the readable columns.</summary>
+    internal DigestColumnLayout ColumnLayout => _layout;
 
     /// <param name="layer">The entity-state layer the scanner reads from; advanced one frame at a time.</param>
     /// <param name="providers">Singleton-entity providers paired with their backing value nodes (push model).</param>
@@ -207,7 +238,11 @@ public sealed class EntityChangeScanner
     ///     The builder's form: <paramref name="silentProviders" /> are tracked for their value node
     ///     and for <c>round_decided</c> only, so a change of one updates the node but synthesizes no
     ///     change marker. The builder tracks the three game-rules singletons in every build and
-    ///     passes the ones no rule reads here.
+    ///     passes the ones no rule reads here. <paramref name="projectileClasses" /> names the
+    ///     grenade projectile classes every digest carries rows for, read back through
+    ///     <see cref="Projectiles" />; null or empty carries none. <paramref name="emitProjectileEvents" />
+    ///     synthesizes <c>projectile_created</c> and <c>projectile_removed</c> from that lifecycle,
+    ///     for those classes only.
     /// </summary>
     internal EntityChangeScanner(
         EntityStateLayer layer,
@@ -216,10 +251,15 @@ public sealed class EntityChangeScanner
         bool emitMolotovThrows,
         AimVantageScanner? vantageScanner,
         VisibilityTransitionScanner? transitionScanner,
-        IReadOnlySet<IEntityValueProvider>? silentProviders)
+        IReadOnlySet<IEntityValueProvider>? silentProviders,
+        IReadOnlySet<string>? projectileClasses = null,
+        bool emitProjectileEvents = false)
     {
         Layer = layer;
         _emitMolotovThrows = emitMolotovThrows;
+        _projectileClasses = projectileClasses is { Count: > 0 } ? projectileClasses : null;
+        _emitProjectileEvents = emitProjectileEvents && _projectileClasses is not null;
+        _projectiles = new ProjectileSlotIndex(_projectileClasses);
         _vantageScanner = vantageScanner;
         _transitionScanner = transitionScanner;
         _tracked = new List<TrackedProvider>(providers.Count);
@@ -253,7 +293,7 @@ public sealed class EntityChangeScanner
 
         // In this order: the delta state and the snapshot are both indexed by the layout.
         _layout = DigestColumnLayout.For(_perPlayerProviders);
-        _delta = new PerPawnDeltaState(_layout);
+        _delta = new PerPawnDeltaState(_layout) { Storage = new DigestStoragePool() };
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
 
@@ -306,8 +346,16 @@ public sealed class EntityChangeScanner
     /// </summary>
     /// <param name="frameIndex">Index of the frame in the evaluation's read order, from zero.</param>
     /// <param name="tick">The frame's server tick.</param>
-    public IReadOnlyList<NetMessage> AdvanceAndPollAt(int frameIndex, int tick)
+    public IReadOnlyList<NetMessage> AdvanceAndPollAt(int frameIndex, int tick) =>
+        AdvanceAndPollOnClock(frameIndex, tick, tick);
+
+    /// <summary>
+    ///     <see cref="AdvanceAndPollAt" /> with the frame clock the look-back history is
+    ///     stamped with (<c>GameTick ?? ServerTick</c>), which the server tick is not.
+    /// </summary>
+    internal IReadOnlyList<NetMessage> AdvanceAndPollOnClock(int frameIndex, int tick, int frameClock)
     {
+        _pollClock = frameClock;
         if (Profiling.Enabled)
         {
             _profiled = true;
@@ -415,19 +463,39 @@ public sealed class EntityChangeScanner
     internal IDemoFrameSource BeginEvaluation(IDemoFrameSource source, int? maxDegreeOfParallelism,
         CancellationToken cancellationToken)
     {
+        // Counted here, before the producer-kind branches below, so every kind (pipelined,
+        // sequential, precomputed, injected) counts this run exactly once.
+        if (EvaluatorMetrics.EntityScanStarted.Enabled)
+        {
+            EvaluatorMetrics.EntityScanStarted.Add(1);
+        }
+
         ClosePipeline();
         _releaseFolded = !source.SupportsRandomAccess;
         _pastSignonPrefix = false;
         _prevDigest = null;
+        _prevFolded = true;
         _seenMolotovs.Clear();
+        Projectiles.Reset();
+        _pendingProjectiles.Clear();
+        _projectileFirstSeen.Clear();
         _postFrame.Clear();
         _lastWinStatus = -1;
         _preFrameSnapshotFrozen = false;
         _lastCompatibleLayout = null;
+        _snapshotClock = int.MinValue;
+        if (_history is not null)
+        {
+            foreach (ColumnHistory? history in _history)
+            {
+                history?.Reset();
+            }
+        }
+
         _pendingFrames.Clear();
         _runDriven = false;
         Array.Fill(_lastTeam, -1);
-        _delta = new PerPawnDeltaState(_layout);
+        _delta = new PerPawnDeltaState(_layout) { Storage = new DigestStoragePool() };
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
         Span<TrackedProvider> tracked = CollectionsMarshal.AsSpan(_tracked);
         for (int i = 0; i < tracked.Length; i++)
@@ -478,7 +546,8 @@ public sealed class EntityChangeScanner
             releaseFolded,
             ValidateSchema,
             cancellationToken,
-            MinChunkFrames(source.FrameCount, workers));
+            MinChunkFrames(source.FrameCount, workers),
+            _projectileClasses);
 
     /// <summary>
     ///     Folds every frame's digest on the pipelined producer up front: the next evaluation over
@@ -692,7 +761,9 @@ public sealed class EntityChangeScanner
                 continue;
             }
 
-            ValidateOne(tracker, p.Name, p.EntityClass, p.FieldName, p.ValueType);
+            // A derived value's type is not its source leaf's wire type, so only the leaf's
+            // existence is the drift signal.
+            ValidateOne(tracker, p.Name, p.EntityClass, p.FieldName, p is IDerivedPawnValue ? null : p.ValueType);
         }
 
         foreach (IEntityValueProvider p in _singletonProviders)
@@ -704,7 +775,7 @@ public sealed class EntityChangeScanner
     }
 
     private static void ValidateOne(EntityTracker tracker, string providerName,
-        string entityClass, string fieldPath, Type declaredType)
+        string entityClass, string fieldPath, Type? declaredType)
     {
         RuntimeField? meta = tracker.GetFieldMeta(entityClass, fieldPath);
         if (meta is null)
@@ -715,7 +786,7 @@ public sealed class EntityChangeScanner
                 + "provider's field path (schema reference: cs2-opendocs).");
         }
 
-        if (!IsWireTypeCompatible(declaredType, meta.TypeName))
+        if (declaredType is not null && !IsWireTypeCompatible(declaredType, meta.TypeName))
         {
             throw new InvalidOperationException(
                 $"provider '{providerName}': declared type '{declaredType.Name}' is not "
@@ -855,9 +926,10 @@ public sealed class EntityChangeScanner
 
     /// <summary>
     ///     Consumes one frame's digest: folds the previous frame's per-pawn values into the pre-frame
-    ///     snapshot, runs singleton change-detection, then molotov synthesis — the (sequential, stateful)
-    ///     half of the scan, the same whichever producer built the digest. Order matches the
-    ///     pre-digest poll-loop → DetectMolotovThrows sequence.
+    ///     snapshot unless <see cref="CompleteFrame" /> already did, runs singleton change-detection,
+    ///     then molotov synthesis: the (sequential, stateful) half of the scan, the same whichever
+    ///     producer built the digest. Order matches the pre-digest poll-loop → DetectMolotovThrows
+    ///     sequence.
     /// </summary>
     private List<NetMessage> Consume(EntityFrameDigest digest, int tick)
     {
@@ -866,7 +938,11 @@ public sealed class EntityChangeScanner
 
         // Pre-frame snapshot consumed inside THIS frame = the previous frame's per-pawn values (N-1 state).
         // Before _prevDigest exists (frame 0) the snapshot stays empty.
-        MergePreFrameSnapshot(_prevDigest);
+        if (!_prevFolded)
+        {
+            MergePreFrameSnapshot(_prevDigest);
+            _prevDigest?.ReleaseStorage();
+        }
 
         ConsumeSingletons(digest, tick);
         ConsumeRoundDecided(digest, tick);
@@ -876,10 +952,42 @@ public sealed class EntityChangeScanner
             ConsumeMolotovs(digest, tick);
         }
 
+        if (_projectileClasses is not null)
+        {
+            Projectiles.Step(digest.Projectiles, tick);
+            if (_emitProjectileEvents)
+            {
+                ConsumeProjectiles(tick);
+            }
+        }
+
         ConsumeAimVantage(digest, tick);
 
         _prevDigest = digest;
+        _prevClock = _pollClock;
+        _prevFolded = false;
         return _scratch;
+    }
+
+    /// <summary>
+    ///     Ends the frame last polled: folds its per-pawn values into the pre-frame snapshot, so
+    ///     what reads after it sees the state at the end of frame N, the same cells the next frame's
+    ///     first edge reads. The evaluator calls it after the frame's wire messages and before the
+    ///     messages the poll synthesized, its post-frame messages, cadence steps and frame observer;
+    ///     a caller that polls without it
+    ///     gets the same fold at the next poll. The decode-compromise latch keeps its order either
+    ///     way, since the fold is the same fold.
+    /// </summary>
+    public void CompleteFrame()
+    {
+        if (_prevFolded)
+        {
+            return;
+        }
+
+        MergePreFrameSnapshot(_prevDigest);
+        _prevDigest?.ReleaseStorage();
+        _prevFolded = true;
     }
 
     /// <summary>The team <paramref name="slot" />'s controller last showed in a digest, when one has.</summary>
@@ -1000,7 +1108,8 @@ public sealed class EntityChangeScanner
         }
 
         EntityFrameDigest d = EntityDigestExtractor.Build(
-            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null, _projectiles, _pawns);
+            Layer, _delta, _singletonProviders, _emitMolotovThrows, _transitionScanner is not null, _projectiles, _pawns,
+            _projectileClasses);
         if (prof)
         {
             // Lumped under the historical "snapshot" sub-phase — it is the per-pawn sweep that dominated it;
@@ -1039,6 +1148,7 @@ public sealed class EntityChangeScanner
             return;
         }
 
+        _snapshotClock = _prevClock;
         PerPawnColumns rows = prev.PerPawn;
         if (rows.Count == 0)
         {
@@ -1062,6 +1172,175 @@ public sealed class EntityChangeScanner
         }
 
         _preFrameSnapshot.Fold(rows);
+        if (_history is not null)
+        {
+            RecordHistory(rows);
+        }
+    }
+
+    // A cell absent from a row did not change, so the history keeps change points only.
+    private void RecordHistory(PerPawnColumns rows)
+    {
+        for (int column = 0; column < _history!.Length; column++)
+        {
+            if (_history[column] is not { } history)
+            {
+                continue;
+            }
+
+            int word = column >> 6;
+            ulong bit = 1UL << (column & 63);
+            for (int r = 0; r < rows.Count; r++)
+            {
+                if ((rows.PresentWord(r, word) & bit) == 0)
+                {
+                    continue;
+                }
+
+                int slot = rows.SlotAt(r);
+                switch (history.Kind)
+                {
+                    case PawnCellKind.Int:
+                    case PawnCellKind.Bool:
+                        history.Push(slot, _snapshotClock, new HistoryEntry { Int = rows.GetInt(r, column) });
+                        break;
+                    case PawnCellKind.Float:
+                        history.Push(slot, _snapshotClock, new HistoryEntry { Float = rows.GetFloat(r, column) });
+                        break;
+                    default:
+                        history.Push(slot, _snapshotClock, new HistoryEntry { String = rows.GetString(r, column) });
+                        break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Keeps <paramref name="provider" />'s values for <paramref name="ticks" /> ticks of the frame
+    ///     clock, for <see cref="GetPreFrameValueAt" />. The longest request per provider wins.
+    /// </summary>
+    internal void KeepHistory(IPerPlayerEntityValueProvider provider, int ticks)
+    {
+        if (!_perPlayerProviderIndex.TryGetValue(provider, out int column))
+        {
+            throw new InvalidOperationException(
+                $"per-player provider '{provider.Name}' is not registered on this scanner, so it keeps no history");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(ticks, 1);
+        _history ??= new ColumnHistory?[_perPlayerProviders.Count];
+        if (_history[column] is not { } held || held.Ticks < ticks)
+        {
+            _history[column] = new ColumnHistory(_layout.Kinds[column], ticks);
+        }
+    }
+
+    /// <summary>
+    ///     <paramref name="provider" />'s value for <paramref name="playerSlot" /> as
+    ///     <see cref="GetPreFrameValue" /> would have returned it <paramref name="ticksBack" /> ticks
+    ///     earlier on the frame clock: the newest value at or before the snapshot's tick minus
+    ///     <paramref name="ticksBack" />. Null when the slot had no value by then.
+    /// </summary>
+    public object? GetPreFrameValueAt(IPerPlayerEntityValueProvider provider, int playerSlot, int ticksBack)
+    {
+        if (!_perPlayerProviderIndex.TryGetValue(provider, out int column)
+            || _history?[column] is not { } history || ticksBack < 1 || ticksBack > history.Ticks)
+        {
+            throw new InvalidOperationException(
+                $"per-player provider '{provider.Name}' keeps no {ticksBack}-tick history on this scanner; "
+                + "the build gates a look-back in through KeepHistory");
+        }
+
+        if (_snapshotClock == int.MinValue || !history.TryAt(playerSlot, _snapshotClock - ticksBack, out HistoryEntry entry))
+        {
+            return null;
+        }
+
+        return history.Kind switch
+        {
+            PawnCellKind.Int => entry.Int,
+            PawnCellKind.Bool => entry.Int != 0 ? PawnCellBoxes.True : PawnCellBoxes.False,
+            PawnCellKind.Float => entry.Float,
+            _ => entry.String
+        };
+    }
+
+    private struct HistoryEntry
+    {
+        public int Tick;
+        public int Int;
+        public float Float;
+        public string? String;
+    }
+
+    // Per slot, a ring of change points with strictly rising ticks, so Ticks + 1 entries always
+    // reach back far enough: the entry a read wants is at most Ticks entries behind the newest.
+    private sealed class ColumnHistory(PawnCellKind kind, int ticks)
+    {
+        private Ring?[] _bySlot = new Ring?[64];
+
+        public PawnCellKind Kind => kind;
+
+        public int Ticks => ticks;
+
+        public void Push(int slot, int tick, HistoryEntry entry)
+        {
+            if ((uint)slot >= (uint)_bySlot.Length)
+            {
+                Array.Resize(ref _bySlot, Math.Max(slot + 1, _bySlot.Length * 2));
+            }
+
+            entry.Tick = tick;
+            (_bySlot[slot] ??= new Ring(ticks + 1)).Push(entry);
+        }
+
+        public bool TryAt(int slot, int tick, out HistoryEntry entry)
+        {
+            if ((uint)slot < (uint)_bySlot.Length && _bySlot[slot] is { } ring)
+            {
+                return ring.TryAt(tick, out entry);
+            }
+
+            entry = default;
+            return false;
+        }
+
+        public void Reset() => Array.Clear(_bySlot);
+    }
+
+    private sealed class Ring(int capacity)
+    {
+        private readonly HistoryEntry[] _entries = new HistoryEntry[capacity];
+        private int _count;
+        private int _newest = capacity - 1;
+
+        public void Push(HistoryEntry entry)
+        {
+            if (_count > 0 && _entries[_newest].Tick == entry.Tick)
+            {
+                _entries[_newest] = entry;
+                return;
+            }
+
+            _newest = (_newest + 1) % _entries.Length;
+            _entries[_newest] = entry;
+            _count = Math.Min(_count + 1, _entries.Length);
+        }
+
+        public bool TryAt(int tick, out HistoryEntry entry)
+        {
+            for (int k = 0; k < _count; k++)
+            {
+                entry = _entries[(_newest - k + _entries.Length) % _entries.Length];
+                if (entry.Tick <= tick)
+                {
+                    return true;
+                }
+            }
+
+            entry = default;
+            return false;
+        }
     }
 
     /// <summary>
@@ -1164,6 +1443,53 @@ public sealed class EntityChangeScanner
     }
 
     /// <summary>
+    ///     Synthesizes the frame's <c>projectile_removed</c> events, then its <c>projectile_created</c>
+    ///     ones, each ascending by entity index. A created event waits for the projectile's thrower
+    ///     to resolve, as <see cref="ConsumeMolotovs" /> does, and is dropped if the projectile goes
+    ///     first; its removal is still emitted, with slot -1.
+    /// </summary>
+    private void ConsumeProjectiles(int tick)
+    {
+        foreach (ProjectileRow row in Projectiles.Removed)
+        {
+            (int EntityIndex, int Serial) key = (row.EntityIndex, row.Serial);
+            _pendingProjectiles.Remove(key);
+            _projectileFirstSeen.Remove(key, out int firstSeen);
+            (float x, float y, float z) = Coordinates(row);
+            _scratch.Add(GameEventMessage.ForSynthesizedEvent(new ProjectileRemovedEvent(
+                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z, row.Bounces,
+                firstSeen)));
+        }
+
+        foreach (ProjectileRow row in Projectiles.Created)
+        {
+            _pendingProjectiles.Add((row.EntityIndex, row.Serial), row);
+            _projectileFirstSeen[(row.EntityIndex, row.Serial)] = tick;
+        }
+
+        if (_pendingProjectiles.Count == 0)
+        {
+            return;
+        }
+
+        foreach (ProjectileRow row in Projectiles.Live)
+        {
+            if (row.ThrowerSlot < 0 || !_pendingProjectiles.Remove((row.EntityIndex, row.Serial), out ProjectileRow first))
+            {
+                continue;
+            }
+
+            (float x, float y, float z) = Coordinates(first);
+            _scratch.Add(GameEventMessage.ForSynthesizedEvent(new ProjectileCreatedEvent(
+                tick, tick, tick, row.ThrowerSlot, row.EntityIndex, row.Serial, row.ClassName, x, y, z,
+                _projectileFirstSeen[(row.EntityIndex, row.Serial)])));
+        }
+    }
+
+    private static (float X, float Y, float Z) Coordinates(in ProjectileRow row) =>
+        row.Position is { } p ? (p.X, p.Y, p.Z) : (float.NaN, float.NaN, float.NaN);
+
+    /// <summary>
     ///     Returns the scanner's per-frame profiling accumulators. Returns <c>default</c>
     ///     (<see cref="ScannerProfilingSnapshot.Enabled" /> = <c>false</c>) when no profiled run has driven
     ///     this scanner — see <see cref="Profiling.Enabled" />.
@@ -1180,9 +1506,12 @@ public sealed class EntityChangeScanner
     /// <summary>
     ///     Reads the snapshot of <paramref name="provider" />'s value for
     ///     <paramref name="playerSlot" /> as captured at the START of the most recent
-    ///     <see cref="AdvanceAndPollAt" /> call. Returns <c>null</c> if no snapshot exists
-    ///     (provider not registered, slot never populated, or first frame). The value is
-    ///     PRE-FRAME relative to the currently-in-flight frame.
+    ///     <see cref="AdvanceAndPollAt" /> call, or at the END of that frame once
+    ///     <see cref="CompleteFrame" /> has run. Returns <c>null</c> if no snapshot exists
+    ///     (provider not registered, slot never populated, or first frame). Under the evaluator a
+    ///     wire message reads the first (the state before its own frame's PacketEntities), and
+    ///     the events this scanner synthesizes, <c>round_decided</c>, a cadence step and the frame
+    ///     observer read the second.
     /// </summary>
     public object? GetPreFrameValue(IPerPlayerEntityValueProvider provider, int playerSlot)
     {
@@ -1202,6 +1531,23 @@ public sealed class EntityChangeScanner
 
         // The one box on the per-pawn path: per event read, not per frame.
         return _preFrameSnapshot.GetBoxed(idx, playerSlot);
+    }
+
+    /// <summary>
+    ///     The user-command lane compiled <c>player.cmd.*</c> reads are served from. The builder sets it
+    ///     when a rule reads a command; the evaluator resets and advances it once per frame, before the
+    ///     frame's poll. Null when nothing reads commands.
+    /// </summary>
+    internal UserCmdReconstructor? Commands { get; set; }
+
+    /// <summary>
+    ///     <paramref name="provider" />'s value off <paramref name="playerSlot" />'s latest command,
+    ///     or null when the slot has no command yet or the build decodes none.
+    /// </summary>
+    public object? GetCommandValue(IPerPlayerCommandProvider provider, int playerSlot)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        return Commands is { } commands ? provider.Read(commands, playerSlot) : null;
     }
 
     private static EntityChangeMessage BuildSynthesizedMessage(IEntityValueProvider provider, int tick, object? oldValue, object? newValue)

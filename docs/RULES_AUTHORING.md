@@ -65,7 +65,8 @@ text, an in-expression `(line, column)` span, and ranked "did you mean" candidat
 A **ruleset** is a named bundle of **stats**. Each stat is one measurement. You choose:
 
 - **`for:`** — do you want this *per player* (`each_player`), *per side* (`each_team`: one for the
-  terrorists, one for the counter-terrorists) or for the *whole match* (`match`)?
+  terrorists, one for the counter-terrorists), *per grenade* (`each_projectile`: one for each
+  projectile, from the throw to the moment it is gone) or for the *whole match* (`match`)?
 - **the kind** — *how* to measure (count events, sum a value, keep a max, compute a formula, …).
 - **the source** — *what* to measure (a "view" like `kill`, or another stat).
 - **`per:`** — the window it resets over: `round` or `match`.
@@ -104,9 +105,10 @@ Validate it, and you have a working stat.
 You don't reference raw wire events; you trigger on **views** — author-friendly verbs that already
 know the CS2 conventions. Common views:
 
-`kill` · `death` · `assist` · `damage_dealt` · `shot` · `blinded_enemy` ·
+`kill` · `death` · `assist` · `damage_dealt` · `shot` · `grenade_released` · `blinded_enemy` ·
 `bomb_planted` · `bomb_defused` · `he_grenade` · `flash_grenade` · `smoke_grenade` · `molotov` ·
-`round_won` · `round_lost` · `round_decided` · `round_ended`
+`decoy_started` · `inferno_started` · `projectile_thrown` · `projectile_landed` · `round_won` ·
+`round_lost` · `round_decided` · `round_ended`
 
 A round ends twice. **`round_decided`** fires on the frame the server decides the round, read off
 the game rules' round-win status: its facets are `winner_side` (2 = T, 3 = CT), `reason` (the
@@ -129,6 +131,45 @@ the engine opens the round itself: it dispatches a synthesized `round_freeze_end
 frame, just before the `round_decided`, which moves `round.number`, resets the round's stats and
 samples the freeze-end economy and rosters like a real one. That round gets its own rows, and
 `round.number` stays level with `rounds_played`. A `raw.round_freeze_end` stat sees it too.
+
+**`projectile_thrown`** and **`projectile_landed`** are a grenade projectile's first and last frame,
+for all five grenades, bound to the thrower. Their facets are `class` (`smoke`, `molotov`, `he`,
+`flash` or `decoy`; an incendiary is a `molotov`), `x`, `y` and `z`, and `projectile_landed` adds
+`bounces`. Both are synthesized from entity state, so `event.tick` is the frame clock. A throw fires
+on the first frame its thrower resolves, which for a molotov is the frame `molotov` fires, and its
+position is where the projectile was first seen; `event.FirstSeenTick` under either view is the
+frame-clock tick it was first seen on, the spawn. A projectile lands on the first frame it is gone:
+right after the burst for an HE, a flash or a molotov, but only when the cloud or the sound ends for
+a smoke or a decoy. A projectile whose thrower never resolves never fires `projectile_thrown`, and
+its `projectile_landed` binds to nobody. `x`, `y` and `z` read NaN when the position was not
+readable. The events behind them are `projectile_created` and `projectile_removed`; under a view,
+`event.*` also reads `EntityIndex`, `Serial` and `ClassName`. A `raw.projectile_created` trigger
+reads only the tick, because raw triggers expose no fields, so filter through the views.
+
+**The release.** `grenade_released` is the `weapon_fire` of one of the six grenade weapons, bound to
+the thrower, with a `weapon` facet (`weapon_smokegrenade`, `weapon_incgrenade`, ...). It fires 6 to
+15 ticks before the projectile row appears, so a throw log joins it to `projectile_created` or to
+a `per: projectile` row's `first_seen_tick` through the thrower's slot. It has its own measured rate
+(a few hundred a match), so an event table may trigger on it where the bare `weapon_fire`, which
+fires on every bullet, is refused.
+
+**The bursts.** `he_grenade`, `flash_grenade` and `smoke_grenade` are the detonations, bound to the
+thrower; under each, `event.EntityId` is the projectile's entity index and `event.X`, `Y`, `Z` where
+it burst. **`decoy_started`** is a decoy's sound beginning (`decoy_detonate` is each fake shot after
+it) and **`inferno_started`** a molotov's or incendiary's fire lighting. Both bind to nobody: the
+wire names the thrower's pawn handle on the one (its `pawn` facet) and no player on the other, so
+read them from a `for: match` ruleset and join through their facets: `entity_id` is the decoy
+projectile's entity index, or the inferno entity's, and `x`, `y`, `z` the burst. A burst arriving on
+the frame the projectile is removed is dispatched before `projectile_removed`, so a `for:
+each_projectile` stat on `he_grenade` still sees it.
+
+```yaml
+stats:
+  smokes_thrown:
+    count: projectile_thrown
+    match: { class: smoke }
+    per: round
+```
 
 `enemy_spotted` is a view as well, but it is *synthesized* from recomputed visibility rather than
 read off the wire, so it only fires on a run set up for it — read "Facets that need a map bake" in
@@ -161,6 +202,37 @@ close, like any view without a subject.
 
 If you need a raw event with no view, use `raw.<event>`; net messages are `net.<Message>`. Views
 are almost always what you want.
+
+### Cadences
+
+A stat that samples state at a fixed rate triggers on a **cadence**, not on `net.CNETMsg_Tick`. A
+tick trigger evaluates every edge on every frame; a cadence fires once per period. Declare it at the
+top of the ruleset and trigger on `cadence.<id>`:
+
+```yaml
+ruleset: round_positions
+for: each_player
+cadences:
+  second: { seconds: 1, anchor: round_freeze_end, until: round_ended }   # or ticks: 64
+stats:
+  pos_x: { capture: player.pos_x, on: cadence.second, per: round }
+```
+
+Give the period as `ticks:` or `seconds:`, not both; seconds are rounded to ticks at the demo's
+tick rate. `anchor: round_freeze_end` is required and starts step 0 on the freeze end's frame.
+`until:` stops it: `round_ended` on the round's close, `next_freeze_end` on the next freeze end, and
+with neither it runs until the next anchor restarts it. Both follow the active profile's bindings:
+the anchor is any concrete event of `$round_freeze_end`, plus the freeze end the evaluator
+synthesizes for a round decided in freeze time, and `round_ended` is any concrete event of
+`$round_end`. A custom profile binds `cadence_tick` through `DemoSourceProfile.CadenceTick`. A match restart stops every cadence. Each
+step fires on the first frame at or after its due tick, after everything else that frame
+dispatches, so a frame gap longer than a period fires the missed steps together on that frame, and
+a step due on the stop's own frame does not fire. A step reads the frame's own state: `player.pos_x`
+on a step is the position at the end of the frame it fired on, the value a frame observer reads
+there. The ticks are the frame clock: `event.tick` reads
+the frame the step fired on, and `event.Step` counts from 0 at the anchor. A cadence binds to
+nobody, so an each_player stat fires for every player on every step. Trigger on `cadence.<id>`
+only: a bare `cadence_tick` reference would fire on every cadence in the build and is rejected.
 
 ---
 
@@ -279,7 +351,8 @@ is the frame clock on every event: the index `DemoFrame`, timeline events and hi
 the one a video or clip consumer seeks by. `event.tick` is the absolute server tick on a wire event
 (`kill`, `shot`, `bomb_planted`, ...), higher by the demo's `ServerStartTick` (about 20,000 ticks on
 a typical GOTV demo). On the views the engine synthesizes from entity state (`enemy_spotted`,
-`molotov`, `round_decided`) there is no server stamp, and `event.tick` is the frame clock too.
+`molotov`, `projectile_thrown`, `projectile_landed`, `round_decided`) there is no server stamp, and
+`event.tick` is the frame clock too.
 
 Capture `event.frame_tick` when the tick is going to a consumer, and whenever you compare ticks
 across views: it is one clock everywhere, so a `where:` that differences a molotov tick against a
@@ -478,6 +551,16 @@ Inside `when:` / `where:` / `compute:` you can read live game state:
     thresholding across weapons compares nothing. It is the weapon's own decaying penalty and does
     NOT include the movement contribution, so reading it alone as "how inaccurate was this shot"
     understates a running player.
+  - `player.on_ground` / `player.ducking`: the ground and crouch bits of the pawn's flags, as
+    bools. `player.ducking` is the flag, not the ramp `player.duck_amount` gives. `player.flags` is
+    the raw bitfield; the language has no bitwise operators, so test the two named bits instead.
+  - `player.weapon_throw_strength`: the held grenade's throw strength: `1` for a full throw, `0`
+    for an underhand lob, about `0.5` with both buttons. Only a grenade carries it, and a read that
+    stops resolving does not clear the column, so after the grenade leaves the hand it keeps its
+    last value. Test it together with `player.active_weapon_class`.
+  - `player.coaching_team`: the side this player coaches, `2` or `3`, and `0` for everyone else.
+    It is read off the slot's controller, not through a pawn, so a slot with no player pawn bound
+    has a value too.
 
 **The four angle columns wrap at 360.** `eye_pitch`, `eye_yaw`, `punch_pitch` and `punch_yaw` are
 raw `QAngle` components as the engine networks them, over **[0, 360)** — a -2 degree kick arrives
@@ -504,11 +587,77 @@ degrees as unreal and **rejects every value this column produces**, which is why
 two is measuring the decode, not the player.
 
 **A timing note on entity reads.** In an event-gated site (`where:`, a `sum:`/`capture:` value,
-`while:`), an entity read is the value *at the moment of the event* (e.g. the victim's HP at the
-kill). In a node-logic site (`compute:`, `flag: when:`), it's the value at *round end / evaluation
-time*. Both are useful — pick the site that matches the question. (Under an event view you can also
-read a role's entity state, using the role name in place of `player`: `victim.health` in a
-`kill`-view `where:`.)
+`while:`), an entity read is the value *at the moment of the event*. Which state that is depends on
+what raised the trigger:
+
+- A game event from the demo (`player_hurt`, `kill`, `weapon_fire`, `round_freeze_end`, ...) reads
+  the state from before its own frame's entity update. A frame's game events come before its
+  entity update on the wire, so this is the state the event arrived in: the victim's HP before the
+  hit, the clip before the shot.
+- A trigger the engine raises from the frame itself (a cadence step, `round_decided`, the freeze
+  end synthesized for a round decided in freeze time, and the entity events synthesized from the
+  frame's state: `projectile_created`, `projectile_removed`, `molotov_thrown`, `enemy_spotted`)
+  reads the frame's state after its entity update, as a frame observer and a capture with no
+  `on:` do. So `thrower.pos_x` and `projectile.pos_x` on `projectile_created` are one frame, and
+  `thrower.pos_x@-8` counts back from it. These events dispatch after the frame's wire events, so
+  a `hegrenade_detonate` that arrives on the frame the projectile is removed reaches the instance
+  before `projectile_removed` does.
+- The one exception is `player.cmd.*`, below.
+
+In a node-logic site (`compute:`, `flag: when:`), it's the value at *round end / evaluation time*.
+Both are useful; pick the site that matches the question. (Under an event view you can also read a
+role's entity state, using the role name in place of `player`: `victim.health` in a `kill`-view
+`where:`.)
+
+**Player input.** `player.cmd.*` reads the player's latest user command, rebuilt from the demo's
+`svc_UserCmds` (matchmaking demos carry them; a demo without them reads `0`):
+
+- `player.cmd.buttons`: the held-button mask (`base.buttons_pb.buttonstate1`), a 64-bit int.
+  `!= 0` is "pressing something"; the language has no bitwise operators yet.
+- `player.cmd.forward` / `player.cmd.left`: the movement inputs, `forwardmove` and `leftmove`.
+- `player.cmd.view_pitch` / `player.cmd.view_yaw`: the view angles the client sent, in degrees.
+- `player.cmd.tick`: the client tick the command was built on.
+- `player.cmd.last_jump_tick`: the frame-clock tick `IN_JUMP` last rose on, set where the previous
+  command had it clear or pressed in a sub-tick move step; `-1` before the first.
+- `player.cmd.coverage`: the player's commands over the last 64 ticks divided by 64, capped at 1,
+  so `0` says the demo carries no input for the player lately and a jump read means nothing.
+
+A command read includes the commands of the frame the event fires on, at a game event too, where
+the entity reads above are the state from before the frame's update. Commands are served at event sites only (`where:`, a `sum:` /
+`capture:` value); a `compute:` or `flag: when:` that reads one fails to lower. Reading any of them
+makes the run decode user commands, which costs a run that reads none nothing; the last two make it
+keep the history they need, which a run reading only the others does not. In a `for:
+each_projectile` ruleset the thrower's commands are `thrower.cmd.*`, so a jump-throw is a press in
+the window up to the spawn. Bound it on both sides: `projectile_created` can fire a few frames
+after the spawn, and a press in between is a jump after the release, not a jump-throw:
+
+```yaml
+stats:
+  jump_throw:
+    capture: >-
+      thrower.cmd.coverage > 0
+      and thrower.cmd.last_jump_tick >= projectile.first_seen_tick - 27
+      and thrower.cmd.last_jump_tick <= projectile.first_seen_tick
+    on: raw.projectile_created
+```
+
+**Looking back.** `player.pos_x@-8` reads what `player.pos_x` read 8 ticks earlier on the frame
+clock. N is a whole number from 1 to 64. It works on the subject's per-player entity reads: the
+`player.*` names above, and `thrower.*` in a `for: each_projectile` ruleset (not `player.cmd.*`, a
+role handle, `projectile.*`, `match.*` or an event field), in a `where:` or the value of an
+event-triggered stat; anywhere else is `resolve.look-back.unsupported`. Before the player has a value that far back it reads `0`. The
+ticks count back from the state the site reads, so on a cadence step `@-8` is 8 ticks before the
+step's own frame.
+
+```yaml
+cadences:
+  step: { ticks: 8, anchor: round_freeze_end }
+stats:
+  moved_x:
+    sum: abs(player.pos_x - player.pos_x@-8)
+    on: cadence.step
+    per: round
+```
 
 The `round.*` and `match.*` contexts read the same in every scope. `player.*` needs a player, so
 only a `for: each_player` ruleset has it. The team aggregates (`round.team.*` / `round.enemies.*`)
@@ -525,8 +674,40 @@ ruleset has no subject and cannot read any of them.
 - **`tables:`** — richer per-round or per-match tables, written as a **named map**
   (`tables: { <table-name>: { per:, columns: [...] } }`). The `per:` has to match the ruleset's
   `for:`, or validation reports `resolve.show.table-scope-mismatch`: `player_round` /
-  `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`, and
-  `match` (a single match-level row) in `for: match`.
+  `player_match` in `for: each_player`, `team_round` / `team_match` in `for: each_team`,
+  `projectile` in `for: each_projectile` and `match` (a single match-level row) in `for: match`.
+  Player rows carry `player_slot`,
+  `player_name`, `steam_id` (the SteamID64 as a string, null when the demo has none) and `team`;
+  join players by `steam_id` rather than by slot. A `player_round` row's `team` is the player's
+  team at that round's freeze end, so the halftime and overtime swaps show; a `player_match` row's
+  is the team they finished on.
+- **Event tables: one row per firing.** `per: player_event`, `team_event` or `match_event` (one
+  per `for:`, in the same order) takes an `on:` trigger, written as a stat's `on:` is, and emits a
+  row each time it fires for an instance, with the columns read right after that message. Rows
+  carry `round_number` and `tick` (the frame clock, listed in `ColumnClocks`); player rows also
+  carry `player_slot`, `player_name`, `steam_id` (a string) and `team` (the player's team at the
+  firing), side rows `side`. A
+  cadence is the usual trigger. The checker refuses a trigger that fires too often to keep a row
+  per firing (`resolve.show.event-table-frequency`): a `perTick` or `frequent` catalog event, or a
+  wire event whose frequency was never measured. Synthesized events pass, and so does a view with
+  a measured rate of its own (`grenade_released`), which answers for itself before its event. A
+  missing `on:`, or an
+  `on:` on any other grain, is `resolve.show.event-table-trigger`. Event tables project with or
+  without snapshots.
+
+  ```yaml
+  cadences:
+    second: { seconds: 1, anchor: round_freeze_end, until: round_ended }
+  stats:
+    pos_x: { capture: player.pos_x, on: cadence.second, per: match }
+    pos_y: { capture: player.pos_y, on: cadence.second, per: match }
+  show:
+    tables:
+      positions:
+        per: player_event
+        on: cadence.second
+        columns: [ { stat: pos_x }, { stat: pos_y } ]
+  ```
 - **Which clock a tick column is on.** A table lists its bare tick columns in
   `MetricTable.ColumnClocks` (`frame` or `server`), so a consumer knows whether to subtract the
   demo's `ServerStartTick` without knowing which views are synthesized.
@@ -615,10 +796,16 @@ row per side: `per: team_round` gives one row per round per side, `per: team_mat
   `round.team.money`, `round.team.alive`, and the enemies' twins.
 - `team.side` is the side, `2` or `3`. `player.*` is not in scope, and neither are
   `round.alive.in_clutch` / `round.clutch.size`, whose subject is a player.
+- `team.score` (rounds won) and `team.clan_name` read the side's own team entity, so they are keyed
+  by side, not by team: after halftime the team that started T is the CT row. Read them anywhere an
+  expression goes, or capture them with no `on:` to get the value the side ends on:
+  `score: { capture: team.score, per: match }`. A capture with no `on:` takes only a bare `team.*`
+  read, `per: match`, kept last; anything else is `resolve.trigger.unsupported-for-kind`. On a demo
+  cut off at the buzzer the last round's point can be missing.
 - A `team_round` table carries two dimensions besides the round: `side`, and `slots`, the
   comma-joined slots of the side's connected players at that round's freeze end. `slots` is the join
-  key to a per-player table: it says which side a player was on *in that round*, where a
-  `player_round` table's `team` is the side the player finished the match on.
+  key to a per-player table: it says which side a player was on *in that round*, as a
+  `player_round` table's `team` does.
 - No `highlights:` and no `scoreboard:` (both are attributed to players). It may `use:` a
   `for: match` or another `for: each_team` ruleset, but not a per-player one, and it reads the used
   ruleset's stats in `compute:` only: a read in `where:`, `while:`, `capture:`, `sum:`, `tally:` or
@@ -645,11 +832,78 @@ show:
 
 `src/CS2DemoKit.Analysis/Rules/examples/round_facts.rules.yaml` is a complete one: the side's buy
 (with its thresholds as `params:`), the decision, the plant, and the kill timeline with the
-man-count after each kill, per round per side, every tick on the frame clock. A tick column of a
+man-count after each kill, per round per side, every tick on the frame clock, and a `team_final`
+table with each side's final score and clan name. A tick column of a
 thing that did not happen that round reads `0`. A string column does not read `""`: a capture of
 `round.bomb.site` or `round.bomb.plant_place` on a round with no plant projects as null (the
 expression reads `""`, and an empty string capture comes out null), so test a table cell for null,
 or use the int twin `round.bomb.site_entity`, which projects `-1`.
+
+### Per-grenade stats: `for: each_projectile`
+When the question is about a grenade (where it was thrown from, where it landed, how many times it
+bounced, what the thrower was doing when it left the hand), use `for: each_projectile`. The ruleset
+runs once per projectile: an instance materializes on `projectile_created`, lives while the grenade
+flies, and on `projectile_removed` its stats are sampled into one row of a `per: projectile` table
+and the instance is released. A grenade still in the air when the demo ends gets its row then.
+
+- `projectile.*` reads the instance's row as of the frame the read happens on: `class` (the short
+  name the views match on: `smoke`, `molotov`, `he`, `flash`, `decoy`), `class_name` (the server
+  class), `thrower` (the slot, held from its first resolution), `team`, `entity_index`, `serial`,
+  `pos_x` / `pos_y` / `pos_z` (the live position, `NaN` while unreadable), `initial_x` / `_y` /
+  `_z` (where it left the hand), `velocity_x` / `_y` / `_z` (the release velocity), `bounces`,
+  `first_seen_tick` (the frame-clock tick the grenade appeared on, the spawn: the created tick
+  unless `projectile_created` waited for the thrower), `last_moved_tick` (the frame-clock tick its
+  position last changed by more than 0.1 units from the frame before, the spawn until it first
+  does: kept last, it is when the grenade came to rest), `smoke_effect_tick` and
+  `smoke_detonation_x` / `_y` / `_z` (a smoke's cloud: the server tick it began, 0 while the
+  grenade flies, and where it popped, `NaN` until then and on every other class), `is_incendiary`
+  and `explode_effect_tick` (the server tick the explosion effect began, 0 until it detonates). A
+  capture of one of the tick members is labelled with its clock in `ColumnClocks`.
+- `thrower.*` reads the thrower's per-player values at the instance's slot, the same names as
+  `player.*` in a `for: each_player` ruleset, look-back included, and `thrower.cmd.*` the thrower's
+  commands (section 7).
+- A capture with no `on:` takes a bare `projectile.*` read: `keep: first` samples it on the frame
+  the instance materializes, `keep: last` reads it live, so the table sees the value at removal.
+  Anything else with no `on:` is `resolve.trigger.unsupported-for-kind`.
+- `thrower.*` is the thrower's per-player read set (`thrower.is_walking`, `thrower.pos_x`, ...),
+  read at the thrower's slot on the frame of the event that triggers the stat. It is in scope on
+  every trigger, not only the `projectile_thrown` view that names the role, and it looks back like
+  `player.*` does: `thrower.pos_x@-8` on `raw.projectile_created` is where the thrower stood 8 ticks
+  before the grenade appeared, and `thrower.on_ground@-40` reaches the release of a long throw.
+- `projectile_thrown` / `projectile_landed`, and the raw `projectile_created` /
+  `projectile_removed`, bind to the instance: a stat on them fires for this grenade only. Any other
+  event fires for every live instance, as it does in `for: match`.
+- The kinds are `count`, `sum`, `capture`, a triggered `flag` and a round-end `compute`, which
+  settles when the instance is sampled. `tally`, `streak`, `burst`, `bucket`, `rate`, a `flag:`
+  with no trigger and a live `compute:` keep state the instance could not release, and are
+  `resolve.projectile-scope.unsupported`, as are highlights. `per:` is accepted and ignored: the
+  instance's whole life is its window. `player.*` is not in scope.
+- It may `use:` a `for: match` ruleset, read in `compute:` only; nothing reads a projectile ruleset.
+- The `projectile` table row carries `round_number` (the round the grenade was removed in),
+  `first_seen_tick`, `created_tick` and `removed_tick` (frame clock, listed in `ColumnClocks`),
+  `removed` (false for a grenade still in the air when the run ended, whose `removed_tick` is then
+  the run's last tick), `entity_index`, `serial`, the thrower's `player_slot`, `player_name` and
+  `steam_id`, and `team` (the grenade's).
+
+```yaml
+ruleset: grenade_rows
+for: each_projectile
+stats:
+  class:        { capture: projectile.class,     keep: first }
+  thrower:      { capture: projectile.thrower,   keep: first }
+  spawn_x:      { capture: projectile.pos_x,     keep: first }
+  end_x:        { capture: projectile.pos_x,     keep: last }
+  bounces:      { capture: projectile.bounces,   keep: last }
+  thrower_walk: { capture: thrower.is_walking,   on: raw.projectile_created }
+show:
+  tables:
+    grenades:
+      per: projectile
+      columns: [ { stat: class }, { stat: thrower }, { stat: spawn_x }, { stat: end_x }, { stat: bounces }, { stat: thrower_walk } ]
+```
+
+The `projectile_created` an instance starts on waits for the thrower to resolve, so a
+`keep: first` position can be a tick into flight; `initial_x` / `_y` / `_z` is the release point.
 
 ### Reusing another ruleset — `use:` / `exports:`
 A stat can read `otherRuleset.stat` if your file declares `use: [otherRuleset]` and that ruleset
@@ -692,6 +946,17 @@ reference cycles — each with a clear message.
 - A ruleset that fails to compose lands in `result.Excluded` with the diagnostics that dropped it —
   at analysis time the same information is on `BuildResult.RulesetDiagnostics` / `.ExcludedRulesets`.
   Check them, or a ruleset that stopped compiling looks identical to stats that never fired.
+- A ruleset is dropped on one of two channels. Validation drops what the source shows is wrong,
+  and `ValidateRulesets` reports it with no demo. The build drops what only lowering can find, with
+  a `build.lowering-failed` diagnostic on `BuildResult.ExcludedRulesets` only (not on
+  `RulesetDiagnostics`); a ruleset that `use:`s it goes with it. Either way the rest still run.
+- Three shapes that validate in YAML but cannot be built are validation errors:
+  `resolve.trigger.unsupported-for-kind` is a `net.<Message>` trigger on `capture keep: list|min|max`,
+  `streak`, `burst` or `bucket`. `resolve.while.unsupported` is a compound `while:` (two gates, from a
+  define and the site, count as one compound), or a value gate (a comparison, or
+  `round.alive.in_clutch`) on a net trigger or on those same kinds; a comparison over a
+  `player.*` entity read is fine wherever the kind has an event trigger.
+  `resolve.keep-list.element-type` is a `keep: list` whose element is not an int, instant or duration.
 - A stat that resolved but cannot measure on *this* run gets a row on `BuildResult.RulesetCoverage`
   instead: a view that does not bind on the demo's source profile, or a spot-derived facet on a run
   with no map bake (above). Those are the two ways a correct ruleset legitimately reports zero, and

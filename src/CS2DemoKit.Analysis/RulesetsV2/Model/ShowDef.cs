@@ -66,7 +66,18 @@ public sealed record TableDef(
     string Name,
     string? Per,
     IReadOnlyList<TableColumn> Columns,
-    SourcePosition Position);
+    SourcePosition Position)
+{
+    /// <summary>
+    ///     The <c>on:</c> trigger of an event table (<c>per: player_event</c>, <c>team_event</c>,
+    ///     <c>match_event</c>), written as a stat's <c>on:</c> is; one row per firing. Null on every
+    ///     other grain.
+    /// </summary>
+    public string? On { get; init; }
+
+    /// <summary>The document-absolute position of the <c>on:</c> value, when present.</summary>
+    public SourcePosition OnPosition { get; init; }
+}
 
 /// <summary>One <c>columns:</c> entry inside a <see cref="TableDef" />.</summary>
 /// <param name="Stat">The referenced stat or highlight.</param>

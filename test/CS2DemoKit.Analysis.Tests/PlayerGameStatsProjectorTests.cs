@@ -2,8 +2,11 @@
 
 using System.Globalization;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Output;
+using CS2DemoKit.Analysis.Yaml;
 using CS2DemoKit.Parser;
+using CS2DemoKit.TestSupport;
 
 #endregion
 
@@ -228,6 +231,74 @@ public class PlayerGameStatsProjectorTests
 
         MetricTable table = new PlayerGameStatsProjector().Project(result, demo).Single();
         await Assert.That(table.ValueColumns).IsEquivalentTo(_expectedUnionColumns);
+    }
+
+    /// <summary>
+    ///     The shipped rulesets on the trimmed sample, run bare and with snapshots over one build:
+    ///     the bare run's scoreboard, read from its final node values, matches the snapshot run's.
+    /// </summary>
+    [Test]
+    [NotInParallel]
+    [Category("Integration")]
+    public async Task BareRun_MatchesSnapshotRun_RowForRow()
+    {
+        string path = DemoTestHelper.RequireDemo(DemoTestHelper.SampleDemoFileName);
+        ParsedDemo demo = DemoTestHelper.GetOrParse(path);
+        RuleConfigLoadResult rules = YamlConfigLoader.LoadShippedEmbedded();
+        BuildResult build = DemoAnalysis.Build(demo, rules.Rulesets);
+
+        AnalysisRun bare = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = false });
+        AnalysisRun snapshot = DemoAnalysis.Evaluate(demo, build, new AnalysisOptions { CaptureSnapshots = true });
+        await Assert.That(bare.Snapshots).IsNull();
+
+        PlayerGameStatsProjector projector = new() { MatchId = "sample" };
+        MetricTable fromBare = projector.Project(bare, bare.Demo).Single();
+        MetricTable fromSnapshot = projector.Project(snapshot, snapshot.Demo).Single();
+
+        await Assert.That(fromSnapshot.Rows.Count).IsGreaterThan(0);
+        await Assert.That(fromSnapshot.Rows.Any(r => r.Values.Values.Any(v => v is not null))).IsTrue();
+        await Assert.That(RenderTable(fromBare)).IsEqualTo(RenderTable(fromSnapshot));
+    }
+
+    /// <summary>The default interface member refuses a run without snapshots rather than projecting nothing.</summary>
+    [Test]
+    public async Task DefaultRunProjection_WithoutSnapshots_Throws()
+    {
+        (int, string, string[])[] players = [(0, "Alice", ["kills"])];
+        (EvaluationResult result, ParsedDemo demo) = BuildScenario(1, players, (_, _, _) => Num(1));
+        IOutputProjector projector = new SnapshotOnlyProjector();
+        DemoDescriptor descriptor = DemoDescriptor.From(demo);
+
+        await Assert.That(projector.Project(RunOf(result, descriptor), descriptor).Single().Rows.Count).IsEqualTo(1);
+        Assert.Throws<NotSupportedException>(() => projector.Project(RunOf(null, descriptor), descriptor));
+    }
+
+    private static AnalysisRun RunOf(EvaluationResult? result, DemoDescriptor demo) =>
+        new(null!, new RuleChainTimeline([]), result) { Demo = demo, Provenance = null! };
+
+    internal static string RenderTable(MetricTable table)
+    {
+        static string Fmt(object? v) => v switch
+        {
+            null => "null",
+            IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+            _ => v.ToString() ?? "null"
+        };
+
+        IEnumerable<string> rows = table.Rows
+            .Select(r =>
+                string.Join("|", table.DimensionColumns.Select(c => Fmt(r.Dimensions.GetValueOrDefault(c)))) + "->" +
+                string.Join("|", table.ValueColumns.Select(c =>
+                    r.Values.TryGetValue(c, out object? v) ? Fmt(v) : "absent")))
+            .Order(StringComparer.Ordinal);
+        return $"{table.Name}\ndims={string.Join(",", table.DimensionColumns)}\nvals={string.Join(",", table.ValueColumns)}\n"
+               + string.Join("\n", rows);
+    }
+
+    private sealed class SnapshotOnlyProjector : IOutputProjector
+    {
+        public IReadOnlyList<MetricTable> Project(EvaluationResult result, DemoDescriptor demo) =>
+            new PlayerGameStatsProjector().Project(result, demo);
     }
 
     private sealed class StubNode(string name) : StateNode

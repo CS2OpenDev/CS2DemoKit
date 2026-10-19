@@ -349,4 +349,85 @@ public class RulesetV2StructuralValidationTests
         RulesetDiagnostic diag = Single(Diagnose(Yaml), RulesetDiagnosticCodes.ParamRange);
         await Assert.That(diag.Message).Contains("numeric or duration");
     }
+
+    // ── Cadences ───────────────────────────────────────────────────────────────
+
+    /// <summary>A cadence with no <c>anchor:</c> is a BadCadence error at the entry.</summary>
+    [Test]
+    public async Task Cadence_MissingAnchor_IsError()
+    {
+        const string Yaml = """
+                            ruleset: r
+                            for: each_player
+                            cadences:
+                              second: { ticks: 64, until: round_ended }
+                            stats:
+                              n:
+                                count: kill
+                                per: round
+                            """;
+
+        RulesetDiagnostic diag = Single(Diagnose(Yaml), RulesetDiagnosticCodes.BadCadence);
+        await Assert.That(diag.Message).Contains("anchor");
+        await Assert.That(diag.Position.Line).IsEqualTo(LineOf(Yaml, "second:"));
+    }
+
+    /// <summary>A cadence with both <c>ticks:</c> and <c>seconds:</c> is a BadCadence error.</summary>
+    [Test]
+    public async Task Cadence_TicksAndSeconds_IsError()
+    {
+        const string Yaml = """
+                            ruleset: r
+                            for: each_player
+                            cadences:
+                              second: { ticks: 64, seconds: 1, anchor: round_freeze_end }
+                            stats:
+                              n:
+                                count: kill
+                                per: round
+                            """;
+
+        RulesetDiagnostic diag = Single(Diagnose(Yaml), RulesetDiagnosticCodes.BadCadence);
+        await Assert.That(diag.Message).Contains("both");
+    }
+
+    /// <summary>A zero-tick or a non-positive seconds period is a BadCadence error.</summary>
+    [Test]
+    public async Task Cadence_ZeroTicks_IsError()
+    {
+        const string Yaml = """
+                            ruleset: r
+                            for: each_player
+                            cadences:
+                              never: { ticks: 0, anchor: round_freeze_end }
+                              backwards: { seconds: -1, anchor: round_freeze_end }
+                            stats:
+                              n:
+                                count: kill
+                                per: round
+                            """;
+
+        RulesetDiagnostic[] bad = Diagnose(Yaml).Where(d => d.Code == RulesetDiagnosticCodes.BadCadence).ToArray();
+        await Assert.That(bad.Length).IsEqualTo(2);
+        await Assert.That(bad.All(d => d.Message.Contains("not positive", StringComparison.Ordinal))).IsTrue();
+    }
+
+    /// <summary>An anchor outside the closed set is a BadEnum error from the mapper.</summary>
+    [Test]
+    public async Task Cadence_UnknownAnchor_IsBadEnum()
+    {
+        const string Yaml = """
+                            ruleset: r
+                            for: each_player
+                            cadences:
+                              second: { ticks: 64, anchor: bomb_planted }
+                            stats:
+                              n:
+                                count: kill
+                                per: round
+                            """;
+
+        RulesetDiagnostic diag = Single(Diagnose(Yaml), RulesetDiagnosticCodes.BadEnum);
+        await Assert.That(diag.Message).Contains("anchor");
+    }
 }

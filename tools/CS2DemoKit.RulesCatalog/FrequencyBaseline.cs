@@ -34,6 +34,12 @@ public sealed class FrequencyBaseline
     /// <summary>Max occurrences observed in any single demo, per event / net-message name.</summary>
     public Dictionary<string, int> MaxPerDemo { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    ///     Max firings observed in any single demo, per view whose <c>views.yaml</c> entry says
+    ///     <c>rate: measured</c>: its event's occurrences that pass its <c>baked:</c> filters.
+    /// </summary>
+    public Dictionary<string, int> ViewMaxPerDemo { get; init; } = new(StringComparer.Ordinal);
+
     /// <summary>Loads the committed baseline, or an empty one (everything "unmeasured") if absent.</summary>
     public static FrequencyBaseline Load(string repoRoot)
     {
@@ -52,7 +58,10 @@ public sealed class FrequencyBaseline
             MeasuredFrom = [.. MeasuredFrom.Order(StringComparer.Ordinal)],
             MaxPerDemo = new Dictionary<string, int>(
                 MaxPerDemo.OrderBy(kv => kv.Key, StringComparer.Ordinal),
-                StringComparer.OrdinalIgnoreCase)
+                StringComparer.OrdinalIgnoreCase),
+            ViewMaxPerDemo = new Dictionary<string, int>(
+                ViewMaxPerDemo.OrderBy(kv => kv.Key, StringComparer.Ordinal),
+                StringComparer.Ordinal)
         };
         return JsonSerializer.Serialize(sorted, _options).ReplaceLineEndings("\n") + "\n";
     }
@@ -64,46 +73,70 @@ public sealed class FrequencyBaseline
     ///     <c>perTick</c> above (CNETMsg_Tick measures 100K+). Unknown names are
     ///     <c>unmeasured</c> — lints must treat that as "no evidence", not "safe".
     /// </summary>
-    public string Classify(string name)
-    {
-        if (!MaxPerDemo.TryGetValue(name, out int max))
-        {
-            return "unmeasured";
-        }
+    public string Classify(string name) =>
+        MaxPerDemo.TryGetValue(name, out int max) ? Classify(max) : "unmeasured";
 
-        return max switch
+    /// <summary>
+    ///     Classifies a measured view (<see cref="ViewMaxPerDemo" />) on the same thresholds as
+    ///     <see cref="Classify(string)" />. A view the baseline never folded is <c>unmeasured</c>.
+    /// </summary>
+    public string ClassifyView(string view) =>
+        ViewMaxPerDemo.TryGetValue(view, out int max) ? Classify(max) : "unmeasured";
+
+    private static string Classify(int maxPerDemo) =>
+        maxPerDemo switch
         {
             <= 50 => "perMatch",
             <= 600 => "perRound",
             <= 20000 => "frequent",
             _ => "perTick"
         };
-    }
+
+    /// <summary>A view <see cref="Measure" /> folds: its name, its wire event and its baked filters.</summary>
+    /// <param name="Name">The view name, the key in <see cref="ViewMaxPerDemo" />.</param>
+    /// <param name="Event">The wire event the filters apply to.</param>
+    /// <param name="Baked">The <c>baked:</c> filters, every one of which an occurrence must pass to count.</param>
+    public sealed record MeasuredView(string Name, string Event, IReadOnlyList<string> Baked);
 
     /// <summary>
     ///     Measures the corpus: parses every .dem under <paramref name="benchDir" />, counting
-    ///     game events by wire name and net messages by payload type name, keeping the max per
-    ///     demo. ~seconds per demo; run explicitly via <c>--measure</c>.
+    ///     game events by wire name, net messages by payload type name and each of
+    ///     <paramref name="views" /> through its baked filters, keeping the max per demo. ~seconds
+    ///     per demo; run explicitly via <c>--measure</c>.
     /// </summary>
-    public static FrequencyBaseline Measure(string benchDir)
+    public static FrequencyBaseline Measure(string benchDir, IReadOnlyList<MeasuredView> views)
     {
+        ArgumentNullException.ThrowIfNull(views);
         FrequencyBaseline baseline = new();
+        List<(MeasuredView View, Func<GameEvent, bool> Passes)> folds =
+            [.. views.Select(v => (v, BakedFilter.Compile(v.Baked)))];
         foreach (string demoPath in Directory.EnumerateFiles(benchDir, "*.dem").Order(StringComparer.Ordinal))
         {
             Console.WriteLine($"  measuring {Path.GetFileName(demoPath)}…");
             ParsedDemo parsed = DemoParser.Parse(File.ReadAllBytes(demoPath).AsMemory());
 
             Dictionary<string, int> counts = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, int> viewCounts = new(StringComparer.Ordinal);
             foreach (GameEvent e in parsed.AllGameEvents)
             {
                 counts[e.Name] = counts.GetValueOrDefault(e.Name) + 1;
+                foreach ((MeasuredView view, Func<GameEvent, bool> passes) in folds)
+                {
+                    if (string.Equals(view.Event, e.Name, StringComparison.OrdinalIgnoreCase) && passes(e))
+                    {
+                        viewCounts[view.Name] = viewCounts.GetValueOrDefault(view.Name) + 1;
+                    }
+                }
             }
 
             foreach (DemoFrame frame in parsed.Frames)
             {
                 foreach (NetMessage message in frame.InnerMessages)
                 {
-                    string payloadName = message.Payload.GetType().Name;
+                    // The stored svc_UserCmds payloads compose into the list as block entries.
+                    string payloadName = message.Payload.GetType().Name is "BlockMessage"
+                        ? nameof(CSVCMsg_UserCommands)
+                        : message.Payload.GetType().Name;
                     counts[payloadName] = counts.GetValueOrDefault(payloadName) + 1;
                 }
             }
@@ -112,6 +145,13 @@ public sealed class FrequencyBaseline
             foreach ((string name, int count) in counts)
             {
                 baseline.MaxPerDemo[name] = Math.Max(baseline.MaxPerDemo.GetValueOrDefault(name), count);
+            }
+
+            // A view its event never fired on a demo still measured there: it fired 0 times.
+            foreach ((MeasuredView view, _) in folds)
+            {
+                baseline.ViewMaxPerDemo[view.Name] = Math.Max(baseline.ViewMaxPerDemo.GetValueOrDefault(view.Name),
+                    viewCounts.GetValueOrDefault(view.Name));
             }
         }
 

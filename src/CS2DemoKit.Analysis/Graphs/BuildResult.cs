@@ -5,6 +5,7 @@ using CS2DemoKit.Analysis.Building;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.Registry;
+using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 
 #endregion
@@ -85,7 +86,8 @@ public sealed record BuildResult(
     ///         Populated by <c>DemoAnalysis.Build</c>, which owns the composition step. A caller
     ///         that composes itself and drives
     ///         <c>RuleChainBuilder.Build</c> directly gets an empty list here and should read
-    ///         <c>RulesetComposition.Result.AttributedDiagnostics</c> instead. Distinct from
+    ///         <c>RulesetComposition.Result.AttributedDiagnostics</c> instead. Lowering failures
+    ///         are not listed here; they are on <see cref="ExcludedRulesets" />. Distinct from
     ///         <see cref="RulesetCoverage" />, which reports legitimate per-profile view-binding
     ///         skips rather than broken documents.
     ///     </para>
@@ -93,11 +95,24 @@ public sealed record BuildResult(
     public IReadOnlyList<RulesetCompositionDiagnostic> RulesetDiagnostics { get; init; } = [];
 
     /// <summary>
-    ///     The rulesets composition dropped from this build, each with the diagnostics explaining
-    ///     why. Empty when every supplied document composed. The ids here are absent from
+    ///     The rulesets dropped from this build, each with the diagnostics explaining why: first
+    ///     the ones composition dropped, then the ones that resolved but could not be lowered
+    ///     (<see cref="BuildDiagnosticCodes.LoweringFailed" />, and the rulesets reading them).
+    ///     Empty when every supplied document composed and lowered. The ids here are absent from
     ///     the graph entirely: their stats and highlights produce no nodes and can never fire.
+    ///     <para>
+    ///         <c>DemoAnalysis.Build</c> fills both halves. A caller that drives
+    ///         <c>RuleChainBuilder.Build</c> directly gets the lowering half only.
+    ///     </para>
     /// </summary>
     public IReadOnlyList<ExcludedRuleset> ExcludedRulesets { get; init; } = [];
+
+    /// <summary>
+    ///     True when an evaluation rebuilds the players' user commands: a rule reads
+    ///     <c>player.cmd.*</c>, or <see cref="AnalysisOptions.DecodeUserCommands" /> asked for them.
+    ///     <c>DemoAnalysis.PlanDecode</c> then decodes <c>MessageCategories.UserCmds</c>.
+    /// </summary>
+    public bool DecodesUserCommands { get; init; }
 
     /// <summary>The source profile the graph was built for, dialect included.</summary>
     public DemoSourceProfile Profile { get; init; } = DemoSourceProfileRegistry.DefaultFallback;
@@ -142,6 +157,16 @@ public sealed record BuildResult(
     ///     together, or a row that writes per-player state is dropped.
     /// </summary>
     public IReadOnlyList<ExternalStateNode> ExternalNodes { get; init; } = [];
+
+    /// <summary>
+    ///     The cadences the built rulesets' stats trigger on, one per distinct
+    ///     <see cref="CadenceDef.Key" />, each with its period resolved to ticks. The evaluator fires
+    ///     a <c>cadence_tick</c> for each one per period. Empty when no stat uses a cadence.
+    /// </summary>
+    public IReadOnlyList<CadenceDef> Cadences { get; init; } = [];
+
+    /// <summary><see cref="Cadences" /> with the dispatch types of each anchor and stop.</summary>
+    internal IReadOnlyList<CadencePlan> CadencePlans { get; init; } = [];
 
     /// <summary>
     ///     Where the builder made each node of <see cref="Nodes" />; <c>null</c> for a hand-built
