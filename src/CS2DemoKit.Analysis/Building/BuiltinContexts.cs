@@ -443,10 +443,19 @@ public static class BuiltinContexts
             "_builtin_game_context",
             ChainScope.Game,
             [
+                // $round_freeze_end is a second activation, not a replacement. A GOTV recording
+                // whose first frame postdates the server's $match_start carries no activation
+                // marker at all, and this node gates round_active and round_number as well as
+                // every `while: match.live` rule, so one missing marker zeroed every death,
+                // round-scoped and per-round stat on the file. Warmup fires no $round_freeze_end,
+                // so the later bound still excludes pre-match deaths. Activation is idempotent and
+                // $match_start precedes the first freeze-end wherever it is recorded, which makes
+                // this a no-op on any demo that carries one.
                 new RuleDef("match_live", RuleType.Bool, "MatchLive",
                     Triggers:
                     [
                         new TriggerDef("$match_start"),
+                        new TriggerDef("$round_freeze_end"),
                         new TriggerDef("$match_end", TriggerAction.Deactivate)
                     ]),
 
