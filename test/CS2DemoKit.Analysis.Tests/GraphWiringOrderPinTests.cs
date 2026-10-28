@@ -29,18 +29,21 @@ public class GraphWiringOrderPinTests
     // "{case}/{sequence}" -> "{line count}:{first 16 hex of the sha256}", taken before every edge was
     // described (#50). The HLTV shipped template did not materialise then (#68), so its player
     // sequence was pinned with that fix. The player sequences gained the two player.team node edges, then the freeze-end team latch.
+    // Each game sequence then gained one line, match_live's $round_freeze_end activation. The player
+    // and types pins did not move with it: no per-player edge changed, and RoundFreezeEndEvent was
+    // already a relevant type.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv/game"] = "67:7A54066EF8A22166",
+        ["shipped-gotv/game"] = "68:DD95A3D2E265818D",
         ["shipped-gotv/player"] = "178:A330259EEF6D319C",
         ["shipped-gotv/types"] = "37:15C0DE3C4278A0EC",
-        ["shipped-hltv/game"] = "67:DDC55B358BE2531E",
+        ["shipped-hltv/game"] = "68:0DD58ED58E70924B",
         ["shipped-hltv/player"] = "171:B03813ECC7E74545",
         ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
-        ["matrix-gotv/game"] = "95:4FCB5A171704463B",
+        ["matrix-gotv/game"] = "96:60B2175F24F94257",
         ["matrix-gotv/player"] = "45:D0953119A0781B35",
         ["matrix-gotv/types"] = "31:2FCCF886F0F9711A",
-        ["matrix-hltv/game"] = "95:C1E1B0A13DEC4ED0",
+        ["matrix-hltv/game"] = "96:5DE7F26CFCD464AA",
         ["matrix-hltv/player"] = "45:0EFB1AB42FD00667",
         ["matrix-hltv/types"] = "31:2FCCF886F0F9711A"
     };

@@ -2883,7 +2883,8 @@
       "resetOnRound": false,
       "triggers": [
         "$match_end",
-        "$match_start"
+        "$match_start",
+        "$round_freeze_end"
       ],
       "v2Name": "match.live",
       "v2Type": "Bool"
