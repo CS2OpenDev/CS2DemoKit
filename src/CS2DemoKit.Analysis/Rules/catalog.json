@@ -1874,6 +1874,13 @@
       ]
     },
     {
+      "name": "round_end_terminal",
+      "clrType": "RoundEndTerminalEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
       "name": "round_freeze_end",
       "clrType": "RoundFreezeEndEvent",
       "synthesized": false,
@@ -3731,7 +3738,8 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -4158,7 +4166,8 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "cs_pre_restart",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -4578,7 +4587,8 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -5397,7 +5407,8 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -6898,21 +6909,24 @@
           "profile": "Cs2FaceitProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "cs_pre_restart",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
           "profile": "Cs2GotvProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -6926,7 +6940,8 @@
           "profile": "Cs2PovProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         }
       ]
@@ -6964,21 +6979,24 @@
           "profile": "Cs2FaceitProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "cs_pre_restart",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
           "profile": "Cs2GotvProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -6992,7 +7010,8 @@
           "profile": "Cs2PovProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         }
       ]
@@ -7030,21 +7049,24 @@
           "profile": "Cs2FaceitProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "cs_pre_restart",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
           "profile": "Cs2GotvProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         },
         {
@@ -7058,7 +7080,8 @@
           "profile": "Cs2PovProfile",
           "concreteEvents": [
             "round_officially_ended",
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "round_end_terminal"
           ]
         }
       ]

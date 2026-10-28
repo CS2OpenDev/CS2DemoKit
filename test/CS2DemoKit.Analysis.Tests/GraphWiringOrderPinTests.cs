@@ -29,20 +29,23 @@ public class GraphWiringOrderPinTests
     // "{case}/{sequence}" -> "{line count}:{first 16 hex of the sha256}", taken before every edge was
     // described (#50). The HLTV shipped template did not materialise then (#68), so its player
     // sequence was pinned with that fix. The player sequences gained the two player.team node edges, then the freeze-end team latch.
-    // Each game sequence then gained one line, match_live's $round_freeze_end activation. The player
-    // and types pins did not move with it: no per-player edge changed, and RoundFreezeEndEvent was
-    // already a relevant type.
+    // Each game sequence then gained one line, match_live's $round_freeze_end activation. The
+    // round_end_terminal close then added a concrete $round_end event to the GOTV family, which is
+    // why only its sequences carry the type and the round-end edges for it; HLTV overrides the
+    // binding without it, so its game sequence moved for the activation alone. The kast gates moved
+    // four player edges from Root to MatchLive on both profiles, which is a reorder at the same
+    // count on HLTV.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv/game"] = "68:DD95A3D2E265818D",
-        ["shipped-gotv/player"] = "178:A330259EEF6D319C",
-        ["shipped-gotv/types"] = "37:15C0DE3C4278A0EC",
+        ["shipped-gotv/game"] = "71:570207B4AEE7A008",
+        ["shipped-gotv/player"] = "204:42D0FAE1075862AC",
+        ["shipped-gotv/types"] = "38:66BD7437294DD34F",
         ["shipped-hltv/game"] = "68:0DD58ED58E70924B",
-        ["shipped-hltv/player"] = "171:B03813ECC7E74545",
+        ["shipped-hltv/player"] = "171:08C95BEC59326A6C",
         ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
-        ["matrix-gotv/game"] = "96:60B2175F24F94257",
-        ["matrix-gotv/player"] = "45:D0953119A0781B35",
-        ["matrix-gotv/types"] = "31:2FCCF886F0F9711A",
+        ["matrix-gotv/game"] = "104:30E8EF70A12D575B",
+        ["matrix-gotv/player"] = "50:0779142BA4CFE2B1",
+        ["matrix-gotv/types"] = "32:E98774E2C288076B",
         ["matrix-hltv/game"] = "96:5DE7F26CFCD464AA",
         ["matrix-hltv/player"] = "45:0EFB1AB42FD00667",
         ["matrix-hltv/types"] = "31:2FCCF886F0F9711A"
