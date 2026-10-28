@@ -38,10 +38,10 @@ public class GraphWiringOrderPinTests
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
         ["shipped-gotv/game"] = "71:570207B4AEE7A008",
-        ["shipped-gotv/player"] = "204:1C57298A48900051",
+        ["shipped-gotv/player"] = "204:42D0FAE1075862AC",
         ["shipped-gotv/types"] = "38:66BD7437294DD34F",
         ["shipped-hltv/game"] = "68:0DD58ED58E70924B",
-        ["shipped-hltv/player"] = "171:35D495A0E14491C0",
+        ["shipped-hltv/player"] = "171:08C95BEC59326A6C",
         ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
         ["matrix-gotv/game"] = "104:30E8EF70A12D575B",
         ["matrix-gotv/player"] = "50:0779142BA4CFE2B1",

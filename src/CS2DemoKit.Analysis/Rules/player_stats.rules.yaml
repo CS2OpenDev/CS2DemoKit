@@ -34,18 +34,9 @@ use: [ kast ]                             # HLTV reads kast.kast_pct cross-rules
 
 stats:
   # ── Kill / death / assist counters (kill & assist views bake event.Attacker != event.UserId) ──
-  #
-  # The three that player_round carries a per: round twin of (kills, assists, damage) take the same
-  # match.live gate total_deaths has always had, so a player's round rows add up to the match
-  # column. A per: round row exists only from round 1 (ConfiguredOutputRecorder samples on
-  # CurrentRound() >= 1), so anything an ungated counter picks up in a RECORDED pre-match round
-  # lands in the match total and in no round row, and the two can never reconcile. Measured on a
-  # tournament recording with a knife round: kills 129 against 120 summed by round, the 9 kills of
-  # that round; deaths already agreed, because they were already gated.
   TotalEnemyKills:
     count: kill
     match: { enemy: true }              # v1 parent enrich.kill.was_enemy_kill
-    while: match.live
     per: match
 
   TeamKills: # internal (HS% denominator); v1 parent was_team_kill
@@ -62,7 +53,6 @@ stats:
     count: assist                       # assist view: actor = assister, bakes event.Attacker != event.UserId
     match: { enemy: true }              # v1 parent was_enemy_kill
     where: "event.AssistedFlash == false"
-    while: match.live
     per: match
 
   total_headshot_kills:
@@ -155,7 +145,6 @@ stats:
     sum: enrich.hurt.capped_damage      # v1 value: rule.value + enrich.hurt.capped_damage
     on: damage_dealt
     match: { enemy: true }              # v1 parent was_enemy_damage
-    while: match.live
     per: match
 
   TeamDmg:
