@@ -68,10 +68,17 @@ stats:
     while: round.active
     label: HSKills
 
+  # match.live, not round.active: these two feed has_kast, whose rising edge is the KAST round
+  # count, and an ungated kill in a RECORDED pre-match round credited a round that was never
+  # played. Measured on a tournament GOTV recording with a knife round: one pre-match kill put
+  # kast.count one above round.number, reading KAST% 105.88. round.active would also drop
+  # post-round kills and move every in-match number; match.live excludes the pre-match period
+  # and nothing else.
   enemy_kills_round:
     count: kill
     match: { enemy: true }            # v1 parent: enrich.kill.was_enemy_kill
     per: round
+    while: match.live
     label: EKills
 
   team_assists_round:
@@ -85,6 +92,7 @@ stats:
     count: assist
     where: "enrich.kill.was_enemy_kill == true"
     per: round
+    while: match.live
 
   flash_assists:
     count: assist
