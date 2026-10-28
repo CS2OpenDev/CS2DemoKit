@@ -145,7 +145,18 @@ stats:
   # ── KAST round: the real four-source OR (v1 has_kast, parents: {mode: any}) ──
   has_kast:
     flag:
-      when: "enemy_kills_round > 0 or team_assists_round > 0 or player.survived or player.traded"
+      # player.traded carries a round bound because it is the one term a ruleset cannot gate at its
+      # source: `traded` is a built-in per-player context. A trade in a RECORDED pre-match round
+      # raised this flag before round 1 existed, so two players on a tournament recording with a
+      # knife round read a KAST round they never played. The other three terms are already bounded,
+      # the two counters by their own match.live gate and player.survived by `alive`, which only
+      # activates on a freeze-end.
+      #
+      # round.number, not match.live: this is a condition the flag tracks rather than a trigger it
+      # latches, and match.live goes false at $match_end, which drops the flag again on the last
+      # round and moves the final sample of the KASTRounds column. round.number only resets on a
+      # match restart, so it bounds the pre-match period without a tail.
+      when: "enemy_kills_round > 0 or team_assists_round > 0 or player.survived or (player.traded and round.number > 0)"
     per: round
     label: HasKAST
 

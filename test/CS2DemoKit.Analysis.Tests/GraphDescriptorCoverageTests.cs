@@ -77,8 +77,8 @@ public class GraphDescriptorCoverageTests
     // rows were added to that pin with the fix.
     private static readonly Dictionary<string, string> _baselineRows = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv"] = "151:88C057EB5C681DD2",
-        ["shipped-hltv"] = "140:29FDA6E953BEDC0C",
+        ["shipped-gotv"] = "151:51EA68EB5AAF0E01",
+        ["shipped-hltv"] = "140:0F7D9573D056B31D",
         ["matrix-gotv"] = "90:0DC39B4C8FCB7E43",
         ["matrix-hltv"] = "85:9EA8747966469030"
     };
@@ -398,7 +398,7 @@ public class GraphDescriptorCoverageTests
     }
 
     private const int ShippedGameRows = 142;
-    private const int ShippedPlayerRows = 244;
+    private const int ShippedPlayerRows = 245;
 
     /// <summary>A tally fires from the root at round end and reads its stat: drawn that way, not from the stat.</summary>
     [Test]
