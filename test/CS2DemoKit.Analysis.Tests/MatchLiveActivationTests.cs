@@ -16,12 +16,10 @@ using CS2DemoKit.TestSupport;
 namespace CS2DemoKit.Analysis.Tests;
 
 /// <summary>
-///     <c>match_live</c>'s activation, on hand-built frames with no demo file. A GOTV recording whose
-///     first frame postdates the server's <c>begin_new_match</c> carries no <c>$match_start</c> at
-///     all, and <c>round_active</c> and <c>round_number</c> are parented on this node, so a dead
-///     <c>match_live</c> zeroes every death, round-scoped and per-round stat on the file. The
-///     freeze-end activation is what keeps those files scoring; the second test pins it as a no-op
-///     where the start marker IS recorded.
+///     <c>match_live</c>'s two activations, on hand-built frames with no demo file.
+///     <c>round_active</c> and <c>round_number</c> are parented on this node, so its activation
+///     bounds theirs. The second case pins the freeze-end arm as a no-op where <c>$match_start</c>
+///     is recorded, which is the whole corpus that worked before it existed.
 /// </summary>
 [Category("Unit")]
 public class MatchLiveActivationTests
