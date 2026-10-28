@@ -629,6 +629,11 @@ public sealed class StateGraphEvaluator
 
                     run.Clear();
                     run.Add(terminalClose);
+
+                    // The carrier reuses the LAST REAL frame's index. A snapshot row stamped one
+                    // past the end is an out-of-range seek for any consumer that indexes the
+                    // demo's frames by it, and FramesConsumed has to stay the frame count.
+                    frameIdx--;
                 }
 
                 runPos = 0;
