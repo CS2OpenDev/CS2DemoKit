@@ -686,6 +686,8 @@ public sealed class StateGraphEvaluator
             // The poll consumes the frame's digest (lazy: scanner is null when no rule references an
             // entity context). The entity events it synthesizes are held and dispatched after the
             // fold below: they are raised from this frame's state, so they read it.
+            // The carrier frame sits past the last decoded frame, and polling the entity pipeline
+            // there throws. The close reads the state the last real frame left, which is correct.
             bool isTerminalClose = ReferenceEquals(frame, terminalClose);
             IReadOnlyList<NetMessage>? synthesized = isTerminalClose
                 ? null
@@ -2329,19 +2331,17 @@ public sealed class StateGraphEvaluator
         return $"Player {slot}";
     }
 
-    /// <summary>One tick run: the next frame and every immediately following frame at the same tick.</summary>
     /// <summary>
-    ///     The one-frame terminal round close, or false when this run needs none.
+    ///     The one-frame terminal round close, or false when this run needs none. All three
+    ///     conditions are load-bearing: <c>round_active</c> is the exclusion, since the v2
+    ///     <c>count:</c> planner's Increment edges are unguarded and a round a real marker closed
+    ///     is not active; <c>round_number</c> keeps a pre-match period out; and
+    ///     <c>gameplay_phase</c> past play is the only thing separating a final round the server
+    ///     finished from a recording cut mid-round, which must stay unfinalised.
     ///     <para>
-    ///         Three conditions, and all three are load-bearing. <c>round_active</c> still active is
-    ///         what makes the close exclusive: a round a real <c>$round_end</c> marker closed is not
-    ///         active, so the unguarded Increment edges the v2 <c>count:</c> planner emits cannot
-    ///         double-count it. <c>round_number</c> above 0 keeps a pre-match period out. And
-    ///         <c>gameplay_phase</c> past play is the difference between a final round the server
-    ///         finished and a recording that was simply cut mid-round: closing the latter would
-    ///         manufacture a round, which is the behaviour the GOTV profile's binding promises not
-    ///         to have. A build with no <c>round_end_terminal</c> edge gets nothing either way, so
-    ///         HLTV, POV and bare builds are untouched.
+    ///         Bound by the GOTV family, FACEIT and POV included, since both inherit
+    ///         <see cref="Profiles.Cs2GotvProfile.RoundEnd" />. <see cref="Profiles.Cs2HltvProfile" />
+    ///         overrides the binding without it.
     ///     </para>
     /// </summary>
     private bool TryBuildTerminalClose(int tick, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out DemoFrame? frame)
@@ -2371,6 +2371,7 @@ public sealed class StateGraphEvaluator
         return true;
     }
 
+    /// <summary>One tick run: the next frame and every immediately following frame at the same tick.</summary>
     private static bool ReadTickRun(IDemoFrameSource source, List<DemoFrame> run)
     {
         run.Clear();
