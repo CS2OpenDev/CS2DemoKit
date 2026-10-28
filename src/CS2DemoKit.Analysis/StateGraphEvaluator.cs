@@ -310,6 +310,18 @@ public sealed class StateGraphEvaluator
     /// <summary>The build's live round-number node, which a projectile record's round reads; null when the build has none.</summary>
     internal StateNode? RoundNumberNode { get; set; }
 
+    /// <summary>
+    ///     The build's <c>round_active</c> node. With <see cref="GameplayPhaseNode" /> it decides the
+    ///     terminal round close; null leaves the close off.
+    /// </summary>
+    internal StateNode? RoundActiveNode { get; set; }
+
+    /// <summary>
+    ///     The build's <c>gameplay_phase</c> node. The close needs it to tell a last round the
+    ///     server finished from a recording that was simply cut mid-round.
+    /// </summary>
+    internal StateNode? GameplayPhaseNode { get; set; }
+
     /// <summary>Frames read by the most recent evaluation.</summary>
     public int FramesConsumed { get; private set; }
 
@@ -596,6 +608,7 @@ public sealed class StateGraphEvaluator
         int frameIdx = 0;
         int runPos = 0;
         int lastFrameTick = 0;
+        DemoFrame? terminalClose = null;
         List<DemoFrame> run = new(4);
         try
         {
@@ -605,11 +618,24 @@ public sealed class StateGraphEvaluator
             {
                 if (!ReadTickRun(frames, run))
                 {
-                    break;
+                    // One more frame, carrying the synthesized close of a last round the recording
+                    // has no marker for. Pushed through the loop rather than dispatched beside it so
+                    // the snapshot rows, the logic nodes and the Observer's round sampling treat it
+                    // as any other frame, and the forward and retained paths share it.
+                    if (terminalClose is not null || !TryBuildTerminalClose(lastFrameTick, out terminalClose))
+                    {
+                        break;
+                    }
+
+                    run.Clear();
+                    run.Add(terminalClose);
                 }
 
                 runPos = 0;
-                _entityScanner?.BeginTickRun(run);
+                if (!ReferenceEquals(run[0], terminalClose))
+                {
+                    _entityScanner?.BeginTickRun(run);
+                }
             }
 
             // Frame granularity is the cancellation quantum: cheap (one volatile read per ~dozens
@@ -655,7 +681,10 @@ public sealed class StateGraphEvaluator
             // The poll consumes the frame's digest (lazy: scanner is null when no rule references an
             // entity context). The entity events it synthesizes are held and dispatched after the
             // fold below: they are raised from this frame's state, so they read it.
-            IReadOnlyList<NetMessage>? synthesized = _entityScanner?.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
+            bool isTerminalClose = ReferenceEquals(frame, terminalClose);
+            IReadOnlyList<NetMessage>? synthesized = isTerminalClose
+                ? null
+                : _entityScanner?.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
 
             // DecodedMessages, not InnerMessages: the stored svc_UserCmds entries are synthesized on
             // access and their dispatch key is the storage wrapper's type, which matches no rule.
@@ -773,7 +802,7 @@ public sealed class StateGraphEvaluator
             //    and "decided" must follow it. Same materialize / track / finish path as the
             //    pre-frame synthesized messages above, so snapshot rows and forward/retained parity
             //    hold. ──
-            if (_entityScanner is not null)
+            if (_entityScanner is not null && !isTerminalClose)
             {
                 IReadOnlyList<NetMessage> postFrame = _entityScanner.PostFrameMessages;
                 for (int p = 0; p < postFrame.Count; p++)
@@ -799,6 +828,13 @@ public sealed class StateGraphEvaluator
 
                     DispatchPostFrame(postMsg);
                 }
+            }
+
+            // ── The terminal round close, on its own carrier frame, after the real frames. ──
+            if (isTerminalClose)
+            {
+                DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(
+                    new RoundEndTerminalEvent(frameTick, frameTick, frameTick)));
             }
 
             // ── Cadence steps, after everything else the frame dispatches. ──
@@ -2289,6 +2325,47 @@ public sealed class StateGraphEvaluator
     }
 
     /// <summary>One tick run: the next frame and every immediately following frame at the same tick.</summary>
+    /// <summary>
+    ///     The one-frame terminal round close, or false when this run needs none.
+    ///     <para>
+    ///         Three conditions, and all three are load-bearing. <c>round_active</c> still active is
+    ///         what makes the close exclusive: a round a real <c>$round_end</c> marker closed is not
+    ///         active, so the unguarded Increment edges the v2 <c>count:</c> planner emits cannot
+    ///         double-count it. <c>round_number</c> above 0 keeps a pre-match period out. And
+    ///         <c>gameplay_phase</c> past play is the difference between a final round the server
+    ///         finished and a recording that was simply cut mid-round: closing the latter would
+    ///         manufacture a round, which is the behaviour the GOTV profile's binding promises not
+    ///         to have. A build with no <c>round_end_terminal</c> edge gets nothing either way, so
+    ///         HLTV, POV and bare builds are untouched.
+    ///     </para>
+    /// </summary>
+    private bool TryBuildTerminalClose(int tick, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out DemoFrame? frame)
+    {
+        frame = null;
+        if (RoundActiveNode is not { IsActive: true }
+            || !_edgeIndex.ContainsKey(typeof(RoundEndTerminalEvent))
+            || RoundNumberNode?.GetNumericValue() is not > 0
+            || GameplayPhaseNode?.GetDisplayValue() is not ("Intermission" or "PostMatch"))
+        {
+            return false;
+        }
+
+        // A carrier only. The close itself goes through the post-frame dispatch, the path the
+        // scanner's synthesized events take; a frame's own message list is Parser-internal.
+        frame = new DemoFrame
+        {
+            CommandKind = EDemoCommands.DemPacket,
+            FrameNumber = tick,
+            ServerTick = tick,
+            GameTick = tick,
+            RawStart = 0,
+            RawLength = 0,
+            HeaderLength = 0,
+            IsCompressed = false
+        };
+        return true;
+    }
+
     private static bool ReadTickRun(IDemoFrameSource source, List<DemoFrame> run)
     {
         run.Clear();

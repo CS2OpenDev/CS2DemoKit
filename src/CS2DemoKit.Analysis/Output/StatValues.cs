@@ -20,6 +20,12 @@ internal static class StatValues
     private const string RoundNumberNodeName = "RoundNumber";
     internal const string RoundNumberRuleId = "round_number";
 
+    /// <summary>The two further built-in context rule ids the terminal round close reads.</summary>
+    internal const string RoundActiveRuleId = "round_active";
+
+    /// <inheritdoc cref="RoundActiveRuleId" />
+    internal const string GameplayPhaseRuleId = "gameplay_phase";
+
     /// <summary>
     ///     The value-column schema: the union of every materialized player's column names, in
     ///     first-seen order. A fixed ordered list keeps the table stable regardless of which player

@@ -235,18 +235,21 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? RoundEnd =>
         // Final round of a match has no round_officially_ended; cs_win_panel_match
         // (Valve's match-summary marker) serves as the terminal fallback for
-        // normal completed matches. Demos cut off mid-round will not finalise
-        // their final round — that is acceptable.
+        // normal completed matches. round_end_terminal covers the recording that
+        // carries neither, synthesized at end of stream.
         //
         // The events here must be MUTUALLY EXCLUSIVE PER ROUND: the v2 `count:` planner emits one
         // unguarded Increment edge per concrete event, so two markers firing in the same round
         // count that round twice. round_officially_ended and cs_win_panel_match never overlap
         // (the final round is exactly the one with no round_officially_ended). This is why
         // cs_pre_restart — which fires alongside round_officially_ended on Valve servers — is NOT
-        // listed here, and lives on Cs2GotvPreRestartProfile instead.
+        // listed here, and lives on Cs2GotvPreRestartProfile instead. round_end_terminal is
+        // exclusive by the evaluator's gate: it fires only while round_active is still active,
+        // which no round a real marker closed ever is.
         LogicalEventBinding.FirstWins(
             "round_officially_ended",
-            "cs_win_panel_match");
+            "cs_win_panel_match",
+            "round_end_terminal");
 
     /// <inheritdoc />
     public override LogicalEventBinding? RoundFreezeEnd =>
