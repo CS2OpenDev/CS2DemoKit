@@ -307,8 +307,6 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "smoke expired" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? SmokeExpired => null;
 
-    /// <summary>Logical binding for the "warmup end" game event. See class summary for binding semantics.</summary>
-    public virtual LogicalEventBinding? WarmupEnd => null;
 
     /// <summary>Logical binding for the "warmup start" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? WarmupStart => null;

@@ -37,18 +37,18 @@ public class GraphWiringOrderPinTests
     // count on HLTV.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv/game"] = "70:4497CAA5F495F0BB",
+        ["shipped-gotv/game"] = "69:741DAD648927E48E",
         ["shipped-gotv/player"] = "204:42D0FAE1075862AC",
-        ["shipped-gotv/types"] = "38:66BD7437294DD34F",
-        ["shipped-hltv/game"] = "67:DDC55B358BE2531E",
+        ["shipped-gotv/types"] = "37:6BEBC238D44FCB95",
+        ["shipped-hltv/game"] = "66:4D9CF4CA6FDE3950",
         ["shipped-hltv/player"] = "171:08C95BEC59326A6C",
-        ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
-        ["matrix-gotv/game"] = "103:B2179C5BB1BBEF94",
+        ["shipped-hltv/types"] = "35:51EF2DA810C41F6F",
+        ["matrix-gotv/game"] = "102:96229F3822C80963",
         ["matrix-gotv/player"] = "50:0779142BA4CFE2B1",
-        ["matrix-gotv/types"] = "32:E98774E2C288076B",
-        ["matrix-hltv/game"] = "95:C1E1B0A13DEC4ED0",
+        ["matrix-gotv/types"] = "31:F2C1D3CCB200B967",
+        ["matrix-hltv/game"] = "94:ECB935D642CC7EF3",
         ["matrix-hltv/player"] = "45:0EFB1AB42FD00667",
-        ["matrix-hltv/types"] = "31:2FCCF886F0F9711A"
+        ["matrix-hltv/types"] = "30:66E2445A8A04AE6D"
     };
 
     public static IEnumerable<string> CaseNames() => RuleGraphFixtures.Cases().Select(c => c.Name);

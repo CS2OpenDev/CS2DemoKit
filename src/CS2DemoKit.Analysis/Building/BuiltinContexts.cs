@@ -538,7 +538,8 @@ public static class BuiltinContexts
                     "WarmUp",
                     Triggers:
                     [
-                        new TriggerDef("warmup_end", TriggerAction.Set, Value: "\"PreMatch\""),
+                        // warmup_end fired 0 times in a 388-demo corpus, so round_announce_match_start
+                        // is the only marker that ever moved this out of WarmUp.
                         new TriggerDef("round_announce_match_start", TriggerAction.Set, Value: "\"PreMatch\""),
                         new TriggerDef("round_prestart", TriggerAction.Set, Value: "\"FreezeTime\""),
                         // Entity-state backup for HLTV demos where round_prestart fires 0×.

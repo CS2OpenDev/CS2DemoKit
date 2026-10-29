@@ -77,10 +77,10 @@ public class GraphDescriptorCoverageTests
     // rows were added to that pin with the fix.
     private static readonly Dictionary<string, string> _baselineRows = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv"] = "150:9E20EAC8A5DCE76C",
-        ["shipped-hltv"] = "139:AE67968AEE703750",
-        ["matrix-gotv"] = "89:671B07CF01E01986",
-        ["matrix-hltv"] = "84:8B641E41CF6BFC10"
+        ["shipped-gotv"] = "149:D93EF1C64DAACB59",
+        ["shipped-hltv"] = "138:DB77DB79D945E217",
+        ["matrix-gotv"] = "88:C98F8ABA3245C453",
+        ["matrix-hltv"] = "83:AD838B65EFA96B27"
     };
 
     public static IEnumerable<string> CaseNames() => RuleGraphFixtures.CoverageCases().Select(c => c.Name);
@@ -390,14 +390,14 @@ public class GraphDescriptorCoverageTests
         BuildResult build = RuleGraphFixtures.Cases().Single(c => c.Name == "shipped-gotv").Build();
         PerPlayerNodeTemplate.MaterializedPlayer p = build.Graph.PerPlayerTemplates[0].Materialize(0, 0, "p0");
 
-        await Assert.That(build.Graph.Edges.Count).IsEqualTo(70);
+        await Assert.That(build.Graph.Edges.Count).IsEqualTo(69);
         await Assert.That(p.Edges.Count).IsEqualTo(203);
         await Assert.That(build.Edges.Count).IsEqualTo(ShippedGameRows);
         await Assert.That(p.EdgeDescriptors.Count).IsEqualTo(ShippedPlayerRows);
         await Assert.That(build.EdgeBacking!.Count).IsEqualTo(build.Edges.Count(d => d.Edge is not null));
     }
 
-    private const int ShippedGameRows = 141;
+    private const int ShippedGameRows = 140;
     private const int ShippedPlayerRows = 245;
 
     /// <summary>A tally fires from the root at round end and reads its stat: drawn that way, not from the stat.</summary>

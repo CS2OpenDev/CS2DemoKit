@@ -2847,8 +2847,7 @@
         "round_freeze_end",
         "round_officially_ended",
         "round_officially_ended",
-        "round_prestart",
-        "warmup_end"
+        "round_prestart"
       ],
       "v2Name": "match.phase",
       "v2Type": "String"
