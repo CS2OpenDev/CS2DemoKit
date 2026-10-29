@@ -314,6 +314,8 @@ public sealed class StateGraphEvaluator
     ///     The build's <c>round_active</c> node. With <see cref="GameplayPhaseNode" /> it decides the
     ///     terminal round close; null leaves the close off.
     /// </summary>
+    internal StateNode? MatchLiveNode { get; set; }
+
     internal StateNode? RoundActiveNode { get; set; }
 
     /// <summary>
@@ -842,6 +844,17 @@ public sealed class StateGraphEvaluator
             {
                 DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(
                     new RoundEndTerminalEvent(frameTick, frameTick, frameTick)));
+
+                // The match end follows the round close and never precedes it. round_active and
+                // round_number are Sourced from match_live, and an edge is only eligible while its
+                // Source is active, so deactivating match_live first would strand the round close.
+                // TopologicalSortEdges only orders within one dispatch key, and these are two
+                // types, so this ordering is this line rather than a property of the sort.
+                if (ShouldCloseMatch())
+                {
+                    DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(
+                        new MatchEndTerminalEvent(frameTick, frameTick, frameTick)));
+                }
             }
 
             // ── Cadence steps, after everything else the frame dispatches. ──
@@ -2344,6 +2357,23 @@ public sealed class StateGraphEvaluator
     ///         overrides the binding without it.
     ///     </para>
     /// </summary>
+    /// <summary>
+    ///     Whether a finished match needs a synthesized end: the server left play and never sent
+    ///     <c>cs_win_panel_match</c>. Measured on 10 of 388 demos, all ending at the intermission.
+    /// </summary>
+    /// <remarks>
+    ///     <c>match_live</c> being active IS the exclusion. The win panel deactivates it, so a demo
+    ///     that sent one cannot reach here; without that condition the gate fires on 385 of 388.
+    ///     The phase is <c>Intermission</c> alone and not the round close's pair, because the one
+    ///     event that sets <c>PostMatch</c> is the one that deactivates <c>match_live</c>, so the
+    ///     other half would be unreachable and would read as though a second case existed.
+    /// </remarks>
+    private bool ShouldCloseMatch() =>
+        MatchLiveNode is { IsActive: true }
+        && _edgeIndex.ContainsKey(typeof(MatchEndTerminalEvent))
+        && RoundNumberNode?.GetNumericValue() is > 0
+        && GameplayPhaseNode?.GetDisplayValue() is "Intermission";
+
     private bool TryBuildTerminalClose(int tick, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out DemoFrame? frame)
     {
         frame = null;

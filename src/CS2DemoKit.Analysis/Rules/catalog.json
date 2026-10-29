@@ -1082,6 +1082,13 @@
       ]
     },
     {
+      "name": "match_end_terminal",
+      "clrType": "MatchEndTerminalEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": []
+    },
+    {
       "name": "molotov_thrown",
       "clrType": "MolotovThrownEvent",
       "synthesized": true,
@@ -3547,7 +3554,8 @@
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "match_end_terminal"
           ]
         },
         {
@@ -3905,7 +3913,8 @@
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "match_end_terminal"
           ]
         },
         {
@@ -4263,7 +4272,8 @@
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "match_end_terminal"
           ]
         },
         {
@@ -4614,7 +4624,8 @@
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "match_end_terminal"
           ]
         },
         {
@@ -5294,7 +5305,8 @@
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
-            "cs_win_panel_match"
+            "cs_win_panel_match",
+            "match_end_terminal"
           ]
         },
         {

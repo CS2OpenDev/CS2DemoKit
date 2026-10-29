@@ -119,7 +119,13 @@ public class Cs2GotvProfile : DemoSourceProfile
 
     /// <inheritdoc />
     public override LogicalEventBinding? MatchEnd =>
-        LogicalEventBinding.Of("cs_win_panel_match");
+        // match_end_terminal covers the finished match whose server never sent the win panel:
+        // 10 of 388 demos, every one ending at the intermission with the match decided. It is
+        // exclusive by match_live, which cs_win_panel_match deactivates, so a demo that sent one
+        // can never reach it.
+        LogicalEventBinding.FirstWins(
+            "cs_win_panel_match",
+            "match_end_terminal");
 
     // ── Match lifecycle ───────────────────────────────────────────────────
 

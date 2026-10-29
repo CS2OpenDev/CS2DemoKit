@@ -110,6 +110,72 @@ public class TerminalRoundCloseTests
     private static GameEvent MatchStart(int frameNumber, int serverTick) =>
         new("begin_new_match", -1, frameNumber, serverTick, serverTick, new BeginNewMatchEvent());
 
+    /// <summary>
+    ///     A finished match whose server never sent the win panel: match_live must not still read
+    ///     true at end of stream. Measured on 10 of 388 demos, all ending at the intermission.
+    /// </summary>
+    [Test]
+    public async Task FinishedMatchWithNoWinPanel_ClosesMatchLive()
+    {
+        bool live = MatchLiveAtEnd(
+            Frame(0, 10, MatchStart(0, 10)),
+            Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
+            Frame(2, 2000, Intermission(2, 2000)));
+
+        await Assert.That(live).IsFalse()
+            .Because("the match is over, so the node that answers 'is this live' must say so");
+    }
+
+    /// <summary>
+    ///     A recording cut mid-round keeps match_live open: nothing says the match finished, and
+    ///     closing it would assert an end the file does not carry.
+    /// </summary>
+    [Test]
+    public async Task TruncatedRecording_LeavesMatchLiveOpen()
+    {
+        bool live = MatchLiveAtEnd(
+            Frame(0, 10, MatchStart(0, 10)),
+            Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
+            Frame(2, 2000, TestGameEvents.RoundFreezeEnd(2, 2000)));
+
+        await Assert.That(live).IsTrue()
+            .Because("three valve-mm demos in the corpus are cut mid-round and must keep an open match");
+    }
+
+    /// <summary>
+    ///     THE KNOWN GAP, pinned rather than fixed. The match end rides the round close's carrier,
+    ///     so a demo whose last round a real marker already closed gets no carrier and no match end,
+    ///     even at the intermission. Zero corpus instances. This is the tripwire if the carrier is
+    ///     ever widened: it should then start failing, and that is the signal to re-read the gate.
+    /// </summary>
+    [Test]
+    public async Task RoundClosedByAMarkerThenIntermission_LeavesMatchLiveOpen()
+    {
+        bool live = MatchLiveAtEnd(
+            Frame(0, 10, MatchStart(0, 10)),
+            Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
+            Frame(2, 1500, TestGameEvents.RoundOfficiallyEnded(2, 1500)),
+            Frame(3, 2000, Intermission(3, 2000)));
+
+        await Assert.That(live).IsTrue()
+            .Because("no carrier frame is built when the round needs no close, so the match end never fires");
+    }
+
+    private static bool MatchLiveAtEnd(params DemoFrame[] frames)
+    {
+        RuleConfigLoadResult load = YamlConfigLoader.LoadDocuments([("trc.rules.yaml", CounterYaml)]);
+        BuildResult build = DemoAnalysis.Build(new AnalysisTarget(64, new Cs2GotvProfile()), load.Rulesets);
+        new StateGraphEvaluator(build.Graph, null, build.PlayerContextIndex, build.EntityScanner)
+        {
+            MatchLiveNode = build.GameNodesByRuleId?.GetValueOrDefault("match_live"),
+            RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault("round_number"),
+            RoundActiveNode = build.GameNodesByRuleId?.GetValueOrDefault("round_active"),
+            GameplayPhaseNode = build.GameNodesByRuleId?.GetValueOrDefault("gameplay_phase")
+        }.Evaluate(frames);
+
+        return Node(build, "match_live").IsActive;
+    }
+
     private static GameEvent Intermission(int frameNumber, int serverTick) =>
         new("cs_intermission", -1, frameNumber, serverTick, serverTick, new CsIntermissionEvent());
 
@@ -120,6 +186,7 @@ public class TerminalRoundCloseTests
         new StateGraphEvaluator(build.Graph, null, build.PlayerContextIndex, build.EntityScanner)
         {
             RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault("round_number"),
+            MatchLiveNode = build.GameNodesByRuleId?.GetValueOrDefault("match_live"),
             RoundActiveNode = build.GameNodesByRuleId?.GetValueOrDefault("round_active"),
             GameplayPhaseNode = build.GameNodesByRuleId?.GetValueOrDefault("gameplay_phase")
         }.Evaluate(frames);
