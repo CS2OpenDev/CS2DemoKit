@@ -73,6 +73,14 @@ public class Cs2HltvProfile : Cs2GotvProfile
             "cs_pre_restart",
             "cs_win_panel_match");
 
+    /// <summary>No synthesized close, mirroring <see cref="RoundEnd" />.</summary>
+    /// <remarks>
+    ///     Both terminal fallbacks stay on the same profile set. No demo in the measured corpus
+    ///     resolves here, so this is a consistency call rather than an evidence one.
+    /// </remarks>
+    public override LogicalEventBinding? MatchEnd =>
+        LogicalEventBinding.Of("cs_win_panel_match");
+
     /// <summary>HLTV demos lack a per-round official-end event entirely.</summary>
     public override LogicalEventBinding? RoundOfficiallyEnded => null;
 

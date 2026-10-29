@@ -709,7 +709,10 @@ public static class DemoAnalysis
             ObservedProviders = options.ObservedProviders,
             DecodeUserCommands = build.DecodesUserCommands || options.DecodeUserCommands,
             Cadences = build.CadencePlans,
-            RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId)
+            RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId),
+            MatchLiveNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.MatchLiveRuleId),
+            RoundActiveNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundActiveRuleId),
+            GameplayPhaseNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.GameplayPhaseRuleId)
         };
         bool capture = options.CaptureSnapshots ?? source.SupportsRandomAccess;
 

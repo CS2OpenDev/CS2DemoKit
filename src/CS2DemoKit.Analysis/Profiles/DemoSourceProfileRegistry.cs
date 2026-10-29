@@ -97,7 +97,13 @@ public static class DemoSourceProfileRegistry
             && !observedEvents.Contains("round_officially_ended")
             && observedEvents.Contains("cs_pre_restart"))
         {
-            return new Cs2GotvPreRestartProfile();
+            // A recording that fires no begin_new_match has no $match_start to open match_live
+            // with, so it needs the freeze-end fallback. The check is for the marker's ABSENCE and
+            // not for this dialect: a pre-match round fires a freeze-end too, so the fallback is
+            // only safe where there is no match start to miss.
+            return observedEvents.Contains("begin_new_match")
+                ? new Cs2GotvPreRestartProfile()
+                : new Cs2GotvPreRestartNoMatchStartProfile();
         }
 
         return resolved;

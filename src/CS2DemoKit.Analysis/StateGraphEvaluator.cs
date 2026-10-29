@@ -310,6 +310,20 @@ public sealed class StateGraphEvaluator
     /// <summary>The build's live round-number node, which a projectile record's round reads; null when the build has none.</summary>
     internal StateNode? RoundNumberNode { get; set; }
 
+    /// <summary>
+    ///     The build's <c>round_active</c> node. With <see cref="GameplayPhaseNode" /> it decides the
+    ///     terminal round close; null leaves the close off.
+    /// </summary>
+    internal StateNode? MatchLiveNode { get; set; }
+
+    internal StateNode? RoundActiveNode { get; set; }
+
+    /// <summary>
+    ///     The build's <c>gameplay_phase</c> node. The close needs it to tell a last round the
+    ///     server finished from a recording that was simply cut mid-round.
+    /// </summary>
+    internal StateNode? GameplayPhaseNode { get; set; }
+
     /// <summary>Frames read by the most recent evaluation.</summary>
     public int FramesConsumed { get; private set; }
 
@@ -596,6 +610,7 @@ public sealed class StateGraphEvaluator
         int frameIdx = 0;
         int runPos = 0;
         int lastFrameTick = 0;
+        DemoFrame? terminalClose = null;
         List<DemoFrame> run = new(4);
         try
         {
@@ -605,11 +620,29 @@ public sealed class StateGraphEvaluator
             {
                 if (!ReadTickRun(frames, run))
                 {
-                    break;
+                    // One more frame, carrying the synthesized close of a last round the recording
+                    // has no marker for. Pushed through the loop rather than dispatched beside it so
+                    // the snapshot rows, the logic nodes and the Observer's round sampling treat it
+                    // as any other frame, and the forward and retained paths share it.
+                    if (terminalClose is not null || !TryBuildTerminalClose(lastFrameTick, out terminalClose))
+                    {
+                        break;
+                    }
+
+                    run.Clear();
+                    run.Add(terminalClose);
+
+                    // The carrier reuses the LAST REAL frame's index. A snapshot row stamped one
+                    // past the end is an out-of-range seek for any consumer that indexes the
+                    // demo's frames by it, and FramesConsumed has to stay the frame count.
+                    frameIdx--;
                 }
 
                 runPos = 0;
-                _entityScanner?.BeginTickRun(run);
+                if (!ReferenceEquals(run[0], terminalClose))
+                {
+                    _entityScanner?.BeginTickRun(run);
+                }
             }
 
             // Frame granularity is the cancellation quantum: cheap (one volatile read per ~dozens
@@ -655,7 +688,12 @@ public sealed class StateGraphEvaluator
             // The poll consumes the frame's digest (lazy: scanner is null when no rule references an
             // entity context). The entity events it synthesizes are held and dispatched after the
             // fold below: they are raised from this frame's state, so they read it.
-            IReadOnlyList<NetMessage>? synthesized = _entityScanner?.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
+            // The carrier frame sits past the last decoded frame, and polling the entity pipeline
+            // there throws. The close reads the state the last real frame left, which is correct.
+            bool isTerminalClose = ReferenceEquals(frame, terminalClose);
+            IReadOnlyList<NetMessage>? synthesized = isTerminalClose
+                ? null
+                : _entityScanner?.AdvanceAndPollOnClock(frameIdx, frame.ServerTick, frameTick);
 
             // DecodedMessages, not InnerMessages: the stored svc_UserCmds entries are synthesized on
             // access and their dispatch key is the storage wrapper's type, which matches no rule.
@@ -773,7 +811,7 @@ public sealed class StateGraphEvaluator
             //    and "decided" must follow it. Same materialize / track / finish path as the
             //    pre-frame synthesized messages above, so snapshot rows and forward/retained parity
             //    hold. ──
-            if (_entityScanner is not null)
+            if (_entityScanner is not null && !isTerminalClose)
             {
                 IReadOnlyList<NetMessage> postFrame = _entityScanner.PostFrameMessages;
                 for (int p = 0; p < postFrame.Count; p++)
@@ -798,6 +836,24 @@ public sealed class StateGraphEvaluator
                     }
 
                     DispatchPostFrame(postMsg);
+                }
+            }
+
+            // ── The terminal round close, on its own carrier frame, after the real frames. ──
+            if (isTerminalClose)
+            {
+                DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(
+                    new RoundEndTerminalEvent(frameTick, frameTick, frameTick)));
+
+                // The match end follows the round close and never precedes it. round_active and
+                // round_number are Sourced from match_live, and an edge is only eligible while its
+                // Source is active, so deactivating match_live first would strand the round close.
+                // TopologicalSortEdges only orders within one dispatch key, and these are two
+                // types, so this ordering is this line rather than a property of the sort.
+                if (ShouldCloseMatch())
+                {
+                    DispatchPostFrame(GameEventMessage.ForSynthesizedEvent(
+                        new MatchEndTerminalEvent(frameTick, frameTick, frameTick)));
                 }
             }
 
@@ -2286,6 +2342,63 @@ public sealed class StateGraphEvaluator
         }
 
         return $"Player {slot}";
+    }
+
+    /// <summary>
+    ///     The one-frame terminal round close, or false when this run needs none. All three
+    ///     conditions are load-bearing: <c>round_active</c> is the exclusion, since the v2
+    ///     <c>count:</c> planner's Increment edges are unguarded and a round a real marker closed
+    ///     is not active; <c>round_number</c> keeps a pre-match period out; and
+    ///     <c>gameplay_phase</c> past play is the only thing separating a final round the server
+    ///     finished from a recording cut mid-round, which must stay unfinalised.
+    ///     <para>
+    ///         Bound by the GOTV family, FACEIT and POV included, since both inherit
+    ///         <see cref="Profiles.Cs2GotvProfile.RoundEnd" />. <see cref="Profiles.Cs2HltvProfile" />
+    ///         overrides the binding without it.
+    ///     </para>
+    /// </summary>
+    /// <summary>
+    ///     Whether a finished match needs a synthesized end: the server left play and never sent
+    ///     <c>cs_win_panel_match</c>. Measured on 10 of 388 demos, all ending at the intermission.
+    /// </summary>
+    /// <remarks>
+    ///     <c>match_live</c> being active IS the exclusion. The win panel deactivates it, so a demo
+    ///     that sent one cannot reach here; without that condition the gate fires on 385 of 388.
+    ///     The phase is <c>Intermission</c> alone and not the round close's pair, because the one
+    ///     event that sets <c>PostMatch</c> is the one that deactivates <c>match_live</c>, so the
+    ///     other half would be unreachable and would read as though a second case existed.
+    /// </remarks>
+    private bool ShouldCloseMatch() =>
+        MatchLiveNode is { IsActive: true }
+        && _edgeIndex.ContainsKey(typeof(MatchEndTerminalEvent))
+        && RoundNumberNode?.GetNumericValue() is > 0
+        && GameplayPhaseNode?.GetDisplayValue() is "Intermission";
+
+    private bool TryBuildTerminalClose(int tick, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out DemoFrame? frame)
+    {
+        frame = null;
+        if (RoundActiveNode is not { IsActive: true }
+            || !_edgeIndex.ContainsKey(typeof(RoundEndTerminalEvent))
+            || RoundNumberNode?.GetNumericValue() is not > 0
+            || GameplayPhaseNode?.GetDisplayValue() is not ("Intermission" or "PostMatch"))
+        {
+            return false;
+        }
+
+        // A carrier only. The close itself goes through the post-frame dispatch, the path the
+        // scanner's synthesized events take; a frame's own message list is Parser-internal.
+        frame = new DemoFrame
+        {
+            CommandKind = EDemoCommands.DemPacket,
+            FrameNumber = tick,
+            ServerTick = tick,
+            GameTick = tick,
+            RawStart = 0,
+            RawLength = 0,
+            HeaderLength = 0,
+            IsCompressed = false
+        };
+        return true;
     }
 
     /// <summary>One tick run: the next frame and every immediately following frame at the same tick.</summary>

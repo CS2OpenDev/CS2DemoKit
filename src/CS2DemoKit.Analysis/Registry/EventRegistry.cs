@@ -104,6 +104,9 @@ public sealed class EventRegistry
         ("projectile_removed", typeof(ProjectileRemovedEvent)),
         // Synthesized (StateGraphEvaluator): a ruleset cadence's period on the frame clock.
         ("cadence_tick", typeof(CadenceTickEvent)),
+        // Synthesized (StateGraphEvaluator): the close of a last round no marker closed.
+        ("round_end_terminal", typeof(RoundEndTerminalEvent)),
+        ("match_end_terminal", typeof(MatchEndTerminalEvent)),
         ("decoy_detonate", typeof(DecoyDetonateEvent)),
         // The decoy's sound starting, once per decoy; decoy_detonate is each fake shot after it.
         ("decoy_started", typeof(DecoyStartedEvent)),

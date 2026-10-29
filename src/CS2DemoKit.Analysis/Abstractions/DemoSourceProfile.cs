@@ -124,6 +124,13 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "halftime" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? Halftime => null;
 
+    /// <summary>
+    ///     Second activation for <c>match_live</c> on a recording that carries no match-start marker
+    ///     at all. Null on every profile whose demos do carry one: a pre-match round fires a round
+    ///     freeze-end, so a freeze-end activation would open the gate before the match starts.
+    /// </summary>
+    public virtual LogicalEventBinding? MatchLiveFallback => null;
+
     /// <summary>Logical binding for the "he grenade detonate" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? HeGrenadeDetonate => null;
 
@@ -300,8 +307,6 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "smoke expired" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? SmokeExpired => null;
 
-    /// <summary>Logical binding for the "warmup end" game event. See class summary for binding semantics.</summary>
-    public virtual LogicalEventBinding? WarmupEnd => null;
 
     /// <summary>Logical binding for the "warmup start" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? WarmupStart => null;

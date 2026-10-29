@@ -5,11 +5,17 @@ namespace CS2DemoKit.Analysis.Config;
 /// <param name="Action">Effect applied to the rule's node when the trigger fires.</param>
 /// <param name="Condition">Optional predicate expression filtering the event payload.</param>
 /// <param name="Value">For Set/Increment actions: expression yielding the new/delta value.</param>
+/// <param name="Optional">
+///     True for a <c>$logical</c> trigger that is a per-profile fallback: a profile that does not
+///     bind it drops this trigger and keeps the rest of the rule. Default false, so an unbound
+///     logical trigger still throws, which is what stops a rule silently becoming a no-op.
+/// </param>
 public sealed record TriggerDef(
     string On,
     TriggerAction Action = TriggerAction.Activate,
     string? Condition = null,
-    string? Value = null);
+    string? Value = null,
+    bool Optional = false);
 
 /// <summary>Effect a trigger applies to its rule's node when its condition is satisfied.</summary>
 public enum TriggerAction

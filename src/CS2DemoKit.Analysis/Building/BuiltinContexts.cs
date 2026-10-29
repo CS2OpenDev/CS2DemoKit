@@ -443,10 +443,15 @@ public static class BuiltinContexts
             "_builtin_game_context",
             ChainScope.Game,
             [
+                // $match_live_fallback is a second activation for a recording that carries no
+                // match-start marker at all. It is bound only on the profile resolved for that case,
+                // never here: a knife round fires a round freeze-end, so an unconditional freeze-end
+                // activation counts the knife round's deaths on any demo that has one.
                 new RuleDef("match_live", RuleType.Bool, "MatchLive",
                     Triggers:
                     [
                         new TriggerDef("$match_start"),
+                        new TriggerDef("$match_live_fallback", Optional: true),
                         new TriggerDef("$match_end", TriggerAction.Deactivate)
                     ]),
 
@@ -533,7 +538,8 @@ public static class BuiltinContexts
                     "WarmUp",
                     Triggers:
                     [
-                        new TriggerDef("warmup_end", TriggerAction.Set, Value: "\"PreMatch\""),
+                        // warmup_end fired 0 times in a 388-demo corpus, so round_announce_match_start
+                        // is the only marker that ever moved this out of WarmUp.
                         new TriggerDef("round_announce_match_start", TriggerAction.Set, Value: "\"PreMatch\""),
                         new TriggerDef("round_prestart", TriggerAction.Set, Value: "\"FreezeTime\""),
                         // Entity-state backup for HLTV demos where round_prestart fires 0×.

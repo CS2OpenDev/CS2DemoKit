@@ -68,10 +68,14 @@ stats:
     while: round.active
     label: HSKills
 
+  # These two feed has_kast, whose rising edge is the KAST round count, so a pre-match kill
+  # credits a round that was never played. match.live, not round.active: round.active would also
+  # drop post-round kills and move every in-match number.
   enemy_kills_round:
     count: kill
     match: { enemy: true }            # v1 parent: enrich.kill.was_enemy_kill
     per: round
+    while: match.live
     label: EKills
 
   team_assists_round:
@@ -85,6 +89,7 @@ stats:
     count: assist
     where: "enrich.kill.was_enemy_kill == true"
     per: round
+    while: match.live
 
   flash_assists:
     count: assist
@@ -137,7 +142,13 @@ stats:
   # ── KAST round: the real four-source OR (v1 has_kast, parents: {mode: any}) ──
   has_kast:
     flag:
-      when: "enemy_kills_round > 0 or team_assists_round > 0 or player.survived or player.traded"
+      # player.traded needs its bound here because `traded` is a built-in per-player context and
+      # cannot be gated at its source. The other three terms are already bounded: the two counters
+      # above, and player.survived by `alive`, which only activates on a freeze-end.
+      #
+      # round.number, NOT match.live: a when: is a condition the flag tracks, and match.live goes
+      # false at $match_end, which drops the flag again on the final round.
+      when: "enemy_kills_round > 0 or team_assists_round > 0 or player.survived or (player.traded and round.number > 0)"
     per: round
     label: HasKAST
 

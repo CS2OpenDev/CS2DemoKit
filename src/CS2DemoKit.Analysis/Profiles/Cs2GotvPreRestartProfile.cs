@@ -49,11 +49,14 @@ public class Cs2GotvPreRestartProfile : Cs2GotvProfile
 
     /// <inheritdoc />
     public override LogicalEventBinding? RoundEnd =>
-        // Same shape as the base profile — one per-round marker plus the terminal match-summary
-        // marker for the final round, which has no per-round marker of its own.
+        // Same shape as the base profile: one per-round marker, the terminal match-summary marker
+        // for the final round, and the synthesized close for a recording carrying neither. These
+        // demos are why the third exists, since a tournament recording that stops at the
+        // intermission fires no cs_win_panel_match at all.
         LogicalEventBinding.FirstWins(
             "cs_pre_restart",
-            "cs_win_panel_match");
+            "cs_win_panel_match",
+            "round_end_terminal");
 
     /// <summary>These demos carry no per-round official-end event at all.</summary>
     public override LogicalEventBinding? RoundOfficiallyEnded => null;

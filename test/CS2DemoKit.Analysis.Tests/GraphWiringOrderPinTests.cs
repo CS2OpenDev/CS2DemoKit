@@ -29,20 +29,26 @@ public class GraphWiringOrderPinTests
     // "{case}/{sequence}" -> "{line count}:{first 16 hex of the sha256}", taken before every edge was
     // described (#50). The HLTV shipped template did not materialise then (#68), so its player
     // sequence was pinned with that fix. The player sequences gained the two player.team node edges, then the freeze-end team latch.
+    // Each game sequence then gained one line, match_live's $round_freeze_end activation. The
+    // round_end_terminal close then added a concrete $round_end event to the GOTV family, which is
+    // why only its sequences carry the type and the round-end edges for it; HLTV overrides the
+    // binding without it, so its game sequence moved for the activation alone. The kast gates moved
+    // four player edges from Root to MatchLive on both profiles, which is a reorder at the same
+    // count on HLTV.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv/game"] = "67:7A54066EF8A22166",
-        ["shipped-gotv/player"] = "178:A330259EEF6D319C",
-        ["shipped-gotv/types"] = "37:15C0DE3C4278A0EC",
-        ["shipped-hltv/game"] = "67:DDC55B358BE2531E",
-        ["shipped-hltv/player"] = "171:B03813ECC7E74545",
-        ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
-        ["matrix-gotv/game"] = "95:4FCB5A171704463B",
-        ["matrix-gotv/player"] = "45:D0953119A0781B35",
-        ["matrix-gotv/types"] = "31:2FCCF886F0F9711A",
-        ["matrix-hltv/game"] = "95:C1E1B0A13DEC4ED0",
+        ["shipped-gotv/game"] = "70:E8396FE962E8104D",
+        ["shipped-gotv/player"] = "204:B658ACF6091E175B",
+        ["shipped-gotv/types"] = "38:BFFD54C887EBAC52",
+        ["shipped-hltv/game"] = "66:4D9CF4CA6FDE3950",
+        ["shipped-hltv/player"] = "171:02659CE95D6B30AC",
+        ["shipped-hltv/types"] = "35:51EF2DA810C41F6F",
+        ["matrix-gotv/game"] = "103:40A9B7AE893B86A3",
+        ["matrix-gotv/player"] = "50:0779142BA4CFE2B1",
+        ["matrix-gotv/types"] = "32:C176D6CD198773A1",
+        ["matrix-hltv/game"] = "94:ECB935D642CC7EF3",
         ["matrix-hltv/player"] = "45:0EFB1AB42FD00667",
-        ["matrix-hltv/types"] = "31:2FCCF886F0F9711A"
+        ["matrix-hltv/types"] = "30:66E2445A8A04AE6D"
     };
 
     public static IEnumerable<string> CaseNames() => RuleGraphFixtures.Cases().Select(c => c.Name);

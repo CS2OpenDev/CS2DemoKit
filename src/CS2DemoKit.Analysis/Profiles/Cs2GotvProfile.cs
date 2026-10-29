@@ -15,13 +15,7 @@ namespace CS2DemoKit.Analysis.Profiles;
 /// </summary>
 public class Cs2GotvProfile : DemoSourceProfile
 {
-    /// <inheritdoc />
-    public override LogicalEventBinding? BombAbortDefuse =>
-        LogicalEventBinding.Of("bomb_abortdefuse");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? BombAbortPlant =>
-        LogicalEventBinding.Of("bomb_abortplant");
 
     /// <inheritdoc />
     public override LogicalEventBinding? BombBeginDefuse =>
@@ -57,9 +51,6 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? BulletDamage =>
         LogicalEventBinding.Of("bullet_damage");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? BulletImpact =>
-        LogicalEventBinding.Of("bullet_impact");
 
     /// <inheritdoc />
     public override LogicalEventBinding? CombatStart =>
@@ -73,20 +64,15 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? DecoyStarted =>
         LogicalEventBinding.Of("decoy_started");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? DefuserDropped =>
-        LogicalEventBinding.Of("defuser_dropped");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? DefuserPickup =>
-        LogicalEventBinding.Of("defuser_pickup");
 
     /// <inheritdoc />
     public override LogicalEventBinding? EnemySpotted =>
         // Synthesized by VisibilityTransitionScanner from baked map geometry, never read off the
         // wire, so it is bound on every source rather than per recording: what varies between demos
         // is whether the map bake is available, not whether the demo carries the signal. Backs the
-        // `enemy_spotted` actor_slot view.
+        // `enemy_spotted` actor_slot view. A game-event sweep cannot see it for the same reason it
+        // cannot see projectile_created, so zero corpus fires is not evidence the binding is dead.
         LogicalEventBinding.Of("enemy_spotted");
 
     /// <inheritdoc />
@@ -100,13 +86,7 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? FlashbangDetonate =>
         LogicalEventBinding.Of("flashbang_detonate");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? GameRestart =>
-        LogicalEventBinding.Of("game_restart");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? Halftime =>
-        LogicalEventBinding.Of("halftime");
 
     // ── Grenades / utility ────────────────────────────────────────────────
 
@@ -118,17 +98,11 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? InfernoExpired =>
         LogicalEventBinding.Of("inferno_expire");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? InfernoExtinguished =>
-        LogicalEventBinding.Of("inferno_extinguish");
 
     /// <inheritdoc />
     public override LogicalEventBinding? InfernoStart =>
         LogicalEventBinding.Of("inferno_startburn");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? ItemDrop =>
-        LogicalEventBinding.Of("item_drop");
 
     /// <inheritdoc />
     public override LogicalEventBinding? ItemEquip =>
@@ -145,7 +119,13 @@ public class Cs2GotvProfile : DemoSourceProfile
 
     /// <inheritdoc />
     public override LogicalEventBinding? MatchEnd =>
-        LogicalEventBinding.Of("cs_win_panel_match");
+        // match_end_terminal covers the finished match whose server never sent the win panel:
+        // 10 of 388 demos, every one ending at the intermission with the match decided. It is
+        // exclusive by match_live, which cs_win_panel_match deactivates, so a demo that sent one
+        // can never reach it.
+        LogicalEventBinding.FirstWins(
+            "cs_win_panel_match",
+            "match_end_terminal");
 
     // ── Match lifecycle ───────────────────────────────────────────────────
 
@@ -155,8 +135,9 @@ public class Cs2GotvProfile : DemoSourceProfile
 
     /// <inheritdoc />
     public override LogicalEventBinding? MolotovThrown =>
-        // Synthesized by EntityChangeScanner (m_hThrower attribution) — GOTV has no wire
+        // Synthesized by EntityChangeScanner (m_hThrower attribution): GOTV has no wire
         // molotov-detonation event. Backs the `molotov` actor_slot view (grenade-usage stats).
+        // Invisible to a game-event sweep, so zero corpus fires is not evidence the binding is dead.
         LogicalEventBinding.Of("molotov_thrown");
 
     /// <inheritdoc />
@@ -172,9 +153,6 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? PhaseEnd =>
         LogicalEventBinding.Of("announce_phase_end");
 
-    /// <inheritdoc />
-    public override LogicalEventBinding? PlayerAvengedTeammate =>
-        LogicalEventBinding.Of("player_avenged_teammate");
 
     /// <inheritdoc />
     public override LogicalEventBinding? PlayerBlind =>
@@ -235,18 +213,21 @@ public class Cs2GotvProfile : DemoSourceProfile
     public override LogicalEventBinding? RoundEnd =>
         // Final round of a match has no round_officially_ended; cs_win_panel_match
         // (Valve's match-summary marker) serves as the terminal fallback for
-        // normal completed matches. Demos cut off mid-round will not finalise
-        // their final round — that is acceptable.
+        // normal completed matches. round_end_terminal covers the recording that
+        // carries neither, synthesized at end of stream.
         //
         // The events here must be MUTUALLY EXCLUSIVE PER ROUND: the v2 `count:` planner emits one
         // unguarded Increment edge per concrete event, so two markers firing in the same round
         // count that round twice. round_officially_ended and cs_win_panel_match never overlap
         // (the final round is exactly the one with no round_officially_ended). This is why
         // cs_pre_restart — which fires alongside round_officially_ended on Valve servers — is NOT
-        // listed here, and lives on Cs2GotvPreRestartProfile instead.
+        // listed here, and lives on Cs2GotvPreRestartProfile instead. round_end_terminal is
+        // exclusive by the evaluator's gate: it fires only while round_active is still active,
+        // which no round a real marker closed ever is.
         LogicalEventBinding.FirstWins(
             "round_officially_ended",
-            "cs_win_panel_match");
+            "cs_win_panel_match",
+            "round_end_terminal");
 
     /// <inheritdoc />
     public override LogicalEventBinding? RoundFreezeEnd =>

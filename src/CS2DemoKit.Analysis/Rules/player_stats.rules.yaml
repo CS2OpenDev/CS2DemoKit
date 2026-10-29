@@ -34,14 +34,22 @@ use: [ kast ]                             # HLTV reads kast.kast_pct cross-rules
 
 stats:
   # ── Kill / death / assist counters (kill & assist views bake event.Attacker != event.UserId) ──
+  #
+  # round.number > 0 on the five below: a per: round row exists only from round 1, so an ungated
+  # per: match counter picks up a RECORDED pre-match round that no round row can hold, and the two
+  # never reconcile. Gated as WHOLE RATIOS, never one side: KD's denominator total_deaths was
+  # already gated, and HS% needs all three of its terms. round.number rather than match.live
+  # because match.live has a tail at $match_end.
   TotalEnemyKills:
     count: kill
     match: { enemy: true }              # v1 parent enrich.kill.was_enemy_kill
+    while: round.number > 0
     per: match
 
   TeamKills: # internal (HS% denominator); v1 parent was_team_kill
     count: kill
     match: { teamkill: true }
+    while: round.number > 0
     per: match
 
   total_deaths:
@@ -53,11 +61,13 @@ stats:
     count: assist                       # assist view: actor = assister, bakes event.Attacker != event.UserId
     match: { enemy: true }              # v1 parent was_enemy_kill
     where: "event.AssistedFlash == false"
+    while: round.number > 0
     per: match
 
   total_headshot_kills:
     count: kill
     match: { headshot: true }
+    while: round.number > 0
     per: match
 
   total_flash_assists:
@@ -145,6 +155,7 @@ stats:
     sum: enrich.hurt.capped_damage      # v1 value: rule.value + enrich.hurt.capped_damage
     on: damage_dealt
     match: { enemy: true }              # v1 parent was_enemy_damage
+    while: round.number > 0
     per: match
 
   TeamDmg:
@@ -159,14 +170,21 @@ stats:
     where: "event.Attacker == event.UserId"   # v1 parent was_self_damage
     per: match
 
+  # Acc% divides these by a shot counter that is already round.active-gated (kast's shots_fired,
+  # aim_rating's bullet_shots), so an ungated hit over a gated shot reads high wherever a demo
+  # records pre-match shooting. The gate matches the denominator rather than F10's
+  # round.number > 0: loosening the denominators instead would count post-round shots on every
+  # demo, which moves numbers everywhere to fix a case that occurs nowhere in matchmaking.
   ShotsHitFoe:
     count: damage_dealt
     match: { enemy: true, bullet: true }
+    while: round.active
     per: match
 
   ShotsHitFriend:
     count: damage_dealt
     match: { teamdamage: true }
+    while: round.active
     per: match
 
   # ── Entity-read stats (player.* pre-frame provider reads — the hard part #1) ──

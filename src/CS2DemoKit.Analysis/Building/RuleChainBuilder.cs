@@ -1533,6 +1533,12 @@ public sealed partial class RuleChainBuilder
         string logicalName = trigger.On[1..];
         LogicalEventBinding? binding = _logicalResolver.Resolve(logicalName);
 
+        if (binding is null && trigger.Optional)
+        {
+            // A fallback the active profile does not need. The rule keeps its other triggers.
+            return new ExpandedTrigger([], null);
+        }
+
         if (binding is null)
         {
             throw new InvalidOperationException(

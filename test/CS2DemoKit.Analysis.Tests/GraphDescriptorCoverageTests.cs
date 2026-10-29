@@ -77,10 +77,10 @@ public class GraphDescriptorCoverageTests
     // rows were added to that pin with the fix.
     private static readonly Dictionary<string, string> _baselineRows = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv"] = "142:2DD1650AAB0812F2",
-        ["shipped-hltv"] = "139:076CB20E5C049366",
-        ["matrix-gotv"] = "84:8AEA2206E51EAD85",
-        ["matrix-hltv"] = "84:8B641E41CF6BFC10"
+        ["shipped-gotv"] = "150:745A4CFBC5EB3682",
+        ["shipped-hltv"] = "138:4B3861F727F2134F",
+        ["matrix-gotv"] = "89:65927669D651F519",
+        ["matrix-hltv"] = "83:AD838B65EFA96B27"
     };
 
     public static IEnumerable<string> CaseNames() => RuleGraphFixtures.CoverageCases().Select(c => c.Name);
@@ -381,6 +381,8 @@ public class GraphDescriptorCoverageTests
     ///     The descriptor counts for the shipped rulesets on GOTV, game scope and one player. Before this
     ///     work they were 43 and 107; the 67 game edges and 174 player edges they now all describe did
     ///     not move. The player's two <c>player.team</c> node edges and its freeze-end team latch brought it to 177.
+    ///     match_live's freeze-end activation and the round_end_terminal close took the game edges to 71
+    ///     and the player's to 203: one concrete $round_end event more is one edge per round-end stat.
     /// </summary>
     [Test]
     public async Task ShippedGotv_DescriptorCounts()
@@ -388,15 +390,15 @@ public class GraphDescriptorCoverageTests
         BuildResult build = RuleGraphFixtures.Cases().Single(c => c.Name == "shipped-gotv").Build();
         PerPlayerNodeTemplate.MaterializedPlayer p = build.Graph.PerPlayerTemplates[0].Materialize(0, 0, "p0");
 
-        await Assert.That(build.Graph.Edges.Count).IsEqualTo(67);
-        await Assert.That(p.Edges.Count).IsEqualTo(177);
+        await Assert.That(build.Graph.Edges.Count).IsEqualTo(70);
+        await Assert.That(p.Edges.Count).IsEqualTo(203);
         await Assert.That(build.Edges.Count).IsEqualTo(ShippedGameRows);
         await Assert.That(p.EdgeDescriptors.Count).IsEqualTo(ShippedPlayerRows);
         await Assert.That(build.EdgeBacking!.Count).IsEqualTo(build.Edges.Count(d => d.Edge is not null));
     }
 
-    private const int ShippedGameRows = 134;
-    private const int ShippedPlayerRows = 214;
+    private const int ShippedGameRows = 141;
+    private const int ShippedPlayerRows = 245;
 
     /// <summary>A tally fires from the root at round end and reads its stat: drawn that way, not from the stat.</summary>
     [Test]
