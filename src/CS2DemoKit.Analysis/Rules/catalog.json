@@ -3412,20 +3412,6 @@
       "kind": "Faceit",
       "bindings": [
         {
-          "logicalName": "$bomb_abort_defuse",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortdefuse"
-          ]
-        },
-        {
-          "logicalName": "$bomb_abort_plant",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortplant"
-          ]
-        },
-        {
           "logicalName": "$bomb_begin_defuse",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3482,13 +3468,6 @@
           ]
         },
         {
-          "logicalName": "$bullet_impact",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bullet_impact"
-          ]
-        },
-        {
           "logicalName": "$cadence_tick",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3517,20 +3496,6 @@
           ]
         },
         {
-          "logicalName": "$defuser_dropped",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_dropped"
-          ]
-        },
-        {
-          "logicalName": "$defuser_pickup",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_pickup"
-          ]
-        },
-        {
           "logicalName": "$enemy_spotted",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3542,20 +3507,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "flashbang_detonate"
-          ]
-        },
-        {
-          "logicalName": "$game_restart",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "game_restart"
-          ]
-        },
-        {
-          "logicalName": "$halftime",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "halftime"
           ]
         },
         {
@@ -3573,24 +3524,10 @@
           ]
         },
         {
-          "logicalName": "$inferno_extinguished",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "inferno_extinguish"
-          ]
-        },
-        {
           "logicalName": "$inferno_start",
           "semantics": "FirstWins",
           "concreteEvents": [
             "inferno_startburn"
-          ]
-        },
-        {
-          "logicalName": "$item_drop",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "item_drop"
           ]
         },
         {
@@ -3640,13 +3577,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "announce_phase_end"
-          ]
-        },
-        {
-          "logicalName": "$player_avenged_teammate",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "player_avenged_teammate"
           ]
         },
         {
@@ -3840,20 +3770,6 @@
       "kind": "GotvMatchmaking",
       "bindings": [
         {
-          "logicalName": "$bomb_abort_defuse",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortdefuse"
-          ]
-        },
-        {
-          "logicalName": "$bomb_abort_plant",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortplant"
-          ]
-        },
-        {
           "logicalName": "$bomb_begin_defuse",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3910,13 +3826,6 @@
           ]
         },
         {
-          "logicalName": "$bullet_impact",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bullet_impact"
-          ]
-        },
-        {
           "logicalName": "$cadence_tick",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3945,20 +3854,6 @@
           ]
         },
         {
-          "logicalName": "$defuser_dropped",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_dropped"
-          ]
-        },
-        {
-          "logicalName": "$defuser_pickup",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_pickup"
-          ]
-        },
-        {
           "logicalName": "$enemy_spotted",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -3970,20 +3865,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "flashbang_detonate"
-          ]
-        },
-        {
-          "logicalName": "$game_restart",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "game_restart"
-          ]
-        },
-        {
-          "logicalName": "$halftime",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "halftime"
           ]
         },
         {
@@ -4001,24 +3882,10 @@
           ]
         },
         {
-          "logicalName": "$inferno_extinguished",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "inferno_extinguish"
-          ]
-        },
-        {
           "logicalName": "$inferno_start",
           "semantics": "FirstWins",
           "concreteEvents": [
             "inferno_startburn"
-          ]
-        },
-        {
-          "logicalName": "$item_drop",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "item_drop"
           ]
         },
         {
@@ -4075,13 +3942,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "announce_phase_end"
-          ]
-        },
-        {
-          "logicalName": "$player_avenged_teammate",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "player_avenged_teammate"
           ]
         },
         {
@@ -4268,20 +4128,6 @@
       "kind": "GotvMatchmaking",
       "bindings": [
         {
-          "logicalName": "$bomb_abort_defuse",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortdefuse"
-          ]
-        },
-        {
-          "logicalName": "$bomb_abort_plant",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortplant"
-          ]
-        },
-        {
           "logicalName": "$bomb_begin_defuse",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4338,13 +4184,6 @@
           ]
         },
         {
-          "logicalName": "$bullet_impact",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bullet_impact"
-          ]
-        },
-        {
           "logicalName": "$cadence_tick",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4373,20 +4212,6 @@
           ]
         },
         {
-          "logicalName": "$defuser_dropped",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_dropped"
-          ]
-        },
-        {
-          "logicalName": "$defuser_pickup",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_pickup"
-          ]
-        },
-        {
           "logicalName": "$enemy_spotted",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4398,20 +4223,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "flashbang_detonate"
-          ]
-        },
-        {
-          "logicalName": "$game_restart",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "game_restart"
-          ]
-        },
-        {
-          "logicalName": "$halftime",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "halftime"
           ]
         },
         {
@@ -4429,24 +4240,10 @@
           ]
         },
         {
-          "logicalName": "$inferno_extinguished",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "inferno_extinguish"
-          ]
-        },
-        {
           "logicalName": "$inferno_start",
           "semantics": "FirstWins",
           "concreteEvents": [
             "inferno_startburn"
-          ]
-        },
-        {
-          "logicalName": "$item_drop",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "item_drop"
           ]
         },
         {
@@ -4496,13 +4293,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "announce_phase_end"
-          ]
-        },
-        {
-          "logicalName": "$player_avenged_teammate",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "player_avenged_teammate"
           ]
         },
         {
@@ -4689,20 +4479,6 @@
       "kind": "GotvMatchmaking",
       "bindings": [
         {
-          "logicalName": "$bomb_abort_defuse",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortdefuse"
-          ]
-        },
-        {
-          "logicalName": "$bomb_abort_plant",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortplant"
-          ]
-        },
-        {
           "logicalName": "$bomb_begin_defuse",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4759,13 +4535,6 @@
           ]
         },
         {
-          "logicalName": "$bullet_impact",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bullet_impact"
-          ]
-        },
-        {
           "logicalName": "$cadence_tick",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4794,20 +4563,6 @@
           ]
         },
         {
-          "logicalName": "$defuser_dropped",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_dropped"
-          ]
-        },
-        {
-          "logicalName": "$defuser_pickup",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_pickup"
-          ]
-        },
-        {
           "logicalName": "$enemy_spotted",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4819,20 +4574,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "flashbang_detonate"
-          ]
-        },
-        {
-          "logicalName": "$game_restart",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "game_restart"
-          ]
-        },
-        {
-          "logicalName": "$halftime",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "halftime"
           ]
         },
         {
@@ -4850,24 +4591,10 @@
           ]
         },
         {
-          "logicalName": "$inferno_extinguished",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "inferno_extinguish"
-          ]
-        },
-        {
           "logicalName": "$inferno_start",
           "semantics": "FirstWins",
           "concreteEvents": [
             "inferno_startburn"
-          ]
-        },
-        {
-          "logicalName": "$item_drop",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "item_drop"
           ]
         },
         {
@@ -4917,13 +4644,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "announce_phase_end"
-          ]
-        },
-        {
-          "logicalName": "$player_avenged_teammate",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "player_avenged_teammate"
           ]
         },
         {
@@ -5117,20 +4837,6 @@
       "kind": "HltvPro",
       "bindings": [
         {
-          "logicalName": "$bomb_abort_defuse",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortdefuse"
-          ]
-        },
-        {
-          "logicalName": "$bomb_abort_plant",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortplant"
-          ]
-        },
-        {
           "logicalName": "$bomb_begin_defuse",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5187,13 +4893,6 @@
           ]
         },
         {
-          "logicalName": "$bullet_impact",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bullet_impact"
-          ]
-        },
-        {
           "logicalName": "$cadence_tick",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5222,20 +4921,6 @@
           ]
         },
         {
-          "logicalName": "$defuser_dropped",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_dropped"
-          ]
-        },
-        {
-          "logicalName": "$defuser_pickup",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_pickup"
-          ]
-        },
-        {
           "logicalName": "$enemy_spotted",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5250,24 +4935,10 @@
           ]
         },
         {
-          "logicalName": "$game_restart",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "game_restart"
-          ]
-        },
-        {
           "logicalName": "$grenade_thrown",
           "semantics": "FirstWins",
           "concreteEvents": [
             "grenade_thrown"
-          ]
-        },
-        {
-          "logicalName": "$halftime",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "halftime"
           ]
         },
         {
@@ -5285,24 +4956,10 @@
           ]
         },
         {
-          "logicalName": "$inferno_extinguished",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "inferno_extinguish"
-          ]
-        },
-        {
           "logicalName": "$inferno_start",
           "semantics": "FirstWins",
           "concreteEvents": [
             "inferno_startburn"
-          ]
-        },
-        {
-          "logicalName": "$item_drop",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "item_drop"
           ]
         },
         {
@@ -5352,13 +5009,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "announce_phase_end"
-          ]
-        },
-        {
-          "logicalName": "$player_avenged_teammate",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "player_avenged_teammate"
           ]
         },
         {
@@ -5509,20 +5159,6 @@
       "kind": "Pov",
       "bindings": [
         {
-          "logicalName": "$bomb_abort_defuse",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortdefuse"
-          ]
-        },
-        {
-          "logicalName": "$bomb_abort_plant",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bomb_abortplant"
-          ]
-        },
-        {
           "logicalName": "$bomb_begin_defuse",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5579,13 +5215,6 @@
           ]
         },
         {
-          "logicalName": "$bullet_impact",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "bullet_impact"
-          ]
-        },
-        {
           "logicalName": "$cadence_tick",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5614,20 +5243,6 @@
           ]
         },
         {
-          "logicalName": "$defuser_dropped",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_dropped"
-          ]
-        },
-        {
-          "logicalName": "$defuser_pickup",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "defuser_pickup"
-          ]
-        },
-        {
           "logicalName": "$enemy_spotted",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5639,20 +5254,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "flashbang_detonate"
-          ]
-        },
-        {
-          "logicalName": "$game_restart",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "game_restart"
-          ]
-        },
-        {
-          "logicalName": "$halftime",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "halftime"
           ]
         },
         {
@@ -5670,24 +5271,10 @@
           ]
         },
         {
-          "logicalName": "$inferno_extinguished",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "inferno_extinguish"
-          ]
-        },
-        {
           "logicalName": "$inferno_start",
           "semantics": "FirstWins",
           "concreteEvents": [
             "inferno_startburn"
-          ]
-        },
-        {
-          "logicalName": "$item_drop",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "item_drop"
           ]
         },
         {
@@ -5737,13 +5324,6 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "announce_phase_end"
-          ]
-        },
-        {
-          "logicalName": "$player_avenged_teammate",
-          "semantics": "FirstWins",
-          "concreteEvents": [
-            "player_avenged_teammate"
           ]
         },
         {
