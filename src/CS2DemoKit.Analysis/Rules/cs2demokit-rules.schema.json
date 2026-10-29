@@ -2160,7 +2160,7 @@
     "match_assist": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060assist\u0060 (event \u0060player_death\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060assist\u0060 (event \u0060player_death\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "enemy": {
           "markdownDescription": "\u0060enemy\u0060 (type \u0060bool\u0060) on view \u0060assist\u0060."
@@ -2182,7 +2182,7 @@
     "match_blinded": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060blinded\u0060 (event \u0060player_blind\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060blinded\u0060 (event \u0060player_blind\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2PovProfile.",
       "properties": {
         "duration": {
           "markdownDescription": "\u0060duration\u0060 (type \u0060float\u0060) on view \u0060blinded\u0060."
@@ -2201,7 +2201,7 @@
     "match_blinded_enemy": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060blinded_enemy\u0060 (event \u0060player_blind\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060blinded_enemy\u0060 (event \u0060player_blind\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2PovProfile.",
       "properties": {
         "duration": {
           "markdownDescription": "\u0060duration\u0060 (type \u0060float\u0060) on view \u0060blinded_enemy\u0060."
@@ -2220,7 +2220,7 @@
     "match_bomb_defused": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060bomb_defused\u0060 (event \u0060bomb_defused\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060bomb_defused\u0060 (event \u0060bomb_defused\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "site": {
           "markdownDescription": "\u0060site\u0060 (type \u0060int\u0060) on view \u0060bomb_defused\u0060."
@@ -2236,7 +2236,7 @@
     "match_bomb_planted": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060bomb_planted\u0060 (event \u0060bomb_planted\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060bomb_planted\u0060 (event \u0060bomb_planted\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "site": {
           "markdownDescription": "\u0060site\u0060 (type \u0060int\u0060) on view \u0060bomb_planted\u0060."
@@ -2252,7 +2252,7 @@
     "match_cadence_tick": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060cadence_tick\u0060 (event \u0060cadence_tick\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once per period on the first frame at or after each due tick, after the frame\u0027s own events. Reach it as cadence.\u003Cid\u003E; Step is the step since the anchor, 0 on the anchor\u0027s frame.",
+      "markdownDescription": "match: facets for view \u0060cadence_tick\u0060 (event \u0060cadence_tick\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized by the evaluator on the frame clock, so event.tick is the FRAME clock. Fires once per period on the first frame at or after each due tick, after the frame\u0027s own events. Reach it as cadence.\u003Cid\u003E; Step is the step since the anchor, 0 on the anchor\u0027s frame.",
       "properties": {
         "step": {
           "markdownDescription": "\u0060step\u0060 (type \u0060int\u0060) on view \u0060cadence_tick\u0060."
@@ -2268,7 +2268,7 @@
     "match_damage_dealt": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060damage_dealt\u0060 (event \u0060player_hurt\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060damage_dealt\u0060 (event \u0060player_hurt\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "amount": {
           "markdownDescription": "\u0060amount\u0060 (type \u0060int\u0060) on view \u0060damage_dealt\u0060."
@@ -2302,7 +2302,7 @@
     "match_damage_taken": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060damage_taken\u0060 (event \u0060player_hurt\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060damage_taken\u0060 (event \u0060player_hurt\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "amount": {
           "markdownDescription": "\u0060amount\u0060 (type \u0060int\u0060) on view \u0060damage_taken\u0060."
@@ -2330,7 +2330,7 @@
     "match_death": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060death\u0060 (event \u0060player_death\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060death\u0060 (event \u0060player_death\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "attacker_blind": {
           "markdownDescription": "\u0060attacker_blind\u0060 (type \u0060bool\u0060) on view \u0060death\u0060."
@@ -2361,7 +2361,7 @@
     "match_decoy_started": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060decoy_started\u0060 (event \u0060decoy_started\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Binds to nobody: the wire names the thrower\u0027s pawn handle (pawn), not a slot. Join a decoy to its projectile row by entity_id (the projectile\u0027s entity_index) or by position and tick.",
+      "markdownDescription": "match: facets for view \u0060decoy_started\u0060 (event \u0060decoy_started\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Binds to nobody: the wire names the thrower\u0027s pawn handle (pawn), not a slot. Join a decoy to its projectile row by entity_id (the projectile\u0027s entity_index) or by position and tick.",
       "properties": {
         "entity_id": {
           "markdownDescription": "\u0060entity_id\u0060 (type \u0060int\u0060) on view \u0060decoy_started\u0060."
@@ -2389,7 +2389,7 @@
     "match_enemy_spotted": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060enemy_spotted\u0060 (event \u0060enemy_spotted\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or shot tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
+      "markdownDescription": "match: facets for view \u0060enemy_spotted\u0060 (event \u0060enemy_spotted\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from visibility sampling, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or shot tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
         "angle_to_chest": {
           "markdownDescription": "\u0060angle_to_chest\u0060 (type \u0060float\u0060) on view \u0060enemy_spotted\u0060."
@@ -2414,7 +2414,7 @@
     "match_flash_grenade": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060flash_grenade\u0060 (event \u0060flashbang_detonate\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060flash_grenade\u0060 (event \u0060flashbang_detonate\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "actor": {
           "enum": [
@@ -2427,7 +2427,7 @@
     "match_grenade_released": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060grenade_released\u0060 (event \u0060weapon_fire\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Measured rate through its baked filters: perRound. Fires on the release, 6 to 15 ticks before the projectile row appears (projectile_created, or first_seen_tick on a per: projectile row). Its rate is measured through its weapon filter, so an event table may trigger on it where the bare weapon_fire may not.",
+      "markdownDescription": "match: facets for view \u0060grenade_released\u0060 (event \u0060weapon_fire\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Measured rate through its baked filters: perRound. Fires on the release, 6 to 15 ticks before the projectile row appears (projectile_created, or first_seen_tick on a per: projectile row). Its rate is measured through its weapon filter, so an event table may trigger on it where the bare weapon_fire may not.",
       "properties": {
         "weapon": {
           "markdownDescription": "\u0060weapon\u0060 (type \u0060string\u0060) on view \u0060grenade_released\u0060."
@@ -2443,7 +2443,7 @@
     "match_he_grenade": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060he_grenade\u0060 (event \u0060hegrenade_detonate\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060he_grenade\u0060 (event \u0060hegrenade_detonate\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "actor": {
           "enum": [
@@ -2456,7 +2456,7 @@
     "match_inferno_started": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060inferno_started\u0060 (event \u0060inferno_startburn\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Binds to nobody: the event names the inferno entity, not the projectile or a player. Join it to a molotov\u0027s projectile row by position (the fire starts where the projectile burst) and tick.",
+      "markdownDescription": "match: facets for view \u0060inferno_started\u0060 (event \u0060inferno_startburn\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Binds to nobody: the event names the inferno entity, not the projectile or a player. Join it to a molotov\u0027s projectile row by position (the fire starts where the projectile burst) and tick.",
       "properties": {
         "entity_id": {
           "markdownDescription": "\u0060entity_id\u0060 (type \u0060int\u0060) on view \u0060inferno_started\u0060."
@@ -2481,7 +2481,7 @@
     "match_kill": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060kill\u0060 (event \u0060player_death\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060kill\u0060 (event \u0060player_death\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "enemy": {
           "markdownDescription": "\u0060enemy\u0060 (type \u0060bool\u0060) on view \u0060kill\u0060."
@@ -2521,7 +2521,7 @@
     "match_molotov": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
+      "markdownDescription": "match: facets for view \u0060molotov\u0060 (event \u0060molotov_thrown\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, not the absolute server tick a wire event carries: differencing it against a kill or bomb_planted tick adds the demo\u0027s ServerStartTick (about 20,000). Use the ticks_since_* facets for timing across views.",
       "properties": {
         "actor": {
           "enum": [
@@ -2534,7 +2534,7 @@
     "match_projectile_landed": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060projectile_landed\u0060 (event \u0060projectile_removed\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state on the first frame the projectile is gone, so event.tick is the FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy lands here only when its cloud or sound ends. Fires for every projectile, but binds to no player when the thrower never resolved.",
+      "markdownDescription": "match: facets for view \u0060projectile_landed\u0060 (event \u0060projectile_removed\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state on the first frame the projectile is gone, so event.tick is the FRAME clock. x, y and z are where it was last seen, NaN when unreadable. A smoke or a decoy lands here only when its cloud or sound ends. Fires for every projectile, but binds to no player when the thrower never resolved.",
       "properties": {
         "bounces": {
           "markdownDescription": "\u0060bounces\u0060 (type \u0060int\u0060) on view \u0060projectile_landed\u0060."
@@ -2562,7 +2562,7 @@
     "match_projectile_thrown": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060projectile_thrown\u0060 (event \u0060projectile_created\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile whose thrower never resolves fires no projectile_thrown.",
+      "markdownDescription": "match: facets for view \u0060projectile_thrown\u0060 (event \u0060projectile_created\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from entity state, so event.tick is the FRAME clock, the value event.frame_tick reads. x, y and z are where the projectile was first seen, NaN when unreadable. A projectile whose thrower never resolves fires no projectile_thrown.",
       "properties": {
         "class": {
           "markdownDescription": "\u0060class\u0060 (type \u0060string\u0060) on view \u0060projectile_thrown\u0060."
@@ -2587,7 +2587,7 @@
     "match_round_decided": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060round_decided\u0060 (event \u0060round_decided\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo (544 at the end of a half; either can land a tick early or late).",
+      "markdownDescription": "match: facets for view \u0060round_decided\u0060 (event \u0060round_decided\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from the game rules\u0027 round-win status on the frame the round is decided, so event.tick is the FRAME clock, the same value event.frame_tick reads. Fires once per decided round, after the frame\u0027s own events; the round\u0027s close (round_ended) comes 448 ticks later on a matchmaking demo (544 at the end of a half; either can land a tick early or late).",
       "properties": {
         "reason": {
           "markdownDescription": "\u0060reason\u0060 (type \u0060int\u0060) on view \u0060round_decided\u0060."
@@ -2609,7 +2609,7 @@
     "match_round_ended": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060round_ended\u0060 (event \u0060round_end\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060round_ended\u0060 (event \u0060round_end\u0060, binding \u0060none\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "has_winner": {
           "markdownDescription": "\u0060has_winner\u0060 (type \u0060bool\u0060) on view \u0060round_ended\u0060."
@@ -2634,7 +2634,7 @@
     "match_round_lost": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060round_lost\u0060 (event \u0060round_end\u0060, binding \u0060team\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060round_lost\u0060 (event \u0060round_end\u0060, binding \u0060team\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "has_winner": {
           "markdownDescription": "\u0060has_winner\u0060 (type \u0060bool\u0060) on view \u0060round_lost\u0060."
@@ -2656,7 +2656,7 @@
     "match_round_won": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060round_won\u0060 (event \u0060round_end\u0060, binding \u0060team\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060round_won\u0060 (event \u0060round_end\u0060, binding \u0060team\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "has_winner": {
           "markdownDescription": "\u0060has_winner\u0060 (type \u0060bool\u0060) on view \u0060round_won\u0060."
@@ -2678,7 +2678,7 @@
     "match_shot": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060shot\u0060 (event \u0060weapon_fire\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060shot\u0060 (event \u0060weapon_fire\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "bullet": {
           "markdownDescription": "\u0060bullet\u0060 (type \u0060bool\u0060) on view \u0060shot\u0060."
@@ -2739,7 +2739,7 @@
     "match_shot_landed": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060shot_landed\u0060 (event \u0060bullet_damage\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060shot_landed\u0060 (event \u0060bullet_damage\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "counter_strafe_admitted": {
           "markdownDescription": "\u0060counter_strafe_admitted\u0060 (type \u0060bool\u0060) on view \u0060shot_landed\u0060."
@@ -2815,7 +2815,7 @@
     "match_smoke_grenade": {
       "type": "object",
       "additionalProperties": false,
-      "markdownDescription": "match: facets for view \u0060smoke_grenade\u0060 (event \u0060smokegrenade_detonate\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
+      "markdownDescription": "match: facets for view \u0060smoke_grenade\u0060 (event \u0060smokegrenade_detonate\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile.",
       "properties": {
         "actor": {
           "enum": [

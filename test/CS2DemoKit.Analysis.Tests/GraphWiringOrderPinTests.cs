@@ -37,16 +37,16 @@ public class GraphWiringOrderPinTests
     // count on HLTV.
     private static readonly Dictionary<string, string> _pins = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv/game"] = "71:570207B4AEE7A008",
+        ["shipped-gotv/game"] = "70:4497CAA5F495F0BB",
         ["shipped-gotv/player"] = "204:42D0FAE1075862AC",
         ["shipped-gotv/types"] = "38:66BD7437294DD34F",
-        ["shipped-hltv/game"] = "68:0DD58ED58E70924B",
+        ["shipped-hltv/game"] = "67:DDC55B358BE2531E",
         ["shipped-hltv/player"] = "171:08C95BEC59326A6C",
         ["shipped-hltv/types"] = "36:8F56BA4EFADEE068",
-        ["matrix-gotv/game"] = "104:30E8EF70A12D575B",
+        ["matrix-gotv/game"] = "103:B2179C5BB1BBEF94",
         ["matrix-gotv/player"] = "50:0779142BA4CFE2B1",
         ["matrix-gotv/types"] = "32:E98774E2C288076B",
-        ["matrix-hltv/game"] = "96:5DE7F26CFCD464AA",
+        ["matrix-hltv/game"] = "95:C1E1B0A13DEC4ED0",
         ["matrix-hltv/player"] = "45:0EFB1AB42FD00667",
         ["matrix-hltv/types"] = "31:2FCCF886F0F9711A"
     };

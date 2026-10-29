@@ -49,6 +49,7 @@ public class MatchLiveActivationTests
     public async Task MatchStart_BeforeFreezeEnd_CountsTheSameRounds()
     {
         (bool live, int rounds, bool roundActive) = Evaluate(
+            new Cs2GotvPreRestartNoMatchStartProfile(),
             Frame(0, 10, BeginNewMatch(0, 10)),
             Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
             Frame(2, 2000, TestGameEvents.RoundFreezeEnd(2, 2000)),
@@ -71,12 +72,40 @@ public class MatchLiveActivationTests
         await Assert.That(rounds).IsEqualTo(0);
     }
 
+    /// <summary>
+    ///     THE REGRESSION GUARD. A profile whose demos record a match start must not go live on a
+    ///     freeze-end, because a knife round fires one. Measured on the two genuine FaceIt server
+    ///     recordings: the first freeze-end precedes begin_new_match by 2,493 and 3,916 ticks, so an
+    ///     unconditional freeze-end activation counts the knife round's deaths as live ones.
+    /// </summary>
+    [Test]
+    public async Task AProfileThatRecordsAMatchStart_DoesNotGoLiveOnAFreezeEndAlone()
+    {
+        (bool live, int rounds, bool roundActive) = Evaluate(
+            new Cs2GotvProfile(),
+            Frame(0, 1000, TestGameEvents.RoundFreezeEnd(0, 1000)),
+            Frame(1, 2000, TestGameEvents.RoundFreezeEnd(1, 2000)));
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(live).IsFalse()
+                .Because("the freeze-ends here are the knife round, and no match start has been seen");
+            await Assert.That(roundActive).IsFalse();
+            await Assert.That(rounds).IsEqualTo(0)
+                .Because("a knife round must not be counted as round 1");
+        }
+    }
+
     private static GameEvent BeginNewMatch(int frameNumber, int serverTick) =>
         new("begin_new_match", -1, frameNumber, serverTick, serverTick, new BeginNewMatchEvent());
 
-    private static (bool Live, int Rounds, bool RoundActive) Evaluate(params DemoFrame[] frames)
+    private static (bool Live, int Rounds, bool RoundActive) Evaluate(params DemoFrame[] frames) =>
+        Evaluate(new Cs2GotvPreRestartNoMatchStartProfile(), frames);
+
+    private static (bool Live, int Rounds, bool RoundActive) Evaluate(
+        DemoSourceProfile profile, params DemoFrame[] frames)
     {
-        BuildResult build = DemoAnalysis.Build(new AnalysisTarget(64, new Cs2GotvProfile()), []);
+        BuildResult build = DemoAnalysis.Build(new AnalysisTarget(64, profile), []);
         new StateGraphEvaluator(build.Graph, null, build.PlayerContextIndex, build.EntityScanner).Evaluate(frames);
 
         return (Node<BoolNode>(build, "MatchLive").IsActive,

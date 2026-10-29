@@ -2890,8 +2890,8 @@
       "resetOnRound": false,
       "triggers": [
         "$match_end",
-        "$match_start",
-        "$round_freeze_end"
+        "$match_live_fallback",
+        "$match_start"
       ],
       "v2Name": "match.live",
       "v2Type": "Bool"
@@ -3761,6 +3761,434 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "round_officially_ended"
+          ]
+        },
+        {
+          "logicalName": "$round_post_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_poststart"
+          ]
+        },
+        {
+          "logicalName": "$round_pre_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_prestart"
+          ]
+        },
+        {
+          "logicalName": "$round_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_start"
+          ]
+        },
+        {
+          "logicalName": "$round_start_beep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_round_start_beep"
+          ]
+        },
+        {
+          "logicalName": "$smoke_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$smoke_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "logicalName": "$weapon_fire_on_empty",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_fire_on_empty"
+          ]
+        },
+        {
+          "logicalName": "$weapon_reload",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_reload"
+          ]
+        },
+        {
+          "logicalName": "$weapon_zoom",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "weapon_zoom"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Cs2GotvPreRestartNoMatchStartProfile",
+      "kind": "GotvMatchmaking",
+      "bindings": [
+        {
+          "logicalName": "$bomb_abort_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortdefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_abort_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_abortplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_defuse",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_begindefuse"
+          ]
+        },
+        {
+          "logicalName": "$bomb_begin_plant",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_beginplant"
+          ]
+        },
+        {
+          "logicalName": "$bomb_defused",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "logicalName": "$bomb_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_dropped"
+          ]
+        },
+        {
+          "logicalName": "$bomb_exploded",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_exploded"
+          ]
+        },
+        {
+          "logicalName": "$bomb_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_pickup"
+          ]
+        },
+        {
+          "logicalName": "$bomb_planted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
+          "logicalName": "$bullet_damage",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
+          "logicalName": "$bullet_impact",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "bullet_impact"
+          ]
+        },
+        {
+          "logicalName": "$cadence_tick",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "logicalName": "$combat_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "buytime_ended"
+          ]
+        },
+        {
+          "logicalName": "$decoy_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_detonate"
+          ]
+        },
+        {
+          "logicalName": "$decoy_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "logicalName": "$defuser_dropped",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_dropped"
+          ]
+        },
+        {
+          "logicalName": "$defuser_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "defuser_pickup"
+          ]
+        },
+        {
+          "logicalName": "$enemy_spotted",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
+          "logicalName": "$flashbang_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "logicalName": "$game_restart",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "game_restart"
+          ]
+        },
+        {
+          "logicalName": "$halftime",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "halftime"
+          ]
+        },
+        {
+          "logicalName": "$he_grenade_detonate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "logicalName": "$inferno_expired",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_expire"
+          ]
+        },
+        {
+          "logicalName": "$inferno_extinguished",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_extinguish"
+          ]
+        },
+        {
+          "logicalName": "$inferno_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "logicalName": "$item_drop",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_drop"
+          ]
+        },
+        {
+          "logicalName": "$item_equip",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_equip"
+          ]
+        },
+        {
+          "logicalName": "$item_pickup",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$match_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_win_panel_match"
+          ]
+        },
+        {
+          "logicalName": "$match_live_fallback",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$match_start",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "begin_new_match"
+          ]
+        },
+        {
+          "logicalName": "$molotov_thrown",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "logicalName": "$other_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "other_death"
+          ]
+        },
+        {
+          "logicalName": "$phase_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "announce_phase_end"
+          ]
+        },
+        {
+          "logicalName": "$player_avenged_teammate",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_avenged_teammate"
+          ]
+        },
+        {
+          "logicalName": "$player_blind",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "logicalName": "$player_connect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_connect"
+          ]
+        },
+        {
+          "logicalName": "$player_death",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
+          "logicalName": "$player_disconnect",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_disconnect"
+          ]
+        },
+        {
+          "logicalName": "$player_footstep",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_footstep"
+          ]
+        },
+        {
+          "logicalName": "$player_hurt",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "logicalName": "$player_jump",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_jump"
+          ]
+        },
+        {
+          "logicalName": "$player_spawn",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_spawn"
+          ]
+        },
+        {
+          "logicalName": "$player_team",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "player_team"
+          ]
+        },
+        {
+          "logicalName": "$projectile_created",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
+          "logicalName": "$projectile_removed",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
+          "logicalName": "$round_decided",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
+          "logicalName": "$round_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match",
+            "round_end_terminal"
+          ]
+        },
+        {
+          "logicalName": "$round_freeze_end",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_freeze_end"
+          ]
+        },
+        {
+          "logicalName": "$round_mvp",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "round_mvp"
           ]
         },
         {
@@ -5557,6 +5985,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "player_death"
@@ -5616,6 +6050,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "player_blind"
           ]
@@ -5683,6 +6123,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "player_blind"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "player_blind"
@@ -5729,6 +6175,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "bomb_defused"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "bomb_defused"
           ]
@@ -5787,6 +6239,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "bomb_planted"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "bomb_planted"
@@ -5830,6 +6288,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "cadence_tick"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "cadence_tick"
           ]
@@ -5930,6 +6394,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "player_hurt"
@@ -6007,6 +6477,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "player_hurt"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "player_hurt"
           ]
@@ -6104,6 +6580,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "player_death"
@@ -6171,6 +6653,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "decoy_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "decoy_started"
           ]
@@ -6253,6 +6741,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "enemy_spotted"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "enemy_spotted"
@@ -6296,6 +6790,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "flashbang_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "flashbang_detonate"
           ]
@@ -6357,6 +6857,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "weapon_fire"
@@ -6401,6 +6907,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "hegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "hegrenade_detonate"
           ]
@@ -6467,6 +6979,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "inferno_startburn"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "inferno_startburn"
           ]
@@ -6585,6 +7103,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "player_death"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "player_death"
@@ -6627,6 +7151,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "molotov_thrown"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "molotov_thrown"
           ]
@@ -6711,6 +7241,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "projectile_removed"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "projectile_removed"
@@ -6784,6 +7320,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "projectile_created"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "projectile_created"
@@ -6840,6 +7382,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "round_decided"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "round_decided"
           ]
@@ -6909,6 +7457,14 @@
           "profile": "Cs2FaceitProfile",
           "concreteEvents": [
             "round_officially_ended",
+            "cs_win_panel_match",
+            "round_end_terminal"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
             "cs_win_panel_match",
             "round_end_terminal"
           ]
@@ -6984,6 +7540,14 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
+            "cs_win_panel_match",
+            "round_end_terminal"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "cs_pre_restart",
@@ -7049,6 +7613,14 @@
           "profile": "Cs2FaceitProfile",
           "concreteEvents": [
             "round_officially_ended",
+            "cs_win_panel_match",
+            "round_end_terminal"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "cs_pre_restart",
             "cs_win_panel_match",
             "round_end_terminal"
           ]
@@ -7200,6 +7772,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "weapon_fire"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "weapon_fire"
           ]
@@ -7383,6 +7961,12 @@
           ]
         },
         {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "bullet_damage"
+          ]
+        },
+        {
           "profile": "Cs2GotvPreRestartProfile",
           "concreteEvents": [
             "bullet_damage"
@@ -7425,6 +8009,12 @@
       "profiles": [
         {
           "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "smokegrenade_detonate"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
           "concreteEvents": [
             "smokegrenade_detonate"
           ]

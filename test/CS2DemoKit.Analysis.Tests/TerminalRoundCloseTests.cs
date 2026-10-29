@@ -46,8 +46,9 @@ public class TerminalRoundCloseTests
     public async Task OpenRoundPastPlay_IsClosedOnce()
     {
         (int ends, double rounds, bool active) = Evaluate(
-            Frame(0, 1000, TestGameEvents.RoundFreezeEnd(0, 1000)),
-            Frame(1, 2000, Intermission(1, 2000)));
+            Frame(0, 10, MatchStart(0, 10)),
+            Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
+            Frame(2, 2000, Intermission(2, 2000)));
 
         await Assert.That(ends).IsEqualTo(1)
             .Because("the last round has no marker of its own, so the synthesized close is its only end");
@@ -65,9 +66,10 @@ public class TerminalRoundCloseTests
     public async Task RoundAlreadyClosedByAMarker_IsNotClosedTwice()
     {
         (int ends, double rounds, bool active) = Evaluate(
-            Frame(0, 1000, TestGameEvents.RoundFreezeEnd(0, 1000)),
-            Frame(1, 1500, TestGameEvents.RoundOfficiallyEnded(1, 1500)),
-            Frame(2, 2000, Intermission(2, 2000)));
+            Frame(0, 10, MatchStart(0, 10)),
+            Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
+            Frame(2, 1500, TestGameEvents.RoundOfficiallyEnded(2, 1500)),
+            Frame(3, 2000, Intermission(3, 2000)));
 
         await Assert.That(ends).IsEqualTo(1)
             .Because("round_active is false once a marker closed the round, which is what keeps the count at one");
@@ -83,8 +85,9 @@ public class TerminalRoundCloseTests
     public async Task OpenRoundStillInPlay_IsLeftOpen()
     {
         (int ends, _, bool active) = Evaluate(
-            Frame(0, 1000, TestGameEvents.RoundFreezeEnd(0, 1000)),
-            Frame(1, 2000, TestGameEvents.RoundFreezeEnd(1, 2000)));
+            Frame(0, 10, MatchStart(0, 10)),
+            Frame(1, 1000, TestGameEvents.RoundFreezeEnd(1, 1000)),
+            Frame(2, 2000, TestGameEvents.RoundFreezeEnd(2, 2000)));
 
         await Assert.That(ends).IsEqualTo(0)
             .Because("a demo cut mid-round must not have its final round finalised");
@@ -100,6 +103,12 @@ public class TerminalRoundCloseTests
         await Assert.That(ends).IsEqualTo(0);
         await Assert.That(active).IsFalse();
     }
+
+    // match_live opens on $match_start, and every demo on this profile records one. Omitting it
+    // left round_active dead, so the close had nothing to act on and the scenario was not the one
+    // the test names.
+    private static GameEvent MatchStart(int frameNumber, int serverTick) =>
+        new("begin_new_match", -1, frameNumber, serverTick, serverTick, new BeginNewMatchEvent());
 
     private static GameEvent Intermission(int frameNumber, int serverTick) =>
         new("cs_intermission", -1, frameNumber, serverTick, serverTick, new CsIntermissionEvent());
