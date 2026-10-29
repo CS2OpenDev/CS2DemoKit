@@ -77,8 +77,8 @@ public class GraphDescriptorCoverageTests
     // rows were added to that pin with the fix.
     private static readonly Dictionary<string, string> _baselineRows = new(StringComparer.Ordinal)
     {
-        ["shipped-gotv"] = "150:EC810EE4A76AE319",
-        ["shipped-hltv"] = "138:DB77DB79D945E217",
+        ["shipped-gotv"] = "150:745A4CFBC5EB3682",
+        ["shipped-hltv"] = "138:4B3861F727F2134F",
         ["matrix-gotv"] = "89:65927669D651F519",
         ["matrix-hltv"] = "83:AD838B65EFA96B27"
     };

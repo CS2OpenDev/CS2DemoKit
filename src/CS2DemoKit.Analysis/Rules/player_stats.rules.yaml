@@ -170,14 +170,21 @@ stats:
     where: "event.Attacker == event.UserId"   # v1 parent was_self_damage
     per: match
 
+  # Acc% divides these by a shot counter that is already round.active-gated (kast's shots_fired,
+  # aim_rating's bullet_shots), so an ungated hit over a gated shot reads high wherever a demo
+  # records pre-match shooting. The gate matches the denominator rather than F10's
+  # round.number > 0: loosening the denominators instead would count post-round shots on every
+  # demo, which moves numbers everywhere to fix a case that occurs nowhere in matchmaking.
   ShotsHitFoe:
     count: damage_dealt
     match: { enemy: true, bullet: true }
+    while: round.active
     per: match
 
   ShotsHitFriend:
     count: damage_dealt
     match: { teamdamage: true }
+    while: round.active
     per: match
 
   # ── Entity-read stats (player.* pre-frame provider reads — the hard part #1) ──
