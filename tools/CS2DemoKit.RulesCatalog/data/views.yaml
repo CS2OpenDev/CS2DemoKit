@@ -68,6 +68,7 @@ views:
       teamkill: { type: bool,   enrichment: enrich.kill.was_team_kill }
       trade: { type: bool,   enrichment: enrich.kill.was_trade_kill }
       flash_assisted: { type: bool,   enrichment: enrich.kill.was_flash_kill }
+      attacker_blind: { type: bool,   field: AttackerBlind }   # the killer was flashed at the kill
       headshot: { type: bool,   field: Headshot }       # wire field is Headshot, not Headshot
       through_smoke: { type: bool,   field: ThruSmoke }
       no_scope: { type: bool,   field: NoScope }

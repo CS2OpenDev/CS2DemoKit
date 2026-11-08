@@ -6631,6 +6631,12 @@
       ],
       "facets": [
         {
+          "name": "attacker_blind",
+          "type": "bool",
+          "v2Type": "Bool",
+          "field": "AttackerBlind"
+        },
+        {
           "name": "enemy",
           "type": "bool",
           "v2Type": "Bool",
