@@ -810,32 +810,36 @@ public static class ExpressionCompiler
     private static Expression MakeSafeModulo(Expression left, Expression right) => MakeSafeQuotient(false, left, right);
 
     /// <summary>
-    ///     <c>/</c> or <c>%</c>, never throwing mid-demo. A double on either side, or a float mix, meets as
-    ///     double (a zero divisor reads 0 for <c>/</c>, NaN for <c>%</c>). int/int and long/long stay integral,
-    ///     since integer <c>/</c> and <c>%</c> are how a rule tests a button bit, and read 0 on a zero divisor
-    ///     and on the one overflowing pair, MinValue by -1. Any other pair is a raw operator, as before.
+    ///     <c>/</c> or <c>%</c> after <see cref="Coerce" />. A double on either side meets as double, and <c>/</c>
+    ///     reads 0 on a zero divisor. int/int and long/long stay integral, since integer <c>/</c> and <c>%</c>
+    ///     are how a rule tests a button bit, and neither throws: a zero divisor reads 0, and MinValue by -1
+    ///     wraps as the compiler's multiply and negate do. Any other pair (float/float, a map lookup's
+    ///     double?, an unsigned field) is the raw operator, as before.
     /// </summary>
     private static Expression MakeSafeQuotient(bool divide, Expression left, Expression right)
     {
-        Type l = left.Type, r = right.Type;
-        if (l == typeof(double) || r == typeof(double) || (l == typeof(float)) != (r == typeof(float)))
+        if (left.Type == typeof(double) || right.Type == typeof(double))
         {
-            Expression ld = l == typeof(double) ? left : Expression.Convert(left, typeof(double));
-            Expression rd = r == typeof(double) ? right : Expression.Convert(right, typeof(double));
+            Expression ld = left.Type == typeof(double) ? left : Expression.Convert(left, typeof(double));
+            Expression rd = right.Type == typeof(double) ? right : Expression.Convert(right, typeof(double));
             return divide
                 ? Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivide), null, ld, rd)
                 : Expression.Modulo(ld, rd);
         }
 
-        string? helper = (l, r) switch
+        if (left.Type == typeof(int) && right.Type == typeof(int))
         {
-            _ when l == typeof(int) && r == typeof(int) => divide ? nameof(SafeDivideInt) : nameof(SafeModuloInt),
-            _ when l == typeof(long) && r == typeof(long) => divide ? nameof(SafeDivideLong) : nameof(SafeModuloLong),
-            _ => null
-        };
-        return helper is not null
-            ? Expression.Call(typeof(ExpressionCompiler), helper, null, left, right)
-            : divide ? Expression.Divide(left, right) : Expression.Modulo(left, right);
+            return Expression.Call(typeof(ExpressionCompiler), divide ? nameof(SafeDivideInt) : nameof(SafeModuloInt),
+                null, left, right);
+        }
+
+        if (left.Type == typeof(long) && right.Type == typeof(long))
+        {
+            return Expression.Call(typeof(ExpressionCompiler), divide ? nameof(SafeDivideLong) : nameof(SafeModuloLong),
+                null, left, right);
+        }
+
+        return divide ? Expression.Divide(left, right) : Expression.Modulo(left, right);
     }
 
     /// <summary>
@@ -1824,9 +1828,9 @@ public static class ExpressionCompiler
 
     private static double SafeDivide(double left, double right) => right == 0 ? 0 : left / right;
     private static int SafeDivideInt(int left, int right) =>
-        right == 0 || (left == int.MinValue && right == -1) ? 0 : left / right;
+        right switch { 0 => 0, -1 => unchecked(-left), _ => left / right };
     private static long SafeDivideLong(long left, long right) =>
-        right == 0 || (left == long.MinValue && right == -1) ? 0 : left / right;
+        right switch { 0 => 0, -1 => unchecked(-left), _ => left / right };
     private static int SafeModuloInt(int left, int right) => right is 0 or -1 ? 0 : left % right;
     private static long SafeModuloLong(long left, long right) => right is 0 or -1 ? 0 : left % right;
 

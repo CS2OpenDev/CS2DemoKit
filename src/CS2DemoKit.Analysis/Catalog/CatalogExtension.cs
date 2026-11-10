@@ -194,10 +194,12 @@ public sealed class CatalogExtension
 
         if (!FriendlyTypeMap.ProviderReadableTypes.Contains(row.ClrType))
         {
+            IEnumerable<string> allowed = row.Scope == "perPlayer"
+                ? _perPlayerTypes
+                : FriendlyTypeMap.ProviderReadableTypes.Order(StringComparer.Ordinal);
             throw Refused(row,
-                $"type '{row.ClrType}' is not one a provider may declare for rules "
-                + $"({string.Join(", ", FriendlyTypeMap.ProviderReadableTypes.Order(StringComparer.Ordinal))}); "
-                + "declare an integer provider as int");
+                $"type '{row.ClrType}' is not one a {row.Scope} provider may declare for rules "
+                + $"({string.Join(", ", allowed)}); declare an integer provider as int");
         }
 
         if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))

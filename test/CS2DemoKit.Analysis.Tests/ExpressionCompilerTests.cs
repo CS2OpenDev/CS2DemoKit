@@ -321,7 +321,8 @@ public class ExpressionCompilerTests
 
     /// <summary>
     ///     A long against an int node read at run time still divides integrally and reads 0 on a zero divisor;
-    ///     the one overflowing pair, MinValue by -1, reads 0 instead of throwing; a float meets a double.
+    ///     the one overflowing pair, MinValue by -1, wraps (as multiply does) instead of throwing; a float
+    ///     meets a double.
     /// </summary>
     [Test]
     public async Task IntegerQuotients_NeverThrow_AndAFloatMeetsADouble()
@@ -344,7 +345,7 @@ public class ExpressionCompilerTests
 
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / entity.ext.zero == 0", lookup)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n % entity.ext.zero == 0", lookup)()).IsTrue();
-        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min / entity.ext.neg == 0", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min / entity.ext.neg == entity.ext.min", lookup)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min % entity.ext.neg == 0", lookup)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.f % 2.5 == 0", lookup)()).IsTrue();
     }
