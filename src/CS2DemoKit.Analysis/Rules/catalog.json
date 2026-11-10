@@ -2112,6 +2112,46 @@
       ]
     },
     {
+      "name": "timeout_ended",
+      "clrType": "TimeoutEndedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Side",
+          "type": "int",
+          "v2Name": "event.Side",
+          "v2Type": "Int"
+        },
+        {
+          "name": "TimeoutsLeft",
+          "type": "int",
+          "v2Name": "event.TimeoutsLeft",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "timeout_started",
+      "clrType": "TimeoutStartedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Side",
+          "type": "int",
+          "v2Name": "event.Side",
+          "v2Type": "Int"
+        },
+        {
+          "name": "TimeoutsLeft",
+          "type": "int",
+          "v2Name": "event.TimeoutsLeft",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
       "name": "warmup_end",
       "clrType": "WarmupEndEvent",
       "synthesized": false,
@@ -3049,6 +3089,15 @@
   ],
   "providers": [
     {
+      "name": "entity.controller.cash_spent",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.cash_spent",
+      "v2Type": "Int",
+      "unit": "dollars",
+      "note": "What the player has spent since the round started (m_iCashSpentThisRound, off the controller). A sale or refund in buy time lowers it; it resets to 0 when the next round starts. Read before the event\u0027s frame, like every player column."
+    },
+    {
       "name": "entity.controller.coaching_team",
       "scope": "perPlayer",
       "clrType": "int",
@@ -3066,12 +3115,37 @@
       "note": "The player\u0027s cash, off the controller. Read before the event\u0027s frame, like every player column. At round_freeze_end it is the money left after the freeze-time buys, the same sample point as round.team.money; a purchase later in buy time is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold more than 5 x 16000)."
     },
     {
+      "name": "entity.controller.start_money",
+      "scope": "perPlayer",
+      "clrType": "int",
+      "v2Name": "player.start_money",
+      "v2Type": "Int",
+      "unit": "dollars",
+      "note": "The cash the player held when the round started (m_iStartAccount, off the controller). At round_freeze_end, money = start_money - cash_spent held for every player-round of regulation on current builds; it does not at the first overtime round, and not on some early-2025 matchmaking builds, whose first round starts this at the pistol money\u0027s remainder."
+    },
+    {
       "name": "entity.game.bomb_planted",
       "scope": "singleton",
       "clrType": "bool",
       "v2Name": "match.bomb_planted",
       "v2Type": "Bool",
       "note": "True from the frame the bomb is planted, and cleared by a defuse as well as at round_officially_ended, so it is not \u0022the bomb was planted this round\u0022: that is \u0060round.bomb.was_planted\u0060, which stays true to the round\u0027s end."
+    },
+    {
+      "name": "entity.game.ct_timeout_active",
+      "scope": "singleton",
+      "clrType": "bool",
+      "v2Name": "match.ct_timeout_active",
+      "v2Type": "Bool",
+      "note": "True while a CT tactical timeout runs, about 30 seconds on the tournament demos measured. The \u0060timeout_started\u0060 and \u0060timeout_ended\u0060 views fire on its edges."
+    },
+    {
+      "name": "entity.game.ct_timeouts_left",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.ct_timeouts_left",
+      "v2Type": "Int",
+      "note": "Tactical timeouts left to the side playing CT. The count follows the side, not the team, so the CT and T counts swap at the half."
     },
     {
       "name": "entity.game.freeze_period",
@@ -3112,6 +3186,30 @@
       "v2Name": "match.round_win_status",
       "v2Type": "Int",
       "note": "0 while the round is undecided, 2 once the terrorists have won it, 3 once the counter-terrorists have. It goes 0 to 2/3 on the frame the round is decided and back to 0 at round_officially_ended, 448 ticks later on matchmaking demos (544 at the end of a half; either can land a tick early or late), so on \u0060round_ended\u0060 it reads 0, except on the match\u0027s last round: that one closes on cs_win_panel_match, 193 ticks after the decision on the demos measured, before the reset, and reads the winner. The \u0060round_decided\u0060 view fires on the step, and at the round\u0027s close the winner is \u0060enrich.round.winner_side\u0060."
+    },
+    {
+      "name": "entity.game.t_timeout_active",
+      "scope": "singleton",
+      "clrType": "bool",
+      "v2Name": "match.t_timeout_active",
+      "v2Type": "Bool",
+      "note": "True while a T tactical timeout runs, about 30 seconds on the tournament demos measured. The \u0060timeout_started\u0060 and \u0060timeout_ended\u0060 views fire on its edges."
+    },
+    {
+      "name": "entity.game.t_timeouts_left",
+      "scope": "singleton",
+      "clrType": "int",
+      "v2Name": "match.t_timeouts_left",
+      "v2Type": "Int",
+      "note": "Tactical timeouts left to the side playing T. The count follows the side, not the team, so the CT and T counts swap at the half."
+    },
+    {
+      "name": "entity.game.technical_timeout",
+      "scope": "singleton",
+      "clrType": "bool",
+      "v2Name": "match.technical_timeout",
+      "v2Type": "Bool",
+      "note": "True while a technical (admin) timeout runs. The \u0060timeout_started\u0060 view fires on the rise of this and of the two tactical flags."
     },
     {
       "name": "entity.game.total_rounds_played",
@@ -3208,6 +3306,21 @@
       "v2Type": "Float",
       "unit": "seconds",
       "note": "The duration the server LATCHED for the flash, not a countdown: probed on the bundled GOTV sample it holds one value for the whole blind and then steps to 0, and the step is about 1.4x the latched value after the flash, so it never reads as \u0022time still blind\u0022. Use \u0060\u003E 0\u0060 for \u0022is blinded\u0022; a magnitude test on it measures the flash, not what is left of it."
+    },
+    {
+      "name": "entity.pawn.has_defuser",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.has_defuser",
+      "v2Type": "Bool"
+    },
+    {
+      "name": "entity.pawn.has_helmet",
+      "scope": "perPlayer",
+      "clrType": "bool",
+      "v2Name": "player.has_helmet",
+      "v2Type": "Bool",
+      "note": "True while the pawn wears a helmet. Kevlar alone is \u0060armor\u0060 above 0 with this false."
     },
     {
       "name": "entity.pawn.health",
@@ -3743,6 +3856,20 @@
           ]
         },
         {
+          "logicalName": "$timeout_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "logicalName": "$timeout_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
           "logicalName": "$weapon_fire",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4102,6 +4229,20 @@
           ]
         },
         {
+          "logicalName": "$timeout_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "logicalName": "$timeout_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
           "logicalName": "$weapon_fire",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4451,6 +4592,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$timeout_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "logicalName": "$timeout_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_started"
           ]
         },
         {
@@ -4813,6 +4968,20 @@
           ]
         },
         {
+          "logicalName": "$timeout_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "logicalName": "$timeout_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
           "logicalName": "$weapon_fire",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5146,6 +5315,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$timeout_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "logicalName": "$timeout_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_started"
           ]
         },
         {
@@ -5491,6 +5674,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "smokegrenade_expired"
+          ]
+        },
+        {
+          "logicalName": "$timeout_ended",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "logicalName": "$timeout_started",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "timeout_started"
           ]
         },
         {
@@ -7635,6 +7832,128 @@
           ]
         }
       ]
+    },
+    {
+      "name": "timeout_ended",
+      "event": "timeout_ended",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "side",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Side"
+        },
+        {
+          "name": "timeouts_left",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "TimeoutsLeft"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "timeout_ended"
+          ]
+        }
+      ],
+      "note": "Synthesized from the game rules\u0027 timeout flags on the frame one falls, so event.tick is the FRAME clock. A recording that starts inside a timeout reports its end without a start."
+    },
+    {
+      "name": "timeout_started",
+      "event": "timeout_started",
+      "binding": "none",
+      "roles": [],
+      "baked": [],
+      "facets": [
+        {
+          "name": "side",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Side"
+        },
+        {
+          "name": "timeouts_left",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "TimeoutsLeft"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "timeout_started"
+          ]
+        }
+      ],
+      "note": "Synthesized from the game rules\u0027 timeout flags on the frame one rises, so event.tick is the FRAME clock. side is 2 (T) or 3 (CT) for a tactical timeout and 0 for a technical one; timeouts_left is that side\u0027s count read on the same frame (already lowered for this timeout on the tournament demos measured), -1 for a technical timeout. The counts follow the side, so they swap with the teams at the half. Some servers raise the technical flag together with a tactical one, which fires two starts on one frame."
     }
   ]
 }

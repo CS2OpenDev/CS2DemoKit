@@ -26,12 +26,13 @@ public class GameRulesProviderTests
 
     private static readonly string[] _names =
     [
-        "round_win_status", "round_win_reason", "total_rounds_played", "game_phase", "bomb_planted", "round_time"
+        "round_win_status", "round_win_reason", "total_rounds_played", "game_phase", "bomb_planted", "round_time",
+        "ct_timeout_active", "t_timeout_active", "ct_timeouts_left", "t_timeouts_left", "technical_timeout"
     ];
 
     [Test]
     [Category("Unit")]
-    public async Task Catalog_ListsTheSixProviders_UnderMatch_WithNotes()
+    public async Task Catalog_ListsTheGameRulesProviders_UnderMatch_WithNotes()
     {
         CatalogRoot catalog = CatalogResource.Load();
         foreach (string name in _names)

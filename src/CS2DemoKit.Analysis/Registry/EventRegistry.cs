@@ -98,6 +98,9 @@ public sealed class EventRegistry
         // after the decision (544 at the end of a half; either can land a tick early or late), when
         // the status has already reset.
         ("round_decided", typeof(RoundDecidedEvent)),
+        // Synthesized (EntityChangeScanner): an edge of one of the game rules' three timeout flags.
+        ("timeout_started", typeof(TimeoutStartedEvent)),
+        ("timeout_ended", typeof(TimeoutEndedEvent)),
         // Synthesized (EntityChangeScanner): a grenade projectile's first and last frame, from the
         // projectile rows of the entity digest.
         ("projectile_created", typeof(ProjectileCreatedEvent)),

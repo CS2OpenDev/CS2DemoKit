@@ -167,6 +167,13 @@ public sealed partial class RuleChainBuilder
     private CatalogRoot Catalog => CatalogResource.Load(CatalogExtension);
 
     /// <summary>
+    ///     Singleton providers a frame observer reads through <c>FrameView.ReadGame</c>. Each is tracked
+    ///     whether or not a rule reads it, silently: its value updates, and no change marker is dispatched.
+    ///     A name the entity registry does not carry is thrown at build.
+    /// </summary>
+    public IReadOnlyList<string> ObservedGameProviders { get; init; } = [];
+
+    /// <summary>
     ///     Materializes the built-in context rules and every ruleset in <paramref name="rulesets" />
     ///     into nodes, edges, and descriptors; wires them into one <see cref="StateGraph" />; and
     ///     returns the build output ready to evaluate. The v2 entity read sets union with the
@@ -464,7 +471,20 @@ public sealed partial class RuleChainBuilder
         IReadOnlySet<string>? projectileClasses = emitProjectiles
             ? AllProjectileClasses
             : _observedProjectileClasses.Count > 0 ? _observedProjectileClasses : null;
-        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || projectileClasses is not null || trackPlayers)
+        // The timeout events are read off five game-rules singletons, tracked only when a ruleset
+        // subscribes to one of the two views.
+        bool emitTimeouts = RulesetsSubscribeToEvent("timeout_started", rulesets)
+                            || RulesetsSubscribeToEvent("timeout_ended", rulesets);
+        List<IEntityValueProvider> observedGame = [];
+        foreach (string name in ObservedGameProviders)
+        {
+            observedGame.Add(_entityProviders?.Get(name)
+                             ?? throw new ArgumentException(
+                                 $"observed game provider '{name}' is not a registered singleton entity provider"));
+        }
+
+        if (matched.Count > 0 || perPlayerList.Count > 0 || emitMolotov || projectileClasses is not null || trackPlayers
+            || observedGame.Count > 0)
         {
             // The round's winner is the server's verdict: the scanner synthesizes round_decided
             // from these three game-rules singletons, and the round-end enrichment reports the
@@ -481,6 +501,21 @@ public sealed partial class RuleChainBuilder
                      ])
             {
                 if (_entityProviders?.Get(contextName) is { } provider && !matched.Contains(provider))
+                {
+                    matched.Add(provider);
+                    silent.Add(provider);
+                }
+            }
+
+            // Same arrangement for the timeout flags and counts when the events are subscribed, and
+            // for whatever the observer declared.
+            IEnumerable<IEntityValueProvider> forced = emitTimeouts
+                ? EntityChangeScanner.TimeoutFlagContexts.Concat(EntityChangeScanner.TimeoutsLeftContexts)
+                    .Select(name => _entityProviders?.Get(name)).OfType<IEntityValueProvider>()
+                : [];
+            foreach (IEntityValueProvider provider in forced.Concat(observedGame))
+            {
+                if (!matched.Contains(provider))
                 {
                     matched.Add(provider);
                     silent.Add(provider);
@@ -512,7 +547,8 @@ public sealed partial class RuleChainBuilder
                 transitionScanner,
                 silent,
                 projectileClasses,
-                emitProjectiles);
+                emitProjectiles,
+                emitTimeouts);
             if (ReadsUserCommands(rulesets, out bool history))
             {
                 entityScanner.Commands = new UserCmdReconstructor { OnDemand = true, TrackInputs = history };

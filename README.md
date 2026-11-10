@@ -369,6 +369,11 @@ AnalysisRun run = DemoAnalysis.Run(path, rulesets, new AnalysisOptions
 });
 ```
 
+Game-wide values are declared apart, by context name, in `ObservedGameProviders`
+(`entity.game.ct_timeouts_left`, `entity.game.t_timeout_active`, ...), and read with
+`frame.ReadGame(name)` or `frame.TryReadGameInt(name, out int value)`: one value per frame rather
+than one per slot.
+
 The view is one object per run and readable only inside `OnFrame`; copy what you keep. A declared
 name resolves once through `FrameView.Provider`, and the typed reads through the handle allocate
 nothing. Reading a name the run did not declare, or declaring one no provider carries, throws.

@@ -171,6 +171,9 @@ public sealed class StateGraphEvaluator
     /// <summary>The provider names <see cref="FrameObserver" /> may read; resolved to columns once per run.</summary>
     internal IReadOnlyList<string> ObservedProviders { get; set; } = [];
 
+    // The singleton names the observer's view reads; tracked by the build.
+    internal IReadOnlyList<string> ObservedGameProviders { get; set; } = [];
+
     /// <summary>The build's cadences (<see cref="Graphs.BuildResult.CadencePlans" />); empty costs one check per frame.</summary>
     internal IReadOnlyList<CadencePlan> Cadences { get; set; } = [];
 
@@ -599,7 +602,7 @@ public sealed class StateGraphEvaluator
 
         // One view per run; the observer reads it inside OnFrame only.
         IFrameObserver? frameObserver = FrameObserver;
-        FrameView? view = frameObserver is not null ? new FrameView(_entityScanner, ObservedProviders, commands) : null;
+        FrameView? view = frameObserver is not null ? new FrameView(_entityScanner, ObservedProviders, commands, ObservedGameProviders) : null;
 
         // Frames are pulled as tick runs: a frame plus its same-tick successors. The sequential
         // producer applies the whole run before any frame in it is polled, which is what a

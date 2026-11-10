@@ -99,6 +99,11 @@ public sealed class PerPlayerEntityValueProviderRegistry
         registry.Register(PawnFlagBitProvider.Ducking());
         registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.WeaponThrowStrength));
         registry.Register(new ControllerFieldProvider(BuiltinProviderSpecs.ControllerCoachingTeam));
+        // Economy reads; same position in CreateGenericPerPlayerProviders(), before the position trio.
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnHasHelmet));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.PawnHasDefuser));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.ControllerCashSpent));
+        registry.Register(new GenericPerPlayerFieldProvider(BuiltinProviderSpecs.ControllerStartMoney));
         // World position, one provider per axis. Computed from CBodyComponent's cell + offset
         // pair rather than a single leaf, so there is no ProviderSpec form; both sides of the
         // parity gate register these same instances, appended last in the same order.

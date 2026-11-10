@@ -137,6 +137,15 @@ public sealed record AnalysisOptions
     public IReadOnlyList<string> ObservedProjectileClasses { get; init; } = [];
 
     /// <summary>
+    ///     The game-wide (singleton) providers <see cref="FrameObserver" /> reads through
+    ///     <see cref="FrameView.ReadGame" /> and <see cref="FrameView.TryReadGameInt" />, by context name
+    ///     (<c>entity.game.ct_timeouts_left</c>). Each is tracked on the run whether or not a rule reads it,
+    ///     without dispatching change markers. Pass it to <c>Build</c> as well as <c>Evaluate</c>: the build
+    ///     is what tracks them. A name the entity registry does not carry throws.
+    /// </summary>
+    public IReadOnlyList<string> ObservedGameProviders { get; init; } = [];
+
+    /// <summary>
     ///     Called once per frame on the evaluation thread, after the frame's messages and
     ///     synthesized events have dispatched, with a <see cref="FrameView" /> over the declared
     ///     state as of the end of that frame. Null for no observer. An observer that throws aborts
@@ -678,7 +687,8 @@ public static class DemoAnalysis
         observedProviders: options.ObservedProviders,
         observedProjectileClasses: options.ObservedProjectileClasses)
     {
-        CatalogExtension = options.CatalogExtension
+        CatalogExtension = options.CatalogExtension,
+        ObservedGameProviders = options.ObservedGameProviders
     };
 
     private static (DemoSourceProfile Profile, ProfileResolutionKind Resolution) ResolveProfileCore(
@@ -741,6 +751,7 @@ public static class DemoAnalysis
         {
             FrameObserver = options.FrameObserver,
             ObservedProviders = options.ObservedProviders,
+            ObservedGameProviders = options.ObservedGameProviders,
             DecodeUserCommands = build.DecodesUserCommands || options.DecodeUserCommands,
             Cadences = build.CadencePlans,
             RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId),

@@ -499,6 +499,37 @@ views:
       rounds_played: { type: int, field: RoundsPlayed }
     availability: all
 
+  # timeout_started / timeout_ended are synthesized from the game rules' timeout flags, on the
+  # frame a flag rises or falls. GOTV has no wire event for a timeout. side is 2 or 3 for a
+  # tactical timeout and 0 for a technical one; timeouts_left is the side's count on that frame.
+  timeout_started:
+    event: timeout_started
+    note: >-
+      Synthesized from the game rules' timeout flags on the frame one rises, so event.tick is the
+      FRAME clock. side is 2 (T) or 3 (CT) for a tactical timeout and 0 for a technical one;
+      timeouts_left is that side's count read on the same frame (already lowered for this timeout on
+      the tournament demos measured), -1 for a technical timeout. The counts follow the side, so
+      they swap with the teams at the half. Some servers raise the technical flag together with a
+      tactical one, which fires two starts on one frame.
+    binding: none
+    baked: [ ]
+    facets:
+      side: { type: int, field: Side }
+      timeouts_left: { type: int, field: TimeoutsLeft }
+    availability: all
+
+  timeout_ended:
+    event: timeout_ended
+    note: >-
+      Synthesized from the game rules' timeout flags on the frame one falls, so event.tick is the
+      FRAME clock. A recording that starts inside a timeout reports its end without a start.
+    binding: none
+    baked: [ ]
+    facets:
+      side: { type: int, field: Side }
+      timeouts_left: { type: int, field: TimeoutsLeft }
+    availability: all
+
   # cadence_tick is a ruleset cadence's period, synthesized by the evaluator. Authors reach it as
   # cadence.<id>, which the resolver lowers to this view filtered on event.Cadence; a bare
   # reference is rejected because it would fire on every cadence in the build.

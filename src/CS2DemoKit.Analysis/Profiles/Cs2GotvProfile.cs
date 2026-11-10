@@ -210,6 +210,16 @@ public class Cs2GotvProfile : DemoSourceProfile
         LogicalEventBinding.Of("round_decided");
 
     /// <inheritdoc />
+    public override LogicalEventBinding? TimeoutStarted =>
+        // Synthesized by EntityChangeScanner from the game rules' timeout flags; inherited by every
+        // profile, like round_decided.
+        LogicalEventBinding.Of("timeout_started");
+
+    /// <inheritdoc />
+    public override LogicalEventBinding? TimeoutEnded =>
+        LogicalEventBinding.Of("timeout_ended");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? RoundEnd =>
         // Final round of a match has no round_officially_ended; cs_win_panel_match
         // (Valve's match-summary marker) serves as the terminal fallback for

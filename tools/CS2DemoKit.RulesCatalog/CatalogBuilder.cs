@@ -127,6 +127,33 @@ public static class CatalogBuilder
                 + "buys, the same sample point as round.team.money; a purchase later in buy time "
                 + "is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold "
                 + "more than 5 x 16000)."),
+            ["entity.controller.cash_spent"] = ("dollars",
+                "What the player has spent since the round started (m_iCashSpentThisRound, off the "
+                + "controller). A sale or refund in buy time lowers it; it resets to 0 when the next "
+                + "round starts. Read before the event's frame, like every player column."),
+            ["entity.controller.start_money"] = ("dollars",
+                "The cash the player held when the round started (m_iStartAccount, off the controller). "
+                + "At round_freeze_end, money = start_money - cash_spent held for every player-round of "
+                + "regulation on current builds; it does not at the first overtime round, and not on "
+                + "some early-2025 matchmaking builds, whose first round starts this at the pistol "
+                + "money's remainder."),
+            ["entity.pawn.has_helmet"] = (null,
+                "True while the pawn wears a helmet. Kevlar alone is `armor` above 0 with this false."),
+            ["entity.game.ct_timeout_active"] = (null,
+                "True while a CT tactical timeout runs, about 30 seconds on the tournament demos "
+                + "measured. The `timeout_started` and `timeout_ended` views fire on its edges."),
+            ["entity.game.t_timeout_active"] = (null,
+                "True while a T tactical timeout runs, about 30 seconds on the tournament demos "
+                + "measured. The `timeout_started` and `timeout_ended` views fire on its edges."),
+            ["entity.game.ct_timeouts_left"] = (null,
+                "Tactical timeouts left to the side playing CT. The count follows the side, not the "
+                + "team, so the CT and T counts swap at the half."),
+            ["entity.game.t_timeouts_left"] = (null,
+                "Tactical timeouts left to the side playing T. The count follows the side, not the "
+                + "team, so the CT and T counts swap at the half."),
+            ["entity.game.technical_timeout"] = (null,
+                "True while a technical (admin) timeout runs. The `timeout_started` view fires on the "
+                + "rise of this and of the two tactical flags."),
             ["entity.controller.coaching_team"] = (null,
                 "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a "
                 + "registered coach, 0 for everyone else. Read off the slot's controller, not "

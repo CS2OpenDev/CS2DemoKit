@@ -1,0 +1,37 @@
+#region
+
+using CS2DemoKit.Parser.GameEvents;
+
+#endregion
+
+namespace CS2DemoKit.Analysis.Events;
+
+/// <summary>
+///     Synthesized by <c>EntityChangeScanner</c> on the frame a timeout ends: the frame one of the game
+///     rules' timeout flags (<c>m_bTerroristTimeOutActive</c>, <c>m_bCTTimeOutActive</c>,
+///     <c>m_bTechnicalTimeOut</c>) falls back to false. GOTV carries no wire event for either edge. A run tracks the
+///     flags only when a ruleset subscribes to <c>timeout_started</c> or <c>timeout_ended</c>.
+///     <para>
+///         A recording that starts inside a timeout reports no start for it, only its end. All three
+///         clocks carry the frame tick, the convention of every event the scanner synthesizes (see
+///         <see cref="RoundDecidedEvent" />).
+///     </para>
+/// </summary>
+/// <param name="FrameNumber">The frame-clock tick of the edge (not a frame index).</param>
+/// <param name="ServerTick">The same tick.</param>
+/// <param name="GameTick">The same tick.</param>
+/// <param name="Side">
+///     2 for a terrorist tactical timeout, 3 for a counter-terrorist one, 0 for a technical timeout,
+///     which belongs to neither side.
+/// </param>
+/// <param name="TimeoutsLeft">
+///     The side's tactical timeouts left as read on the same frame (unchanged since the start); -1 for a technical
+///     timeout. The count follows the side, so it swaps with the teams at the half.
+/// </param>
+public sealed record TimeoutEndedEvent(int FrameNumber, int ServerTick, int GameTick, int Side, int TimeoutsLeft)
+    : GameEvent("timeout_ended", -1, FrameNumber, ServerTick, GameTick)
+{
+    /// <inheritdoc />
+    public override IReadOnlyList<(string Name, string Value, string WireType)> GetDecodedFields() =>
+        [F("Side", Side), F("TimeoutsLeft", TimeoutsLeft)];
+}

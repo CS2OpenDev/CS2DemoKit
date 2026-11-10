@@ -248,6 +248,47 @@ public static class BuiltinProviderSpecs
             SchemaNames.CBasePlayerPawn.WeaponServices + "." + SchemaNames.CPlayerWeaponServices.ActiveWeapon,
             SchemaNames.CBaseCSGrenade.ThrowStrength));
 
+    /// <summary>
+    ///     entity.pawn.has_helmet: <c>m_pItemServices.m_bHasHelmet</c>, true while the pawn wears a
+    ///     helmet. Read before the event's frame like every per-player column, so at a purchase it is
+    ///     the state before the buy. Kevlar without a helmet is <see cref="PawnArmor" /> above 0 with
+    ///     this false.
+    /// </summary>
+    public static ProviderSpec PawnHasHelmet { get; } = new(
+        "entity.pawn.has_helmet", "CCSPlayerPawn",
+        SchemaNames.CBasePlayerPawn.ItemServices + "." + SchemaNames.CCSPlayerItemServices.HasHelmet, typeof(bool));
+
+    /// <summary>entity.pawn.has_defuser: <c>m_pItemServices.m_bHasDefuser</c>, true while the pawn carries a kit.</summary>
+    public static ProviderSpec PawnHasDefuser { get; } = new(
+        "entity.pawn.has_defuser", "CCSPlayerPawn",
+        SchemaNames.CBasePlayerPawn.ItemServices + "." + SchemaNames.CCSPlayerItemServices.HasDefuser, typeof(bool));
+
+    /// <summary>
+    ///     entity.controller.cash_spent: <c>m_iCashSpentThisRound</c> on the slot's controller, reached
+    ///     through the pawn's controller handle like <see cref="ControllerMoney" />. What the player has
+    ///     spent since the round's start; a sale or a refund lowers it, and it resets to 0 at the next
+    ///     round's start.
+    /// </summary>
+    public static ProviderSpec ControllerCashSpent { get; } = new(
+        "entity.controller.cash_spent", "CCSPlayerPawn",
+        "", typeof(int),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.Controller,
+            SchemaNames.CCSPlayerController.InGameMoneyServices + "."
+                                                                + SchemaNames.CCSPlayerControllerInGameMoneyServices.CashSpentThisRound));
+
+    /// <summary>
+    ///     entity.controller.start_money: <c>m_iStartAccount</c> on the slot's controller, the cash the
+    ///     player held when the round started. Same handle hop as <see cref="ControllerMoney" />.
+    /// </summary>
+    public static ProviderSpec ControllerStartMoney { get; } = new(
+        "entity.controller.start_money", "CCSPlayerPawn",
+        "", typeof(int),
+        ViaHandleToField: new HandleFieldHop(
+            SchemaNames.CBasePlayerPawn.Controller,
+            SchemaNames.CCSPlayerController.InGameMoneyServices + "."
+                                                                + SchemaNames.CCSPlayerControllerInGameMoneyServices.StartAccount));
+
     /// <summary>entity.game.freeze_period — the singleton freeze-period poll.</summary>
     public static ProviderSpec GameFreezePeriod { get; } = new(
         "entity.game.freeze_period", "CCSGameRulesProxy",
@@ -315,6 +356,39 @@ public static class BuiltinProviderSpecs
         "entity.game.round_time", "CCSGameRulesProxy",
         SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.RoundTime,
         typeof(int));
+
+    /// <summary>entity.game.ct_timeout_active: true while a counter-terrorist tactical timeout runs.</summary>
+    public static ProviderSpec GameCtTimeoutActive { get; } = new(
+        "entity.game.ct_timeout_active", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.CTTimeOutActive,
+        typeof(bool));
+
+    /// <summary>entity.game.t_timeout_active: true while a terrorist tactical timeout runs.</summary>
+    public static ProviderSpec GameTTimeoutActive { get; } = new(
+        "entity.game.t_timeout_active", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.TerroristTimeOutActive,
+        typeof(bool));
+
+    /// <summary>
+    ///     entity.game.ct_timeouts_left: tactical timeouts the side playing counter-terrorist has left.
+    ///     The count follows the side, not the team, so the two counts swap at the half.
+    /// </summary>
+    public static ProviderSpec GameCtTimeoutsLeft { get; } = new(
+        "entity.game.ct_timeouts_left", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.CTTimeOuts,
+        typeof(int));
+
+    /// <summary>entity.game.t_timeouts_left: the terrorist side's count, as <see cref="GameCtTimeoutsLeft" />.</summary>
+    public static ProviderSpec GameTTimeoutsLeft { get; } = new(
+        "entity.game.t_timeouts_left", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.TerroristTimeOuts,
+        typeof(int));
+
+    /// <summary>entity.game.technical_timeout: true while a technical (admin) timeout runs.</summary>
+    public static ProviderSpec GameTechnicalTimeout { get; } = new(
+        "entity.game.technical_timeout", "CCSGameRulesProxy",
+        SchemaNames.CCSGameRulesProxy.GameRules + "." + SchemaNames.CCSGameRules.TechnicalTimeOut,
+        typeof(bool));
 
     /// <summary>
     ///     entity.team.score: a side's rounds won, <c>CCSTeam.m_iScore</c>. Read per side
@@ -389,6 +463,11 @@ public static class BuiltinProviderSpecs
         new GenericPerPlayerFieldProvider(WeaponThrowStrength),
         // Same position in CreateDefault, before the position trio.
         new ControllerFieldProvider(ControllerCoachingTeam),
+        // Economy reads, at the same position in CreateDefault, before the position trio.
+        new GenericPerPlayerFieldProvider(PawnHasHelmet),
+        new GenericPerPlayerFieldProvider(PawnHasDefuser),
+        new GenericPerPlayerFieldProvider(ControllerCashSpent),
+        new GenericPerPlayerFieldProvider(ControllerStartMoney),
         // Computed from six CBodyComponent leaves, so there is no spec form to migrate to. Both
         // lists register the same class, which makes these three pass-through columns in the
         // parity gate rather than a hand-written-vs-spec comparison. The gate's population is
@@ -418,7 +497,17 @@ public static class BuiltinProviderSpecs
         new GenericSingletonFieldProvider(GameBombPlanted, ChangeDirection.RisingOnly,
             typeof(CCSGameRulesBombPlantedMarker), false),
         new GenericSingletonFieldProvider(GameRoundTime, ChangeDirection.RisingOnly,
-            typeof(CCSGameRulesRoundTimeMarker), 0)
+            typeof(CCSGameRulesRoundTimeMarker), 0),
+        new GenericSingletonFieldProvider(GameCtTimeoutActive, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesCTTimeOutActiveMarker), false),
+        new GenericSingletonFieldProvider(GameTTimeoutActive, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesTerroristTimeOutActiveMarker), false),
+        new GenericSingletonFieldProvider(GameCtTimeoutsLeft, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesCTTimeOutsMarker), 0),
+        new GenericSingletonFieldProvider(GameTTimeoutsLeft, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesTerroristTimeOutsMarker), 0),
+        new GenericSingletonFieldProvider(GameTechnicalTimeout, ChangeDirection.RisingOnly,
+            typeof(CCSGameRulesTechnicalTimeOutMarker), false)
     ];
 
     /// <summary>

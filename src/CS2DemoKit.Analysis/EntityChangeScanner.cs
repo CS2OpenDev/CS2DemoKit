@@ -107,6 +107,14 @@ public sealed class EntityChangeScanner
     // The last win status observed, or -1 before one has been. A round is decided on an OBSERVED
     // 0 → 2/3 step: a demo that starts inside a decided round has no decision to report.
     private int _lastWinStatus = -1;
+
+    // timeout_started / timeout_ended synthesis: where in _tracked the five timeout singletons sit
+    // (-1 when untracked), and each flag's last observed state (-1 before the first read). Only
+    // an observed edge emits, so a recording that starts inside a timeout reports its end alone.
+    private readonly bool _emitTimeouts;
+    private readonly int[] _timeoutFlagIndex = [-1, -1, -1];
+    private readonly int[] _timeoutsLeftIndex = [-1, -1];
+    private readonly int[] _lastTimeoutFlag = [-1, -1, -1];
     private readonly HashSet<(int Index, int Serial)> _seenMolotovs = [];
 
     // projectile_created / projectile_removed synthesis. A projectile waits here, keyed by
@@ -253,7 +261,8 @@ public sealed class EntityChangeScanner
         VisibilityTransitionScanner? transitionScanner,
         IReadOnlySet<IEntityValueProvider>? silentProviders,
         IReadOnlySet<string>? projectileClasses = null,
-        bool emitProjectileEvents = false)
+        bool emitProjectileEvents = false,
+        bool emitTimeouts = false)
     {
         Layer = layer;
         _emitMolotovThrows = emitMolotovThrows;
@@ -277,12 +286,24 @@ public sealed class EntityChangeScanner
                 case TotalRoundsPlayedContext:
                     _roundsPlayedIndex = _tracked.Count;
                     break;
+                default:
+                    if (Array.IndexOf(TimeoutFlagContexts, p.ContextName) is var flag and >= 0)
+                    {
+                        _timeoutFlagIndex[flag] = _tracked.Count;
+                    }
+                    else if (Array.IndexOf(TimeoutsLeftContexts, p.ContextName) is var left and >= 0)
+                    {
+                        _timeoutsLeftIndex[left] = _tracked.Count;
+                    }
+
+                    break;
             }
 
             _tracked.Add(new TrackedProvider(p, node, p.DefaultValue, silentProviders?.Contains(p) != true));
             _singletonProviders.Add(p);
         }
 
+        _emitTimeouts = emitTimeouts && _timeoutFlagIndex.Any(i => i >= 0);
         _perPlayerProviders = perPlayerProviders is not null
             ? new List<IPerPlayerEntityValueProvider>(perPlayerProviders)
             : new List<IPerPlayerEntityValueProvider>();
@@ -297,6 +318,13 @@ public sealed class EntityChangeScanner
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
 
+    /// <summary>Where the singleton named <paramref name="contextName" /> sits among the tracked ones, or -1.</summary>
+    internal int TrackedSingletonIndex(string contextName) =>
+        _tracked.FindIndex(t => string.Equals(t.Provider.ContextName, contextName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The tracked singleton's value as of the last consumed frame: its default until first seen.</summary>
+    internal object? TrackedSingletonValue(int index) => _tracked[index].LastValue;
+
     /// <summary>The singleton the synthesized <c>round_decided</c> is detected on.</summary>
     internal const string RoundWinStatusContext = "entity.game.round_win_status";
 
@@ -305,6 +333,21 @@ public sealed class EntityChangeScanner
 
     /// <summary>The singleton <c>round_decided</c> reads the rounds played from.</summary>
     internal const string TotalRoundsPlayedContext = "entity.game.total_rounds_played";
+
+    /// <summary>
+    ///     The timeout flags <c>timeout_started</c> / <c>timeout_ended</c> are detected on, in the order
+    ///     terrorist, counter-terrorist, technical.
+    /// </summary>
+    internal static readonly string[] TimeoutFlagContexts =
+    [
+        "entity.game.t_timeout_active", "entity.game.ct_timeout_active", "entity.game.technical_timeout"
+    ];
+
+    /// <summary>The per-side counts the timeout events carry, terrorist then counter-terrorist.</summary>
+    internal static readonly string[] TimeoutsLeftContexts =
+    [
+        "entity.game.t_timeouts_left", "entity.game.ct_timeouts_left"
+    ];
 
     /// <summary>
     ///     The messages to dispatch AFTER the frame just polled with <see cref="AdvanceAndPollAt" />
@@ -481,6 +524,7 @@ public sealed class EntityChangeScanner
         _projectileFirstSeen.Clear();
         _postFrame.Clear();
         _lastWinStatus = -1;
+        Array.Fill(_lastTimeoutFlag, -1);
         _preFrameSnapshotFrozen = false;
         _lastCompatibleLayout = null;
         _snapshotClock = int.MinValue;
@@ -946,6 +990,11 @@ public sealed class EntityChangeScanner
 
         ConsumeSingletons(digest, tick);
         ConsumeRoundDecided(digest, tick);
+        if (_emitTimeouts)
+        {
+            ConsumeTimeouts(digest, tick);
+        }
+
         ConsumeControllerTeams(digest, tick);
         if (_emitMolotovThrows)
         {
@@ -1406,6 +1455,44 @@ public sealed class EntityChangeScanner
         // Frame clock in all three slots, the convention of every event this scanner synthesizes.
         _postFrame.Add(GameEventMessage.ForSynthesizedEvent(
             new RoundDecidedEvent(tick, tick, tick, status, reason, played)));
+    }
+
+    /// <summary>
+    ///     Synthesizes <c>timeout_started</c> and <c>timeout_ended</c> on an observed edge of each of the
+    ///     three timeout flags, on the post-frame list like <c>round_decided</c>, carrying the side's count
+    ///     read off the same digest. Ends are queued before starts, so a frame that hands one timeout
+    ///     over to the next closes the first before opening the second.
+    /// </summary>
+    private void ConsumeTimeouts(EntityFrameDigest digest, int tick)
+    {
+        Span<int> now = stackalloc int[3];
+        for (int flag = 0; flag < 3; flag++)
+        {
+            now[flag] = _timeoutFlagIndex[flag] >= 0 && digest.Singletons[_timeoutFlagIndex[flag]] is bool b
+                ? b ? 1 : 0
+                : _lastTimeoutFlag[flag];
+        }
+
+        for (int pass = 0; pass < 2; pass++)
+        {
+            bool starts = pass == 1;
+            for (int flag = 0; flag < 3; flag++)
+            {
+                if (_lastTimeoutFlag[flag] == (starts ? 0 : 1) && now[flag] == (starts ? 1 : 0))
+                {
+                    int side = flag switch { 0 => 2, 1 => 3, _ => 0 };
+                    int left = flag < 2 && _timeoutsLeftIndex[flag] >= 0
+                                        && digest.Singletons[_timeoutsLeftIndex[flag]] is int count
+                        ? count
+                        : -1;
+                    _postFrame.Add(GameEventMessage.ForSynthesizedEvent(starts
+                        ? new TimeoutStartedEvent(tick, tick, tick, side, left)
+                        : new TimeoutEndedEvent(tick, tick, tick, side, left)));
+                }
+            }
+        }
+
+        now.CopyTo(_lastTimeoutFlag);
     }
 
     /// <summary>

@@ -278,6 +278,16 @@ public abstract class DemoSourceProfile
     /// <summary>Logical binding for the "round end" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundEnd => null;
 
+    /// <summary>
+    ///     Logical binding for the synthesized "timeout started" event: a tactical or technical timeout's
+    ///     flag rising on the game rules. Synthesized from entity state, so a profile binds it wherever the
+    ///     game-rules entity is recorded. See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? TimeoutStarted => null;
+
+    /// <summary>Logical binding for the synthesized "timeout ended" event, the same flag falling.</summary>
+    public virtual LogicalEventBinding? TimeoutEnded => null;
+
     /// <summary>Logical binding for the "round freeze end" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundFreezeEnd => null;
 
