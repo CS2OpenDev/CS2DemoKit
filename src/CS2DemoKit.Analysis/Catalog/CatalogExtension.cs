@@ -24,7 +24,7 @@ namespace CS2DemoKit.Analysis.Catalog;
 ///         <see cref="Create" /> refuses a row the resolver or the lowering could not serve: a provider name
 ///         outside <c>entity.</c> (a read is lowered to <c>player.&lt;provider name&gt;</c>), a scope other than
 ///         <c>perPlayer</c> or <c>singleton</c>, a rules path outside that scope's root (<c>player.</c>,
-///         <c>match.</c>) or under the reserved <c>player.cmd.</c>, an unmapped type, a per-player type the
+///         <c>match.</c>) or under the reserved <c>player.cmd.</c>, an unmapped or narrow integer type, a per-player type the
 ///         per-pawn digest cannot store (only int, bool, float and string), and any name or path that
 ///         collides with the embedded catalog, an injected symbol or another row.
 ///     </para>
@@ -35,6 +35,8 @@ public sealed class CatalogExtension
     // is refused here instead.
     private static readonly string[] _perPlayerTypes =
         [.. DigestColumnLayout.StorableTypes.Select(t => FriendlyTypeMap.FriendlyName(t)!)];
+
+    private static readonly string[] _narrowTypes = ["byte", "sbyte", "short", "ushort"];
 
     private static readonly ConditionalWeakTable<CatalogExtension, CatalogRoot> _merged = new();
 
@@ -189,6 +191,13 @@ public sealed class CatalogExtension
         catch (InvalidOperationException)
         {
             throw Refused(row, $"type '{row.ClrType}' has no rules type");
+        }
+
+        // The narrow widths are event-field types from the SDK's KV1 tags; not every provider read path
+        // widens them, so a provider declares int instead.
+        if (_narrowTypes.Contains(row.ClrType, StringComparer.Ordinal))
+        {
+            throw Refused(row, $"type '{row.ClrType}' is an event-field width; declare the provider as int");
         }
 
         if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))

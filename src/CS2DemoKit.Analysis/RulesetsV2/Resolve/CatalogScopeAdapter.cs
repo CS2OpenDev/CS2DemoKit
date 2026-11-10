@@ -196,18 +196,19 @@ public sealed class CatalogScopeAdapter
     /// </summary>
     internal static IEnumerable<string> InjectedPaths => InjectedSymbols().Select(s => s.Path);
 
-    // Loader-injected symbols with no catalog entry.
-    private static IEnumerable<(string Path, RulesType Type)> InjectedSymbols()
+    // Loader-injected symbols with no catalog entry. A sticky one yields to a catalog row at the same
+    // path, which it may gain later; the rest are the adapter's alone.
+    private static IEnumerable<(string Path, RulesType Type, bool Sticky)> InjectedSymbols()
     {
-        yield return ("player.slot", RulesType.Int);
-        yield return ("player.team", RulesType.Int);
-        yield return ("player.name", RulesType.String);
-        yield return ("match.tick", RulesType.Instant); // instant — no catalog event field
-        yield return (BombWasPlantedPath, RulesType.Bool);
-        yield return (TeamSidePath, RulesType.Int);
+        yield return ("player.slot", RulesType.Int, false);
+        yield return ("player.team", RulesType.Int, false);
+        yield return ("player.name", RulesType.String, false);
+        yield return ("match.tick", RulesType.Instant, false); // instant — no catalog event field
+        yield return (BombWasPlantedPath, RulesType.Bool, true);
+        yield return (TeamSidePath, RulesType.Int, false);
         foreach ((string member, RulesType type) in ProjectileMembers)
         {
-            yield return ($"{ProjectileRoot}.{member}", type);
+            yield return ($"{ProjectileRoot}.{member}", type, false);
         }
     }
 
@@ -255,10 +256,9 @@ public sealed class CatalogScopeAdapter
             tree.Add(path, type);
         }
 
-        foreach ((string path, RulesType type) in InjectedSymbols())
+        foreach ((string path, RulesType type, bool sticky) in InjectedSymbols())
         {
-            // round.bomb.was_planted is sticky: the catalog may gain it later, and then that row wins.
-            if (path == BombWasPlantedPath)
+            if (sticky)
             {
                 tree.AddIfAbsent(path, type);
             }

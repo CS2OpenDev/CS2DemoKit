@@ -26,10 +26,10 @@ public class TimeoutEventTests
         .. EntityChangeScanner.TimeoutFlagContexts, .. EntityChangeScanner.TimeoutsLeftContexts
     ];
 
-    private static EntityChangeScanner Scanner(bool emit = true)
+    private static EntityChangeScanner Scanner(bool emit = true, IReadOnlyList<string>? contexts = null)
     {
         List<(IEntityValueProvider, StateNode)> tracked = [];
-        foreach (string name in _contexts)
+        foreach (string name in contexts ?? _contexts)
         {
             IEntityValueProvider provider = BuiltinProviderSpecs.CreateGameRulesProviders().Single(p => p.ContextName == name);
             tracked.Add((provider, new GenericValueNode<object>(name)));
@@ -87,6 +87,23 @@ public class TimeoutEventTests
 
         await Assert.That(events.Count).IsEqualTo(1);
         await Assert.That(events[0]).IsEqualTo(new TimeoutEndedEvent(101, 101, 101, 2, 1));
+    }
+
+    [Test]
+    public async Task WithoutTheCountProviders_TheEventsStillFire_AndCarryMinusOne()
+    {
+        EntityChangeScanner scanner = Scanner(contexts: EntityChangeScanner.TimeoutFlagContexts);
+        List<GameEvent> events = Run(scanner,
+            new EntityFrameDigest { Singletons = [false, false, false] },
+            new EntityFrameDigest { Singletons = [false, true, false] },
+            new EntityFrameDigest { Singletons = [false, false, false] });
+
+        await Assert.That(scanner.EmitsTimeouts).IsTrue();
+        await Assert.That(events).IsEquivalentTo(new List<GameEvent>
+        {
+            new TimeoutStartedEvent(101, 101, 101, 3, -1),
+            new TimeoutEndedEvent(102, 102, 102, 3, -1)
+        }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
     [Test]

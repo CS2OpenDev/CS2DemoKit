@@ -112,6 +112,9 @@ public sealed class EntityChangeScanner
     // (-1 when untracked), and each flag's last observed state (-1 before the first read). Only
     // an observed edge emits, so a recording that starts inside a timeout reports its end alone.
     private readonly bool _emitTimeouts;
+
+    /// <summary>Whether this scanner synthesizes <c>timeout_started</c> / <c>timeout_ended</c>.</summary>
+    internal bool EmitsTimeouts => _emitTimeouts;
     private readonly int[] _timeoutFlagIndex = [-1, -1, -1];
     private readonly int[] _timeoutsLeftIndex = [-1, -1];
     private readonly int[] _lastTimeoutFlag = [-1, -1, -1];

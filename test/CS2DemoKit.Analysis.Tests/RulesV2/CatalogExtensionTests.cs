@@ -108,43 +108,55 @@ public class CatalogExtensionTests
             HighlightConfigFingerprint.Compute([Doc(Reader)], 64.0, "Cs2GotvProfile"));
     }
 
+    private const string Highlighted = """
+        ruleset: ext_hl
+        for: each_player
+        stats:
+          helmet_kills:
+            count: kill
+            where: "victim.ext.has_helmet"
+            per: match
+          kills:
+            count: kill
+            per: match
+        highlights:
+          helmet_hunter:
+            when: helmet_kills >= 2
+            per: match
+            title: "helmet hunter"
+          multi:
+            when: kills >= 2
+            per: match
+            title: "multi"
+        """;
+
     [Test]
-    public async Task Fingerprint_ChangesWhenARowMapsThePathToAnotherProvider()
+    public async Task Fingerprint_RemappingARowsProvider_ChangesOnlyTheHighlightsThatReadIt()
     {
-        IEntityValueProvider other = new GenericSingletonFieldProvider(
-            new ProviderSpec("entity.ext.t_timeouts_left", "CCSGameRulesProxy", "m_pGameRules.m_nTerroristTimeOuts",
-                typeof(int)),
-            ChangeDirection.RisingOnly, typeof(TimeoutsMarker), 0);
+        IPerPlayerEntityValueProvider other = new GenericPerPlayerFieldProvider(
+            new ProviderSpec("entity.ext.has_defuser", "CCSPlayerPawn", "m_pItemServices.m_bHasDefuser", typeof(bool)));
         CatalogExtension remapped = CatalogExtension.Create(
         [
-            CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
-            CatalogExtension.Singleton(other, TimeoutsPath)
+            CatalogExtension.PerPlayer(other, HelmetPath, note: "test helmet"),
+            CatalogExtension.Singleton(Timeouts, TimeoutsPath)
         ]);
 
-        string before = HighlightConfigFingerprint.Compute([Doc(Reader)], 64.0, "Cs2GotvProfile", Extension).Fingerprint;
-        string after = HighlightConfigFingerprint.Compute([Doc(Reader)], 64.0, "Cs2GotvProfile", remapped).Fingerprint;
+        HighlightConfigFingerprint.Result before =
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", Extension);
+        HighlightConfigFingerprint.Result after =
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", remapped);
 
-        await Assert.That(after).IsNotEqualTo(before)
-            .Because("the same rules path now reads another provider, so cached results are stale");
+        await Assert.That(after.HighlightHashes["ext_hl.helmet_hunter"])
+            .IsNotEqualTo(before.HighlightHashes["ext_hl.helmet_hunter"])
+            .Because("its stat's rules path now reads another provider, so its cached results are stale");
+        await Assert.That(after.HighlightHashes["ext_hl.multi"]).IsEqualTo(before.HighlightHashes["ext_hl.multi"])
+            .Because("it reads no extension row, so its cache survives");
+        await Assert.That(after.Fingerprint).IsNotEqualTo(before.Fingerprint);
     }
 
     [Test]
-    public async Task Fingerprint_PerHighlightHashes_ChangeWithTheRows()
+    public async Task Fingerprint_ChangingAnUnreadRow_KeepsEveryHighlightHash()
     {
-        const string highlighted = """
-            ruleset: ext_hl
-            for: each_player
-            stats:
-              helmet_kills:
-                count: kill
-                where: "victim.ext.has_helmet"
-                per: match
-            highlights:
-              helmet_hunter:
-                when: helmet_kills >= 2
-                per: match
-                title: "helmet hunter"
-            """;
         CatalogExtension renamed = CatalogExtension.Create(
         [
             CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
@@ -152,14 +164,12 @@ public class CatalogExtensionTests
         ]);
 
         HighlightConfigFingerprint.Result before =
-            HighlightConfigFingerprint.Compute([Doc(highlighted)], 64.0, "Cs2GotvProfile", Extension);
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", Extension);
         HighlightConfigFingerprint.Result after =
-            HighlightConfigFingerprint.Compute([Doc(highlighted)], 64.0, "Cs2GotvProfile", renamed);
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", renamed);
 
-        await Assert.That(before.HighlightHashes.Keys).Contains("ext_hl.helmet_hunter");
-        await Assert.That(after.HighlightHashes["ext_hl.helmet_hunter"])
-            .IsNotEqualTo(before.HighlightHashes["ext_hl.helmet_hunter"])
-            .Because("a cache that checks highlights one by one must see the extension change too");
+        await Assert.That(after.HighlightHashes).IsEquivalentTo(before.HighlightHashes);
+        await Assert.That(after.Fingerprint).IsEqualTo(before.Fingerprint);
     }
 
     [Test]
@@ -197,6 +207,8 @@ public class CatalogExtensionTests
     [Arguments("entity.ext.w", "perPlayer", "int", "player.1w", "not a dotted path")]
     [Arguments("entity.ext.d", "perPlayer", "double", "player.d", "cannot be stored per player")]
     [Arguments("entity.ext.l", "perPlayer", "long", "player.l", "cannot be stored per player")]
+    [Arguments("entity.ext.n", "singleton", "ushort", "match.n", "event-field width")]
+    [Arguments("entity.ext.o", "singleton", "sbyte", "match.o", "event-field width")]
     public async Task Create_RefusesARowTheResolverCouldNotServe(string name, string scope, string type, string path,
         string why)
     {

@@ -496,8 +496,8 @@ public sealed partial class RuleChainBuilder
         IReadOnlySet<string>? projectileClasses = emitProjectiles
             ? AllProjectileClasses
             : _observedProjectileClasses.Count > 0 ? _observedProjectileClasses : null;
-        // The timeout events are read off five game-rules singletons, tracked only when a ruleset
-        // subscribes to one of the two views.
+        // The timeout events are read off the game rules' three timeout flags, with the two per-side
+        // counts filling timeouts_left, all tracked only when a ruleset subscribes to one of the two views.
         bool emitTimeouts = RulesetsSubscribeToEvent("timeout_started", rulesets)
                             || RulesetsSubscribeToEvent("timeout_ended", rulesets);
         // An entity registry missing any of the three flags leaves the events off and reported below;
@@ -609,20 +609,27 @@ public sealed partial class RuleChainBuilder
         // case any such reference is a clean compile-time error.
         _entityScanner = entityScanner;
 
-        ReportUnproducibleSpotReads(rulesets, v2Coverage, spottedSubscribed,
-            entityScanner is not null && transitionScanner is not null);
-
+        // Every synthesized event this run cannot produce, with why, so one pass per stat can report it
+        // whichever mix of them it triggers on.
+        Dictionary<string, string> unproduced = new(StringComparer.Ordinal);
         if (missingPurchaseProviders.Length > 0)
         {
-            ReportUnproducedEvents(rulesets, v2Coverage, ["item_purchase", "item_refund"],
-                $"this run's per-player entity providers lack [{string.Join(", ", missingPurchaseProviders)}], which the purchase synthesis reads");
+            string cause = $"this run's per-player entity providers lack [{string.Join(", ", missingPurchaseProviders)}], "
+                           + "which the purchase synthesis reads";
+            unproduced["item_purchase"] = cause;
+            unproduced["item_refund"] = cause;
         }
 
         if (missingTimeoutProviders.Length > 0)
         {
-            ReportUnproducedEvents(rulesets, v2Coverage, ["timeout_started", "timeout_ended"],
-                $"this run's entity providers lack [{string.Join(", ", missingTimeoutProviders)}], which the timeout events are read from");
+            string cause = $"this run's entity providers lack [{string.Join(", ", missingTimeoutProviders)}], "
+                           + "which the timeout events are read from";
+            unproduced["timeout_started"] = cause;
+            unproduced["timeout_ended"] = cause;
         }
+
+        ReportUnproducibleReads(rulesets, v2Coverage, spottedSubscribed,
+            entityScanner is not null && transitionScanner is not null, unproduced);
 
         // The equipment provider was gated into perPlayerList (hence snapshotted) exactly when a v2
         // round.*.equipment read requires it; capture it for the B6 freeze-end economy edge. Null (no
@@ -1793,68 +1800,21 @@ public sealed partial class RuleChainBuilder
     }
 
     /// <summary>
-    ///     Records one coverage diagnostic per stat that triggers only on synthesized events this run
-    ///     cannot produce, so a stat that would read zero says why instead of reporting zero as a result.
-    ///     A stat that also triggers on an event the run does produce still fires, and is not reported.
-    /// </summary>
-    /// <param name="rulesets">The checked rulesets being built.</param>
-    /// <param name="coverage">The build's coverage list, appended to in place.</param>
-    /// <param name="eventNames">The concrete events that will not be produced.</param>
-    /// <param name="cause">Why they will not be, as a clause.</param>
-    private void ReportUnproducedEvents(
-        IReadOnlyList<CheckedRuleset> rulesets,
-        List<RulesetCoverageDiagnostic> coverage,
-        IReadOnlyList<string> eventNames,
-        string cause)
-    {
-        string profileId = Profile.GetType().Name;
-        foreach (CheckedRuleset ruleset in rulesets)
-        {
-            foreach (CheckedStat stat in ruleset.Stats)
-            {
-                if (UnproducedEventDiagnostic(ruleset, stat, eventNames, cause, profileId) is { } diagnostic)
-                {
-                    coverage.Add(diagnostic);
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    ///     The coverage row for <paramref name="stat" /> when it triggers only on
-    ///     <paramref name="eventNames" />, which this run does not produce; null otherwise.
-    /// </summary>
-    private static RulesetCoverageDiagnostic? UnproducedEventDiagnostic(CheckedRuleset ruleset, CheckedStat stat,
-        IReadOnlyList<string> eventNames, string cause, string profileId)
-    {
-        if (stat.ConcreteEvents.Count == 0
-            || !stat.ConcreteEvents.All(e => eventNames.Contains(e, StringComparer.Ordinal)))
-        {
-            return null;
-        }
-
-        string name = stat.ConcreteEvents[0];
-        return new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId, stat.ResolvedView ?? name, profileId,
-            $"stat '{stat.StatId}' triggers on the synthesized '{name}' event — {cause}, so the event is never "
-            + "produced and the stat never fires",
-            stat.Position);
-    }
-
-    /// <summary>
-    ///     Records one coverage diagnostic per v2 node that depends on the synthesized
-    ///     <c>enemy_spotted</c> contacts on a run that does not produce them — a node reading one of
-    ///     <see cref="BuiltinContexts.SpotDerivedEnrichments" />, or a stat triggering on the event
-    ///     itself. Left alone the node is not an error and not a miss: the facets read their
-    ///     no-measurement sentinel and the subscriber never fires, so the stat reports a number that
-    ///     looks exactly like a player who never spotted anyone.
+    ///     Records one coverage diagnostic per v2 node that depends on something this run cannot
+    ///     produce: the synthesized <c>enemy_spotted</c> contacts (a node reading one of
+    ///     <see cref="BuiltinContexts.SpotDerivedEnrichments" />), or a synthesized event in
+    ///     <paramref name="unproduced" /> or <c>enemy_spotted</c> itself that a stat triggers on. Left
+    ///     alone the node is not an error and not a miss: the facets read their no-measurement sentinel
+    ///     and the subscriber never fires, so the stat reports a number that looks exactly like a
+    ///     player who never did the thing.
     ///     <para>
     ///         This is a <b>graph-build</b> check, not a resolve-time one, because resolution cannot
     ///         see the answer: <c>ResolveContext</c> carries the tick rate, the source profile, and
-    ///         the install's params, and the geometry arrives separately through
-    ///         <c>AnalysisOptions.VisibilityEngine</c> at the builder's constructor. The other half of
-    ///         the condition is directory-wide (any ruleset subscribing to the event turns the scan on
-    ///         for all of them), which a per-document resolve pass would have to guess at — and a
-    ///         guess here costs a false positive on a ruleset that is correct.
+    ///         the install's params, and the geometry and provider registries arrive separately at the
+    ///         builder's constructor. The spot half of the condition is also directory-wide (any
+    ///         ruleset subscribing to the event turns the scan on for all of them), which a
+    ///         per-document resolve pass would have to guess at — and a guess here costs a false
+    ///         positive on a ruleset that is correct.
     ///     </para>
     ///     <para>
     ///         It rides <see cref="RulesetCoverageDiagnostic" /> for the same reason a view that does
@@ -1868,46 +1828,59 @@ public sealed partial class RuleChainBuilder
     /// <param name="coverage">The build's coverage list, appended to in place.</param>
     /// <param name="spottedSubscribed">Whether any rule subscribes to <c>enemy_spotted</c>.</param>
     /// <param name="contactsProduced">Whether the contact scan was actually built and wired into the entity scanner.</param>
-    private void ReportUnproducibleSpotReads(
+    /// <param name="unproduced">The other synthesized events this run cannot produce, each with why.</param>
+    private void ReportUnproducibleReads(
         IReadOnlyList<CheckedRuleset> rulesets,
         List<RulesetCoverageDiagnostic> coverage,
         bool spottedSubscribed,
-        bool contactsProduced)
+        bool contactsProduced,
+        Dictionary<string, string> unproduced)
     {
-        if (contactsProduced || rulesets.Count == 0)
+        // Which half is missing decides what the author has to do about it, so the message says
+        // which rather than naming both and leaving them to find out.
+        string? spotCause = contactsProduced || rulesets.Count == 0
+            ? null
+            : _visibilityEngine is null
+                ? "this run was given no baked map geometry (AnalysisOptions.VisibilityEngine), and "
+                  + "visibility is recomputed from geometry rather than read off the wire"
+                : spottedSubscribed
+                    ? "the contact scan could not be built on this run (no demo frames, or the per-player "
+                      + "vantage columns it samples are unavailable)"
+                    : "no stat subscribes to the 'enemy_spotted' view, and the contact scan runs only for "
+                      + "a rule that does";
+        if (spotCause is not null)
+        {
+            unproduced["enemy_spotted"] = spotCause;
+        }
+
+        if (unproduced.Count == 0)
         {
             return;
         }
-
-        // Which half is missing decides what the author has to do about it, so the message says
-        // which rather than naming both and leaving them to find out.
-        string cause = _visibilityEngine is null
-            ? "this run was given no baked map geometry (AnalysisOptions.VisibilityEngine), and "
-              + "visibility is recomputed from geometry rather than read off the wire"
-            : spottedSubscribed
-                ? "the contact scan could not be built on this run (no demo frames, or the per-player "
-                  + "vantage columns it samples are unavailable)"
-                : "no stat subscribes to the 'enemy_spotted' view, and the contact scan runs only for "
-                  + "a rule that does";
 
         string profileId = Profile.GetType().Name;
         foreach (CheckedRuleset ruleset in rulesets)
         {
             foreach (CheckedStat stat in ruleset.Stats)
             {
-                if (FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
+                if (spotCause is not null && FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
                 {
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
                         stat.ResolvedView ?? "", profileId,
                         $"stat '{stat.StatId}' reads {facet}, which is measured from the synthesized "
-                        + $"'enemy_spotted' contacts — {cause}, so it reads its no-measurement value on "
+                        + $"'enemy_spotted' contacts — {spotCause}, so it reads its no-measurement value on "
                         + "every event rather than a number",
                         stat.Position));
                 }
-                else if (UnproducedEventDiagnostic(ruleset, stat, ["enemy_spotted"], cause, profileId) is { } unproduced)
+                else if (UnproducedEventDiagnostic(ruleset, stat, unproduced, profileId) is { } diagnostic)
                 {
-                    coverage.Add(unproduced);
+                    coverage.Add(diagnostic);
                 }
+            }
+
+            if (spotCause is null)
+            {
+                continue;
             }
 
             foreach (CheckedHighlight highlight in ruleset.Highlights)
@@ -1917,13 +1890,56 @@ public sealed partial class RuleChainBuilder
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, highlight.HighlightId,
                         "", profileId,
                         $"highlight '{highlight.HighlightId}' reads {facet}, which is measured from the "
-                        + $"synthesized 'enemy_spotted' contacts — {cause}, so it reads its "
+                        + $"synthesized 'enemy_spotted' contacts — {spotCause}, so it reads its "
                         + "no-measurement value on every event rather than a number",
                         highlight.Position));
                 }
             }
         }
+    }
 
+    /// <summary>
+    ///     The coverage row for a stat that triggers on any of the <paramref name="unproduced" /> events,
+    ///     or null. Triggering on nothing else, the stat never fires; triggering on a produced event as
+    ///     well, it fires on that one only, and the row says which half is missing.
+    /// </summary>
+    private static RulesetCoverageDiagnostic? UnproducedEventDiagnostic(CheckedRuleset ruleset, CheckedStat stat,
+        Dictionary<string, string> unproduced, string profileId) =>
+        UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced) is { } found
+            ? new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId, stat.ResolvedView ?? found.FirstMissing,
+                profileId, found.Message, stat.Position)
+            : null;
+
+    /// <summary>
+    ///     The message for a stat triggering on <paramref name="concreteEvents" />, and the first of them
+    ///     that is unproduced; null when none is.
+    /// </summary>
+    internal static (string Message, string FirstMissing)? UnproducedEventMessage(string statId,
+        IReadOnlyList<string> concreteEvents, Dictionary<string, string> unproduced)
+    {
+        List<string> missing = [.. concreteEvents.Where(unproduced.ContainsKey).Distinct(StringComparer.Ordinal)];
+        if (missing.Count == 0)
+        {
+            return null;
+        }
+
+        bool all = concreteEvents.All(unproduced.ContainsKey);
+        string what = missing.Count == 1
+            ? $"the synthesized '{missing[0]}' event"
+            : "the synthesized events " + string.Join(", ", missing.Select(e => $"'{e}'"));
+        List<IGrouping<string, string>> byCause = [.. missing.GroupBy(e => unproduced[e], StringComparer.Ordinal)];
+        string why = byCause.Count == 1
+            ? byCause[0].Key
+            : string.Join("; ", byCause.Select(g => $"{string.Join(", ", g.Select(e => $"'{e}'"))}: {g.Key}"));
+        string outcome = (all, missing.Count == 1) switch
+        {
+            (true, true) => "so the event is never produced and the stat never fires",
+            (true, false) => "so none of them is produced and the stat never fires",
+            (false, true) => "so that event is never produced and the stat fires only on its other events",
+            (false, false) => "so those are never produced and the stat fires only on its other events"
+        };
+
+        return ($"stat '{statId}' triggers on {what} — {why}, {outcome}", missing[0]);
     }
 
     /// <summary>
