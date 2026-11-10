@@ -776,17 +776,6 @@ public static class ExpressionCompiler
             return (Expression.Convert(left, typeof(long)), right);
         }
 
-        // An unsigned read widens to long (WidenNarrowIntegral), so long meets the fractional types too.
-        if (left.Type == typeof(long) && (right.Type == typeof(double) || right.Type == typeof(float)))
-        {
-            return (Expression.Convert(left, right.Type), right);
-        }
-
-        if (right.Type == typeof(long) && (left.Type == typeof(double) || left.Type == typeof(float)))
-        {
-            return (left, Expression.Convert(right, left.Type));
-        }
-
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
         // so a comparison such as `weapon_tier[event.Weapon] > 2` is a lifted (null-safe) comparison.
         if (left.Type == typeof(double?) && right.Type is var rt && (rt == typeof(int) || rt == typeof(double) || rt == typeof(float)))
@@ -2139,13 +2128,13 @@ public static class ExpressionCompiler
         e.Type == typeof(byte) || e.Type == typeof(sbyte)
         || e.Type == typeof(short) || e.Type == typeof(ushort)
             ? Expression.Convert(e, typeof(int))
-            // The language has one integer type; the unsigned widths meet it as long, which Coerce
-            // pairs with int, float and double. A ulong above long.MaxValue wraps.
-            : e.Type == typeof(uint) || e.Type == typeof(ulong)
-                ? Expression.Convert(e, typeof(long))
-                : e;
+            : e;
 
-    /// <summary>A node's <c>Value</c> read, widened like an event field so any integer width compares.</summary>
+    /// <summary>
+    ///     A node's <c>Value</c> read, widened like an event field: a narrow integer reads as int. Unsigned
+    ///     and 64-bit widths are left alone, as on event fields, where a uint is a pawn handle and must
+    ///     not compare against a slot; a catalog extension cannot declare them.
+    /// </summary>
     private static Expression NodeValueRead(object node, PropertyInfo valueProp) =>
         WidenNarrowIntegral(Expression.Property(Expression.Constant(node), valueProp));
 

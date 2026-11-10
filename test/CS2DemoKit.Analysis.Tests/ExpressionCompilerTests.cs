@@ -265,7 +265,7 @@ public class ExpressionCompilerTests
     }
 
     /// <summary>
-    ///     A host singleton may declare any integer width. Every node read widens it, so it compares
+    ///     A host singleton may declare int or a narrower width. Every node read widens it, so it compares
     ///     against an int or fractional literal and takes part in arithmetic, on the <c>entity.</c> path a
     ///     where: lowers to and the bare-identifier path a compute: lowers to, and reads the right number.
     /// </summary>
@@ -274,9 +274,8 @@ public class ExpressionCompilerTests
     [Arguments((sbyte)3)]
     [Arguments((short)3)]
     [Arguments((ushort)3)]
-    [Arguments(3u)]
-    [Arguments(3ul)]
-    public async Task AnyIntegerWidthNodeRead_ComparesAndComputes(object three)
+    [Arguments(3)]
+    public async Task AnyIntWidthNodeRead_ComparesAndComputes(object three)
     {
         object node = Activator.CreateInstance(typeof(GenericValueNode<>).MakeGenericType(three.GetType()), "n", null)!;
         node.GetType().GetMethod("SetValue")!.Invoke(node, [three]);
@@ -286,6 +285,8 @@ public class ExpressionCompilerTests
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 3", lookup)()).IsFalse();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 2.5", lookup)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeExpression("n * 2", lookup)()).IsEqualTo(6.0);
+        await Assert.That(ExpressionCompiler.CompileNodeExpression("n / 2", lookup)()).IsEqualTo(1.5)
+            .Because("a compute reads every int width as double, so division is not integer division");
     }
 
     // ── Helper: build a synthetic node lookup from name → int value pairs ──

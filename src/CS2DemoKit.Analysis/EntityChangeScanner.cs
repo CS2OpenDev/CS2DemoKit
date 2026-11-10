@@ -327,7 +327,7 @@ public sealed class EntityChangeScanner
 
     /// <summary>Where the singleton named <paramref name="contextName" /> sits among the tracked ones, or -1.</summary>
     internal int TrackedSingletonIndex(string contextName) =>
-        _tracked.FindIndex(t => string.Equals(t.Provider.ContextName, contextName, StringComparison.OrdinalIgnoreCase));
+        _tracked.FindIndex(t => IsContext(t.Provider, contextName));
 
     /// <summary>The tracked singleton's value as of the last consumed frame: its default until first seen.</summary>
     internal object? TrackedSingletonValue(int index) => _tracked[index].LastValue;

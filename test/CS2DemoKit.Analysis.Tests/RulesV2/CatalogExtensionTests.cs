@@ -248,7 +248,10 @@ public class CatalogExtensionTests
     [Arguments("entity.ext.v", "perPlayer", "vector", "player.v", "has no rules type")]
     [Arguments("entity.ext.w", "perPlayer", "int", "player.1w", "not a dotted path")]
     [Arguments("entity.ext.d", "perPlayer", "double", "player.d", "cannot be stored per player")]
-    [Arguments("entity.ext.l", "perPlayer", "long", "player.l", "cannot be stored per player")]
+    [Arguments("entity.ext.l", "perPlayer", "long", "player.l", "declare the provider as int")]
+    [Arguments("entity.ext.u", "singleton", "uint", "match.u", "declare the provider as int")]
+    [Arguments("entity.ext.q", "singleton", "ulong", "match.q", "declare the provider as int")]
+    [Arguments("entity.ext.g", "singleton", "long", "match.g", "declare the provider as int")]
     public async Task Create_RefusesARowTheResolverCouldNotServe(string name, string scope, string type, string path,
         string why)
     {

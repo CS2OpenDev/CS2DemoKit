@@ -1867,11 +1867,13 @@ public sealed partial class RuleChainBuilder
             foreach (CheckedStat stat in ruleset.Stats)
             {
                 // Both rows for one stat carry the same view, so a consumer grouping by view sees one stat.
-                bool facetReported = spotCause is not null && FirstSpotDerivedRead(stat.DeclaredReads) is not null;
+                string? facet = spotCause is null ? null : FirstSpotDerivedRead(stat.DeclaredReads);
                 (string Message, string FirstMissing)? trigger =
-                    UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced, facetReported);
-                string view = stat.ResolvedView ?? trigger?.FirstMissing ?? "";
-                if (facetReported && FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
+                    UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced, facet is not null);
+                string view = stat.ResolvedView
+                              ?? stat.ConcreteEvents.FirstOrDefault(unproduced.ContainsKey)
+                              ?? "";
+                if (facet is not null)
                 {
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
                         view, profileId,

@@ -1267,10 +1267,12 @@ carry -1 for that side's timeouts left.
 
 ### Catalog extension rows (0.15.0)
 
-`CatalogExtension` is new. `Create` refuses a per-player row whose type the per-pawn digest cannot
-store: only `int`, `bool`, `float` and `string` are accepted, so `long`, `uint`, `ulong` and `double`
-are refused at `Create` instead of throwing when a run builds its columns. Singleton rows take any
-mapped type.
+`CatalogExtension` is new. `Create` refuses a row whose type a rule could not read: `long`, `uint`
+and `ulong` on any row (the rules language has one integer type, and those widths neither compare
+with int literals nor divide safely; declare the provider as `int`), and on a per-player row anything
+the per-pawn digest cannot store, which leaves `int`, `bool`, `float` and `string`. Singleton rows
+also take `double` and the narrow widths `byte`, `sbyte`, `short` and `ushort`, which every read
+widens to `int`.
 
 `HighlightConfigFingerprint.Compute` with an extension folds each row a stat or highlight reads into
 that node's hash, and on into every highlight that depends on it, so remapping a rules path to
