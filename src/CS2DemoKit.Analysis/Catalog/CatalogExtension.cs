@@ -37,9 +37,6 @@ public sealed class CatalogExtension
     private static readonly string[] _perPlayerTypes =
         [.. DigestColumnLayout.StorableTypes.Select(t => FriendlyTypeMap.FriendlyName(t)!)];
 
-    private static readonly string[] _readableTypes =
-        ["int", "byte", "sbyte", "short", "ushort", "float", "double", "bool", "string"];
-
     private static readonly ConditionalWeakTable<CatalogExtension, CatalogRoot> _merged = new();
 
     private CatalogExtension(IReadOnlyList<CatalogProvider> providers) => Providers = providers;
@@ -195,13 +192,11 @@ public sealed class CatalogExtension
             throw Refused(row, $"type '{row.ClrType}' has no rules type");
         }
 
-        // The language has one integer type, int. A narrow width widens to it on every read; a 64-bit or
-        // unsigned one does not (an unsigned event field is a pawn handle, kept apart from slots), and
-        // would neither compare with int literals nor divide safely. An allow-list, so a width the type
-        // map gains later is refused until a read handles it.
-        if (!_readableTypes.Contains(row.ClrType, StringComparer.Ordinal))
+        if (!FriendlyTypeMap.ProviderReadableTypes.Contains(row.ClrType))
         {
-            throw Refused(row, $"type '{row.ClrType}' is not an int width the rules language reads; declare the provider as int");
+            throw Refused(row, FriendlyTypeMap.IsIntegerWidth(row.ClrType)
+                ? $"type '{row.ClrType}' is an integer width a rule cannot read without loss; declare the provider as int"
+                : $"type '{row.ClrType}' is not a type a rule can read from a provider");
         }
 
         if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))

@@ -301,6 +301,32 @@ public class ExpressionCompilerTests
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("2.5 > entity.ext.n", lookup)()).IsFalse();
     }
 
+    /// <summary>A long divides as double and safely, like every other compute division.</summary>
+    [Test]
+    public async Task ALongNodeRead_DividesSafelyAsDouble()
+    {
+        GenericValueNode<long> node = new("buttons");
+        node.SetValue(3L);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal)
+        {
+            ["entity.ext.n"] = node, ["zero"] = new GenericValueNode<int>("zero")
+        };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / 2 > 1.4", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / zero == 0", lookup)()).IsTrue()
+            .Because("a zero divisor reads 0 instead of throwing mid-demo");
+    }
+
+    /// <summary>A ulong node has a numeric value, so a breakpoint condition on it reads a number, not NaN.</summary>
+    [Test]
+    public async Task AULongNode_HasANumericValue()
+    {
+        GenericValueNode<ulong> node = new("id");
+        node.SetValue(5ul);
+
+        await Assert.That(node.GetNumericValue()).IsEqualTo(5f);
+    }
+
     // ── Helper: build a synthetic node lookup from name → int value pairs ──
     private static Dictionary<string, object> NodeMap(
         params (string Name, int Value)[] entries)

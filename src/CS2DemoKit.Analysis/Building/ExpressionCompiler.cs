@@ -777,24 +777,27 @@ public static class ExpressionCompiler
         }
 
         // The rules type check reads long as Int, so it accepts a long against a fractional value too.
+        // Both sides meet as double: a float's 24-bit mantissa would round high button bits.
         if (left.Type == typeof(long) && (right.Type == typeof(double) || right.Type == typeof(float)))
         {
-            return (Expression.Convert(left, right.Type), right);
+            return (Expression.Convert(left, typeof(double)), Expression.Convert(right, typeof(double)));
         }
 
         if (right.Type == typeof(long) && (left.Type == typeof(double) || left.Type == typeof(float)))
         {
-            return (left, Expression.Convert(right, left.Type));
+            return (Expression.Convert(left, typeof(double)), Expression.Convert(right, typeof(double)));
         }
 
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
         // so a comparison such as `weapon_tier[event.Weapon] > 2` is a lifted (null-safe) comparison.
-        if (left.Type == typeof(double?) && right.Type is var rt && (rt == typeof(int) || rt == typeof(double) || rt == typeof(float)))
+        if (left.Type == typeof(double?) && right.Type is var rt
+            && (rt == typeof(int) || rt == typeof(long) || rt == typeof(double) || rt == typeof(float)))
         {
             return (left, Expression.Convert(right, typeof(double?)));
         }
 
-        if (right.Type == typeof(double?) && left.Type is var lt && (lt == typeof(int) || lt == typeof(double) || lt == typeof(float)))
+        if (right.Type == typeof(double?) && left.Type is var lt
+            && (lt == typeof(int) || lt == typeof(long) || lt == typeof(double) || lt == typeof(float)))
         {
             return (Expression.Convert(left, typeof(double?)), right);
         }
@@ -822,6 +825,13 @@ public static class ExpressionCompiler
         if (left.Type == typeof(int) && right.Type == typeof(int))
         {
             return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivideInt), null, left, right);
+        }
+
+        // A long (player.cmd.buttons) divides as double, safely, rather than throwing on a zero divisor.
+        if (left.Type == typeof(long) || right.Type == typeof(long))
+        {
+            return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivide), null,
+                Expression.Convert(left, typeof(double)), Expression.Convert(right, typeof(double)));
         }
 
         return Expression.Divide(left, right);

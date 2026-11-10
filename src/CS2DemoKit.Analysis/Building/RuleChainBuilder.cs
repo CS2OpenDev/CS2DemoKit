@@ -1870,26 +1870,22 @@ public sealed partial class RuleChainBuilder
                 string? facet = spotCause is null ? null : FirstSpotDerivedRead(stat.DeclaredReads);
                 (string Message, string FirstMissing)? trigger =
                     UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced, facet is not null);
-                // The trigger row's own event first; a stat whose only unproduced trigger is the
-                // enemy_spotted its facet row reports falls back to that.
-                string view = stat.ResolvedView
-                              ?? trigger?.FirstMissing
-                              ?? stat.ConcreteEvents.FirstOrDefault(unproduced.ContainsKey)
-                              ?? "";
+                // Each row names the view of what it reports: the facet row the enemy_spotted contacts,
+                // the trigger row its own first unproduced event. A resolved view wins for both.
                 if (facet is not null)
                 {
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
-                        view, profileId,
+                        stat.ResolvedView ?? "enemy_spotted", profileId,
                         $"stat '{stat.StatId}' reads {facet}, which is measured from the synthesized "
                         + $"'enemy_spotted' contacts — {spotCause}, so it reads its no-measurement value on "
                         + "every event rather than a number",
                         stat.Position));
                 }
 
-                if (trigger is var (message, _))
+                if (trigger is var (message, firstMissing))
                 {
-                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId, view, profileId, message,
-                        stat.Position));
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
+                        stat.ResolvedView ?? firstMissing, profileId, message, stat.Position));
                 }
             }
 

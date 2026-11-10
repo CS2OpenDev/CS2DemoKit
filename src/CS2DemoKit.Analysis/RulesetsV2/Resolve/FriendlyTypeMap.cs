@@ -17,6 +17,19 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Resolve;
 public static class FriendlyTypeMap
 {
     /// <summary>
+    ///     The friendly types a provider may declare and a rule read without loss: <see cref="Map" />'s set
+    ///     minus the 64-bit and unsigned integers. Those stay in the map because event fields carry them
+    ///     (an unsigned field is a pawn handle, kept apart from slots), but a node read does not widen them
+    ///     to int, so they neither compare with int literals nor divide safely.
+    /// </summary>
+    public static IReadOnlySet<string> ProviderReadableTypes { get; } = new HashSet<string>(
+        ["int", "byte", "sbyte", "short", "ushort", "float", "double", "bool", "string"], StringComparer.Ordinal);
+
+    /// <summary>Whether <paramref name="friendlyType" /> is an integer width <see cref="Map" /> accepts.</summary>
+    public static bool IsIntegerWidth(string friendlyType) => friendlyType is "int" or "uint" or "ulong" or "long"
+        or "byte" or "sbyte" or "short" or "ushort";
+
+    /// <summary>
     ///     The friendly type name the catalog writes for <paramref name="type" />, or null when the type is
     ///     outside the set <see cref="Map" /> accepts. The generator and catalog extension rows both name
     ///     types through this, so the two cannot disagree.
