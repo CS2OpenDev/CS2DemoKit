@@ -489,6 +489,16 @@ public sealed partial class RuleChainBuilder
         // subscribes to one of the two views.
         bool emitTimeouts = RulesetsSubscribeToEvent("timeout_started", rulesets)
                             || RulesetsSubscribeToEvent("timeout_ended", rulesets);
+        // An entity registry missing any of the five leaves the events off and reported below; a
+        // partial set would read a missing flag as never raised and count zero timeouts as a result.
+        string[] missingTimeoutProviders = emitTimeouts
+            ? EntityChangeScanner.TimeoutFlagContexts.Concat(EntityChangeScanner.TimeoutsLeftContexts)
+                .Where(name => _entityProviders?.Get(name) is null).ToArray()
+            : [];
+        if (missingTimeoutProviders.Length > 0)
+        {
+            emitTimeouts = false;
+        }
         List<IEntityValueProvider> observedGame = [];
         foreach (string name in ObservedGameProviders)
         {
@@ -563,7 +573,9 @@ public sealed partial class RuleChainBuilder
                 projectileClasses,
                 emitProjectiles,
                 emitTimeouts);
-            if (emitPurchases)
+            // A registry without the two economy columns leaves the synthesis off and reported below,
+            // rather than throwing from the synthesizer and failing every other stat in the build.
+            if (emitPurchases && HasAllProviders(perPlayerList, PurchaseSynthesizer.RequiredProviders))
             {
                 entityScanner.Purchases = new PurchaseSynthesizer(entityScanner.ColumnLayout.Names);
             }
@@ -589,6 +601,22 @@ public sealed partial class RuleChainBuilder
 
         ReportUnproducibleSpotReads(rulesets, v2Coverage, spottedSubscribed,
             entityScanner is not null && transitionScanner is not null);
+
+        if (emitPurchases && entityScanner?.Purchases is null)
+        {
+            string[] missing = PurchaseSynthesizer.RequiredProviders
+                .Where(name => !HasAllProviders(perPlayerList, [name])).ToArray();
+            ReportUnproducedEvents(rulesets, v2Coverage, ["item_purchase", "item_refund"],
+                missing.Length > 0
+                    ? $"this run's per-player entity providers lack [{string.Join(", ", missing)}], which the purchase synthesis reads"
+                    : "this run built no entity scanner to read the economy columns from");
+        }
+
+        if (missingTimeoutProviders.Length > 0)
+        {
+            ReportUnproducedEvents(rulesets, v2Coverage, ["timeout_started", "timeout_ended"],
+                $"this run's entity providers lack [{string.Join(", ", missingTimeoutProviders)}], which the timeout events are read from");
+        }
 
         // The equipment provider was gated into perPlayerList (hence snapshotted) exactly when a v2
         // round.*.equipment read requires it; capture it for the B6 freeze-end economy edge. Null (no
@@ -1756,6 +1784,37 @@ public sealed partial class RuleChainBuilder
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Records one coverage diagnostic per stat triggering on a synthesized event this run cannot
+    ///     produce, so a stat that would read zero says why instead of reporting zero as a result.
+    /// </summary>
+    /// <param name="rulesets">The checked rulesets being built.</param>
+    /// <param name="coverage">The build's coverage list, appended to in place.</param>
+    /// <param name="eventNames">The concrete events that will not be produced.</param>
+    /// <param name="cause">Why they will not be, as a clause.</param>
+    private void ReportUnproducedEvents(
+        IReadOnlyList<CheckedRuleset> rulesets,
+        List<RulesetCoverageDiagnostic> coverage,
+        IReadOnlyList<string> eventNames,
+        string cause)
+    {
+        string profileId = Profile.GetType().Name;
+        foreach (CheckedRuleset ruleset in rulesets)
+        {
+            foreach (CheckedStat stat in ruleset.Stats)
+            {
+                if (stat.ConcreteEvents.FirstOrDefault(e => eventNames.Contains(e, StringComparer.Ordinal)) is { } name)
+                {
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
+                        stat.ResolvedView ?? name, profileId,
+                        $"stat '{stat.StatId}' triggers on the synthesized '{name}' event — {cause}, so the "
+                        + "event is never produced and the stat never fires",
+                        stat.Position));
+                }
+            }
+        }
     }
 
     /// <summary>

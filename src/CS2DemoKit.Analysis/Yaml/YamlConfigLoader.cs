@@ -366,7 +366,7 @@ public static class YamlConfigLoader
                 failedFiles.Add(label);
                 continue;
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (RulesetDocumentLoader.IsYamlScannerFailure(ex))
             {
                 // YamlDotNet's scanner throws this, not YamlException, on some malformed flow input
                 // such as an unclosed sequence (`ruleset: [`). One such file must not take the

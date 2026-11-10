@@ -109,6 +109,45 @@ public class CatalogExtensionTests
     }
 
     [Test]
+    public async Task Fingerprint_ChangesWhenARowMapsThePathToAnotherProvider()
+    {
+        IEntityValueProvider other = new GenericSingletonFieldProvider(
+            new ProviderSpec("entity.ext.t_timeouts_left", "CCSGameRulesProxy", "m_pGameRules.m_nTerroristTimeOuts",
+                typeof(int)),
+            ChangeDirection.RisingOnly, typeof(TimeoutsMarker), 0);
+        CatalogExtension remapped = CatalogExtension.Create(
+        [
+            CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
+            CatalogExtension.Singleton(other, TimeoutsPath)
+        ]);
+
+        string before = HighlightConfigFingerprint.Compute([Doc(Reader)], 64.0, "Cs2GotvProfile", Extension).Fingerprint;
+        string after = HighlightConfigFingerprint.Compute([Doc(Reader)], 64.0, "Cs2GotvProfile", remapped).Fingerprint;
+
+        await Assert.That(after).IsNotEqualTo(before)
+            .Because("the same rules path now reads another provider, so cached results are stale");
+    }
+
+    [Test]
+    public async Task Fingerprint_WithAnEmptyExtension_MatchesNoExtension()
+    {
+        const string plain = """
+            ruleset: plain
+            for: each_player
+            stats:
+              kills:
+                count: kill
+                per: match
+            """;
+
+        string none = HighlightConfigFingerprint.Compute([Doc(plain)], 64.0, "Cs2GotvProfile").Fingerprint;
+        string empty = HighlightConfigFingerprint.Compute([Doc(plain)], 64.0, "Cs2GotvProfile",
+            CatalogExtension.Create([])).Fingerprint;
+
+        await Assert.That(empty).IsEqualTo(none).Because("a host with no rows keeps its cached fingerprints");
+    }
+
+    [Test]
     [Arguments("pawn.has_helmet", "perPlayer", "bool", "player.x.y", "must start with 'entity.'")]
     [Arguments("entity.pawn.health", "perPlayer", "int", "player.x.health", "already in the catalog")]
     [Arguments("entity.ext.health", "perPlayer", "int", "player.health", "already in the catalog")]
@@ -122,6 +161,8 @@ public class CatalogExtensionTests
     [Arguments("entity.ext.u", "perPlayerCommand", "int", "player.u", "cannot be extended")]
     [Arguments("entity.ext.v", "perPlayer", "vector", "player.v", "has no rules type")]
     [Arguments("entity.ext.w", "perPlayer", "int", "player.1w", "not a dotted path")]
+    [Arguments("entity.ext.d", "perPlayer", "double", "player.d", "cannot be stored per player")]
+    [Arguments("entity.ext.l", "perPlayer", "long", "player.l", "cannot be stored per player")]
     public async Task Create_RefusesARowTheResolverCouldNotServe(string name, string scope, string type, string path,
         string why)
     {

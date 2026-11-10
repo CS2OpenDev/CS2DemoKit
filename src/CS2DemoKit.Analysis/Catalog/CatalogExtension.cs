@@ -24,7 +24,8 @@ namespace CS2DemoKit.Analysis.Catalog;
 ///         <see cref="Create" /> refuses a row the resolver or the lowering could not serve: a provider name
 ///         outside <c>entity.</c> (a read is lowered to <c>player.&lt;provider name&gt;</c>), a scope other than
 ///         <c>perPlayer</c> or <c>singleton</c>, a rules path outside that scope's root (<c>player.</c>,
-///         <c>match.</c>) or under the reserved <c>player.cmd.</c>, an unmapped type, and any name or path that
+///         <c>match.</c>) or under the reserved <c>player.cmd.</c>, an unmapped type, a per-player type the
+///         per-pawn digest cannot store (only int, bool, float and string), and any name or path that
 ///         collides with the embedded catalog, an injected symbol or another row.
 ///     </para>
 /// </summary>
@@ -36,6 +37,10 @@ public sealed class CatalogExtension
         "player.slot", "player.team", "player.name", "match.tick", CatalogScopeAdapter.BombWasPlantedPath,
         CatalogScopeAdapter.TeamSidePath
     ];
+
+    // The per-pawn digest's four lanes (DigestColumnLayout.KindOf); any other per-player type throws when a
+    // run builds its columns, so it is refused here instead.
+    private static readonly string[] _perPlayerTypes = ["int", "bool", "float", "string"];
 
     private static readonly ConditionalWeakTable<CatalogExtension, CatalogRoot> _merged = new();
 
@@ -191,6 +196,11 @@ public sealed class CatalogExtension
         catch (InvalidOperationException)
         {
             throw Refused(row, $"type '{row.ClrType}' has no rules type");
+        }
+
+        if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))
+        {
+            throw Refused(row, $"type '{row.ClrType}' cannot be stored per player; use int, bool, float or string");
         }
 
         if (row.V2Type is { } v2Type && !string.Equals(v2Type, type.Kind.ToString(), StringComparison.Ordinal))

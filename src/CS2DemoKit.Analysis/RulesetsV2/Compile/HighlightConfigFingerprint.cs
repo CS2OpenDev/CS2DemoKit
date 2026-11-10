@@ -179,7 +179,23 @@ public static class HighlightConfigFingerprint
                 + string.Join("; ", composed.Diagnostics));
         }
 
-        return Compute(composed.Rulesets);
+        Result result = Compute(composed.Rulesets);
+        if (catalogExtension is not { Providers.Count: > 0 })
+        {
+            return result;
+        }
+
+        // The checked rules hash a read by its rules path, not by the provider the path lowers to, so
+        // remapping an extension row to another provider would leave the hash unchanged. Folding the rows
+        // in makes that remap a config change; a run with no extension keeps its fingerprint unchanged.
+        IEnumerable<string> rows = catalogExtension.Providers
+            .Select(p => $"ext#{p.Name}#{p.Scope}#{p.ClrType}#{p.V2Name}")
+            .OrderBy(line => line, StringComparer.Ordinal);
+        string preimage = string.Join('\n', rows.Prepend(result.Fingerprint));
+        return result with
+        {
+            Fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(preimage)))
+        };
     }
 
     /// <summary>Hashes one stat and registers its bare + qualified spellings (the builder's two).</summary>

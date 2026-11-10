@@ -32,6 +32,9 @@ internal sealed class PurchaseSynthesizer
     internal const string MoneyProvider = "entity.controller.money";
     internal const string Unknown = "unknown";
 
+    /// <summary>The per-player columns the synthesis reads; the constructor throws without both.</summary>
+    internal static readonly IReadOnlyList<string> RequiredProviders = [CashSpentProvider, MoneyProvider];
+
     private const int MaxSlots = 64;
 
     private static readonly Dictionary<string, int> _prices = new(StringComparer.Ordinal)

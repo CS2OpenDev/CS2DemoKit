@@ -133,12 +133,21 @@ public static class RulesetDocumentLoader
         {
             return ParseDocuments(yaml);
         }
-        catch (Exception ex) when (ex is YamlException or InvalidOperationException)
+        catch (Exception ex) when (ex is YamlException || IsYamlScannerFailure(ex))
         {
-            // The scanner throws InvalidOperationException on some malformed flow input.
             return null;
         }
     }
+
+    /// <summary>
+    ///     Whether <paramref name="ex" /> is YamlDotNet's scanner rejecting malformed flow input (an unclosed
+    ///     <c>ruleset: [</c>), which it reports as an <see cref="InvalidOperationException" /> rather than a
+    ///     <see cref="YamlException" />. Only one thrown from inside YamlDotNet counts: the same exception
+    ///     type from our own code is a bug and must propagate, not read as an unparseable file.
+    /// </summary>
+    internal static bool IsYamlScannerFailure(Exception ex) =>
+        ex is InvalidOperationException
+        && ex.TargetSite?.DeclaringType?.Assembly == typeof(YamlException).Assembly;
 
     private static Outcome MultiDocumentOutcome(int count, string? file) =>
         new(null,

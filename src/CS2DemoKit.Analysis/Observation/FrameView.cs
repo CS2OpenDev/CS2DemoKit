@@ -167,12 +167,6 @@ public sealed class FrameView
     }
 
     /// <summary>
-    ///     The slot's latest user command as of the end of this frame, its own commands included, or
-    ///     null before the slot's first. The instance is the slot's baseline for its next delta: read
-    ///     it, never change it, and copy what you keep.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">The run decodes no user commands (<see cref="AnalysisOptions.DecodeUserCommands" />).</exception>
-    /// <summary>
     ///     A game-wide provider's value as of the end of this frame, by its context name, which must be in
     ///     <see cref="AnalysisOptions.ObservedGameProviders" />. Reads the provider's default until the
     ///     entity carrying it is first seen.
@@ -205,6 +199,12 @@ public sealed class FrameView
         }
     }
 
+    /// <summary>
+    ///     The slot's latest user command as of the end of this frame, its own commands included, or
+    ///     null before the slot's first. The instance is the slot's baseline for its next delta: read
+    ///     it, never change it, and copy what you keep.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The run decodes no user commands (<see cref="AnalysisOptions.DecodeUserCommands" />).</exception>
     public CSGOUserCmdPB? Command(int playerSlot) =>
         (Open()._commands ?? throw new InvalidOperationException(
             "this run decodes no user commands; set AnalysisOptions.DecodeUserCommands")).Current(playerSlot);
