@@ -17,17 +17,14 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Resolve;
 public static class FriendlyTypeMap
 {
     /// <summary>
-    ///     The friendly types a provider may declare and a rule read without loss: <see cref="Map" />'s set
-    ///     minus the 64-bit and unsigned integers. Those stay in the map because event fields carry them
-    ///     (an unsigned field is a pawn handle, kept apart from slots), but a node read does not widen them
-    ///     to int, so they neither compare with int literals nor divide safely.
+    ///     The friendly types a host provider may declare for rules: <see cref="Map" />'s set minus the
+    ///     64-bit and unsigned integers. Those stay in the map because event fields carry them (an unsigned
+    ///     field is a pawn handle, kept apart from slots), but a node read does not widen them to int:
+    ///     uint and ulong meet no int operand at all, and long is the one built-in 64-bit read
+    ///     (<c>player.cmd.buttons</c>), not a width to extend.
     /// </summary>
     public static IReadOnlySet<string> ProviderReadableTypes { get; } = new HashSet<string>(
         ["int", "byte", "sbyte", "short", "ushort", "float", "double", "bool", "string"], StringComparer.Ordinal);
-
-    /// <summary>Whether <paramref name="friendlyType" /> is an integer width <see cref="Map" /> accepts.</summary>
-    public static bool IsIntegerWidth(string friendlyType) => friendlyType is "int" or "uint" or "ulong" or "long"
-        or "byte" or "sbyte" or "short" or "ushort";
 
     /// <summary>
     ///     The friendly type name the catalog writes for <paramref name="type" />, or null when the type is

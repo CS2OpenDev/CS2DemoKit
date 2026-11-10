@@ -68,7 +68,6 @@ public abstract class ValueNode<T> : StateNode
             short s => s,
             byte b => b,
             uint u => u,
-            ulong ul => ul,
             ushort us => us,
             sbyte sb => sb,
             _ => null

@@ -301,30 +301,30 @@ public class ExpressionCompilerTests
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("2.5 > entity.ext.n", lookup)()).IsFalse();
     }
 
-    /// <summary>A long divides as double and safely, like every other compute division.</summary>
+    /// <summary>
+    ///     A long truncates under / and %, since integer division is how a rule tests a button bit (the
+    ///     language has no bitwise operators), and a zero divisor reads 0 instead of throwing mid-demo.
+    /// </summary>
     [Test]
-    public async Task ALongNodeRead_DividesSafelyAsDouble()
+    public async Task ALongNodeRead_DividesAndTakesModuloAsAnInteger_Safely()
     {
         GenericValueNode<long> node = new("buttons");
         node.SetValue(3L);
-        Dictionary<string, object> lookup = new(StringComparer.Ordinal)
-        {
-            ["entity.ext.n"] = node, ["zero"] = new GenericValueNode<int>("zero")
-        };
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal) { ["entity.ext.n"] = node };
 
-        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / 2 > 1.4", lookup)()).IsTrue();
-        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / zero == 0", lookup)()).IsTrue()
-            .Because("a zero divisor reads 0 instead of throwing mid-demo");
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / 2 == 1", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("(entity.ext.n / 2) % 2 == 1", lookup)()).IsTrue()
+            .Because("bit 1 of 3 is set");
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / 0 == 0", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n % 0 == 0", lookup)()).IsTrue();
     }
 
-    /// <summary>A ulong node has a numeric value, so a breakpoint condition on it reads a number, not NaN.</summary>
+    /// <summary>An integer % by zero reads 0, as an integer / by zero does. (A compute's node reads are doubles.)</summary>
     [Test]
-    public async Task AULongNode_HasANumericValue()
+    public async Task AnIntModuloByZero_ReadsZero()
     {
-        GenericValueNode<ulong> node = new("id");
-        node.SetValue(5ul);
-
-        await Assert.That(node.GetNumericValue()).IsEqualTo(5f);
+        Func<double> fn = ExpressionCompiler.CompileNodeExpression("7 % 0", new Dictionary<string, object>());
+        await Assert.That(fn()).IsEqualTo(0.0);
     }
 
     // ── Helper: build a synthetic node lookup from name → int value pairs ──

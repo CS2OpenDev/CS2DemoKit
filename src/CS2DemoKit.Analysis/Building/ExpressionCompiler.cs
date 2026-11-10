@@ -827,11 +827,11 @@ public static class ExpressionCompiler
             return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivideInt), null, left, right);
         }
 
-        // A long (player.cmd.buttons) divides as double, safely, rather than throwing on a zero divisor.
-        if (left.Type == typeof(long) || right.Type == typeof(long))
+        // A long (player.cmd.buttons) truncates like an int, since integer / and % are how a rule tests
+        // its bits, and reads 0 on a zero divisor rather than throwing mid-demo.
+        if (left.Type == typeof(long) && right.Type == typeof(long))
         {
-            return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivide), null,
-                Expression.Convert(left, typeof(double)), Expression.Convert(right, typeof(double)));
+            return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivideLong), null, left, right);
         }
 
         return Expression.Divide(left, right);
@@ -1081,7 +1081,7 @@ public static class ExpressionCompiler
             {
                 TokenKind.OpMul => Expression.Multiply(left, right),
                 TokenKind.OpDiv => MakeSafeDivide(left, right),
-                TokenKind.OpMod => Expression.Modulo(left, right),
+                TokenKind.OpMod => MakeSafeModulo(left, right),
                 _ => left
             };
         }
@@ -1823,6 +1823,17 @@ public static class ExpressionCompiler
 
     private static double SafeDivide(double left, double right) => right == 0 ? 0 : left / right;
     private static int SafeDivideInt(int left, int right) => right == 0 ? 0 : left / right;
+    private static long SafeDivideLong(long left, long right) => right == 0 ? 0 : left / right;
+    private static int SafeModuloInt(int left, int right) => right == 0 ? 0 : left % right;
+    private static long SafeModuloLong(long left, long right) => right == 0 ? 0 : left % right;
+
+    // An integer % by zero reads 0, as an integer / does; a fractional one is already NaN, not a throw.
+    private static Expression MakeSafeModulo(Expression left, Expression right) =>
+        left.Type == typeof(int) && right.Type == typeof(int)
+            ? Expression.Call(typeof(ExpressionCompiler), nameof(SafeModuloInt), null, left, right)
+            : left.Type == typeof(long) && right.Type == typeof(long)
+                ? Expression.Call(typeof(ExpressionCompiler), nameof(SafeModuloLong), null, left, right)
+                : Expression.Modulo(left, right);
 
     private static Token[] Tokenize(string input)
     {
