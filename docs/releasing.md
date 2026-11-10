@@ -1244,6 +1244,41 @@ per-player and projectiles-only arms and the `for: each_projectile` scope's `eva
 and the likely causes are in `docs/perf/baseline.md`, "The 0.14.0 release review"; candidate fixes
 are tracked as an issue.
 
+### Four economy columns shift the per-pawn digest (0.15.0)
+
+The new per-player providers `entity.pawn.has_helmet`, `entity.pawn.has_defuser`,
+`entity.controller.cash_spent` and `entity.controller.start_money` sit before the position trio in
+both registries, so the column index of every provider after them moved by four in the per-pawn
+digest layout. A consumer that indexes digest columns by position rather than by provider name needs
+to rebuild its index; the per-pawn fold fixtures moved for the new columns. With the four filtered
+out, the 0.14 fixtures pass unchanged.
+
+### Synthesized purchase and timeout events need their providers (0.15.0)
+
+`item_purchase` / `item_refund` are read off `entity.controller.cash_spent` and
+`entity.controller.money`, and `timeout_started` / `timeout_ended` off five game-rules singletons.
+Both default registries carry them. A host that passes its own `PerPlayerEntityProviders` or
+`EntityProviders` without them still builds: the events are not produced, and every stat that
+triggers on one gets a `RulesetCoverageDiagnostic` naming the missing providers, rather than counting
+zero as if it were a measurement.
+
+### Catalog extension rows (0.15.0)
+
+`CatalogExtension` is new. `Create` refuses a per-player row whose type the per-pawn digest cannot
+store: only `int`, `bool`, `float` and `string` are accepted, so `long`, `uint`, `ulong` and `double`
+are refused at `Create` instead of throwing when a run builds its columns. Singleton rows take any
+mapped type. `HighlightConfigFingerprint.Compute` with an extension folds the rows into the
+fingerprint, so remapping a rules path to another provider invalidates cached highlights; with no
+extension, or an empty one, the fingerprint is unchanged from 0.14.
+
+### A YAML file the scanner cannot read is that file's error (0.15.0)
+
+YamlDotNet's scanner throws `InvalidOperationException`, not `YamlException`, on some malformed flow
+input (an unclosed `ruleset: [`). Through 0.14.1 that escaped `YamlConfigLoader.LoadDocuments` and
+`TryLoadDirectory` and failed the whole load. It is now that file's `RuleConfigError` and a
+`FailedFiles` entry, and the other files still load; `RulesetDocumentLoader.TryLoad` returns null for
+it. An `InvalidOperationException` thrown from outside YamlDotNet still propagates.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo
