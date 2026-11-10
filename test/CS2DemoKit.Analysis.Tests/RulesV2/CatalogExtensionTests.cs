@@ -119,6 +119,10 @@ public class CatalogExtensionTests
           kills:
             count: kill
             per: match
+          timeouts_seen:
+            sum: match.ext.ct_timeouts_left
+            on: round_ended
+            per: match
         highlights:
           helmet_hunter:
             when: helmet_kills >= 2
@@ -128,6 +132,10 @@ public class CatalogExtensionTests
             when: kills >= 2
             per: match
             title: "multi"
+          patient:
+            when: timeouts_seen >= 10
+            per: match
+            title: "patient"
         """;
 
     [Test]
@@ -155,12 +163,42 @@ public class CatalogExtensionTests
     }
 
     [Test]
-    public async Task Fingerprint_ChangingAnUnreadRow_KeepsEveryHighlightHash()
+    public async Task Fingerprint_RemappingASingletonReadInAValue_ChangesItsHighlight()
     {
+        IEntityValueProvider other = new GenericSingletonFieldProvider(
+            new ProviderSpec("entity.ext.t_timeouts_left", "CCSGameRulesProxy", "m_pGameRules.m_nTerroristTimeOuts",
+                typeof(int)),
+            ChangeDirection.Both, typeof(TimeoutsMarker), 0);
+        CatalogExtension remapped = CatalogExtension.Create(
+        [
+            CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
+            CatalogExtension.Singleton(other, TimeoutsPath)
+        ]);
+
+        HighlightConfigFingerprint.Result before =
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", Extension);
+        HighlightConfigFingerprint.Result after =
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", remapped);
+
+        await Assert.That(after.HighlightHashes["ext_hl.patient"])
+            .IsNotEqualTo(before.HighlightHashes["ext_hl.patient"])
+            .Because("a sum: value read of a singleton row is an entity read too");
+        await Assert.That(after.HighlightHashes["ext_hl.helmet_hunter"])
+            .IsEqualTo(before.HighlightHashes["ext_hl.helmet_hunter"]);
+    }
+
+    [Test]
+    public async Task Fingerprint_AddingAnUnreadRow_KeepsEveryHighlightHash()
+    {
+        IEntityValueProvider unread = new GenericSingletonFieldProvider(
+            new ProviderSpec("entity.ext.t_timeouts_left", "CCSGameRulesProxy", "m_pGameRules.m_nTerroristTimeOuts",
+                typeof(int)),
+            ChangeDirection.Both, typeof(TimeoutsMarker), 0);
         CatalogExtension renamed = CatalogExtension.Create(
         [
             CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
-            CatalogExtension.Singleton(Timeouts, "match.ext.timeouts_ct")
+            CatalogExtension.Singleton(Timeouts, TimeoutsPath),
+            CatalogExtension.Singleton(unread, "match.ext.t_timeouts_left")
         ]);
 
         HighlightConfigFingerprint.Result before =
@@ -207,8 +245,6 @@ public class CatalogExtensionTests
     [Arguments("entity.ext.w", "perPlayer", "int", "player.1w", "not a dotted path")]
     [Arguments("entity.ext.d", "perPlayer", "double", "player.d", "cannot be stored per player")]
     [Arguments("entity.ext.l", "perPlayer", "long", "player.l", "cannot be stored per player")]
-    [Arguments("entity.ext.n", "singleton", "ushort", "match.n", "event-field width")]
-    [Arguments("entity.ext.o", "singleton", "sbyte", "match.o", "event-field width")]
     public async Task Create_RefusesARowTheResolverCouldNotServe(string name, string scope, string type, string path,
         string why)
     {

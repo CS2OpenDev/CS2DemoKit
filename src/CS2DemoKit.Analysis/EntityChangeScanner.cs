@@ -108,13 +108,15 @@ public sealed class EntityChangeScanner
     // 0 → 2/3 step: a demo that starts inside a decided round has no decision to report.
     private int _lastWinStatus = -1;
 
+    /// <summary>
+    ///     Whether this scanner synthesizes <c>timeout_started</c> / <c>timeout_ended</c>: asked for, and at
+    ///     least one timeout flag tracked. The builder reports a subscribing stat when it is false.
+    /// </summary>
+    internal bool EmitsTimeouts { get; }
+
     // timeout_started / timeout_ended synthesis: where in _tracked the five timeout singletons sit
     // (-1 when untracked), and each flag's last observed state (-1 before the first read). Only
     // an observed edge emits, so a recording that starts inside a timeout reports its end alone.
-    private readonly bool _emitTimeouts;
-
-    /// <summary>Whether this scanner synthesizes <c>timeout_started</c> / <c>timeout_ended</c>.</summary>
-    internal bool EmitsTimeouts => _emitTimeouts;
     private readonly int[] _timeoutFlagIndex = [-1, -1, -1];
     private readonly int[] _timeoutsLeftIndex = [-1, -1];
     private readonly int[] _lastTimeoutFlag = [-1, -1, -1];
@@ -306,7 +308,7 @@ public sealed class EntityChangeScanner
             _singletonProviders.Add(p);
         }
 
-        _emitTimeouts = emitTimeouts && _timeoutFlagIndex.Any(i => i >= 0);
+        EmitsTimeouts = emitTimeouts && _timeoutFlagIndex.Any(i => i >= 0);
         _perPlayerProviders = perPlayerProviders is not null
             ? new List<IPerPlayerEntityValueProvider>(perPlayerProviders)
             : new List<IPerPlayerEntityValueProvider>();
@@ -997,7 +999,7 @@ public sealed class EntityChangeScanner
 
         ConsumeSingletons(digest, tick);
         ConsumeRoundDecided(digest, tick);
-        if (_emitTimeouts)
+        if (EmitsTimeouts)
         {
             ConsumeTimeouts(digest, tick);
         }

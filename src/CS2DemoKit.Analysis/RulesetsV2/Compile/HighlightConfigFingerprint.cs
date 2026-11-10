@@ -209,7 +209,10 @@ public static class HighlightConfigFingerprint
     private static ReadOnlyMemory<byte> FoldExtensionRows(ReadOnlyMemory<byte> hash,
         IReadOnlyList<EntityProviderReference> reads, IReadOnlyDictionary<string, string>? extensionRows)
     {
-        if (extensionRows is null)
+        // EntityReads is complete for extension rows by construction: a host provider reaches the scanner
+        // only through a node's EntityReads (RuleChainBuilder.UnionV2EntityReads) or an observer's
+        // declaration, which no ruleset node holds. A read missing here would read nothing at all.
+        if (extensionRows is null || reads.Count == 0)
         {
             return hash;
         }

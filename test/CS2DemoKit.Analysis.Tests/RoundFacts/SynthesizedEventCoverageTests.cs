@@ -125,23 +125,22 @@ public class SynthesizedEventCoverageTests
     [Test]
     public async Task AStatOnUnproducedEventsFromTwoCauses_IsReportedAsNeverFiring()
     {
-        (string Message, string FirstMissing)? found = RuleChainBuilder.UnproducedEventMessage("mix",
-            ["item_purchase", "timeout_started"], _unproduced);
+        string? found = RuleChainBuilder.UnproducedEventMessage("mix", ["item_purchase", "timeout_started"],
+            _unproduced);
 
         await Assert.That(found).IsNotNull();
-        await Assert.That(found!.Value.Message).Contains("never fires")
+        await Assert.That(found!).Contains("never fires")
             .And.Contains("no economy columns").And.Contains("no timeout flags");
-        await Assert.That(found.Value.FirstMissing).IsEqualTo("item_purchase");
     }
 
     [Test]
     public async Task AStatThatAlsoTriggersOnAProducedEvent_IsReportedAsPartial()
     {
-        (string Message, string FirstMissing)? found = RuleChainBuilder.UnproducedEventMessage("half",
-            ["enemy_spotted", "player_death"], _unproduced);
+        string? found = RuleChainBuilder.UnproducedEventMessage("half", ["enemy_spotted", "player_death"],
+            _unproduced);
 
         await Assert.That(found).IsNotNull();
-        await Assert.That(found!.Value.Message).Contains("fires only on its other events")
+        await Assert.That(found!).Contains("fires only on its other events")
             .And.Contains("'enemy_spotted'").And.DoesNotContain("never fires");
     }
 

@@ -498,8 +498,9 @@ public sealed partial class RuleChainBuilder
             : _observedProjectileClasses.Count > 0 ? _observedProjectileClasses : null;
         // The timeout events are read off the game rules' three timeout flags, with the two per-side
         // counts filling timeouts_left, all tracked only when a ruleset subscribes to one of the two views.
-        bool emitTimeouts = RulesetsSubscribeToEvent("timeout_started", rulesets)
-                            || RulesetsSubscribeToEvent("timeout_ended", rulesets);
+        bool timeoutsRequested = RulesetsSubscribeToEvent("timeout_started", rulesets)
+                                 || RulesetsSubscribeToEvent("timeout_ended", rulesets);
+        bool emitTimeouts = timeoutsRequested;
         // An entity registry missing any of the three flags leaves the events off and reported below;
         // otherwise a missing flag would read as never raised and count zero timeouts as a result. The
         // two counts are optional: without one, the events carry -1 for that side's timeouts left.
@@ -620,10 +621,12 @@ public sealed partial class RuleChainBuilder
             unproduced["item_refund"] = cause;
         }
 
-        if (missingTimeoutProviders.Length > 0)
+        if (timeoutsRequested && entityScanner?.EmitsTimeouts != true)
         {
-            string cause = $"this run's entity providers lack [{string.Join(", ", missingTimeoutProviders)}], "
-                           + "which the timeout events are read from";
+            string cause = missingTimeoutProviders.Length > 0
+                ? $"this run's entity providers lack [{string.Join(", ", missingTimeoutProviders)}], "
+                  + "which the timeout events are read from"
+                : "this run built no entity scanner to read the timeout flags from";
             unproduced["timeout_started"] = cause;
             unproduced["timeout_ended"] = cause;
         }
@@ -1858,13 +1861,20 @@ public sealed partial class RuleChainBuilder
             return;
         }
 
+        // A stat already reported for a spot facet is not reported again for an enemy_spotted trigger;
+        // its other unproduced triggers still are.
+        Dictionary<string, string> unproducedButSpotted = new(unproduced, StringComparer.Ordinal);
+        unproducedButSpotted.Remove("enemy_spotted");
+
         string profileId = Profile.GetType().Name;
         foreach (CheckedRuleset ruleset in rulesets)
         {
             foreach (CheckedStat stat in ruleset.Stats)
             {
+                bool facetReported = false;
                 if (spotCause is not null && FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
                 {
+                    facetReported = true;
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
                         stat.ResolvedView ?? "", profileId,
                         $"stat '{stat.StatId}' reads {facet}, which is measured from the synthesized "
@@ -1872,9 +1882,13 @@ public sealed partial class RuleChainBuilder
                         + "every event rather than a number",
                         stat.Position));
                 }
-                else if (UnproducedEventDiagnostic(ruleset, stat, unproduced, profileId) is { } diagnostic)
+
+                Dictionary<string, string> triggers = facetReported ? unproducedButSpotted : unproduced;
+                if (UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, triggers) is { } message)
                 {
-                    coverage.Add(diagnostic);
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
+                        stat.ResolvedView ?? stat.ConcreteEvents.First(triggers.ContainsKey), profileId, message,
+                        stat.Position));
                 }
             }
 
@@ -1899,22 +1913,12 @@ public sealed partial class RuleChainBuilder
     }
 
     /// <summary>
-    ///     The coverage row for a stat that triggers on any of the <paramref name="unproduced" /> events,
-    ///     or null. Triggering on nothing else, the stat never fires; triggering on a produced event as
-    ///     well, it fires on that one only, and the row says which half is missing.
+    ///     The coverage message for a stat triggering on <paramref name="concreteEvents" /> when any of them
+    ///     is <paramref name="unproduced" />, or null. Triggering on nothing else, the stat never fires;
+    ///     triggering on a produced event as well, it fires on that one only, and the message says which
+    ///     half is missing.
     /// </summary>
-    private static RulesetCoverageDiagnostic? UnproducedEventDiagnostic(CheckedRuleset ruleset, CheckedStat stat,
-        Dictionary<string, string> unproduced, string profileId) =>
-        UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced) is { } found
-            ? new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId, stat.ResolvedView ?? found.FirstMissing,
-                profileId, found.Message, stat.Position)
-            : null;
-
-    /// <summary>
-    ///     The message for a stat triggering on <paramref name="concreteEvents" />, and the first of them
-    ///     that is unproduced; null when none is.
-    /// </summary>
-    internal static (string Message, string FirstMissing)? UnproducedEventMessage(string statId,
+    internal static string? UnproducedEventMessage(string statId,
         IReadOnlyList<string> concreteEvents, Dictionary<string, string> unproduced)
     {
         List<string> missing = [.. concreteEvents.Where(unproduced.ContainsKey).Distinct(StringComparer.Ordinal)];
@@ -1939,7 +1943,7 @@ public sealed partial class RuleChainBuilder
             (false, false) => "so those are never produced and the stat fires only on its other events"
         };
 
-        return ($"stat '{statId}' triggers on {what} — {why}, {outcome}", missing[0]);
+        return $"stat '{statId}' triggers on {what} — {why}, {outcome}";
     }
 
     /// <summary>

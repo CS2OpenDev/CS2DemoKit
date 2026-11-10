@@ -1261,21 +1261,24 @@ flags (`entity.game.t_timeout_active`, `ct_timeout_active`, `technical_timeout`)
 registries carry them. A host that passes its own `PerPlayerEntityProviders` or `EntityProviders`
 without them still builds: the events are not produced, and every stat that triggers on one gets a
 `RulesetCoverageDiagnostic` naming the missing providers, rather than counting zero as if it were a
-measurement. The row says whether the stat never fires or fires only on its other events. The two counts (`entity.game.t_timeouts_left`, `ct_timeouts_left`) are optional:
-without one, the events carry -1 for that side's timeouts left.
+measurement. The row says whether the stat never fires or fires only on its other events. The two
+counts (`entity.game.t_timeouts_left`, `ct_timeouts_left`) are optional: without one, the events
+carry -1 for that side's timeouts left.
 
 ### Catalog extension rows (0.15.0)
 
 `CatalogExtension` is new. `Create` refuses a per-player row whose type the per-pawn digest cannot
 store: only `int`, `bool`, `float` and `string` are accepted, so `long`, `uint`, `ulong` and `double`
 are refused at `Create` instead of throwing when a run builds its columns. Singleton rows take any
-mapped type except the event-field widths `byte`, `sbyte`, `short` and `ushort`; declare those
-providers as `int`. `HighlightConfigFingerprint.Compute` with an extension folds each row a stat or
-highlight reads into that node's hash, and on into every highlight that depends on it, so remapping a
-rules path to another provider invalidates exactly the highlights that read it. A highlight that
-reads no extension row, and every highlight of a run with no extension, keeps its 0.14 hash. Rows are
-hashed by name, scope, type and path: a host that changes what a provider reads while keeping its
-name changes its own code, and has to invalidate its own cache.
+mapped type.
+
+`HighlightConfigFingerprint.Compute` with an extension folds each row a stat or highlight reads into
+that node's hash, and on into every highlight that depends on it, so remapping a rules path to
+another provider invalidates exactly the highlights that read it. A highlight that reads no
+extension row, and every highlight of a run with no extension, keeps its 0.14 hash; one that reads a
+row no longer matches the builder's own node hash, which cannot see which provider a path lowers to.
+Rows are hashed by name, scope, type and path: a host that changes what a provider reads while
+keeping its name changes its own code, and has to invalidate its own cache.
 
 ### A YAML file the scanner cannot read is that file's error (0.15.0)
 
