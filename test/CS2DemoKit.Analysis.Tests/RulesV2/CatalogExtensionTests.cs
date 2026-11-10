@@ -188,26 +188,29 @@ public class CatalogExtensionTests
     }
 
     [Test]
-    public async Task Fingerprint_AddingAnUnreadRow_KeepsEveryHighlightHash()
+    public async Task Fingerprint_AddingOrRepathingAnUnreadRow_KeepsEveryHighlightHash()
     {
         IEntityValueProvider unread = new GenericSingletonFieldProvider(
             new ProviderSpec("entity.ext.t_timeouts_left", "CCSGameRulesProxy", "m_pGameRules.m_nTerroristTimeOuts",
                 typeof(int)),
             ChangeDirection.Both, typeof(TimeoutsMarker), 0);
-        CatalogExtension renamed = CatalogExtension.Create(
+        CatalogExtension With(string unreadPath) => CatalogExtension.Create(
         [
             CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
             CatalogExtension.Singleton(Timeouts, TimeoutsPath),
-            CatalogExtension.Singleton(unread, "match.ext.t_timeouts_left")
+            CatalogExtension.Singleton(unread, unreadPath)
         ]);
 
-        HighlightConfigFingerprint.Result before =
+        HighlightConfigFingerprint.Result baseline =
             HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", Extension);
-        HighlightConfigFingerprint.Result after =
-            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", renamed);
+        HighlightConfigFingerprint.Result added =
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", With("match.ext.t_left"));
+        HighlightConfigFingerprint.Result repathed =
+            HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", With("match.ext.t_moved"));
 
-        await Assert.That(after.HighlightHashes).IsEquivalentTo(before.HighlightHashes);
-        await Assert.That(after.Fingerprint).IsEqualTo(before.Fingerprint);
+        await Assert.That(added.HighlightHashes).IsEquivalentTo(baseline.HighlightHashes);
+        await Assert.That(repathed.HighlightHashes).IsEquivalentTo(baseline.HighlightHashes);
+        await Assert.That(repathed.Fingerprint).IsEqualTo(baseline.Fingerprint);
     }
 
     [Test]

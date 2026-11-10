@@ -500,17 +500,14 @@ public sealed partial class RuleChainBuilder
         // counts filling timeouts_left, all tracked only when a ruleset subscribes to one of the two views.
         bool timeoutsRequested = RulesetsSubscribeToEvent("timeout_started", rulesets)
                                  || RulesetsSubscribeToEvent("timeout_ended", rulesets);
-        bool emitTimeouts = timeoutsRequested;
         // An entity registry missing any of the three flags leaves the events off and reported below;
         // otherwise a missing flag would read as never raised and count zero timeouts as a result. The
         // two counts are optional: without one, the events carry -1 for that side's timeouts left.
-        string[] missingTimeoutProviders = emitTimeouts
+        string[] missingTimeoutProviders = timeoutsRequested
             ? EntityChangeScanner.TimeoutFlagContexts.Where(name => _entityProviders?.Get(name) is null).ToArray()
             : [];
-        if (missingTimeoutProviders.Length > 0)
-        {
-            emitTimeouts = false;
-        }
+        bool emitTimeouts = timeoutsRequested && missingTimeoutProviders.Length == 0;
+
         List<IEntityValueProvider> observedGame = [];
         foreach (string name in ObservedGameProviders)
         {
@@ -626,7 +623,8 @@ public sealed partial class RuleChainBuilder
             string cause = missingTimeoutProviders.Length > 0
                 ? $"this run's entity providers lack [{string.Join(", ", missingTimeoutProviders)}], "
                   + "which the timeout events are read from"
-                : "this run built no entity scanner to read the timeout flags from";
+                : "the timeout flag providers are registered, but the entity scanner tracked none of them "
+                  + "(their context names must match the scanner's exactly)";
             unproduced["timeout_started"] = cause;
             unproduced["timeout_ended"] = cause;
         }
@@ -1863,8 +1861,7 @@ public sealed partial class RuleChainBuilder
 
         // A stat already reported for a spot facet is not reported again for an enemy_spotted trigger;
         // its other unproduced triggers still are.
-        Dictionary<string, string> unproducedButSpotted = new(unproduced, StringComparer.Ordinal);
-        unproducedButSpotted.Remove("enemy_spotted");
+        HashSet<string> spotReported = new(["enemy_spotted"], StringComparer.Ordinal);
 
         string profileId = Profile.GetType().Name;
         foreach (CheckedRuleset ruleset in rulesets)
@@ -1883,11 +1880,11 @@ public sealed partial class RuleChainBuilder
                         stat.Position));
                 }
 
-                Dictionary<string, string> triggers = facetReported ? unproducedButSpotted : unproduced;
-                if (UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, triggers) is { } message)
+                if (UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced,
+                        facetReported ? spotReported : null) is var (message, firstMissing))
                 {
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
-                        stat.ResolvedView ?? stat.ConcreteEvents.First(triggers.ContainsKey), profileId, message,
+                        stat.ResolvedView ?? firstMissing, profileId, message,
                         stat.Position));
                 }
             }
@@ -1914,14 +1911,20 @@ public sealed partial class RuleChainBuilder
 
     /// <summary>
     ///     The coverage message for a stat triggering on <paramref name="concreteEvents" /> when any of them
-    ///     is <paramref name="unproduced" />, or null. Triggering on nothing else, the stat never fires;
-    ///     triggering on a produced event as well, it fires on that one only, and the message says which
-    ///     half is missing.
+    ///     is <paramref name="unproduced" />, and the first such event (the row's view when the stat has
+    ///     none); null when none is, or when every one is in <paramref name="reportedElsewhere" />.
+    ///     Triggering on nothing else, the stat never fires; triggering on a produced event as well, it
+    ///     fires on that one only, and the message says which half is missing.
     /// </summary>
-    internal static string? UnproducedEventMessage(string statId,
-        IReadOnlyList<string> concreteEvents, Dictionary<string, string> unproduced)
+    internal static (string Message, string FirstMissing)? UnproducedEventMessage(string statId,
+        IReadOnlyList<string> concreteEvents, Dictionary<string, string> unproduced,
+        IReadOnlySet<string>? reportedElsewhere = null)
     {
-        List<string> missing = [.. concreteEvents.Where(unproduced.ContainsKey).Distinct(StringComparer.Ordinal)];
+        // An event another row already reports still counts toward "never fires"; it is just not
+        // named again here.
+        List<string> missing = [.. concreteEvents
+            .Where(e => unproduced.ContainsKey(e) && reportedElsewhere?.Contains(e) != true)
+            .Distinct(StringComparer.Ordinal)];
         if (missing.Count == 0)
         {
             return null;
@@ -1943,7 +1946,7 @@ public sealed partial class RuleChainBuilder
             (false, false) => "so those are never produced and the stat fires only on its other events"
         };
 
-        return $"stat '{statId}' triggers on {what} — {why}, {outcome}";
+        return ($"stat '{statId}' triggers on {what} — {why}, {outcome}", missing[0]);
     }
 
     /// <summary>

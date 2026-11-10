@@ -1,7 +1,10 @@
 #region
 
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Catalog;
+using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Plugins;
+using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.RulesetsV2.Model;
 using CS2DemoKit.Analysis.Tests.RoundFacts;
 using CS2DemoKit.TestSupport;
@@ -61,6 +64,45 @@ public class CatalogExtensionRunTests
     }
 
     [Test]
+    [Category("Unit")]
+    [Arguments(typeof(ushort))]
+    [Arguments(typeof(sbyte))]
+    [Arguments(typeof(short))]
+    [Arguments(typeof(byte))]
+    public async Task ANarrowIntegerSingletonRow_BuildsInAComparison(Type narrow)
+    {
+        IEntityValueProvider provider = new GenericSingletonFieldProvider(
+            new ProviderSpec("entity.ext.narrow", "CCSGameRulesProxy", "m_pGameRules.m_nCTTimeOuts", narrow),
+            ChangeDirection.Both, typeof(NarrowMarker), Activator.CreateInstance(narrow)!);
+        EntityValueProviderRegistry singletons = EntityValueProviderRegistry.CreateDefault();
+        singletons.Register(provider);
+        AnalysisOptions options = new()
+        {
+            EntityProviders = singletons,
+            CatalogExtension = CatalogExtension.Create([CatalogExtension.Singleton(provider, "match.ext.narrow")])
+        };
+        IReadOnlyList<RulesetDoc> rules = RoundFactsTestSupport.Load("""
+            ruleset: narrow
+            for: match
+            stats:
+              late_kills:
+                count: kill
+                where: "match.ext.narrow >= 2"
+                per: match
+              seen:
+                capture: match.ext.narrow
+                on: round_decided
+                keep: list
+                per: match
+            """);
+
+        BuildResult build = DemoAnalysis.Build(new AnalysisTarget(64, new Cs2GotvProfile()), rules, options);
+
+        await Assert.That(build.ExcludedRulesets.Count).IsEqualTo(0)
+            .Because(string.Join("; ", build.ExcludedRulesets.SelectMany(e => e.Diagnostics)));
+    }
+
+    [Test]
     public async Task ExtensionReads_ReachTheRun()
     {
         string path = DemoTestHelper.RequireDemo(GameRulesProviderTests.Build10231Nuke);
@@ -84,4 +126,6 @@ public class CatalogExtensionRunTests
         await Assert.That(timeouts.Length).IsGreaterThan(12);
         await Assert.That(timeouts.All(t => t is >= 0 and <= 4)).IsTrue().Because(string.Join(",", timeouts));
     }
+
+    private sealed class NarrowMarker;
 }

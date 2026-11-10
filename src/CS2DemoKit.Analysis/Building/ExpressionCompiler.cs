@@ -1624,7 +1624,8 @@ public static class ExpressionCompiler
                         PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                         if (valueProp is not null)
                         {
-                            return Expression.Property(Expression.Constant(entityNode), valueProp);
+                            // A host singleton may declare a narrow integer, as event fields do.
+                            return WidenNarrowIntegral(Expression.Property(Expression.Constant(entityNode), valueProp));
                         }
                     }
 
