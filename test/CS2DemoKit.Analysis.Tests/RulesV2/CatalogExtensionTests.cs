@@ -247,7 +247,7 @@ public class CatalogExtensionTests
     [Arguments("entity.ext.u", "perPlayerCommand", "int", "player.u", "cannot be extended")]
     [Arguments("entity.ext.v", "perPlayer", "vector", "player.v", "has no rules type")]
     [Arguments("entity.ext.w", "perPlayer", "int", "player.1w", "not a dotted path")]
-    [Arguments("entity.ext.d", "perPlayer", "double", "player.d", "cannot be stored per player")]
+    [Arguments("entity.ext.d", "perPlayer", "double", "player.d", "is not one a perPlayer provider may declare")]
     [Arguments("entity.ext.l", "perPlayer", "long", "player.l", "declare an integer provider as int")]
     [Arguments("entity.ext.u", "singleton", "uint", "match.u", "declare an integer provider as int")]
     [Arguments("entity.ext.q", "singleton", "ulong", "match.q", "declare an integer provider as int")]

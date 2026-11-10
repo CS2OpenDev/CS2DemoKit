@@ -35,7 +35,10 @@ public sealed class CatalogExtension
     // The per-pawn digest's lanes; any other per-player type throws when a run builds its columns, so it
     // is refused here instead.
     private static readonly string[] _perPlayerTypes =
-        [.. DigestColumnLayout.StorableTypes.Select(t => FriendlyTypeMap.FriendlyName(t)!)];
+        [.. DigestColumnLayout.StorableTypes.Select(t => FriendlyTypeMap.FriendlyName(t)!).Order(StringComparer.Ordinal)];
+
+    private static readonly string[] _singletonTypes =
+        [.. FriendlyTypeMap.ProviderReadableTypes.Order(StringComparer.Ordinal)];
 
     private static readonly ConditionalWeakTable<CatalogExtension, CatalogRoot> _merged = new();
 
@@ -192,20 +195,13 @@ public sealed class CatalogExtension
             throw Refused(row, $"type '{row.ClrType}' has no rules type");
         }
 
-        if (!FriendlyTypeMap.ProviderReadableTypes.Contains(row.ClrType))
+        // A per-player row's types are the digest's lanes, a subset of what a singleton row may declare.
+        IReadOnlyCollection<string> allowed = row.Scope == "perPlayer" ? _perPlayerTypes : _singletonTypes;
+        if (!allowed.Contains(row.ClrType, StringComparer.Ordinal))
         {
-            IEnumerable<string> allowed = row.Scope == "perPlayer"
-                ? _perPlayerTypes
-                : FriendlyTypeMap.ProviderReadableTypes.Order(StringComparer.Ordinal);
             throw Refused(row,
                 $"type '{row.ClrType}' is not one a {row.Scope} provider may declare for rules "
                 + $"({string.Join(", ", allowed)}); declare an integer provider as int");
-        }
-
-        if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))
-        {
-            throw Refused(row,
-                $"type '{row.ClrType}' cannot be stored per player; use {string.Join(", ", _perPlayerTypes)}");
         }
 
         if (row.V2Type is { } v2Type && !string.Equals(v2Type, type.Kind.ToString(), StringComparison.Ordinal))

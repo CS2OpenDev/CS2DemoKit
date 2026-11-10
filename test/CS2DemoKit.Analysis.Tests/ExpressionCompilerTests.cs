@@ -347,6 +347,17 @@ public class ExpressionCompilerTests
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n % entity.ext.zero == 0", lookup)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min / entity.ext.neg == entity.ext.min", lookup)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min % entity.ext.neg == 0", lookup)()).IsTrue();
+
+        GenericValueNode<long> longMin = new("longMin");
+        longMin.SetValue(long.MinValue);
+        GenericValueNode<long> longNeg = new("longNeg");
+        longNeg.SetValue(-1L);
+        Dictionary<string, object> longs = new(StringComparer.Ordinal)
+        {
+            ["entity.ext.min"] = longMin, ["entity.ext.neg"] = longNeg
+        };
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min / entity.ext.neg == entity.ext.min", longs)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min % entity.ext.neg == 0", longs)()).IsTrue();
         await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.f % 2.5 == 0", lookup)()).IsTrue();
     }
 

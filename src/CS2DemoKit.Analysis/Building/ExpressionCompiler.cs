@@ -810,8 +810,9 @@ public static class ExpressionCompiler
     private static Expression MakeSafeModulo(Expression left, Expression right) => MakeSafeQuotient(false, left, right);
 
     /// <summary>
-    ///     <c>/</c> or <c>%</c> after <see cref="Coerce" />. A double on either side meets as double, and <c>/</c>
-    ///     reads 0 on a zero divisor. int/int and long/long stay integral, since integer <c>/</c> and <c>%</c>
+    ///     <c>/</c> or <c>%</c> after <see cref="Coerce" />. A double on either side meets as double: <c>/</c>
+    ///     reads 0 on a zero divisor, <c>%</c> reads NaN (so <c>x % 0 == 0</c> is false for a double, true
+    ///     for an integer). int/int and long/long stay integral, since integer <c>/</c> and <c>%</c>
     ///     are how a rule tests a button bit, and neither throws: a zero divisor reads 0, and MinValue by -1
     ///     wraps as the compiler's multiply and negate do. Any other pair (float/float, a map lookup's
     ///     double?, an unsigned field) is the raw operator, as before.
