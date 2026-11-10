@@ -362,7 +362,7 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, StateNode> gameNodesByRuleId,
         HashSet<Type> relevantTypes)
     {
-        CatalogRoot catalog = CatalogResource.Load();
+        CatalogRoot catalog = Catalog;
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> baseContextV2ToV1 = BuildContextV2ToV1(catalog);
 
@@ -608,7 +608,7 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, StateNode> gameNodesByRuleId,
         HashSet<Type> relevantTypes)
     {
-        CatalogRoot catalog = CatalogResource.Load();
+        CatalogRoot catalog = Catalog;
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
 
         // A projectile.* read lowers to the instance's pull node, keyed like a singleton provider so
@@ -901,7 +901,7 @@ public sealed partial class RuleChainBuilder
         Dictionary<string, StateNode> gameNodesByRuleId,
         HashSet<Type> relevantTypes)
     {
-        CatalogRoot catalog = CatalogResource.Load();
+        CatalogRoot catalog = Catalog;
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
 
@@ -1248,7 +1248,7 @@ public sealed partial class RuleChainBuilder
         HashSet<Type> relevantTypes,
         IReadOnlyList<RuleDef> perPlayerContextRules)
     {
-        CatalogRoot catalog = CatalogResource.Load();
+        CatalogRoot catalog = Catalog;
         Dictionary<string, CatalogView> views = catalog.Views.ToDictionary(v => v.Name, StringComparer.Ordinal);
         Dictionary<string, string> contextV2ToV1 = BuildContextV2ToV1(catalog);
 

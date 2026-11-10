@@ -26,14 +26,28 @@ public sealed class FrameView
     private readonly EntityChangeScanner? _scanner;
     private readonly UserCmdReconstructor? _commands;
     private readonly Dictionary<string, int> _columns;
+    private readonly Dictionary<string, int> _gameIndex;
     private readonly string[] _declared;
     private DemoFrame? _frame;
     private int _frameIndex;
     private bool _open;
 
     internal FrameView(EntityChangeScanner? scanner, IReadOnlyList<string> declaredProviders,
-        UserCmdReconstructor? commands = null)
+        UserCmdReconstructor? commands = null, IReadOnlyList<string>? declaredGameProviders = null)
     {
+        _gameIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in declaredGameProviders ?? [])
+        {
+            int index = scanner?.TrackedSingletonIndex(name) ?? -1;
+            if (index < 0)
+            {
+                throw new InvalidOperationException(
+                    $"observed game provider '{name}' is not tracked by this run's scanner; pass ObservedGameProviders to Build");
+            }
+
+            _gameIndex[name] = index;
+        }
+
         _scanner = scanner;
         _commands = commands;
         _declared = [.. declaredProviders];
@@ -153,6 +167,39 @@ public sealed class FrameView
     }
 
     /// <summary>
+    ///     A game-wide provider's value as of the end of this frame, by its context name, which must be in
+    ///     <see cref="AnalysisOptions.ObservedGameProviders" />. Reads the provider's default until the
+    ///     entity carrying it is first seen.
+    /// </summary>
+    /// <param name="providerName">The singleton's context name (<c>entity.game.ct_timeouts_left</c>).</param>
+    /// <returns>The boxed value.</returns>
+    public object? ReadGame(string providerName) =>
+        Open()._scanner!.TrackedSingletonValue(GameIndex(providerName));
+
+    /// <summary>
+    ///     <see cref="ReadGame" /> for an int or bool provider (a bool reads 1 or 0). False when the value
+    ///     is of neither type.
+    /// </summary>
+    /// <param name="providerName">The singleton's context name.</param>
+    /// <param name="value">The value.</param>
+    /// <returns>Whether there was an int or bool to read.</returns>
+    public bool TryReadGameInt(string providerName, out int value)
+    {
+        switch (ReadGame(providerName))
+        {
+            case int i:
+                value = i;
+                return true;
+            case bool b:
+                value = b ? 1 : 0;
+                return true;
+            default:
+                value = 0;
+                return false;
+        }
+    }
+
+    /// <summary>
     ///     The slot's latest user command as of the end of this frame, its own commands included, or
     ///     null before the slot's first. The instance is the slot's baseline for its next delta: read
     ///     it, never change it, and copy what you keep.
@@ -196,6 +243,14 @@ public sealed class FrameView
                     ? "the provider handle is default; resolve one with FrameView.Provider"
                     : $"the handle for '{provider.Name}' belongs to another run's view",
                 nameof(provider));
+
+    private int GameIndex(string providerName) =>
+        _gameIndex.TryGetValue(providerName, out int index)
+            ? index
+            : throw new ArgumentException(
+                $"game provider '{providerName}' is not declared in AnalysisOptions.ObservedGameProviders "
+                + $"(declared: {(_gameIndex.Count == 0 ? "none" : string.Join(", ", _gameIndex.Keys))})",
+                nameof(providerName));
 
     private int Column(string providerName) =>
         _columns.TryGetValue(providerName, out int column)

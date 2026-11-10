@@ -164,6 +164,15 @@ public abstract class DemoSourceProfile
 
     /// <summary>Logical binding for the "item pickup" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? ItemPickup => null;
+
+    /// <summary>
+    ///     Logical binding for the synthesized "item purchase" event: a rise of a player's cash spent this
+    ///     round, with the item from the same frame's pickup. See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? ItemPurchase => null;
+
+    /// <summary>Logical binding for the synthesized "item refund" event: a sale back in buy time.</summary>
+    public virtual LogicalEventBinding? ItemRefund => null;
     // ── Identity / matching ───────────────────────────────────────────────
 
     /// <summary>The source kind this profile recognises.</summary>
@@ -277,6 +286,16 @@ public abstract class DemoSourceProfile
 
     /// <summary>Logical binding for the "round end" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundEnd => null;
+
+    /// <summary>
+    ///     Logical binding for the synthesized "timeout started" event: a tactical or technical timeout's
+    ///     flag rising on the game rules. Synthesized from entity state, so a profile binds it wherever the
+    ///     game-rules entity is recorded. See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? TimeoutStarted => null;
+
+    /// <summary>Logical binding for the synthesized "timeout ended" event, the same flag falling.</summary>
+    public virtual LogicalEventBinding? TimeoutEnded => null;
 
     /// <summary>Logical binding for the "round freeze end" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? RoundFreezeEnd => null;

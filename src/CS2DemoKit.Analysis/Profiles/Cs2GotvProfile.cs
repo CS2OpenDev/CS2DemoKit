@@ -111,6 +111,16 @@ public class Cs2GotvProfile : DemoSourceProfile
     // ── Items / economy ───────────────────────────────────────────────────
 
     /// <inheritdoc />
+    public override LogicalEventBinding? ItemPurchase =>
+        // Synthesized by PurchaseSynthesizer from the controller's cash spent and item_pickup; GOTV
+        // has no wire item_purchase. Inherited by every profile.
+        LogicalEventBinding.Of("item_purchase");
+
+    /// <inheritdoc />
+    public override LogicalEventBinding? ItemRefund =>
+        LogicalEventBinding.Of("item_refund");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? ItemPickup =>
         LogicalEventBinding.Of("item_pickup");
 
@@ -208,6 +218,16 @@ public class Cs2GotvProfile : DemoSourceProfile
         // Not a replacement for $round_end: that stays the round's close, which every round-end
         // stat (survived, KAST) is timed on.
         LogicalEventBinding.Of("round_decided");
+
+    /// <inheritdoc />
+    public override LogicalEventBinding? TimeoutStarted =>
+        // Synthesized by EntityChangeScanner from the game rules' timeout flags; inherited by every
+        // profile, like round_decided.
+        LogicalEventBinding.Of("timeout_started");
+
+    /// <inheritdoc />
+    public override LogicalEventBinding? TimeoutEnded =>
+        LogicalEventBinding.Of("timeout_ended");
 
     /// <inheritdoc />
     public override LogicalEventBinding? RoundEnd =>

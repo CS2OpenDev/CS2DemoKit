@@ -292,6 +292,34 @@ v1 per-event timeline log still needs snapshots. The built-in scoreboard works t
 `new PlayerGameStatsProjector().Project(run, run.Demo)` reads a bare run's final node values and
 matches a snapshot run's table.
 
+### Your own providers in rules
+
+A provider you register yourself (`PerPlayerEntityValueProviderRegistry.Register`,
+`EntityValueProviderRegistry.Register`) is readable from a ruleset once it has a catalog row. Pass the
+rows as a `CatalogExtension` on the run; the embedded catalog is never modified, so a build without
+the extension does not see them. A rules path may nest, and a per-player row is a role member at the
+same relative path:
+
+```csharp
+var helmet = new GenericPerPlayerFieldProvider(
+    new ProviderSpec("entity.mine.has_helmet", "CCSPlayerPawn", "m_pItemServices.m_bHasHelmet", typeof(bool)));
+PerPlayerEntityValueProviderRegistry perPlayer = PerPlayerEntityValueProviderRegistry.CreateDefault();
+perPlayer.Register(helmet);
+
+AnalysisRun run = DemoAnalysis.Run(path, rulesets, new AnalysisOptions
+{
+    PerPlayerEntityProviders = perPlayer,
+    // player.mine.has_helmet, and victim.mine.has_helmet on the kill view
+    CatalogExtension = CatalogExtension.Create([CatalogExtension.PerPlayer(helmet, "player.mine.has_helmet")])
+});
+```
+
+Validate and fingerprint against the same extension: `DemoAnalysis.ValidateRulesets(docs, extension)`,
+`HighlightConfigFingerprint.Compute(docs, tickRate, profileId, extension)`. `CatalogExtension.Create`
+refuses a row the rules could not serve: a provider name outside `entity.`, a scope other than
+per-player or singleton, a path outside `player.` / `match.` or under `player.cmd.`, and any name or
+path the catalog already has.
+
 ## Reading state frame by frame
 
 A host that wants per-frame entity state without a second decode declares what it reads and sets
@@ -340,6 +368,11 @@ AnalysisRun run = DemoAnalysis.Run(path, rulesets, new AnalysisOptions
     FrameObserver = log
 });
 ```
+
+Game-wide values are declared apart, by context name, in `ObservedGameProviders`
+(`entity.game.ct_timeouts_left`, `entity.game.t_timeout_active`, ...), and read with
+`frame.ReadGame(name)` or `frame.TryReadGameInt(name, out int value)`: one value per frame rather
+than one per slot.
 
 The view is one object per run and readable only inside `OnFrame`; copy what you keep. A declared
 name resolves once through `FrameView.Provider`, and the typed reads through the handle allocate

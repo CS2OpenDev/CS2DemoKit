@@ -264,6 +264,111 @@ public class ExpressionCompilerTests
         await Assert.That(ex!.Message).Contains("must be a string");
     }
 
+    /// <summary>
+    ///     A host singleton may declare int or a narrower width. Every node read widens it, so it compares
+    ///     against an int or fractional literal and takes part in arithmetic, on the <c>entity.</c> path a
+    ///     where: lowers to and the bare-identifier path a compute: lowers to, and reads the right number.
+    /// </summary>
+    [Test]
+    [Arguments((byte)3)]
+    [Arguments((sbyte)3)]
+    [Arguments((short)3)]
+    [Arguments((ushort)3)]
+    [Arguments(3)]
+    public async Task AnyIntWidthNodeRead_ComparesAndComputes(object three)
+    {
+        object node = Activator.CreateInstance(typeof(GenericValueNode<>).MakeGenericType(three.GetType()), "n", null)!;
+        node.GetType().GetMethod("SetValue")!.Invoke(node, [three]);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal) { ["entity.ext.n"] = node, ["n"] = node };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n >= 2", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 3", lookup)()).IsFalse();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 2.5", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeExpression("n * 2", lookup)()).IsEqualTo(6.0);
+        await Assert.That(ExpressionCompiler.CompileNodeExpression("n / 2", lookup)()).IsEqualTo(1.5)
+            .Because("a compute reads every int width as double, so division is not integer division");
+    }
+
+    /// <summary>The rules type check reads long as Int, so a long read compares against a fractional value.</summary>
+    [Test]
+    public async Task ALongNodeRead_ComparesAgainstAFraction()
+    {
+        GenericValueNode<long> node = new("buttons");
+        node.SetValue(3L);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal) { ["entity.ext.n"] = node };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 2.5", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("2.5 > entity.ext.n", lookup)()).IsFalse();
+    }
+
+    /// <summary>
+    ///     A long truncates under / and %, since integer division is how a rule tests a button bit (the
+    ///     language has no bitwise operators), and a zero divisor reads 0 instead of throwing mid-demo.
+    /// </summary>
+    [Test]
+    public async Task ALongNodeRead_DividesAndTakesModuloAsAnInteger_Safely()
+    {
+        GenericValueNode<long> node = new("buttons");
+        node.SetValue(3L);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal) { ["entity.ext.n"] = node };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / 2 == 1", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("(entity.ext.n / 2) % 2 == 1", lookup)()).IsTrue()
+            .Because("bit 1 of 3 is set");
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / 0 == 0", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n % 0 == 0", lookup)()).IsTrue();
+    }
+
+    /// <summary>
+    ///     A long against an int node read at run time still divides integrally and reads 0 on a zero divisor;
+    ///     the one overflowing pair, MinValue by -1, wraps (as multiply does) instead of throwing; a float
+    ///     meets a double.
+    /// </summary>
+    [Test]
+    public async Task IntegerQuotients_NeverThrow_AndAFloatMeetsADouble()
+    {
+        GenericValueNode<long> buttons = new("buttons");
+        buttons.SetValue(3L);
+        GenericValueNode<int> zero = new("zero");
+        zero.SetValue(0);
+        GenericValueNode<int> min = new("min");
+        min.SetValue(int.MinValue);
+        GenericValueNode<int> neg = new("neg");
+        neg.SetValue(-1);
+        GenericValueNode<float> f = new("f");
+        f.SetValue(5f);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal)
+        {
+            ["entity.ext.n"] = buttons, ["entity.ext.zero"] = zero, ["entity.ext.min"] = min,
+            ["entity.ext.neg"] = neg, ["entity.ext.f"] = f
+        };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n / entity.ext.zero == 0", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n % entity.ext.zero == 0", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min / entity.ext.neg == entity.ext.min", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min % entity.ext.neg == 0", lookup)()).IsTrue();
+
+        GenericValueNode<long> longMin = new("longMin");
+        longMin.SetValue(long.MinValue);
+        GenericValueNode<long> longNeg = new("longNeg");
+        longNeg.SetValue(-1L);
+        Dictionary<string, object> longs = new(StringComparer.Ordinal)
+        {
+            ["entity.ext.min"] = longMin, ["entity.ext.neg"] = longNeg
+        };
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min / entity.ext.neg == entity.ext.min", longs)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.min % entity.ext.neg == 0", longs)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.f % 2.5 == 0", lookup)()).IsTrue();
+    }
+
+    /// <summary>An integer % by zero reads 0, as an integer / by zero does. (A compute's node reads are doubles.)</summary>
+    [Test]
+    public async Task AnIntModuloByZero_ReadsZero()
+    {
+        Func<double> fn = ExpressionCompiler.CompileNodeExpression("7 % 0", new Dictionary<string, object>());
+        await Assert.That(fn()).IsEqualTo(0.0);
+    }
+
     // ── Helper: build a synthetic node lookup from name → int value pairs ──
     private static Dictionary<string, object> NodeMap(
         params (string Name, int Value)[] entries)

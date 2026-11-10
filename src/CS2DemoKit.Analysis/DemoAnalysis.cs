@@ -137,6 +137,15 @@ public sealed record AnalysisOptions
     public IReadOnlyList<string> ObservedProjectileClasses { get; init; } = [];
 
     /// <summary>
+    ///     The game-wide (singleton) providers <see cref="FrameObserver" /> reads through
+    ///     <see cref="FrameView.ReadGame" /> and <see cref="FrameView.TryReadGameInt" />, by context name
+    ///     (<c>entity.game.ct_timeouts_left</c>). Each is tracked on the run whether or not a rule reads it,
+    ///     without dispatching change markers. Pass it to <c>Build</c> as well as <c>Evaluate</c>: the build
+    ///     is what tracks them. A name the entity registry does not carry throws.
+    /// </summary>
+    public IReadOnlyList<string> ObservedGameProviders { get; init; } = [];
+
+    /// <summary>
     ///     Called once per frame on the evaluation thread, after the frame's messages and
     ///     synthesized events have dispatched, with a <see cref="FrameView" /> over the declared
     ///     state as of the end of that frame. Null for no observer. An observer that throws aborts
@@ -152,6 +161,14 @@ public sealed record AnalysisOptions
     ///     <c>Evaluate</c> alone, the lane sees only the commands the source already decodes.
     /// </summary>
     public bool DecodeUserCommands { get; init; }
+
+    /// <summary>
+    ///     Extra rules-catalog rows naming providers this run's registries carry beyond the defaults, so a
+    ///     ruleset can read them. Composition, the build and every <see cref="DemoAnalysis" /> validation
+    ///     overload that is handed the same extension resolve against the embedded catalog plus these rows;
+    ///     nothing global changes. Null for the embedded catalog alone.
+    /// </summary>
+    public CatalogExtension? CatalogExtension { get; init; }
 }
 
 /// <summary>The result of a full <see cref="DemoAnalysis" /> run.</summary>
@@ -487,7 +504,19 @@ public static class DemoAnalysis
     ///     <c>RuleConfigLoadResult.Rulesets</c>). An empty list validates trivially.
     /// </param>
     /// <returns>The diagnostics, the excluded rulesets, and the ids that composed cleanly.</returns>
-    public static RulesetValidationResult ValidateRulesets(IReadOnlyList<RulesetDoc> docs)
+    public static RulesetValidationResult ValidateRulesets(IReadOnlyList<RulesetDoc> docs) =>
+        ValidateRulesets(docs, null);
+
+    /// <summary>
+    ///     <see cref="ValidateRulesets(IReadOnlyList{RulesetDoc})" /> against the embedded catalog plus
+    ///     <paramref name="catalogExtension" />'s rows, the catalog a run with the same
+    ///     <see cref="AnalysisOptions.CatalogExtension" /> resolves against.
+    /// </summary>
+    /// <param name="docs">Every document in the id namespace being validated.</param>
+    /// <param name="catalogExtension">Extra provider rows, or null.</param>
+    /// <returns>The diagnostics, the excluded rulesets, and the ids that composed cleanly.</returns>
+    public static RulesetValidationResult ValidateRulesets(IReadOnlyList<RulesetDoc> docs,
+        CatalogExtension? catalogExtension)
     {
         ArgumentNullException.ThrowIfNull(docs);
         if (docs.Count == 0)
@@ -495,7 +524,7 @@ public static class DemoAnalysis
             return new RulesetValidationResult([], [], [], []);
         }
 
-        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load(catalogExtension));
         RulesetComposition.Result composed = RulesetComposition.ComposeDraft(docs, adapter);
         return new RulesetValidationResult(
             [],
@@ -521,12 +550,23 @@ public static class DemoAnalysis
     /// </summary>
     /// <param name="documents">Each document's label (used to attribute errors) and its YAML text.</param>
     /// <returns>The load errors, composition diagnostics, exclusions, and cleanly-composed ids.</returns>
-    public static RulesetValidationResult ValidateRulesets(IEnumerable<(string Label, string Yaml)> documents)
+    public static RulesetValidationResult ValidateRulesets(IEnumerable<(string Label, string Yaml)> documents) =>
+        ValidateRulesets(documents, null);
+
+    /// <summary>
+    ///     The YAML-text validation against the embedded catalog plus <paramref name="catalogExtension" />'s
+    ///     rows.
+    /// </summary>
+    /// <param name="documents">Each document's label (used to attribute errors) and its YAML text.</param>
+    /// <param name="catalogExtension">Extra provider rows, or null.</param>
+    /// <returns>The load errors, composition diagnostics, exclusions, and cleanly-composed ids.</returns>
+    public static RulesetValidationResult ValidateRulesets(IEnumerable<(string Label, string Yaml)> documents,
+        CatalogExtension? catalogExtension)
     {
         ArgumentNullException.ThrowIfNull(documents);
 
         RuleConfigLoadResult loaded = YamlConfigLoader.LoadDocuments(documents);
-        RulesetValidationResult composed = ValidateRulesets(loaded.Rulesets);
+        RulesetValidationResult composed = ValidateRulesets(loaded.Rulesets, catalogExtension);
         return composed with
         {
             LoadErrors = loaded.Errors
@@ -625,7 +665,7 @@ public static class DemoAnalysis
             };
         }
 
-        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load(options.CatalogExtension));
         RulesetComposition.Result composed =
             RulesetComposition.Compose(v2Docs, adapter, target.TickRate, builder.Profile.GetType().Name);
         BuildResult build = builder.Build([.. composed.Rulesets]);
@@ -645,7 +685,11 @@ public static class DemoAnalysis
         perPlayerEntityProviders: options.PerPlayerEntityProviders ?? PerPlayerEntityValueProviderRegistry.CreateDefault(),
         visibilityEngine: options.VisibilityEngine,
         observedProviders: options.ObservedProviders,
-        observedProjectileClasses: options.ObservedProjectileClasses);
+        observedProjectileClasses: options.ObservedProjectileClasses)
+    {
+        CatalogExtension = options.CatalogExtension,
+        ObservedGameProviders = options.ObservedGameProviders
+    };
 
     private static (DemoSourceProfile Profile, ProfileResolutionKind Resolution) ResolveProfileCore(
         ParsedDemo demo, AnalysisOptions? options)
@@ -707,6 +751,7 @@ public static class DemoAnalysis
         {
             FrameObserver = options.FrameObserver,
             ObservedProviders = options.ObservedProviders,
+            ObservedGameProviders = options.ObservedGameProviders,
             DecodeUserCommands = build.DecodesUserCommands || options.DecodeUserCommands,
             Cadences = build.CadencePlans,
             RoundNumberNode = build.GameNodesByRuleId?.GetValueOrDefault(StatValues.RoundNumberRuleId),

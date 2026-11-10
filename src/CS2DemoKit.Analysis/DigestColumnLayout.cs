@@ -134,29 +134,27 @@ internal sealed class DigestColumnLayout
         return providers.Count == 0 ? Empty : new DigestColumnLayout(providers);
     }
 
+    // The digest's closed set of lanes: the one list KindOf and CatalogExtension's per-player check read.
+    private static readonly (Type Type, PawnCellKind Kind)[] _kinds =
+    [
+        (typeof(int), PawnCellKind.Int), (typeof(bool), PawnCellKind.Bool),
+        (typeof(float), PawnCellKind.Float), (typeof(string), PawnCellKind.String)
+    ];
+
+    /// <summary>The value types a per-player provider may declare: one per digest lane.</summary>
+    internal static IEnumerable<Type> StorableTypes => _kinds.Select(k => k.Type);
+
     /// <summary>The storage kind for a provider's declared value type.</summary>
     /// <exception cref="NotSupportedException">The type is outside the four digest kinds.</exception>
     public static PawnCellKind KindOf(IPerPlayerEntityValueProvider provider)
     {
         Type type = provider.ValueType;
-        if (type == typeof(int))
+        foreach ((Type storable, PawnCellKind kind) in _kinds)
         {
-            return PawnCellKind.Int;
-        }
-
-        if (type == typeof(bool))
-        {
-            return PawnCellKind.Bool;
-        }
-
-        if (type == typeof(float))
-        {
-            return PawnCellKind.Float;
-        }
-
-        if (type == typeof(string))
-        {
-            return PawnCellKind.String;
+            if (type == storable)
+            {
+                return kind;
+            }
         }
 
         // A third-party provider that declared double, long, uint or an enum compiled and ran

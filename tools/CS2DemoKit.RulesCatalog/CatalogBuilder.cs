@@ -10,6 +10,7 @@ using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Profiles;
 using CS2DemoKit.Analysis.Registry;
+using CS2DemoKit.Analysis.RulesetsV2.Resolve;
 using CS2DemoKit.Parser.GameEvents;
 
 #endregion
@@ -127,6 +128,33 @@ public static class CatalogBuilder
                 + "buys, the same sample point as round.team.money; a purchase later in buy time "
                 + "is not in it yet. Bound-check a sum of it before trusting it (a side cannot hold "
                 + "more than 5 x 16000)."),
+            ["entity.controller.cash_spent"] = ("dollars",
+                "What the player has spent since the round started (m_iCashSpentThisRound, off the "
+                + "controller). A sale or refund in buy time lowers it; it resets to 0 when the next "
+                + "round starts. Read before the event's frame, like every player column."),
+            ["entity.controller.start_money"] = ("dollars",
+                "The cash the player held when the round started (m_iStartAccount, off the controller). "
+                + "At round_freeze_end, money = start_money - cash_spent held for every player-round of "
+                + "regulation on current builds; it does not at the first overtime round, and not on "
+                + "some early-2025 matchmaking builds, whose first round starts this at the pistol "
+                + "money's remainder."),
+            ["entity.pawn.has_helmet"] = (null,
+                "True while the pawn wears a helmet. Kevlar alone is `armor` above 0 with this false."),
+            ["entity.game.ct_timeout_active"] = (null,
+                "True while a CT tactical timeout runs, about 30 seconds on the tournament demos "
+                + "measured. The `timeout_started` and `timeout_ended` views fire on its edges."),
+            ["entity.game.t_timeout_active"] = (null,
+                "True while a T tactical timeout runs, about 30 seconds on the tournament demos "
+                + "measured. The `timeout_started` and `timeout_ended` views fire on its edges."),
+            ["entity.game.ct_timeouts_left"] = (null,
+                "Tactical timeouts left to the side playing CT. The count follows the side, not the "
+                + "team, so the CT and T counts swap at the half."),
+            ["entity.game.t_timeouts_left"] = (null,
+                "Tactical timeouts left to the side playing T. The count follows the side, not the "
+                + "team, so the CT and T counts swap at the half."),
+            ["entity.game.technical_timeout"] = (null,
+                "True while a technical (admin) timeout runs. The `timeout_started` view fires on the "
+                + "rise of this and of the two tactical flags."),
             ["entity.controller.coaching_team"] = (null,
                 "The side this player coaches (m_iCoachingTeam on the controller): 2 or 3 for a "
                 + "registered coach, 0 for everyone else. Read off the slot's controller, not "
@@ -719,15 +747,13 @@ public static class CatalogBuilder
     ///     <c>entity.team.* → team.*</c>.
     ///     <para>
     ///         The weapon arm FLATTENS to an underscore rather than nesting under
-    ///         <c>player.weapon.</c>, and the reason is load-bearing. Weapon providers reach the
-    ///         weapon through the pawn's active-weapon handle, so in the rules language they are
-    ///         properties of the player, and a per-player provider is reachable two ways: as a
-    ///         full path in the player scope, and as a member on a role handle. Role members are
-    ///         keyed by the path's LAST segment (<c>CatalogScopeAdapter</c>,
-    ///         <c>RulesetResolver</c>), so a nested <c>player.weapon.recoil_index</c> would be
-    ///         spelled <c>role.recoil_index</c> on the handle: the same value under two different
-    ///         names, and one collision away from an ambiguous member set. Flattening keeps the
-    ///         two spellings identical.
+    ///         <c>player.weapon.</c>. Weapon providers reach the weapon through the pawn's
+    ///         active-weapon handle, so in the rules language they are properties of the player,
+    ///         reachable as a full path in the player scope and as a member on a role handle. Role
+    ///         members are keyed by the path relative to <c>player.</c> (<c>CatalogScopeAdapter</c>,
+    ///         <c>RulesetResolver</c>), so a nested path would now read the same on both; the flat
+    ///         spelling stays because rulesets already name <c>player.weapon_*</c>, and renaming
+    ///         it would break them.
     ///     </para>
     /// </summary>
     private static string ProviderV2Name(string name) =>
@@ -765,22 +791,7 @@ public static class CatalogBuilder
             $"catalog v2 adapter: no v2 type for context rule kind '{ruleType}'")
     };
 
-    private static string FriendlyTypeName(Type type) => type switch
-    {
-        _ when type == typeof(int) => "int",
-        // The SDK's event records type each field to its KV1 tag rather than widening everything
-        // to int the way the retired generator did, so byte/sbyte/short/ushort reach here now.
-        _ when type == typeof(byte) => "byte",
-        _ when type == typeof(sbyte) => "sbyte",
-        _ when type == typeof(short) => "short",
-        _ when type == typeof(ushort) => "ushort",
-        _ when type == typeof(long) => "long",
-        _ when type == typeof(ulong) => "ulong",
-        _ when type == typeof(uint) => "uint",
-        _ when type == typeof(float) => "float",
-        _ when type == typeof(double) => "double",
-        _ when type == typeof(bool) => "bool",
-        _ when type == typeof(string) => "string",
-        _ => type.Name
-    };
+    // Shared with CatalogExtension's rows; a type outside the map keeps its CLR name, which
+    // FriendlyTypeMap.Map then refuses loudly where a v2 type is needed.
+    private static string FriendlyTypeName(Type type) => FriendlyTypeMap.FriendlyName(type) ?? type.Name;
 }

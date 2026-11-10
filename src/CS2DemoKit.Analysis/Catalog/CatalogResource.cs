@@ -26,6 +26,14 @@ public static class CatalogResource
     /// <summary>The embedded catalog, parsed once per process.</summary>
     public static CatalogRoot Load() => _cached.Value;
 
+    /// <summary>
+    ///     The embedded catalog with <paramref name="extension" />'s rows added, or the embedded catalog itself
+    ///     when it is null. The merged copy is built once per extension; the embedded one is not modified.
+    /// </summary>
+    /// <param name="extension">Extra provider rows, or null.</param>
+    public static CatalogRoot Load(CatalogExtension? extension) =>
+        extension is null ? _cached.Value : extension.Merge(_cached.Value);
+
     private static CatalogRoot LoadCore()
     {
         using Stream stream = typeof(CatalogResource).Assembly.GetManifestResourceStream(ResourceName)

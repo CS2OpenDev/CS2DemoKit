@@ -1244,6 +1244,53 @@ per-player and projectiles-only arms and the `for: each_projectile` scope's `eva
 and the likely causes are in `docs/perf/baseline.md`, "The 0.14.0 release review"; candidate fixes
 are tracked as an issue.
 
+### Four economy columns shift the per-pawn digest (0.15.0)
+
+The new per-player providers `entity.pawn.has_helmet`, `entity.pawn.has_defuser`,
+`entity.controller.cash_spent` and `entity.controller.start_money` sit before the position trio in
+both registries, so the column index of every provider after them moved by four in the per-pawn
+digest layout. A consumer that indexes digest columns by position rather than by provider name needs
+to rebuild its index; the per-pawn fold fixtures moved for the new columns. With the four filtered
+out, the 0.14 fixtures pass unchanged.
+
+### Synthesized purchase and timeout events need their providers (0.15.0)
+
+`item_purchase` / `item_refund` are read off `entity.controller.cash_spent` and
+`entity.controller.money`, and `timeout_started` / `timeout_ended` off the game rules' three timeout
+flags (`entity.game.t_timeout_active`, `ct_timeout_active`, `technical_timeout`). Both default
+registries carry them. A host that passes its own `PerPlayerEntityProviders` or `EntityProviders`
+without them still builds: the events are not produced, and every stat that triggers on one gets a
+`RulesetCoverageDiagnostic` naming the missing providers, rather than counting zero as if it were a
+measurement. The row says whether the stat never fires or fires only on its other events. The two
+counts (`entity.game.t_timeouts_left`, `ct_timeouts_left`) are optional: without one, the events
+carry -1 for that side's timeouts left.
+
+### Catalog extension rows (0.15.0)
+
+`CatalogExtension` is new. `Create` refuses a row whose type a rule could not read: `long`, `uint`
+and `ulong` on any row (the rules language has one integer type; a read does not widen those to it,
+and `uint` and `ulong` meet no int operand at all; declare the provider as `int`), and on a
+per-player row anything the per-pawn digest cannot store, which leaves `int`, `bool`, `float` and
+`string`. Singleton rows also take `double`, a fractional value like `float`, and the narrow integer
+widths `byte`, `sbyte`, `short` and `ushort`, which every read widens to `int`.
+
+`HighlightConfigFingerprint.Compute` with an extension folds each row a stat or highlight reads into
+that node's hash, and on into every highlight that depends on it, so remapping a rules path to
+another provider invalidates exactly the highlights that read it. A highlight that reads no
+extension row, and every highlight of a run with no extension, keeps its 0.14 hash; one that reads a
+row no longer matches the builder's own node hash, which cannot see which provider a path lowers to.
+Rows are hashed by name, scope, type and path: a host that changes what a provider reads while
+keeping its name changes its own code, and has to invalidate its own cache.
+
+### A YAML file the scanner cannot read is that file's error (0.15.0)
+
+YamlDotNet's scanner throws `InvalidOperationException`, not `YamlException`, on some malformed flow
+input (an unclosed `ruleset: [`). Through 0.14.1 that escaped `YamlConfigLoader.LoadDocuments` and
+`TryLoadDirectory` and failed the whole load. It is now that file's `RuleConfigError` and a
+`FailedFiles` entry with no line or column, and the other files still load;
+`RulesetDocumentLoader.TryLoad` returns null for it. Only an exception from YamlDotNet's own parse is
+caught this way: an `InvalidOperationException` from anywhere else in the load still propagates.
+
 ## Credentials
 
 None to manage. nuget.org auth is a trusted-publishing policy tied to owner `sid2934`, repo

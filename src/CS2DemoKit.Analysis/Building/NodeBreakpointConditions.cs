@@ -91,7 +91,8 @@ public static class NodeBreakpointConditions
         }
 
         if (arg == typeof(int) || arg == typeof(long) || arg == typeof(double) || arg == typeof(float)
-            || arg == typeof(short) || arg == typeof(byte) || arg == typeof(uint) || arg == typeof(ushort))
+            || arg == typeof(short) || arg == typeof(byte) || arg == typeof(sbyte) || arg == typeof(uint)
+            || arg == typeof(ushort))
         {
             return ValueKind.Number;
         }

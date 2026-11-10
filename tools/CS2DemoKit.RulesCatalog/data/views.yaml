@@ -68,6 +68,7 @@ views:
       teamkill: { type: bool,   enrichment: enrich.kill.was_team_kill }
       trade: { type: bool,   enrichment: enrich.kill.was_trade_kill }
       flash_assisted: { type: bool,   enrichment: enrich.kill.was_flash_kill }
+      attacker_blind: { type: bool,   field: AttackerBlind }   # the killer was flashed at the kill
       headshot: { type: bool,   field: Headshot }       # wire field is Headshot, not Headshot
       through_smoke: { type: bool,   field: ThruSmoke }
       no_scope: { type: bool,   field: NoScope }
@@ -497,6 +498,77 @@ views:
       winner_side: { type: int, field: Winner }
       reason: { type: int, field: Reason }
       rounds_played: { type: int, field: RoundsPlayed }
+    availability: all
+
+  # item_purchased / item_refunded are synthesized from the controller's cash spent this round and
+  # the same frame's item_pickup: GOTV has no item_purchase.
+  item_purchased:
+    event: item_purchase
+    note: >-
+      Synthesized from a rise of the buyer's cash spent this round, so event.tick is the FRAME clock.
+      cost is the exact rise. item is the buyer's item_pickup on the same frame, `unknown` when there
+      was none (a buy dropped straight to a teammate, about 1.5% of buys), and several items joined
+      with `+` when one frame's buys cannot be split by the price list. item collapses variants
+      (m4a1 is the M4A4 or the M4A1-S, deagle the Deagle or the R8); def_index tells them apart.
+      Warmup buys are included: gate on match.live.
+    binding: actor_slot
+    actor: buyer
+    roles:
+      buyer: PlayerSlot
+    baked: [ ]
+    facets:
+      item: { type: string, field: Item }
+      def_index: { type: int, field: DefIndex }
+      cost: { type: int, field: Cost }
+    availability: all
+
+  item_refunded:
+    event: item_refund
+    note: >-
+      Synthesized from a fall of the player's cash spent this round matched by an equal rise of the
+      account, so event.tick is the FRAME clock. refund is the amount given back; item is the
+      player's latest purchase this round at that cost, else `unknown`.
+    binding: actor_slot
+    actor: buyer
+    roles:
+      buyer: PlayerSlot
+    baked: [ ]
+    facets:
+      item: { type: string, field: Item }
+      def_index: { type: int, field: DefIndex }
+      refund: { type: int, field: Refund }
+    availability: all
+
+  # timeout_started / timeout_ended are synthesized from the game rules' timeout flags, on the
+  # frame a flag rises or falls. GOTV has no wire event for a timeout. side is 2 or 3 for a
+  # tactical timeout and 0 for a technical one; timeouts_left is the side's count on that frame.
+  timeout_started:
+    event: timeout_started
+    note: >-
+      Synthesized from the game rules' timeout flags on the frame one rises, so event.tick is the
+      FRAME clock. side is 2 (T) or 3 (CT) for a tactical timeout and 0 for a technical one;
+      timeouts_left is that side's count read on the same frame (already lowered for this timeout on
+      the tournament demos measured), -1 for a technical timeout or when the run registers no count
+      provider for that side. The counts follow the side, so they swap with the teams at the half.
+      Some servers raise the technical flag together with a tactical one, which fires two starts on
+      one frame.
+    binding: none
+    baked: [ ]
+    facets:
+      side: { type: int, field: Side }
+      timeouts_left: { type: int, field: TimeoutsLeft }
+    availability: all
+
+  timeout_ended:
+    event: timeout_ended
+    note: >-
+      Synthesized from the game rules' timeout flags on the frame one falls, so event.tick is the
+      FRAME clock. A recording that starts inside a timeout reports its end without a start.
+    binding: none
+    baked: [ ]
+    facets:
+      side: { type: int, field: Side }
+      timeouts_left: { type: int, field: TimeoutsLeft }
     availability: all
 
   # cadence_tick is a ruleset cadence's period, synthesized by the evaluator. Authors reach it as

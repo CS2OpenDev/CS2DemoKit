@@ -290,4 +290,44 @@ public class LoadDocumentsTests
         await Assert.That(outcome.Diagnostics.Count).IsEqualTo(1);
         await Assert.That(outcome.Diagnostics[0].Message).Contains("2 '---' documents");
     }
+
+    /// <summary>
+    ///     An unclosed flow sequence makes YamlDotNet's scanner throw InvalidOperationException rather
+    ///     than YamlException. It must land as that file's error, with the other documents still loaded.
+    /// </summary>
+    [Test]
+    public async Task AFileTheScannerCannotRead_IsItsOwnError_AndTheRestStillLoad()
+    {
+        const string unclosed = "ruleset: [\nfor: each_player\nstats: {}\n";
+        RuleConfigLoadResult result = YamlConfigLoader.LoadDocuments([("broken.yaml", unclosed), ("healthy.yaml", Healthy)]);
+        using (Assert.Multiple())
+        {
+            await Assert.That(result.Rulesets.Select(r => r.Id)).IsEquivalentTo(["healthy"]);
+            await Assert.That(result.Errors.Select(e => e.FilePath ?? "")).IsEquivalentTo(["broken.yaml"]);
+            await Assert.That(result.FailedFiles).IsEquivalentTo(["broken.yaml"]);
+            await Assert.That(RulesetDocumentLoader.TryLoad(unclosed, "broken.yaml")).IsNull();
+        }
+    }
+
+    /// <summary>
+    ///     The scanner's InvalidOperationException is caught around YamlDotNet's parse only and re-thrown as
+    ///     one YamlException type, so it is caught by construction, wherever inside YamlDotNet it was raised.
+    /// </summary>
+    [Test]
+    public async Task TheScannersInvalidOperation_SurfacesAsAYamlException()
+    {
+        YamlDotNet.Core.YamlException? caught = null;
+        try
+        {
+            RulesetDocumentLoader.ParseDocuments("ruleset: [\nfor: each_player\n");
+        }
+        catch (YamlDotNet.Core.YamlException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsTypeOf<YamlScannerException>();
+        await Assert.That(caught!.InnerException).IsTypeOf<InvalidOperationException>();
+    }
+
 }

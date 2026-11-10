@@ -374,7 +374,7 @@ public static class ExpressionCompiler
             PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
             if (valueProp is not null)
             {
-                nodeValue = Expression.Property(Expression.Constant(nodeRef), valueProp);
+                nodeValue = NodeValueRead(nodeRef, valueProp);
             }
         }
 
@@ -776,14 +776,28 @@ public static class ExpressionCompiler
             return (Expression.Convert(left, typeof(long)), right);
         }
 
+        // The rules type check reads long as Int, so it accepts a long against a fractional value too.
+        // Both sides meet as double: a float's 24-bit mantissa would round high button bits.
+        if (left.Type == typeof(long) && (right.Type == typeof(double) || right.Type == typeof(float)))
+        {
+            return (Expression.Convert(left, typeof(double)), Expression.Convert(right, typeof(double)));
+        }
+
+        if (right.Type == typeof(long) && (left.Type == typeof(double) || left.Type == typeof(float)))
+        {
+            return (Expression.Convert(left, typeof(double)), Expression.Convert(right, typeof(double)));
+        }
+
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
         // so a comparison such as `weapon_tier[event.Weapon] > 2` is a lifted (null-safe) comparison.
-        if (left.Type == typeof(double?) && right.Type is var rt && (rt == typeof(int) || rt == typeof(double) || rt == typeof(float)))
+        if (left.Type == typeof(double?) && right.Type is var rt
+            && (rt == typeof(int) || rt == typeof(long) || rt == typeof(double) || rt == typeof(float)))
         {
             return (left, Expression.Convert(right, typeof(double?)));
         }
 
-        if (right.Type == typeof(double?) && left.Type is var lt && (lt == typeof(int) || lt == typeof(double) || lt == typeof(float)))
+        if (right.Type == typeof(double?) && left.Type is var lt
+            && (lt == typeof(int) || lt == typeof(long) || lt == typeof(double) || lt == typeof(float)))
         {
             return (Expression.Convert(left, typeof(double?)), right);
         }
@@ -791,29 +805,42 @@ public static class ExpressionCompiler
         return (left, right);
     }
 
-    private static Expression MakeSafeDivide(Expression left, Expression right)
+    private static Expression MakeSafeDivide(Expression left, Expression right) => MakeSafeQuotient(true, left, right);
+
+    private static Expression MakeSafeModulo(Expression left, Expression right) => MakeSafeQuotient(false, left, right);
+
+    /// <summary>
+    ///     <c>/</c> or <c>%</c> after <see cref="Coerce" />. A double on either side meets as double: <c>/</c>
+    ///     reads 0 on a zero divisor, <c>%</c> reads NaN (so <c>x % 0 == 0</c> is false for a double, true
+    ///     for an integer). int/int and long/long stay integral, since integer <c>/</c> and <c>%</c>
+    ///     are how a rule tests a button bit, and neither throws: a zero divisor reads 0, and MinValue by -1
+    ///     wraps as the compiler's multiply and negate do. Any other pair (float/float, a map lookup's
+    ///     double?, an unsigned field) is the raw operator, as before.
+    /// </summary>
+    private static Expression MakeSafeQuotient(bool divide, Expression left, Expression right)
     {
         if (left.Type == typeof(double) || right.Type == typeof(double))
         {
-            if (left.Type != typeof(double))
-            {
-                left = Expression.Convert(left, typeof(double));
-            }
-
-            if (right.Type != typeof(double))
-            {
-                right = Expression.Convert(right, typeof(double));
-            }
-
-            return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivide), null, left, right);
+            Expression ld = left.Type == typeof(double) ? left : Expression.Convert(left, typeof(double));
+            Expression rd = right.Type == typeof(double) ? right : Expression.Convert(right, typeof(double));
+            return divide
+                ? Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivide), null, ld, rd)
+                : Expression.Modulo(ld, rd);
         }
 
         if (left.Type == typeof(int) && right.Type == typeof(int))
         {
-            return Expression.Call(typeof(ExpressionCompiler), nameof(SafeDivideInt), null, left, right);
+            return Expression.Call(typeof(ExpressionCompiler), divide ? nameof(SafeDivideInt) : nameof(SafeModuloInt),
+                null, left, right);
         }
 
-        return Expression.Divide(left, right);
+        if (left.Type == typeof(long) && right.Type == typeof(long))
+        {
+            return Expression.Call(typeof(ExpressionCompiler), divide ? nameof(SafeDivideLong) : nameof(SafeModuloLong),
+                null, left, right);
+        }
+
+        return divide ? Expression.Divide(left, right) : Expression.Modulo(left, right);
     }
 
     /// <summary>
@@ -1060,7 +1087,7 @@ public static class ExpressionCompiler
             {
                 TokenKind.OpMul => Expression.Multiply(left, right),
                 TokenKind.OpDiv => MakeSafeDivide(left, right),
-                TokenKind.OpMod => Expression.Modulo(left, right),
+                TokenKind.OpMod => MakeSafeModulo(left, right),
                 _ => left
             };
         }
@@ -1583,7 +1610,7 @@ public static class ExpressionCompiler
                         PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                         if (valueProp is not null)
                         {
-                            return Expression.Property(Expression.Constant(nodeObj), valueProp);
+                            return NodeValueRead(nodeObj, valueProp);
                         }
                     }
 
@@ -1624,7 +1651,7 @@ public static class ExpressionCompiler
                         PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                         if (valueProp is not null)
                         {
-                            return Expression.Property(Expression.Constant(entityNode), valueProp);
+                            return NodeValueRead(entityNode, valueProp);
                         }
                     }
 
@@ -1639,15 +1666,8 @@ public static class ExpressionCompiler
                 PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                 if (valueProp is not null)
                 {
-                    Expression valueExpr = Expression.Property(Expression.Constant(fallbackNode), valueProp);
-                    if (valueProp.PropertyType != typeof(double) && valueProp.PropertyType != typeof(int))
-                    {
-                        return valueExpr;
-                    }
-
-                    return valueProp.PropertyType == typeof(int)
-                        ? Expression.Convert(valueExpr, typeof(double))
-                        : valueExpr;
+                    Expression valueExpr = NodeValueRead(fallbackNode, valueProp);
+                    return valueExpr.Type == typeof(int) ? Expression.Convert(valueExpr, typeof(double)) : valueExpr;
                 }
             }
 
@@ -1808,7 +1828,12 @@ public static class ExpressionCompiler
     }
 
     private static double SafeDivide(double left, double right) => right == 0 ? 0 : left / right;
-    private static int SafeDivideInt(int left, int right) => right == 0 ? 0 : left / right;
+    private static int SafeDivideInt(int left, int right) =>
+        right switch { 0 => 0, -1 => unchecked(-left), _ => left / right };
+    private static long SafeDivideLong(long left, long right) =>
+        right switch { 0 => 0, -1 => unchecked(-left), _ => left / right };
+    private static int SafeModuloInt(int left, int right) => right is 0 or -1 ? 0 : left % right;
+    private static long SafeModuloLong(long left, long right) => right is 0 or -1 ? 0 : left % right;
 
     private static Token[] Tokenize(string input)
     {
@@ -2136,5 +2161,13 @@ public static class ExpressionCompiler
         || e.Type == typeof(short) || e.Type == typeof(ushort)
             ? Expression.Convert(e, typeof(int))
             : e;
+
+    /// <summary>
+    ///     A node's <c>Value</c> read, widened like an event field: a narrow integer reads as int. Unsigned
+    ///     and 64-bit widths are left alone, as on event fields, where a uint is a pawn handle and must
+    ///     not compare against a slot; a catalog extension cannot declare them.
+    /// </summary>
+    private static Expression NodeValueRead(object node, PropertyInfo valueProp) =>
+        WidenNarrowIntegral(Expression.Property(Expression.Constant(node), valueProp));
 
 }

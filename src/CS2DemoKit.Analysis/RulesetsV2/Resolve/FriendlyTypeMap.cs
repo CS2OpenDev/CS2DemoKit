@@ -16,6 +16,46 @@ namespace CS2DemoKit.Analysis.RulesetsV2.Resolve;
 /// </summary>
 public static class FriendlyTypeMap
 {
+    /// <summary>
+    ///     The friendly types a host provider may declare for rules: <see cref="Map" />'s set minus the
+    ///     64-bit and unsigned integers. Those stay in the map because event fields carry them (an unsigned
+    ///     field is a pawn handle, kept apart from slots), but a node read does not widen them to int:
+    ///     uint and ulong meet no int operand at all, and long is the one built-in 64-bit read
+    ///     (<c>player.cmd.buttons</c>), not a width to extend.
+    /// </summary>
+    public static IReadOnlySet<string> ProviderReadableTypes { get; } = new HashSet<string>(
+        ["int", "byte", "sbyte", "short", "ushort", "float", "double", "bool", "string"], StringComparer.Ordinal);
+
+    /// <summary>
+    ///     The friendly type name the catalog writes for <paramref name="type" />, or null when the type is
+    ///     outside the set <see cref="Map" /> accepts. The generator and catalog extension rows both name
+    ///     types through this, so the two cannot disagree.
+    /// </summary>
+    /// <param name="type">A provider's or event field's CLR type.</param>
+    /// <returns>The friendly name, or null.</returns>
+    public static string? FriendlyName(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        return type switch
+        {
+            _ when type == typeof(int) => "int",
+            // The SDK's event records type each field to its KV1 tag rather than widening everything
+            // to int, so byte/sbyte/short/ushort reach the generator.
+            _ when type == typeof(byte) => "byte",
+            _ when type == typeof(sbyte) => "sbyte",
+            _ when type == typeof(short) => "short",
+            _ when type == typeof(ushort) => "ushort",
+            _ when type == typeof(long) => "long",
+            _ when type == typeof(ulong) => "ulong",
+            _ when type == typeof(uint) => "uint",
+            _ when type == typeof(float) => "float",
+            _ when type == typeof(double) => "double",
+            _ when type == typeof(bool) => "bool",
+            _ when type == typeof(string) => "string",
+            _ => null
+        };
+    }
+
     /// <summary>Maps a Catalog friendly type name to its language-level <see cref="RulesType" />.</summary>
     /// <param name="friendlyType">
     ///     The friendly type as the generator wrote it (<c>bool</c>, <c>int</c>, <c>uint</c>,

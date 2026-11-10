@@ -359,6 +359,13 @@ public static class YamlConfigLoader
             {
                 documents = RulesetDocumentLoader.ParseDocuments(yaml);
             }
+            catch (YamlScannerException ex)
+            {
+                // No position to report; one such file must not take the whole directory down.
+                errors.Add(new RuleConfigError(label, ex.Message));
+                failedFiles.Add(label);
+                continue;
+            }
             catch (YamlException ex)
             {
                 errors.Add(new RuleConfigError(label, ex.InnerException?.Message ?? ex.Message,

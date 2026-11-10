@@ -49,7 +49,14 @@ public static class HighlightConfigFingerprint
     ///     a node outside the per-player hash space (the same config would fail the builder's
     ///     dependency-ordered hashing invariant).
     /// </exception>
-    public static Result Compute(IReadOnlyList<CheckedRuleset> rulesets)
+    public static Result Compute(IReadOnlyList<CheckedRuleset> rulesets) => Compute(rulesets, null);
+
+    /// <summary>
+    ///     <see cref="Compute(IReadOnlyList{CheckedRuleset})" />, with each catalog extension row a node reads
+    ///     folded into that node's hash, keyed by provider name.
+    /// </summary>
+    private static Result Compute(IReadOnlyList<CheckedRuleset> rulesets,
+        IReadOnlyDictionary<string, string>? extensionRows)
     {
         ArgumentNullException.ThrowIfNull(rulesets);
 
@@ -92,7 +99,7 @@ public static class HighlightConfigFingerprint
                     continue;
                 }
 
-                HashStat(rs, stat, statHashesByPath, hashSource);
+                HashStat(rs, stat, statHashesByPath, hashSource, extensionRows);
             }
 
             // Builder order 2: rate stats (deferred so both of:/per: bucket hashes resolve).
@@ -103,7 +110,7 @@ public static class HighlightConfigFingerprint
                     continue;
                 }
 
-                HashStat(rs, stat, statHashesByPath, hashSource);
+                HashStat(rs, stat, statHashesByPath, hashSource, extensionRows);
             }
 
             // Builder order 3: highlights — hashed as a Flag over the when-conjunction + scope
@@ -114,7 +121,8 @@ public static class HighlightConfigFingerprint
                 RuleNodeDescriptor descriptor = new(
                     highlight.HighlightId, RuleNodeKind.Flag, RulesType.Bool, highlight.Scope,
                     [], highlight.When);
-                ReadOnlyMemory<byte> hash = RuleHasher.ComputeHash(descriptor, hashSource);
+                ReadOnlyMemory<byte> hash = FoldExtensionRows(RuleHasher.ComputeHash(descriptor, hashSource),
+                    highlight.EntityReads, extensionRows);
                 statHashesByPath[highlight.HighlightId] = hash;
                 statHashesByPath[highlight.CountNodeId] = hash;
                 statHashesByPath[$"{rs.Id.Id}.{highlight.HighlightId}"] = hash;
@@ -134,7 +142,7 @@ public static class HighlightConfigFingerprint
                     continue;
                 }
 
-                HashStat(rs, stat, statHashesByPath, hashSource);
+                HashStat(rs, stat, statHashesByPath, hashSource, extensionRows);
             }
         }
 
@@ -151,10 +159,28 @@ public static class HighlightConfigFingerprint
     /// <param name="profileId">The active demo-source profile id (e.g. <c>Cs2GotvProfile</c>).</param>
     /// <returns>The per-highlight hash map and combined fingerprint.</returns>
     /// <exception cref="InvalidOperationException">The documents fail composition (diagnostics listed).</exception>
-    public static Result Compute(IReadOnlyList<RulesetDoc> docs, double ticksPerSecond, string profileId)
+    public static Result Compute(IReadOnlyList<RulesetDoc> docs, double ticksPerSecond, string profileId) =>
+        Compute(docs, ticksPerSecond, profileId, null);
+
+    /// <summary>
+    ///     <see cref="Compute(IReadOnlyList{RulesetDoc}, double, string)" /> against the embedded catalog plus
+    ///     <paramref name="catalogExtension" />'s rows, the catalog a run with the same
+    ///     <see cref="AnalysisOptions.CatalogExtension" /> composes against. Each extension row a stat or
+    ///     highlight reads is folded into that node's hash, so a highlight that reads one no longer matches
+    ///     the builder's own node hash: that is the point, since the builder's hash cannot see which
+    ///     provider a path lowers to. A highlight that reads none keeps the builder's hash.
+    /// </summary>
+    /// <param name="docs">The loaded ruleset documents.</param>
+    /// <param name="ticksPerSecond">The demo's tick rate.</param>
+    /// <param name="profileId">The active demo-source profile id.</param>
+    /// <param name="catalogExtension">Extra provider rows, or null.</param>
+    /// <returns>The per-highlight hash map and combined fingerprint.</returns>
+    /// <exception cref="InvalidOperationException">The documents fail composition (diagnostics listed).</exception>
+    public static Result Compute(IReadOnlyList<RulesetDoc> docs, double ticksPerSecond, string profileId,
+        CatalogExtension? catalogExtension)
     {
         ArgumentNullException.ThrowIfNull(docs);
-        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load(catalogExtension));
         RulesetComposition.Result composed =
             RulesetComposition.Compose(docs, adapter, ticksPerSecond, profileId);
         if (!composed.Success)
@@ -164,14 +190,55 @@ public static class HighlightConfigFingerprint
                 + string.Join("; ", composed.Diagnostics));
         }
 
-        return Compute(composed.Rulesets);
+        // The checked rules hash a read by its rules path, not by the provider the path lowers to, so
+        // remapping an extension row to another provider would leave every hash unchanged. Each row a
+        // node reads is folded into that node's hash; a stat reference carries it on into every
+        // highlight that depends on the stat, and from there into the combined fingerprint. A node that
+        // reads no extension row, and every node of a run with no extension, keeps its hash.
+        Dictionary<string, string>? rows = catalogExtension is { Providers.Count: > 0 }
+            ? catalogExtension.Providers.ToDictionary(
+                p => p.Name, p => $"ext#{p.Name}#{p.Scope}#{p.ClrType}#{p.V2Name}", StringComparer.OrdinalIgnoreCase)
+            : null;
+        return Compute(composed.Rulesets, rows);
+    }
+
+    /// <summary>
+    ///     <paramref name="hash" /> with the extension rows among <paramref name="reads" /> folded in, or
+    ///     <paramref name="hash" /> itself when the node reads none.
+    /// </summary>
+    private static ReadOnlyMemory<byte> FoldExtensionRows(ReadOnlyMemory<byte> hash,
+        IReadOnlyList<EntityProviderReference> reads, IReadOnlyDictionary<string, string>? extensionRows)
+    {
+        // EntityReads is complete for extension rows by construction: a host provider reaches the scanner
+        // only through a node's EntityReads (RuleChainBuilder.UnionV2EntityReads) or an observer's
+        // declaration, which no ruleset node holds. A read missing here would read nothing at all.
+        if (extensionRows is null || reads.Count == 0)
+        {
+            return hash;
+        }
+
+        List<string> read = reads
+            .Select(r => extensionRows.GetValueOrDefault(r.ProviderName))
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        if (read.Count == 0)
+        {
+            return hash;
+        }
+
+        byte[] preimage = [.. hash.Span, .. Encoding.UTF8.GetBytes(string.Join('\n', read))];
+        return SHA256.HashData(preimage);
     }
 
     /// <summary>Hashes one stat and registers its bare + qualified spellings (the builder's two).</summary>
     private static void HashStat(CheckedRuleset rs, CheckedStat stat,
-        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath, MapStatHashSource hashSource)
+        Dictionary<string, ReadOnlyMemory<byte>> statHashesByPath, MapStatHashSource hashSource,
+        IReadOnlyDictionary<string, string>? extensionRows)
     {
-        byte[] hash = V2StatHasher.Hash(stat, hashSource);
+        ReadOnlyMemory<byte> hash = FoldExtensionRows(V2StatHasher.Hash(stat, hashSource), stat.EntityReads,
+            extensionRows);
         statHashesByPath[stat.StatId] = hash;
         statHashesByPath[$"{rs.Id.Id}.{stat.StatId}"] = hash;
     }
