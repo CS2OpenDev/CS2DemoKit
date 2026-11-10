@@ -366,6 +366,15 @@ public static class YamlConfigLoader
                 failedFiles.Add(label);
                 continue;
             }
+            catch (InvalidOperationException ex)
+            {
+                // YamlDotNet's scanner throws this, not YamlException, on some malformed flow input
+                // such as an unclosed sequence (`ruleset: [`). One such file must not take the
+                // whole directory down.
+                errors.Add(new RuleConfigError(label, ex.Message));
+                failedFiles.Add(label);
+                continue;
+            }
 
             if (documents.Count == 0)
             {
