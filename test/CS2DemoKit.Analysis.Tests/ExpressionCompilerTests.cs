@@ -264,6 +264,30 @@ public class ExpressionCompilerTests
         await Assert.That(ex!.Message).Contains("must be a string");
     }
 
+    /// <summary>
+    ///     A host singleton may declare any integer width. Every node read widens it, so it compares
+    ///     against an int or fractional literal and takes part in arithmetic, on the <c>entity.</c> path a
+    ///     where: lowers to and the bare-identifier path a compute: lowers to, and reads the right number.
+    /// </summary>
+    [Test]
+    [Arguments((byte)3)]
+    [Arguments((sbyte)3)]
+    [Arguments((short)3)]
+    [Arguments((ushort)3)]
+    [Arguments(3u)]
+    [Arguments(3ul)]
+    public async Task AnyIntegerWidthNodeRead_ComparesAndComputes(object three)
+    {
+        object node = Activator.CreateInstance(typeof(GenericValueNode<>).MakeGenericType(three.GetType()), "n", null)!;
+        node.GetType().GetMethod("SetValue")!.Invoke(node, [three]);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal) { ["entity.ext.n"] = node, ["n"] = node };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n >= 2", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 3", lookup)()).IsFalse();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 2.5", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeExpression("n * 2", lookup)()).IsEqualTo(6.0);
+    }
+
     // ── Helper: build a synthetic node lookup from name → int value pairs ──
     private static Dictionary<string, object> NodeMap(
         params (string Name, int Value)[] entries)

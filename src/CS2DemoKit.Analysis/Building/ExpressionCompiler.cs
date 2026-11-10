@@ -374,7 +374,7 @@ public static class ExpressionCompiler
             PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
             if (valueProp is not null)
             {
-                nodeValue = Expression.Property(Expression.Constant(nodeRef), valueProp);
+                nodeValue = NodeValueRead(nodeRef, valueProp);
             }
         }
 
@@ -774,6 +774,17 @@ public static class ExpressionCompiler
         if (left.Type == typeof(int) && right.Type == typeof(long))
         {
             return (Expression.Convert(left, typeof(long)), right);
+        }
+
+        // An unsigned read widens to long (WidenNarrowIntegral), so long meets the fractional types too.
+        if (left.Type == typeof(long) && (right.Type == typeof(double) || right.Type == typeof(float)))
+        {
+            return (Expression.Convert(left, right.Type), right);
+        }
+
+        if (right.Type == typeof(long) && (left.Type == typeof(double) || left.Type == typeof(float)))
+        {
+            return (left, Expression.Convert(right, left.Type));
         }
 
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
@@ -1583,7 +1594,7 @@ public static class ExpressionCompiler
                         PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                         if (valueProp is not null)
                         {
-                            return Expression.Property(Expression.Constant(nodeObj), valueProp);
+                            return NodeValueRead(nodeObj, valueProp);
                         }
                     }
 
@@ -1624,8 +1635,7 @@ public static class ExpressionCompiler
                         PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                         if (valueProp is not null)
                         {
-                            // A host singleton may declare a narrow integer, as event fields do.
-                            return WidenNarrowIntegral(Expression.Property(Expression.Constant(entityNode), valueProp));
+                            return NodeValueRead(entityNode, valueProp);
                         }
                     }
 
@@ -1640,15 +1650,8 @@ public static class ExpressionCompiler
                 PropertyInfo? valueProp = nodeType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
                 if (valueProp is not null)
                 {
-                    Expression valueExpr = Expression.Property(Expression.Constant(fallbackNode), valueProp);
-                    if (valueProp.PropertyType != typeof(double) && valueProp.PropertyType != typeof(int))
-                    {
-                        return valueExpr;
-                    }
-
-                    return valueProp.PropertyType == typeof(int)
-                        ? Expression.Convert(valueExpr, typeof(double))
-                        : valueExpr;
+                    Expression valueExpr = NodeValueRead(fallbackNode, valueProp);
+                    return valueExpr.Type == typeof(int) ? Expression.Convert(valueExpr, typeof(double)) : valueExpr;
                 }
             }
 
@@ -2136,6 +2139,14 @@ public static class ExpressionCompiler
         e.Type == typeof(byte) || e.Type == typeof(sbyte)
         || e.Type == typeof(short) || e.Type == typeof(ushort)
             ? Expression.Convert(e, typeof(int))
-            : e;
+            // The language has one integer type; the unsigned widths meet it as long, which Coerce
+            // pairs with int, float and double. A ulong above long.MaxValue wraps.
+            : e.Type == typeof(uint) || e.Type == typeof(ulong)
+                ? Expression.Convert(e, typeof(long))
+                : e;
+
+    /// <summary>A node's <c>Value</c> read, widened like an event field so any integer width compares.</summary>
+    private static Expression NodeValueRead(object node, PropertyInfo valueProp) =>
+        WidenNarrowIntegral(Expression.Property(Expression.Constant(node), valueProp));
 
 }

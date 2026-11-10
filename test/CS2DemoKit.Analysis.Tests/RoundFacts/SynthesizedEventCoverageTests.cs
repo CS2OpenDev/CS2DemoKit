@@ -149,14 +149,15 @@ public class SynthesizedEventCoverageTests
     public async Task AnEventReportedElsewhere_StillCountsTowardNeverFiring()
     {
         (string Message, string FirstMissing)? found = RuleChainBuilder.UnproducedEventMessage("facet",
-            ["enemy_spotted", "timeout_started"], _unproduced, new HashSet<string>(["enemy_spotted"]));
+            ["enemy_spotted", "timeout_started"], _unproduced, spotReportedElsewhere: true);
 
         await Assert.That(found).IsNotNull();
-        await Assert.That(found!.Value.Message).Contains("never fires").And.DoesNotContain("'enemy_spotted'")
-            .Because("the facet row names enemy_spotted; both triggers are still unproduced");
+        await Assert.That(found!.Value.Message).Contains("never fires").And.DoesNotContain("no geometry")
+            .And.Contains("'enemy_spotted' trigger, reported with its facet")
+            .Because("both triggers are unproduced; the facet row already gives enemy_spotted's cause");
         await Assert.That(found.Value.FirstMissing).IsEqualTo("timeout_started");
         await Assert.That(RuleChainBuilder.UnproducedEventMessage("only", ["enemy_spotted"], _unproduced,
-            new HashSet<string>(["enemy_spotted"]))).IsNull();
+            spotReportedElsewhere: true)).IsNull();
     }
 
     [Test]

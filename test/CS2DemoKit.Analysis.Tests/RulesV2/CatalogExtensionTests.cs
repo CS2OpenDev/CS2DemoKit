@@ -209,6 +209,7 @@ public class CatalogExtensionTests
             HighlightConfigFingerprint.Compute([Doc(Highlighted)], 64.0, "Cs2GotvProfile", With("match.ext.t_moved"));
 
         await Assert.That(added.HighlightHashes).IsEquivalentTo(baseline.HighlightHashes);
+        await Assert.That(added.Fingerprint).IsEqualTo(baseline.Fingerprint);
         await Assert.That(repathed.HighlightHashes).IsEquivalentTo(baseline.HighlightHashes);
         await Assert.That(repathed.Fingerprint).IsEqualTo(baseline.Fingerprint);
     }

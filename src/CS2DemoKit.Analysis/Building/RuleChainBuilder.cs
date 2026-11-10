@@ -1861,30 +1861,29 @@ public sealed partial class RuleChainBuilder
 
         // A stat already reported for a spot facet is not reported again for an enemy_spotted trigger;
         // its other unproduced triggers still are.
-        HashSet<string> spotReported = new(["enemy_spotted"], StringComparer.Ordinal);
-
         string profileId = Profile.GetType().Name;
         foreach (CheckedRuleset ruleset in rulesets)
         {
             foreach (CheckedStat stat in ruleset.Stats)
             {
-                bool facetReported = false;
-                if (spotCause is not null && FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
+                // Both rows for one stat carry the same view, so a consumer grouping by view sees one stat.
+                bool facetReported = spotCause is not null && FirstSpotDerivedRead(stat.DeclaredReads) is not null;
+                (string Message, string FirstMissing)? trigger =
+                    UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced, facetReported);
+                string view = stat.ResolvedView ?? trigger?.FirstMissing ?? "";
+                if (facetReported && FirstSpotDerivedRead(stat.DeclaredReads) is { } facet)
                 {
-                    facetReported = true;
                     coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
-                        stat.ResolvedView ?? "", profileId,
+                        view, profileId,
                         $"stat '{stat.StatId}' reads {facet}, which is measured from the synthesized "
                         + $"'enemy_spotted' contacts — {spotCause}, so it reads its no-measurement value on "
                         + "every event rather than a number",
                         stat.Position));
                 }
 
-                if (UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced,
-                        facetReported ? spotReported : null) is var (message, firstMissing))
+                if (trigger is var (message, _))
                 {
-                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId,
-                        stat.ResolvedView ?? firstMissing, profileId, message,
+                    coverage.Add(new RulesetCoverageDiagnostic(ruleset.Id, stat.StatId, view, profileId, message,
                         stat.Position));
                 }
             }
@@ -1912,18 +1911,19 @@ public sealed partial class RuleChainBuilder
     /// <summary>
     ///     The coverage message for a stat triggering on <paramref name="concreteEvents" /> when any of them
     ///     is <paramref name="unproduced" />, and the first such event (the row's view when the stat has
-    ///     none); null when none is, or when every one is in <paramref name="reportedElsewhere" />.
+    ///     none); null when none is, or when the only one is an <c>enemy_spotted</c> trigger already reported
+    ///     with the stat's facet (<paramref name="spotReportedElsewhere" />).
     ///     Triggering on nothing else, the stat never fires; triggering on a produced event as well, it
     ///     fires on that one only, and the message says which half is missing.
     /// </summary>
     internal static (string Message, string FirstMissing)? UnproducedEventMessage(string statId,
         IReadOnlyList<string> concreteEvents, Dictionary<string, string> unproduced,
-        IReadOnlySet<string>? reportedElsewhere = null)
+        bool spotReportedElsewhere = false)
     {
-        // An event another row already reports still counts toward "never fires"; it is just not
-        // named again here.
+        // An enemy_spotted trigger the stat's facet row already reports still counts toward "never
+        // fires"; it is named here only as reported, not with its cause again.
         List<string> missing = [.. concreteEvents
-            .Where(e => unproduced.ContainsKey(e) && reportedElsewhere?.Contains(e) != true)
+            .Where(e => unproduced.ContainsKey(e) && !(spotReportedElsewhere && e == "enemy_spotted"))
             .Distinct(StringComparer.Ordinal)];
         if (missing.Count == 0)
         {
@@ -1946,7 +1946,10 @@ public sealed partial class RuleChainBuilder
             (false, false) => "so those are never produced and the stat fires only on its other events"
         };
 
-        return ($"stat '{statId}' triggers on {what} — {why}, {outcome}", missing[0]);
+        string alsoSpotted = spotReportedElsewhere && concreteEvents.Contains("enemy_spotted", StringComparer.Ordinal)
+            ? " (its 'enemy_spotted' trigger, reported with its facet, is not produced either)"
+            : "";
+        return ($"stat '{statId}' triggers on {what} — {why}, {outcome}{alsoSpotted}", missing[0]);
     }
 
     /// <summary>

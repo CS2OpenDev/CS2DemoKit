@@ -280,28 +280,27 @@ public sealed class EntityChangeScanner
         _singletonProviders = new List<IEntityValueProvider>(providers.Count);
         foreach ((IEntityValueProvider p, StateNode node) in providers)
         {
-            switch (p.ContextName)
+            // Context names compare case-insensitively, as the registry that resolved them does: a
+            // provider the registry found under another casing must not then go unrecognised here.
+            if (IsContext(p, RoundWinStatusContext))
             {
-                case RoundWinStatusContext:
-                    _winStatusIndex = _tracked.Count;
-                    break;
-                case RoundWinReasonContext:
-                    _winReasonIndex = _tracked.Count;
-                    break;
-                case TotalRoundsPlayedContext:
-                    _roundsPlayedIndex = _tracked.Count;
-                    break;
-                default:
-                    if (Array.IndexOf(TimeoutFlagContexts, p.ContextName) is var flag and >= 0)
-                    {
-                        _timeoutFlagIndex[flag] = _tracked.Count;
-                    }
-                    else if (Array.IndexOf(TimeoutsLeftContexts, p.ContextName) is var left and >= 0)
-                    {
-                        _timeoutsLeftIndex[left] = _tracked.Count;
-                    }
-
-                    break;
+                _winStatusIndex = _tracked.Count;
+            }
+            else if (IsContext(p, RoundWinReasonContext))
+            {
+                _winReasonIndex = _tracked.Count;
+            }
+            else if (IsContext(p, TotalRoundsPlayedContext))
+            {
+                _roundsPlayedIndex = _tracked.Count;
+            }
+            else if (Array.FindIndex(TimeoutFlagContexts, c => IsContext(p, c)) is var flag and >= 0)
+            {
+                _timeoutFlagIndex[flag] = _tracked.Count;
+            }
+            else if (Array.FindIndex(TimeoutsLeftContexts, c => IsContext(p, c)) is var left and >= 0)
+            {
+                _timeoutsLeftIndex[left] = _tracked.Count;
             }
 
             _tracked.Add(new TrackedProvider(p, node, p.DefaultValue, silentProviders?.Contains(p) != true));
@@ -341,6 +340,9 @@ public sealed class EntityChangeScanner
 
     /// <summary>The singleton <c>round_decided</c> reads the rounds played from.</summary>
     internal const string TotalRoundsPlayedContext = "entity.game.total_rounds_played";
+
+    private static bool IsContext(IEntityValueProvider provider, string contextName) =>
+        string.Equals(provider.ContextName, contextName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     ///     The timeout flags <c>timeout_started</c> / <c>timeout_ended</c> are detected on, in the order
