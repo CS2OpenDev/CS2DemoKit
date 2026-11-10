@@ -133,8 +133,9 @@ public static class RulesetDocumentLoader
         {
             return ParseDocuments(yaml);
         }
-        catch (YamlException)
+        catch (Exception ex) when (ex is YamlException or InvalidOperationException)
         {
+            // The scanner throws InvalidOperationException on some malformed flow input.
             return null;
         }
     }
