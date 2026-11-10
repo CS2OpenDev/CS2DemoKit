@@ -776,6 +776,17 @@ public static class ExpressionCompiler
             return (Expression.Convert(left, typeof(long)), right);
         }
 
+        // The rules type check reads long as Int, so it accepts a long against a fractional value too.
+        if (left.Type == typeof(long) && (right.Type == typeof(double) || right.Type == typeof(float)))
+        {
+            return (Expression.Convert(left, right.Type), right);
+        }
+
+        if (right.Type == typeof(long) && (left.Type == typeof(double) || left.Type == typeof(float)))
+        {
+            return (left, Expression.Convert(right, left.Type));
+        }
+
         // A number-map lookup yields double? (null on miss); lift the numeric other side to double?
         // so a comparison such as `weapon_tier[event.Weapon] > 2` is a lifted (null-safe) comparison.
         if (left.Type == typeof(double?) && right.Type is var rt && (rt == typeof(int) || rt == typeof(double) || rt == typeof(float)))

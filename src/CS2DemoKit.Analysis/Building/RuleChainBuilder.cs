@@ -1870,7 +1870,10 @@ public sealed partial class RuleChainBuilder
                 string? facet = spotCause is null ? null : FirstSpotDerivedRead(stat.DeclaredReads);
                 (string Message, string FirstMissing)? trigger =
                     UnproducedEventMessage(stat.StatId, stat.ConcreteEvents, unproduced, facet is not null);
+                // The trigger row's own event first; a stat whose only unproduced trigger is the
+                // enemy_spotted its facet row reports falls back to that.
                 string view = stat.ResolvedView
+                              ?? trigger?.FirstMissing
                               ?? stat.ConcreteEvents.FirstOrDefault(unproduced.ContainsKey)
                               ?? "";
                 if (facet is not null)

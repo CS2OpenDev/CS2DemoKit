@@ -289,6 +289,18 @@ public class ExpressionCompilerTests
             .Because("a compute reads every int width as double, so division is not integer division");
     }
 
+    /// <summary>The rules type check reads long as Int, so a long read compares against a fractional value.</summary>
+    [Test]
+    public async Task ALongNodeRead_ComparesAgainstAFraction()
+    {
+        GenericValueNode<long> node = new("buttons");
+        node.SetValue(3L);
+        Dictionary<string, object> lookup = new(StringComparer.Ordinal) { ["entity.ext.n"] = node };
+
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("entity.ext.n > 2.5", lookup)()).IsTrue();
+        await Assert.That(ExpressionCompiler.CompileNodeBoolExpression("2.5 > entity.ext.n", lookup)()).IsFalse();
+    }
+
     // ── Helper: build a synthetic node lookup from name → int value pairs ──
     private static Dictionary<string, object> NodeMap(
         params (string Name, int Value)[] entries)

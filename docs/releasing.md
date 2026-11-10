@@ -1271,8 +1271,8 @@ carry -1 for that side's timeouts left.
 and `ulong` on any row (the rules language has one integer type, and those widths neither compare
 with int literals nor divide safely; declare the provider as `int`), and on a per-player row anything
 the per-pawn digest cannot store, which leaves `int`, `bool`, `float` and `string`. Singleton rows
-also take `double` and the narrow widths `byte`, `sbyte`, `short` and `ushort`, which every read
-widens to `int`.
+also take `double`, read as a float, and the narrow integer widths `byte`, `sbyte`, `short` and
+`ushort`, which every read widens to `int`.
 
 `HighlightConfigFingerprint.Compute` with an extension folds each row a stat or highlight reads into
 that node's hash, and on into every highlight that depends on it, so remapping a rules path to
