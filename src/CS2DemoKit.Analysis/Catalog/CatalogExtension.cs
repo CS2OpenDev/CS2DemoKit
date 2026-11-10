@@ -194,8 +194,10 @@ public sealed class CatalogExtension
 
         if (!FriendlyTypeMap.ProviderReadableTypes.Contains(row.ClrType))
         {
-            // Map has already refused any unknown type, so only a 64-bit or unsigned integer reaches here.
-            throw Refused(row, $"type '{row.ClrType}' is an integer width a rule cannot read as int; declare the provider as int");
+            throw Refused(row,
+                $"type '{row.ClrType}' is not one a provider may declare for rules "
+                + $"({string.Join(", ", FriendlyTypeMap.ProviderReadableTypes.Order(StringComparer.Ordinal))}); "
+                + "declare an integer provider as int");
         }
 
         if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))

@@ -1268,11 +1268,11 @@ carry -1 for that side's timeouts left.
 ### Catalog extension rows (0.15.0)
 
 `CatalogExtension` is new. `Create` refuses a row whose type a rule could not read: `long`, `uint`
-and `ulong` on any row (the rules language has one integer type, and those widths neither compare
-with int literals nor divide safely; declare the provider as `int`), and on a per-player row anything
-the per-pawn digest cannot store, which leaves `int`, `bool`, `float` and `string`. Singleton rows
-also take `double`, read as a float, and the narrow integer widths `byte`, `sbyte`, `short` and
-`ushort`, which every read widens to `int`.
+and `ulong` on any row (the rules language has one integer type; a read does not widen those to it,
+and `uint` and `ulong` meet no int operand at all; declare the provider as `int`), and on a
+per-player row anything the per-pawn digest cannot store, which leaves `int`, `bool`, `float` and
+`string`. Singleton rows also take `double`, a fractional value like `float`, and the narrow integer
+widths `byte`, `sbyte`, `short` and `ushort`, which every read widens to `int`.
 
 `HighlightConfigFingerprint.Compute` with an extension folds each row a stat or highlight reads into
 that node's hash, and on into every highlight that depends on it, so remapping a rules path to
