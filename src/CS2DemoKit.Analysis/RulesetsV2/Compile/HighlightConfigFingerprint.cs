@@ -186,17 +186,20 @@ public static class HighlightConfigFingerprint
         }
 
         // The checked rules hash a read by its rules path, not by the provider the path lowers to, so
-        // remapping an extension row to another provider would leave the hash unchanged. Folding the rows
-        // in makes that remap a config change; a run with no extension keeps its fingerprint unchanged.
-        IEnumerable<string> rows = catalogExtension.Providers
+        // remapping an extension row to another provider would leave every hash unchanged. Folding the
+        // rows into each highlight's hash and the combined one makes that remap a config change; a run
+        // with no extension, or an empty one, keeps its hashes unchanged. Every highlight takes the rows,
+        // not only one that reads an extension path: a stale miss costs a recompute, a stale hit is wrong.
+        string rows = string.Join('\n', catalogExtension.Providers
             .Select(p => $"ext#{p.Name}#{p.Scope}#{p.ClrType}#{p.V2Name}")
-            .OrderBy(line => line, StringComparer.Ordinal);
-        string preimage = string.Join('\n', rows.Prepend(result.Fingerprint));
-        return result with
-        {
-            Fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(preimage)))
-        };
+            .OrderBy(line => line, StringComparer.Ordinal));
+        Dictionary<string, string> highlightHashes = result.HighlightHashes.ToDictionary(
+            kv => kv.Key, kv => Sha256Hex($"{kv.Value}\n{rows}"), StringComparer.Ordinal);
+        return new Result(highlightHashes, Sha256Hex($"{result.Fingerprint}\n{rows}"));
     }
+
+    private static string Sha256Hex(string preimage) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(preimage)));
 
     /// <summary>Hashes one stat and registers its bare + qualified spellings (the builder's two).</summary>
     private static void HashStat(CheckedRuleset rs, CheckedStat stat,

@@ -129,6 +129,40 @@ public class CatalogExtensionTests
     }
 
     [Test]
+    public async Task Fingerprint_PerHighlightHashes_ChangeWithTheRows()
+    {
+        const string highlighted = """
+            ruleset: ext_hl
+            for: each_player
+            stats:
+              helmet_kills:
+                count: kill
+                where: "victim.ext.has_helmet"
+                per: match
+            highlights:
+              helmet_hunter:
+                when: helmet_kills >= 2
+                per: match
+                title: "helmet hunter"
+            """;
+        CatalogExtension renamed = CatalogExtension.Create(
+        [
+            CatalogExtension.PerPlayer(Helmet, HelmetPath, note: "test helmet"),
+            CatalogExtension.Singleton(Timeouts, "match.ext.timeouts_ct")
+        ]);
+
+        HighlightConfigFingerprint.Result before =
+            HighlightConfigFingerprint.Compute([Doc(highlighted)], 64.0, "Cs2GotvProfile", Extension);
+        HighlightConfigFingerprint.Result after =
+            HighlightConfigFingerprint.Compute([Doc(highlighted)], 64.0, "Cs2GotvProfile", renamed);
+
+        await Assert.That(before.HighlightHashes.Keys).Contains("ext_hl.helmet_hunter");
+        await Assert.That(after.HighlightHashes["ext_hl.helmet_hunter"])
+            .IsNotEqualTo(before.HighlightHashes["ext_hl.helmet_hunter"])
+            .Because("a cache that checks highlights one by one must see the extension change too");
+    }
+
+    [Test]
     public async Task Fingerprint_WithAnEmptyExtension_MatchesNoExtension()
     {
         const string plain = """

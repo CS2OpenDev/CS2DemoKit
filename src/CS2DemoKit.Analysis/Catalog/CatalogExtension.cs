@@ -31,16 +31,10 @@ namespace CS2DemoKit.Analysis.Catalog;
 /// </summary>
 public sealed class CatalogExtension
 {
-    // Paths the scope adapter injects with no catalog row.
-    private static readonly string[] _injectedPaths =
-    [
-        "player.slot", "player.team", "player.name", "match.tick", CatalogScopeAdapter.BombWasPlantedPath,
-        CatalogScopeAdapter.TeamSidePath
-    ];
-
-    // The per-pawn digest's four lanes (DigestColumnLayout.KindOf); any other per-player type throws when a
-    // run builds its columns, so it is refused here instead.
-    private static readonly string[] _perPlayerTypes = ["int", "bool", "float", "string"];
+    // The per-pawn digest's lanes; any other per-player type throws when a run builds its columns, so it
+    // is refused here instead.
+    private static readonly string[] _perPlayerTypes =
+        [.. DigestColumnLayout.StorableTypes.Select(t => FriendlyTypeMap.FriendlyName(t)!)];
 
     private static readonly ConditionalWeakTable<CatalogExtension, CatalogRoot> _merged = new();
 
@@ -63,8 +57,7 @@ public sealed class CatalogExtension
         HashSet<string> paths = new(StringComparer.Ordinal);
         paths.UnionWith(embedded.Providers.Select(p => p.V2Name).OfType<string>());
         paths.UnionWith(embedded.Contexts.Select(c => c.V2Name).OfType<string>());
-        paths.UnionWith(_injectedPaths);
-        paths.UnionWith(CatalogScopeAdapter.ProjectileMembers.Select(m => $"{CatalogScopeAdapter.ProjectileRoot}.{m.Member}"));
+        paths.UnionWith(CatalogScopeAdapter.InjectedPaths);
 
         foreach (CatalogProvider row in rows)
         {
@@ -146,7 +139,7 @@ public sealed class CatalogExtension
         string? unit)
     {
         ArgumentNullException.ThrowIfNull(rulesPath);
-        string friendly = FriendlyName(valueType)
+        string friendly = FriendlyTypeMap.FriendlyName(valueType)
                           ?? throw new ArgumentException(
                               $"provider '{name}' has value type {valueType.Name}, which the rules language has no type for",
                               nameof(valueType));
@@ -200,7 +193,8 @@ public sealed class CatalogExtension
 
         if (row.Scope == "perPlayer" && !_perPlayerTypes.Contains(row.ClrType, StringComparer.Ordinal))
         {
-            throw Refused(row, $"type '{row.ClrType}' cannot be stored per player; use int, bool, float or string");
+            throw Refused(row,
+                $"type '{row.ClrType}' cannot be stored per player; use {string.Join(", ", _perPlayerTypes)}");
         }
 
         if (row.V2Type is { } v2Type && !string.Equals(v2Type, type.Kind.ToString(), StringComparison.Ordinal))
@@ -212,19 +206,6 @@ public sealed class CatalogExtension
     private static bool IsIdentifier(string segment) =>
         (char.IsAsciiLetter(segment[0]) || segment[0] == '_')
         && segment.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
-
-    private static string? FriendlyName(Type type) => type switch
-    {
-        _ when type == typeof(int) => "int",
-        _ when type == typeof(long) => "long",
-        _ when type == typeof(uint) => "uint",
-        _ when type == typeof(ulong) => "ulong",
-        _ when type == typeof(float) => "float",
-        _ when type == typeof(double) => "double",
-        _ when type == typeof(bool) => "bool",
-        _ when type == typeof(string) => "string",
-        _ => null
-    };
 
     private static ArgumentException Refused(CatalogProvider row, string why) =>
         new($"catalog extension row '{row.Name}': {why}");

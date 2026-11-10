@@ -309,4 +309,25 @@ public class LoadDocumentsTests
         }
     }
 
+    /// <summary>
+    ///     The scanner's InvalidOperationException is caught around YamlDotNet's parse only and re-thrown as
+    ///     one YamlException type, so it is caught by construction, wherever inside YamlDotNet it was raised.
+    /// </summary>
+    [Test]
+    public async Task TheScannersInvalidOperation_SurfacesAsAYamlException()
+    {
+        YamlDotNet.Core.YamlException? caught = null;
+        try
+        {
+            RulesetDocumentLoader.ParseDocuments("ruleset: [\nfor: each_player\n");
+        }
+        catch (YamlDotNet.Core.YamlException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsTypeOf<YamlScannerException>();
+        await Assert.That(caught!.InnerException).IsTypeOf<InvalidOperationException>();
+    }
+
 }

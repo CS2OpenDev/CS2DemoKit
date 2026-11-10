@@ -26,7 +26,7 @@ namespace CS2DemoKit.Analysis.Events;
 /// </param>
 /// <param name="TimeoutsLeft">
 ///     The side's tactical timeouts left as read on the same frame (unchanged since the start); -1 for a technical
-///     timeout. The count follows the side, so it swaps with the teams at the half.
+///     timeout, or when the run registers no count provider for the side. The count follows the side, so it swaps with the teams at the half.
 /// </param>
 public sealed record TimeoutEndedEvent(int FrameNumber, int ServerTick, int GameTick, int Side, int TimeoutsLeft)
     : GameEvent("timeout_ended", -1, FrameNumber, ServerTick, GameTick)

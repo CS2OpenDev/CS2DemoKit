@@ -1256,28 +1256,33 @@ out, the 0.14 fixtures pass unchanged.
 ### Synthesized purchase and timeout events need their providers (0.15.0)
 
 `item_purchase` / `item_refund` are read off `entity.controller.cash_spent` and
-`entity.controller.money`, and `timeout_started` / `timeout_ended` off five game-rules singletons.
-Both default registries carry them. A host that passes its own `PerPlayerEntityProviders` or
-`EntityProviders` without them still builds: the events are not produced, and every stat that
-triggers on one gets a `RulesetCoverageDiagnostic` naming the missing providers, rather than counting
-zero as if it were a measurement.
+`entity.controller.money`, and `timeout_started` / `timeout_ended` off the game rules' three timeout
+flags (`entity.game.t_timeout_active`, `ct_timeout_active`, `technical_timeout`). Both default
+registries carry them. A host that passes its own `PerPlayerEntityProviders` or `EntityProviders`
+without them still builds: the events are not produced, and every stat that triggers only on them
+gets a `RulesetCoverageDiagnostic` naming the missing providers, rather than counting zero as if it
+were a measurement. The two counts (`entity.game.t_timeouts_left`, `ct_timeouts_left`) are optional:
+without one, the events carry -1 for that side's timeouts left.
 
 ### Catalog extension rows (0.15.0)
 
 `CatalogExtension` is new. `Create` refuses a per-player row whose type the per-pawn digest cannot
 store: only `int`, `bool`, `float` and `string` are accepted, so `long`, `uint`, `ulong` and `double`
 are refused at `Create` instead of throwing when a run builds its columns. Singleton rows take any
-mapped type. `HighlightConfigFingerprint.Compute` with an extension folds the rows into the
-fingerprint, so remapping a rules path to another provider invalidates cached highlights; with no
-extension, or an empty one, the fingerprint is unchanged from 0.14.
+mapped type. `HighlightConfigFingerprint.Compute` with an extension folds the rows into every
+per-highlight hash and the combined fingerprint, so remapping a rules path to another provider
+invalidates cached highlights; with no extension, or an empty one, both are unchanged from 0.14. The
+rows are hashed by name, scope, type and path: a host that changes what a provider reads while
+keeping its name changes its own code, and has to invalidate its own cache.
 
 ### A YAML file the scanner cannot read is that file's error (0.15.0)
 
 YamlDotNet's scanner throws `InvalidOperationException`, not `YamlException`, on some malformed flow
 input (an unclosed `ruleset: [`). Through 0.14.1 that escaped `YamlConfigLoader.LoadDocuments` and
 `TryLoadDirectory` and failed the whole load. It is now that file's `RuleConfigError` and a
-`FailedFiles` entry, and the other files still load; `RulesetDocumentLoader.TryLoad` returns null for
-it. An `InvalidOperationException` thrown from outside YamlDotNet still propagates.
+`FailedFiles` entry with no line or column, and the other files still load;
+`RulesetDocumentLoader.TryLoad` returns null for it. Only an exception from YamlDotNet's own parse is
+caught this way: an `InvalidOperationException` from anywhere else in the load still propagates.
 
 ## Credentials
 

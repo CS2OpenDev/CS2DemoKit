@@ -190,6 +190,27 @@ public sealed class CatalogScopeAdapter
     // The root the role member tree is built under; never a scope a ruleset sees.
     private const string RoleRoot = "role";
 
+    /// <summary>
+    ///     The paths <see cref="From" /> injects with no catalog row: the one list a
+    ///     <see cref="CatalogExtension" /> row is checked against, so the two cannot drift.
+    /// </summary>
+    internal static IEnumerable<string> InjectedPaths => InjectedSymbols().Select(s => s.Path);
+
+    // Loader-injected symbols with no catalog entry.
+    private static IEnumerable<(string Path, RulesType Type)> InjectedSymbols()
+    {
+        yield return ("player.slot", RulesType.Int);
+        yield return ("player.team", RulesType.Int);
+        yield return ("player.name", RulesType.String);
+        yield return ("match.tick", RulesType.Instant); // instant — no catalog event field
+        yield return (BombWasPlantedPath, RulesType.Bool);
+        yield return (TeamSidePath, RulesType.Int);
+        foreach ((string member, RulesType type) in ProjectileMembers)
+        {
+            yield return ($"{ProjectileRoot}.{member}", type);
+        }
+    }
+
     /// <summary>Builds an adapter from a catalog root.</summary>
     /// <param name="catalog">The generated catalog.</param>
     /// <returns>The adapter.</returns>
@@ -234,16 +255,17 @@ public sealed class CatalogScopeAdapter
             tree.Add(path, type);
         }
 
-        // Loader-injected symbols with no catalog entry.
-        tree.Add("player.slot", RulesType.Int);
-        tree.Add("player.team", RulesType.Int);
-        tree.Add("player.name", RulesType.String);
-        tree.Add("match.tick", RulesType.Instant); // instant — no catalog event field
-        tree.AddIfAbsent(BombWasPlantedPath, RulesType.Bool); // sticky; the catalog gains it later
-        tree.Add(TeamSidePath, RulesType.Int);
-        foreach ((string member, RulesType type) in ProjectileMembers)
+        foreach ((string path, RulesType type) in InjectedSymbols())
         {
-            tree.Add($"{ProjectileRoot}.{member}", type);
+            // round.bomb.was_planted is sticky: the catalog may gain it later, and then that row wins.
+            if (path == BombWasPlantedPath)
+            {
+                tree.AddIfAbsent(path, type);
+            }
+            else
+            {
+                tree.Add(path, type);
+            }
         }
 
         IScopeSymbol roleRoot = roleTree.Build(RoleRoot);

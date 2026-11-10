@@ -86,7 +86,17 @@ public static class RulesetDocumentLoader
     {
         YamlStream stream = [];
         using StringReader reader = new(yaml);
-        stream.Load(reader);
+        try
+        {
+            stream.Load(reader);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // YamlDotNet's scanner throws this, not YamlException, on some malformed flow input (an
+            // unclosed `ruleset: [`), sometimes from inside a BCL collection it drives. Only Load is
+            // in this try, so whatever is caught here came out of YamlDotNet.
+            throw new YamlScannerException(ex);
+        }
         List<(int, YamlNode)> documents = new(stream.Documents.Count);
         for (int i = 0; i < stream.Documents.Count; i++)
         {
@@ -133,21 +143,11 @@ public static class RulesetDocumentLoader
         {
             return ParseDocuments(yaml);
         }
-        catch (Exception ex) when (ex is YamlException || IsYamlScannerFailure(ex))
+        catch (YamlException)
         {
             return null;
         }
     }
-
-    /// <summary>
-    ///     Whether <paramref name="ex" /> is YamlDotNet's scanner rejecting malformed flow input (an unclosed
-    ///     <c>ruleset: [</c>), which it reports as an <see cref="InvalidOperationException" /> rather than a
-    ///     <see cref="YamlException" />. Only one thrown from inside YamlDotNet counts: the same exception
-    ///     type from our own code is a bug and must propagate, not read as an unparseable file.
-    /// </summary>
-    internal static bool IsYamlScannerFailure(Exception ex) =>
-        ex is InvalidOperationException
-        && ex.TargetSite?.DeclaringType?.Assembly == typeof(YamlException).Assembly;
 
     private static Outcome MultiDocumentOutcome(int count, string? file) =>
         new(null,
@@ -182,3 +182,11 @@ public static class RulesetDocumentLoader
     /// <param name="Diagnostics">Every mapping / expansion / validation diagnostic, in document order.</param>
     public sealed record Outcome(RulesetDoc? Doc, IReadOnlyList<RulesetDiagnostic> Diagnostics);
 }
+
+/// <summary>
+///     YamlDotNet's scanner failing with an <see cref="InvalidOperationException" /> instead of a
+///     <see cref="YamlException" />, wrapped by <c>RulesetDocumentLoader.ParseDocuments</c> so callers catch
+///     one type. It carries no position: the scanner's exception has none.
+/// </summary>
+internal sealed class YamlScannerException(InvalidOperationException inner)
+    : YamlException(inner.Message, inner);

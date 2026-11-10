@@ -1,5 +1,6 @@
 #region
 
+using CS2DemoKit.Parser.GameEvents;
 using CS2DemoKit.Analysis.Graphs;
 using CS2DemoKit.Analysis.Plugins;
 using CS2DemoKit.Analysis.Profiles;
@@ -50,6 +51,8 @@ public class SynthesizedEventCoverageTests
 
         await Assert.That(build.ExcludedRulesets.Count).IsEqualTo(0);
         await Assert.That(build.EntityScanner?.Purchases).IsNull();
+        await Assert.That(build.RelevantMessageTypes).DoesNotContain(typeof(ItemPickupEvent))
+            .Because("no pickups are dispatched for a synthesis that will not run");
         IReadOnlyList<RulesetCoverageDiagnostic> coverage = build.RulesetCoverage ?? [];
         await Assert.That(coverage.Select(c => c.NodeId)).Contains("buys");
         await Assert.That(coverage.Select(c => c.NodeId)).Contains("refunds");
@@ -68,6 +71,33 @@ public class SynthesizedEventCoverageTests
         await Assert.That(coverage.Select(c => c.NodeId)).Contains("timeouts");
         await Assert.That(coverage.Single(c => c.NodeId == "timeouts").Message)
             .Contains(EntityChangeScanner.TimeoutFlagContexts[0]);
+    }
+
+    [Test]
+    public async Task AnEntityRegistryWithTheFlagsButNotTheCounts_StillProducesTheTimeoutEvents()
+    {
+        EntityValueProviderRegistry flagsOnly = new();
+        foreach (IEntityValueProvider provider in EntityValueProviderRegistry.CreateDefault().All
+                     .Where(p => !EntityChangeScanner.TimeoutsLeftContexts.Contains(p.ContextName)))
+        {
+            flagsOnly.Register(provider);
+        }
+
+        BuildResult build = DemoAnalysis.Build(_target, Load(),
+            new AnalysisOptions { EntityProviders = flagsOnly });
+
+        await Assert.That((build.RulesetCoverage ?? []).Select(c => c.NodeId)).DoesNotContain("timeouts")
+            .Because("the counts only fill timeouts_left, which reads -1 without them");
+    }
+
+    [Test]
+    public async Task TheTimeoutCounts_EmitTheirMarkerOnEveryChange()
+    {
+        IEnumerable<IEntityValueProvider> counts = BuiltinProviderSpecs.CreateGameRulesProviders()
+            .Where(p => EntityChangeScanner.TimeoutsLeftContexts.Contains(p.ContextName));
+
+        await Assert.That(counts.Select(p => p.EmitOn)).IsEquivalentTo([ChangeDirection.Both, ChangeDirection.Both])
+            .Because("a count that only goes down never rises, so RisingOnly would never fire on a timeout");
     }
 
     [Test]

@@ -8253,7 +8253,7 @@
           ]
         }
       ],
-      "note": "Synthesized from the game rules\u0027 timeout flags on the frame one rises, so event.tick is the FRAME clock. side is 2 (T) or 3 (CT) for a tactical timeout and 0 for a technical one; timeouts_left is that side\u0027s count read on the same frame (already lowered for this timeout on the tournament demos measured), -1 for a technical timeout. The counts follow the side, so they swap with the teams at the half. Some servers raise the technical flag together with a tactical one, which fires two starts on one frame."
+      "note": "Synthesized from the game rules\u0027 timeout flags on the frame one rises, so event.tick is the FRAME clock. side is 2 (T) or 3 (CT) for a tactical timeout and 0 for a technical one; timeouts_left is that side\u0027s count read on the same frame (already lowered for this timeout on the tournament demos measured), -1 for a technical timeout or when the run registers no count provider for that side. The counts follow the side, so they swap with the teams at the half. Some servers raise the technical flag together with a tactical one, which fires two starts on one frame."
     }
   ]
 }

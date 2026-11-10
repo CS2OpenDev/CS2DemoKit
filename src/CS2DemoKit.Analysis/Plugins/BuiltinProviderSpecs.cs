@@ -502,9 +502,9 @@ public static class BuiltinProviderSpecs
             typeof(CCSGameRulesCTTimeOutActiveMarker), false),
         new GenericSingletonFieldProvider(GameTTimeoutActive, ChangeDirection.RisingOnly,
             typeof(CCSGameRulesTerroristTimeOutActiveMarker), false),
-        new GenericSingletonFieldProvider(GameCtTimeoutsLeft, ChangeDirection.RisingOnly,
+        new GenericSingletonFieldProvider(GameCtTimeoutsLeft, ChangeDirection.Both,
             typeof(CCSGameRulesCTTimeOutsMarker), 0),
-        new GenericSingletonFieldProvider(GameTTimeoutsLeft, ChangeDirection.RisingOnly,
+        new GenericSingletonFieldProvider(GameTTimeoutsLeft, ChangeDirection.Both,
             typeof(CCSGameRulesTerroristTimeOutsMarker), 0),
         new GenericSingletonFieldProvider(GameTechnicalTimeout, ChangeDirection.RisingOnly,
             typeof(CCSGameRulesTechnicalTimeOutMarker), false)
