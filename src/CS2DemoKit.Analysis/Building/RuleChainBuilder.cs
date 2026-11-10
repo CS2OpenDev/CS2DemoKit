@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Linq.Expressions;
 using CS2DemoKit.Analysis.Abstractions;
+using CS2DemoKit.Analysis.Catalog;
 using CS2DemoKit.Analysis.Config;
 using CS2DemoKit.Analysis.Edges;
 using CS2DemoKit.Analysis.Graphs;
@@ -156,6 +157,14 @@ public sealed partial class RuleChainBuilder
 
     /// <summary>The active engine-side profile resolved for this build.</summary>
     public DemoSourceProfile Profile => _logicalResolver.Profile;
+
+    /// <summary>
+    ///     The extra catalog rows the rulesets were composed against, so the lowering maps their singleton
+    ///     paths to the same providers. Null for the embedded catalog alone.
+    /// </summary>
+    public CatalogExtension? CatalogExtension { get; init; }
+
+    private CatalogRoot Catalog => CatalogResource.Load(CatalogExtension);
 
     /// <summary>
     ///     Materializes the built-in context rules and every ruleset in <paramref name="rulesets" />

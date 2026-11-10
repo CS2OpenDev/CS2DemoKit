@@ -164,9 +164,31 @@ public sealed class CatalogScopeAdapter
     /// </summary>
     public IScopeSymbol Projectile { get; }
 
-    /// <summary>Builds an adapter from the embedded catalog (<see cref="CatalogResource.Load" />).</summary>
+    /// <summary>Builds an adapter from the embedded catalog (<see cref="CatalogResource.Load()" />).</summary>
     /// <returns>The adapter.</returns>
     public static CatalogScopeAdapter FromEmbeddedCatalog() => From(CatalogResource.Load());
+
+    /// <summary>Builds an adapter from the embedded catalog plus <paramref name="extension" />'s rows.</summary>
+    /// <param name="extension">Extra provider rows, or null for the embedded catalog alone.</param>
+    /// <returns>The adapter.</returns>
+    public static CatalogScopeAdapter FromEmbeddedCatalog(CatalogExtension? extension) =>
+        From(CatalogResource.Load(extension));
+
+    /// <summary>
+    ///     A per-player rules path relative to <c>player.</c>, which is also its spelling after a role handle:
+    ///     <c>player.health</c> is <c>health</c>, <c>player.dv.has_helmet</c> is <c>dv.has_helmet</c>.
+    /// </summary>
+    /// <param name="path">A per-player provider's rules path.</param>
+    /// <returns>The relative path, or <paramref name="path" /> when it has no root.</returns>
+    public static string PlayerRelativePath(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        int dot = path.IndexOf('.', StringComparison.Ordinal);
+        return dot < 0 ? path : path[(dot + 1)..];
+    }
+
+    // The root the role member tree is built under; never a scope a ruleset sees.
+    private const string RoleRoot = "role";
 
     /// <summary>Builds an adapter from a catalog root.</summary>
     /// <param name="catalog">The generated catalog.</param>
@@ -179,8 +201,10 @@ public sealed class CatalogScopeAdapter
         NamespaceTreeBuilder tree = new();
 
         // Per-player providers double as role-handle members (spec §4: "the member set after the
-        // role is exactly the per-player provider set").
-        List<IScopeSymbol> roleMembers = [];
+        // role is exactly the per-player provider set"), at their path relative to `player.`. Every
+        // built-in path has one segment there; a catalog extension's may nest (player.dv.has_helmet
+        // is victim.dv.has_helmet).
+        NamespaceTreeBuilder roleTree = new();
         // The command providers are the thrower's too (player.cmd.* as thrower.cmd.*), since the
         // thrower's slot is fixed per instance like the ruleset player's; a role read per fire is not.
         List<IScopeSymbol> commandMembers = [];
@@ -193,7 +217,7 @@ public sealed class CatalogScopeAdapter
             tree.Add(path, type);
             if (string.Equals(provider.Scope, "perPlayer", StringComparison.Ordinal))
             {
-                roleMembers.Add(ScopeSymbol.Value(LastSegment(path), type));
+                roleTree.Add(RoleRoot + "." + PlayerRelativePath(path), type);
             }
             else if (string.Equals(provider.Scope, "perPlayerCommand", StringComparison.Ordinal))
             {
@@ -220,6 +244,16 @@ public sealed class CatalogScopeAdapter
         foreach ((string member, RulesType type) in ProjectileMembers)
         {
             tree.Add($"{ProjectileRoot}.{member}", type);
+        }
+
+        IScopeSymbol roleRoot = roleTree.Build(RoleRoot);
+        List<IScopeSymbol> roleMembers = [];
+        foreach (string member in roleRoot.MemberNames)
+        {
+            if (roleRoot.TryGetMember(member, out IScopeSymbol? symbol))
+            {
+                roleMembers.Add(symbol);
+            }
         }
 
         IScopeSymbol player = tree.Build("player");

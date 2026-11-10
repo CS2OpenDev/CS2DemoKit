@@ -151,10 +151,25 @@ public static class HighlightConfigFingerprint
     /// <param name="profileId">The active demo-source profile id (e.g. <c>Cs2GotvProfile</c>).</param>
     /// <returns>The per-highlight hash map and combined fingerprint.</returns>
     /// <exception cref="InvalidOperationException">The documents fail composition (diagnostics listed).</exception>
-    public static Result Compute(IReadOnlyList<RulesetDoc> docs, double ticksPerSecond, string profileId)
+    public static Result Compute(IReadOnlyList<RulesetDoc> docs, double ticksPerSecond, string profileId) =>
+        Compute(docs, ticksPerSecond, profileId, null);
+
+    /// <summary>
+    ///     <see cref="Compute(IReadOnlyList{RulesetDoc}, double, string)" /> against the embedded catalog plus
+    ///     <paramref name="catalogExtension" />'s rows, the catalog a run with the same
+    ///     <see cref="AnalysisOptions.CatalogExtension" /> composes against.
+    /// </summary>
+    /// <param name="docs">The loaded ruleset documents.</param>
+    /// <param name="ticksPerSecond">The demo's tick rate.</param>
+    /// <param name="profileId">The active demo-source profile id.</param>
+    /// <param name="catalogExtension">Extra provider rows, or null.</param>
+    /// <returns>The per-highlight hash map and combined fingerprint.</returns>
+    /// <exception cref="InvalidOperationException">The documents fail composition (diagnostics listed).</exception>
+    public static Result Compute(IReadOnlyList<RulesetDoc> docs, double ticksPerSecond, string profileId,
+        CatalogExtension? catalogExtension)
     {
         ArgumentNullException.ThrowIfNull(docs);
-        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load());
+        CatalogScopeAdapter adapter = CatalogScopeAdapter.From(CatalogResource.Load(catalogExtension));
         RulesetComposition.Result composed =
             RulesetComposition.Compose(docs, adapter, ticksPerSecond, profileId);
         if (!composed.Success)

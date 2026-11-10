@@ -132,9 +132,10 @@ public static class RulesetResolver
             _providerByV2Name = adapter.Catalog.Providers
                 .Where(p => p.V2Name is not null)
                 .ToDictionary(p => p.V2Name!, StringComparer.Ordinal);
+            // Keyed by the path relative to `player.`, which is the member's spelling after a role.
             _perPlayerProviderByMember = adapter.Catalog.Providers
                 .Where(p => string.Equals(p.Scope, "perPlayer", StringComparison.Ordinal) && p.V2Name is not null)
-                .ToDictionary(p => LastSegment(p.V2Name!), StringComparer.Ordinal);
+                .ToDictionary(p => CatalogScopeAdapter.PlayerRelativePath(p.V2Name!), StringComparer.Ordinal);
             _commandProviderByMember = adapter.Catalog.Providers
                 .Where(p => string.Equals(p.Scope, "perPlayerCommand", StringComparison.Ordinal) && p.V2Name is not null)
                 .ToDictionary(p => LastSegment(p.V2Name!), StringComparer.Ordinal);
@@ -2407,9 +2408,10 @@ public static class RulesetResolver
             // The projectile subject's thrower: the role's slot is the instance's, fixed at
             // materialization, so the read lowers like the ruleset player's own.
             string[] segments = reference.Path.Split('.');
-            if (_forEachProjectile && segments.Length == 2
+            string member = CatalogScopeAdapter.PlayerRelativePath(reference.Path);
+            if (_forEachProjectile && segments.Length >= 2
                                    && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
-                                   && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider))
+                                   && _perPlayerProviderByMember.TryGetValue(member, out CatalogProvider? throwerProvider))
             {
                 entity = new EntityProviderReference(reference.Path, throwerProvider.Name,
                     EntityProviderReference.PlayerSubject);
@@ -2431,9 +2433,9 @@ public static class RulesetResolver
             // resolves to its event slot-field (killer → Attacker) via the view's roles table, threaded
             // onto the reference so the planner emits `<SlotField>.<provider>` — the read of the ROLE's
             // per-fire entity value, not the ruleset player's.
-            if (view is not null && segments.Length == 2
+            if (view is not null && segments.Length >= 2
                                  && view.Roles.FirstOrDefault(r => string.Equals(r.Role, segments[0], StringComparison.Ordinal)) is { } viewRole
-                                 && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? roleProvider))
+                                 && _perPlayerProviderByMember.TryGetValue(member, out CatalogProvider? roleProvider))
             {
                 entity = new EntityProviderReference(
                     reference.Path, roleProvider.Name, segments[0], viewRole.Field);
@@ -2462,9 +2464,10 @@ public static class RulesetResolver
             }
 
             string[] segments = entity.Path.Split('.');
-            return _forEachProjectile && segments.Length == 2
+            return _forEachProjectile && segments.Length >= 2
                    && string.Equals(segments[0], CatalogScopeAdapter.ThrowerRole, StringComparison.Ordinal)
-                   && _perPlayerProviderByMember.TryGetValue(segments[1], out CatalogProvider? throwerProvider)
+                   && _perPlayerProviderByMember.TryGetValue(CatalogScopeAdapter.PlayerRelativePath(entity.Path),
+                       out CatalogProvider? throwerProvider)
                    && string.Equals(throwerProvider.Name, entity.ProviderName, StringComparison.Ordinal);
         }
 
