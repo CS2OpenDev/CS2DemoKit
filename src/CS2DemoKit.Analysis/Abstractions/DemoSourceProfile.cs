@@ -164,6 +164,15 @@ public abstract class DemoSourceProfile
 
     /// <summary>Logical binding for the "item pickup" game event. See class summary for binding semantics.</summary>
     public virtual LogicalEventBinding? ItemPickup => null;
+
+    /// <summary>
+    ///     Logical binding for the synthesized "item purchase" event: a rise of a player's cash spent this
+    ///     round, with the item from the same frame's pickup. See class summary for binding semantics.
+    /// </summary>
+    public virtual LogicalEventBinding? ItemPurchase => null;
+
+    /// <summary>Logical binding for the synthesized "item refund" event: a sale back in buy time.</summary>
+    public virtual LogicalEventBinding? ItemRefund => null;
     // ── Identity / matching ───────────────────────────────────────────────
 
     /// <summary>The source kind this profile recognises.</summary>

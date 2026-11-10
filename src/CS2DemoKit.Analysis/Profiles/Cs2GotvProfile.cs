@@ -111,6 +111,16 @@ public class Cs2GotvProfile : DemoSourceProfile
     // ── Items / economy ───────────────────────────────────────────────────
 
     /// <inheritdoc />
+    public override LogicalEventBinding? ItemPurchase =>
+        // Synthesized by PurchaseSynthesizer from the controller's cash spent and item_pickup; GOTV
+        // has no wire item_purchase. Inherited by every profile.
+        LogicalEventBinding.Of("item_purchase");
+
+    /// <inheritdoc />
+    public override LogicalEventBinding? ItemRefund =>
+        LogicalEventBinding.Of("item_refund");
+
+    /// <inheritdoc />
     public override LogicalEventBinding? ItemPickup =>
         LogicalEventBinding.Of("item_pickup");
 

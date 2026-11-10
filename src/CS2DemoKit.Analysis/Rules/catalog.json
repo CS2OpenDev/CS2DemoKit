@@ -1082,6 +1082,70 @@
       ]
     },
     {
+      "name": "item_purchase",
+      "clrType": "ItemPurchasedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "Cost",
+          "type": "int",
+          "v2Name": "event.Cost",
+          "v2Type": "Int"
+        },
+        {
+          "name": "DefIndex",
+          "type": "int",
+          "v2Name": "event.DefIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Item",
+          "type": "string",
+          "v2Name": "event.Item",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
+      "name": "item_refund",
+      "clrType": "ItemRefundedEvent",
+      "synthesized": true,
+      "frequencyClass": "unmeasured",
+      "fields": [
+        {
+          "name": "DefIndex",
+          "type": "int",
+          "v2Name": "event.DefIndex",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Item",
+          "type": "string",
+          "v2Name": "event.Item",
+          "v2Type": "String"
+        },
+        {
+          "name": "PlayerSlot",
+          "type": "int",
+          "v2Name": "event.PlayerSlot",
+          "v2Type": "Int"
+        },
+        {
+          "name": "Refund",
+          "type": "int",
+          "v2Name": "event.Refund",
+          "v2Type": "Int"
+        }
+      ]
+    },
+    {
       "name": "match_end_terminal",
       "clrType": "MatchEndTerminalEvent",
       "synthesized": true,
@@ -3664,6 +3728,20 @@
           ]
         },
         {
+          "logicalName": "$item_purchase",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "logicalName": "$item_refund",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4034,6 +4112,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$item_purchase",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "logicalName": "$item_refund",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_refund"
           ]
         },
         {
@@ -4410,6 +4502,20 @@
           ]
         },
         {
+          "logicalName": "$item_purchase",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "logicalName": "$item_refund",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -4773,6 +4879,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$item_purchase",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "logicalName": "$item_refund",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_refund"
           ]
         },
         {
@@ -5156,6 +5276,20 @@
           ]
         },
         {
+          "logicalName": "$item_purchase",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "logicalName": "$item_refund",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
           "logicalName": "$match_end",
           "semantics": "FirstWins",
           "concreteEvents": [
@@ -5482,6 +5616,20 @@
           "semantics": "FirstWins",
           "concreteEvents": [
             "item_pickup"
+          ]
+        },
+        {
+          "logicalName": "$item_purchase",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "logicalName": "$item_refund",
+          "semantics": "FirstWins",
+          "concreteEvents": [
+            "item_refund"
           ]
         },
         {
@@ -6803,6 +6951,152 @@
         }
       ],
       "note": "Binds to nobody: the event names the inferno entity, not the projectile or a player. Join it to a molotov\u0027s projectile row by position (the fire starts where the projectile burst) and tick."
+    },
+    {
+      "name": "item_purchased",
+      "event": "item_purchase",
+      "binding": "actor_slot",
+      "actor": "buyer",
+      "roles": [
+        {
+          "role": "buyer",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "cost",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Cost"
+        },
+        {
+          "name": "def_index",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "DefIndex"
+        },
+        {
+          "name": "item",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Item"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "item_purchase"
+          ]
+        }
+      ],
+      "note": "Synthesized from a rise of the buyer\u0027s cash spent this round, so event.tick is the FRAME clock. cost is the exact rise. item is the buyer\u0027s item_pickup on the same frame, \u0060unknown\u0060 when there was none (a buy dropped straight to a teammate, about 1.5% of buys), and several items joined with \u0060\u002B\u0060 when one frame\u0027s buys cannot be split by the price list. item collapses variants (m4a1 is the M4A4 or the M4A1-S, deagle the Deagle or the R8); def_index tells them apart. Warmup buys are included: gate on match.live."
+    },
+    {
+      "name": "item_refunded",
+      "event": "item_refund",
+      "binding": "actor_slot",
+      "actor": "buyer",
+      "roles": [
+        {
+          "role": "buyer",
+          "field": "PlayerSlot"
+        }
+      ],
+      "baked": [],
+      "facets": [
+        {
+          "name": "def_index",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "DefIndex"
+        },
+        {
+          "name": "item",
+          "type": "string",
+          "v2Type": "String",
+          "field": "Item"
+        },
+        {
+          "name": "refund",
+          "type": "int",
+          "v2Type": "Int",
+          "field": "Refund"
+        }
+      ],
+      "availability": "all",
+      "profiles": [
+        {
+          "profile": "Cs2FaceitProfile",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartNoMatchStartProfile",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
+          "profile": "Cs2GotvPreRestartProfile",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
+          "profile": "Cs2GotvProfile",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
+          "profile": "Cs2HltvProfile",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        },
+        {
+          "profile": "Cs2PovProfile",
+          "concreteEvents": [
+            "item_refund"
+          ]
+        }
+      ],
+      "note": "Synthesized from a fall of the player\u0027s cash spent this round matched by an equal rise of the account, so event.tick is the FRAME clock. refund is the amount given back; item is the player\u0027s latest purchase this round at that cost, else \u0060unknown\u0060."
     },
     {
       "name": "kill",

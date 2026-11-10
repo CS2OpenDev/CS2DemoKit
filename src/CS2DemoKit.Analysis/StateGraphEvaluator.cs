@@ -840,6 +840,16 @@ public sealed class StateGraphEvaluator
 
                     DispatchPostFrame(postMsg);
                 }
+
+                // Purchases and refunds, read off the folded frame and its pickups.
+                if (_entityScanner.Purchases is { } purchases)
+                {
+                    IReadOnlyList<NetMessage> bought = purchases.Step(msgs, _entityScanner.Snapshot, frameTick);
+                    for (int p = 0; p < bought.Count; p++)
+                    {
+                        DispatchPostFrame(bought[p]);
+                    }
+                }
             }
 
             // ── The terminal round close, on its own carrier frame, after the real frames. ──

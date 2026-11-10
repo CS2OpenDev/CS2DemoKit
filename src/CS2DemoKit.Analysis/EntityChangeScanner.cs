@@ -318,6 +318,9 @@ public sealed class EntityChangeScanner
         _preFrameSnapshot = new PreFrameSnapshot(_layout);
     }
 
+    /// <summary>The <c>item_purchase</c> / <c>item_refund</c> synthesis, or null when nothing subscribes.</summary>
+    internal PurchaseSynthesizer? Purchases { get; set; }
+
     /// <summary>Where the singleton named <paramref name="contextName" /> sits among the tracked ones, or -1.</summary>
     internal int TrackedSingletonIndex(string contextName) =>
         _tracked.FindIndex(t => string.Equals(t.Provider.ContextName, contextName, StringComparison.OrdinalIgnoreCase));
@@ -525,6 +528,7 @@ public sealed class EntityChangeScanner
         _postFrame.Clear();
         _lastWinStatus = -1;
         Array.Fill(_lastTimeoutFlag, -1);
+        Purchases?.Reset();
         _preFrameSnapshotFrozen = false;
         _lastCompatibleLayout = null;
         _snapshotClock = int.MinValue;

@@ -101,6 +101,9 @@ public sealed class EventRegistry
         // Synthesized (EntityChangeScanner): an edge of one of the game rules' three timeout flags.
         ("timeout_started", typeof(TimeoutStartedEvent)),
         ("timeout_ended", typeof(TimeoutEndedEvent)),
+        // Synthesized (PurchaseSynthesizer): a rise or refund of a player's cash spent this round.
+        ("item_purchase", typeof(ItemPurchasedEvent)),
+        ("item_refund", typeof(ItemRefundedEvent)),
         // Synthesized (EntityChangeScanner): a grenade projectile's first and last frame, from the
         // projectile rows of the entity digest.
         ("projectile_created", typeof(ProjectileCreatedEvent)),

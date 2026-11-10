@@ -333,6 +333,14 @@ public sealed partial class RuleChainBuilder
         // The plant-site round facts read the planter's place: an indirect need like the hurt
         // enrichments', so a ruleset naming any of the three gates the place column in.
         bool roundFactsNeeded = RoundFactIds.Members.Any(m => IsReferencedByV2Reads(m.V2Name, rulesets));
+
+        // item_purchase / item_refund are read off two economy columns and the frame's pickups.
+        bool emitPurchases = RulesetsSubscribeToEvent("item_purchase", rulesets)
+                             || RulesetsSubscribeToEvent("item_refund", rulesets);
+        if (emitPurchases)
+        {
+            relevantTypes.Add(typeof(ItemPickupEvent));
+        }
         if (_perPlayerEntityProviders is { All.Count: > 0 })
         {
             // B6 relative economy: a v2 read of round.team.equipment / round.enemies.equipment needs the
@@ -374,6 +382,12 @@ public sealed partial class RuleChainBuilder
                 }
 
                 if (observed.Remove(provider.Name))
+                {
+                    referenced = true;
+                }
+
+                if (emitPurchases && provider.Name is PurchaseSynthesizer.CashSpentProvider
+                        or PurchaseSynthesizer.MoneyProvider)
                 {
                     referenced = true;
                 }
@@ -549,6 +563,11 @@ public sealed partial class RuleChainBuilder
                 projectileClasses,
                 emitProjectiles,
                 emitTimeouts);
+            if (emitPurchases)
+            {
+                entityScanner.Purchases = new PurchaseSynthesizer(entityScanner.ColumnLayout.Names);
+            }
+
             if (ReadsUserCommands(rulesets, out bool history))
             {
                 entityScanner.Commands = new UserCmdReconstructor { OnDemand = true, TrackInputs = history };

@@ -353,6 +353,8 @@
         "grenade_released",
         "he_grenade",
         "inferno_started",
+        "item_purchased",
+        "item_refunded",
         "kill",
         "molotov",
         "projectile_landed",
@@ -397,11 +399,17 @@
         "class": {
           "markdownDescription": "Facet \u0060class\u0060 (type \u0060string\u0060). Exposed by: projectile_landed, projectile_thrown. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "cost": {
+          "markdownDescription": "Facet \u0060cost\u0060 (type \u0060int\u0060). Exposed by: item_purchased. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "counter_strafe_admitted": {
           "markdownDescription": "Facet \u0060counter_strafe_admitted\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "counter_strafe_good": {
           "markdownDescription": "Facet \u0060counter_strafe_good\u0060 (type \u0060bool\u0060). Exposed by: shot, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "def_index": {
+          "markdownDescription": "Facet \u0060def_index\u0060 (type \u0060int\u0060). Exposed by: item_purchased, item_refunded. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "distance": {
           "markdownDescription": "Facet \u0060distance\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -448,6 +456,9 @@
         "in_air": {
           "markdownDescription": "Facet \u0060in_air\u0060 (type \u0060bool\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
+        "item": {
+          "markdownDescription": "Facet \u0060item\u0060 (type \u0060string\u0060). Exposed by: item_purchased, item_refunded. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
         "no_scope": {
           "markdownDescription": "Facet \u0060no_scope\u0060 (type \u0060bool\u0060). Exposed by: death, kill, shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
@@ -459,6 +470,9 @@
         },
         "recoil_index": {
           "markdownDescription": "Facet \u0060recoil_index\u0060 (type \u0060float\u0060). Exposed by: shot_landed. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
+        },
+        "refund": {
+          "markdownDescription": "Facet \u0060refund\u0060 (type \u0060int\u0060). Exposed by: item_refunded. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
         },
         "rounds_played": {
           "markdownDescription": "Facet \u0060rounds_played\u0060 (type \u0060int\u0060). Exposed by: round_decided. Availability: all. Value is a unary test (literal / \u0060in list\u0060 / comparison / \u0060[lo..hi]\u0060)."
@@ -1483,6 +1497,72 @@
             "properties": {
               "match": {
                 "$ref": "#/$defs/match_inferno_started"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "item_purchased"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "item_purchased"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_item_purchased"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "on": {
+                    "const": "item_refunded"
+                  }
+                },
+                "required": [
+                  "on"
+                ]
+              },
+              {
+                "properties": {
+                  "count": {
+                    "const": "item_refunded"
+                  }
+                },
+                "required": [
+                  "count"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "match": {
+                "$ref": "#/$defs/match_item_refunded"
               }
             }
           }
@@ -2579,6 +2659,50 @@
         },
         "z": {
           "markdownDescription": "\u0060z\u0060 (type \u0060float\u0060) on view \u0060inferno_started\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_item_purchased": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060item_purchased\u0060 (event \u0060item_purchase\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from a rise of the buyer\u0027s cash spent this round, so event.tick is the FRAME clock. cost is the exact rise. item is the buyer\u0027s item_pickup on the same frame, \u0060unknown\u0060 when there was none (a buy dropped straight to a teammate, about 1.5% of buys), and several items joined with \u0060\u002B\u0060 when one frame\u0027s buys cannot be split by the price list. item collapses variants (m4a1 is the M4A4 or the M4A1-S, deagle the Deagle or the R8); def_index tells them apart. Warmup buys are included: gate on match.live.",
+      "properties": {
+        "cost": {
+          "markdownDescription": "\u0060cost\u0060 (type \u0060int\u0060) on view \u0060item_purchased\u0060."
+        },
+        "def_index": {
+          "markdownDescription": "\u0060def_index\u0060 (type \u0060int\u0060) on view \u0060item_purchased\u0060."
+        },
+        "item": {
+          "markdownDescription": "\u0060item\u0060 (type \u0060string\u0060) on view \u0060item_purchased\u0060."
+        },
+        "actor": {
+          "enum": [
+            "any"
+          ],
+          "markdownDescription": "Suppress the implicit actor binding (\u0060any\u0060 only)."
+        }
+      }
+    },
+    "match_item_refunded": {
+      "type": "object",
+      "additionalProperties": false,
+      "markdownDescription": "match: facets for view \u0060item_refunded\u0060 (event \u0060item_refund\u0060, binding \u0060actor_slot\u0060). Available on: Cs2FaceitProfile, Cs2GotvPreRestartNoMatchStartProfile, Cs2GotvPreRestartProfile, Cs2GotvProfile, Cs2HltvProfile, Cs2PovProfile. Synthesized from a fall of the player\u0027s cash spent this round matched by an equal rise of the account, so event.tick is the FRAME clock. refund is the amount given back; item is the player\u0027s latest purchase this round at that cost, else \u0060unknown\u0060.",
+      "properties": {
+        "def_index": {
+          "markdownDescription": "\u0060def_index\u0060 (type \u0060int\u0060) on view \u0060item_refunded\u0060."
+        },
+        "item": {
+          "markdownDescription": "\u0060item\u0060 (type \u0060string\u0060) on view \u0060item_refunded\u0060."
+        },
+        "refund": {
+          "markdownDescription": "\u0060refund\u0060 (type \u0060int\u0060) on view \u0060item_refunded\u0060."
         },
         "actor": {
           "enum": [
